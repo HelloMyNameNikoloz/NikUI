@@ -1,10 +1,28 @@
 'use strict';
 
 const vscode = require('vscode');
+const path = require('path');
 const { EventEmitter } = require('events');
 const { Session } = require('./session');
 
 const STORAGE_KEY = 'nikui.sessions.v1';
+// One number for both sides of a reload. Remembering more than we restore
+// loses rows silently, which is worse than remembering fewer.
+const KEEP = 20;
+// Turns kept per instance across a reload. Enough to redraw the charts without
+// making the workspace store carry the whole conversation.
+const KEEP_TURNS = 60;
+
+/** Only what /status draws, so a remembered turn stays small. */
+function slimTurn(t) {
+  return {
+    n: t.n, at: t.at, durationMs: t.durationMs, costUsd: t.costUsd,
+    input: t.input, output: t.output, cacheRead: t.cacheRead, cacheCreate: t.cacheCreate,
+    contextTokens: t.contextTokens, model: t.model || null,
+    tools: (t.tools || []).slice(0, 8),
+    interrupted: !!t.interrupted, isError: !!t.isError
+  };
+}
 const COMMANDS_KEY = 'nikui.slashCommands.v1';
 
 // The CLI only reports its command list in the init event, which it emits after
@@ -30,6 +48,10 @@ function readConfig() {
     fontFamily: cfg.get('fontFamily', ''),
     fontSize: cfg.get('fontSize', 13),
     showThinking: cfg.get('showThinking', true),
+    notifyOnAttention: cfg.get('notifyOnAttention', true),
+    interruptOnSingleEscape: cfg.get('interruptOnSingleEscape', false),
+    maxItems: cfg.get('maxTranscriptItems', 400),
+    keepPanelsWarm: cfg.get('keepHiddenPanelsWarm', false),
     statusEmoji: cfg.get('statusEmoji', {})
   };
 }
@@ -39,10 +61,42 @@ class SessionManager extends EventEmitter {
     super();
     this.context = context;
     this.sessions = new Map();
+    this.activeId = null;
   }
 
   get list() {
     return [...this.sessions.values()];
+  }
+
+  /**
+   * What to call an instance when it is shown next to the others. Two tabs both
+   * called 1327 are indistinguishable, so the first thing that tells them apart
+   * is added: the folder, and failing that their order in the list.
+   */
+  displayName(session) {
+    if (!session) return '';
+    const same = this.list.filter((s) => s.label === session.label);
+    if (same.length < 2) return session.label;
+    const folder = path.basename(session.cwd || '');
+    const sameFolder = same.filter((s) => path.basename(s.cwd || '') === folder);
+    if (folder && sameFolder.length < 2) return `${session.label} · ${folder}`;
+    const nth = sameFolder.indexOf(session) + 1;
+    return folder ? `${session.label} · ${folder} ${nth}` : `${session.label} ${nth}`;
+  }
+
+  /** The instance the user is looking at, whichever way they got to it. */
+  get active() {
+    return this.activeId ? this.sessions.get(this.activeId) || null : null;
+  }
+
+  /**
+   * Called when a panel takes focus. Opening an instance from the editor tabs
+   * has to move the sidebar highlight exactly as clicking its row does.
+   */
+  focus(session) {
+    if (!session || this.activeId === session.id) return;
+    this.activeId = session.id;
+    this.emit('focused', session);
   }
 
   get config() {
@@ -59,7 +113,7 @@ class SessionManager extends EventEmitter {
     this.context.globalState.update(COMMANDS_KEY, list);
   }
 
-  create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage }) {
+  create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage, turnLog, startedAt, turns, errors, interrupts }) {
     const cfg = this.config;
     const session = new Session({
       id,
@@ -75,10 +129,21 @@ class SessionManager extends EventEmitter {
       effort: cfg.effort,
       outputStyle: cfg.outputStyle,
       extraArgs: cfg.extraArgs,
-      autoTitle: cfg.autoTitle
+      autoTitle: cfg.autoTitle,
+      maxItems: cfg.maxItems,
+      // What the status sheet needs to keep telling the truth after a reload.
+      turnLog,
+      startedAt,
+      turns,
+      errors,
+      interrupts
     });
 
     session.on('status', () => { this._changed(session); });
+    // One place to listen for trouble, however many instances there are.
+    session.on('failed', (message, code) => this.emit('failed', session, message, code));
+    // A queued prompt changes what the row has to say about the instance.
+    session.on('queue', () => this._changed(session));
     session.on('meta', () => {
       this.rememberCommands(session.meta.slashCommands);
       this._changed(session);
@@ -100,23 +165,40 @@ class SessionManager extends EventEmitter {
     if (!session) return;
     session.dispose();
     this.sessions.delete(id);
+    if (this.activeId === id) this.activeId = null;
     this.emit('removed', session);
     this.emit('changed');
     this.persist();
   }
 
+  /**
+   * Instances whose process ran and is now gone. An instance restored from the
+   * last window has no process either, but it has never been started — it is
+   * asleep, and clearing it would throw away a row the user still wants.
+   */
+  stopped() {
+    return this.list.filter((s) => s.everStarted && !s.isRunning);
+  }
+
   removeStopped() {
-    let removed = 0;
-    for (const session of this.list) {
-      if (!session.isRunning) {
-        session.dispose();
-        this.sessions.delete(session.id);
-        this.emit('removed', session);
-        removed++;
-      }
+    const dead = this.stopped();
+    for (const session of dead) {
+      if (this.activeId === session.id) this.activeId = null;
+      session.dispose();
+      this.sessions.delete(session.id);
+      this.emit('removed', session);
     }
-    if (removed) { this.emit('changed'); this.persist(); }
-    return removed;
+    if (dead.length) { this.emit('changed'); this.persist(); }
+    return dead.length;
+  }
+
+  /** Kill the process but keep the instance: the conversation resumes on open. */
+  sleep(id) {
+    const session = this.sessions.get(id);
+    if (!session || !session.isRunning) return false;
+    session.stop();
+    this._changed(session);
+    return true;
   }
 
   disposeAll() {
@@ -134,9 +216,16 @@ class SessionManager extends EventEmitter {
   persist() {
     const data = this.list
       .filter((s) => s.claudeSessionId)
-      .map((s) => ({ id: s.id, cwd: s.cwd, customTitle: s.customTitle, autoLabel: s.autoLabel, ticket: s.ticket,
-        claudeSessionId: s.claudeSessionId, totalCost: s.totalCost, usage: s.usage }));
-    this.context.workspaceState.update(STORAGE_KEY, data.slice(-20));
+      .map((s) => ({
+        id: s.id, cwd: s.cwd, customTitle: s.customTitle, autoLabel: s.autoLabel, ticket: s.ticket,
+        claudeSessionId: s.claudeSessionId, totalCost: s.totalCost, usage: s.usage,
+        // The running totals are remembered, so the charts that explain them
+        // have to be remembered too — a real cost above an empty chart is worse
+        // than either on its own.
+        startedAt: s.startedAt, turns: s.turns, errors: s.errors, interrupts: s.interrupts,
+        turnLog: (s.turnLog || []).slice(-KEEP_TURNS).map(slimTurn)
+      }));
+    this.context.workspaceState.update(STORAGE_KEY, data.slice(-KEEP));
   }
 
   restorable() {
@@ -150,7 +239,7 @@ class SessionManager extends EventEmitter {
    */
   restoreOpen() {
     const saved = this.restorable().filter((s) => s.claudeSessionId && s.cwd);
-    for (const entry of saved.slice(-8)) {
+    for (const entry of saved.slice(-KEEP)) {
       if (this.sessions.has(entry.id)) continue;
       this.create({
         id: entry.id,
@@ -161,6 +250,11 @@ class SessionManager extends EventEmitter {
         resume: entry.claudeSessionId,
         totalCost: entry.totalCost,
         usage: entry.usage,
+        turnLog: entry.turnLog,
+        startedAt: entry.startedAt,
+        turns: entry.turns,
+        errors: entry.errors,
+        interrupts: entry.interrupts,
         autoStart: false
       });
     }
