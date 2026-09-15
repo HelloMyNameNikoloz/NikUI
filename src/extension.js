@@ -31,6 +31,10 @@ function activate(context) {
   manager.on('changed', () => history.refresh());
 
   // Keep the sidebar badge honest about how many instances are busy.
+  // Whatever removes an instance, its panel goes with it; an orphaned panel
+  // still holds a live reference and could respawn the process.
+  manager.on('removed', (session) => SessionPanel.close(session.id));
+
   manager.on('changed', () => {
     const busy = manager.list.filter((s) => s.isBusy).length;
     view.badge = busy ? { value: busy, tooltip: `${busy} working` } : undefined;

@@ -100,6 +100,7 @@ class SessionManager extends EventEmitter {
     if (!session) return;
     session.dispose();
     this.sessions.delete(id);
+    this.emit('removed', session);
     this.emit('changed');
     this.persist();
   }
@@ -107,7 +108,12 @@ class SessionManager extends EventEmitter {
   removeStopped() {
     let removed = 0;
     for (const session of this.list) {
-      if (!session.isRunning) { session.dispose(); this.sessions.delete(session.id); removed++; }
+      if (!session.isRunning) {
+        session.dispose();
+        this.sessions.delete(session.id);
+        this.emit('removed', session);
+        removed++;
+      }
     }
     if (removed) { this.emit('changed'); this.persist(); }
     return removed;

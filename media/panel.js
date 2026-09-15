@@ -153,7 +153,9 @@
   function setStatus(next) {
     $('dot').className = 'dot ' + next;
     $('stop').disabled = !(next === 'working' || next === 'waiting');
-    $('send').disabled = next === 'stopped';
+    // Sending to a stopped instance revives it with --resume, so this stays
+    // enabled; disabling it left the panel a dead end after a crash.
+    $('send').disabled = false;
   }
 
   // ── items ────────────────────────────────────────────────────

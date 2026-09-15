@@ -70,6 +70,7 @@ class Session extends EventEmitter {
     this._controlSeq = 0;
     this._seq = 0;
     this.replayed = false;
+    this.disposed = false;
     this.queue = [];
     this._drainTimer = null;
     this.contextTokens = 0;
@@ -91,7 +92,7 @@ class Session extends EventEmitter {
   // ---- lifecycle ----------------------------------------------------------
 
   start() {
-    if (this.isRunning) return;
+    if (this.isRunning || this.disposed) return;
 
     const args = [
       '--output-format', 'stream-json',
@@ -191,6 +192,9 @@ class Session extends EventEmitter {
   }
 
   dispose() {
+    // Marked before stopping: a panel that outlives its instance must not be
+    // able to respawn an untracked process.
+    this.disposed = true;
     this._clearDrain();
     this.stop();
     this.removeAllListeners();

@@ -153,14 +153,14 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test          # 126 checks, no dependencies, no network, no CLI
+    npm test          # 138 checks, no dependencies, no network, no CLI
     npm run test:live # 15 checks against the real claude binary (costs tokens)
 
 The offline suite stubs the VS Code API (`test/helpers/vscode-stub.js`) and
 drives the real modules: markdown and table rendering, ticket naming, the folder
 store, project grouping and drag and drop, file-reference matching, activation
-and command parity, history paths, and the stream parser fed synthetic events in
-exactly the shape the CLI emits.
+and command parity, history paths, icon geometry, instance lifecycle, and the
+stream parser fed synthetic events in exactly the shape the CLI emits.
 
 Two of those deserve naming, because both encode a bug that already bit:
 the parser test asserts a streamed block is not duplicated by the final
