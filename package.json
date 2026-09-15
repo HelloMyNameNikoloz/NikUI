@@ -262,6 +262,16 @@
           "type": "string",
           "default": "Concise",
           "description": "Output style for every instance. Empty inherits your Claude Code default."
+        },
+        "nikui.groupByProject": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "default": "auto",
+          "description": "Group instances by project folder in the sidebar. \"auto\" nests them only once more than one project is open."
         }
       }
     }

@@ -30,6 +30,10 @@ owns the whole surface.
   navigable. Options are seeded for `/effort` and learned at runtime by reading
   `Usage: /cmd <a|b|c>` out of the CLI's own replies.
 - **Copy buttons** on every code block, including tool input and output.
+- **Grouped by project.** Instances nest under their project folder — a git
+  worktree groups with the repo it belongs to — with a per-group count, working
+  count and summed cost. `nikui.groupByProject` is `auto` (nest only once more
+  than one project is open), `always` or `never`.
 - **Close an instance** from the × on its row: the process is killed (SIGTERM,
   then SIGKILL if it lingers) and the row disappears, while the conversation
   stays in History to reopen later. You are only asked to confirm if a turn is
@@ -81,6 +85,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.fontFamily` | *(empty)* | Conversation font; empty uses the UI font |
 | `nikui.fontSize` | `13` | Conversation font size |
 | `nikui.showThinking` | `true` | Show thinking blocks, collapsed |
+| `nikui.groupByProject` | `auto` | Nest instances under their project folder |
 | `nikui.statusEmoji` | see below | Emoji per status in tab titles |
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
