@@ -379,8 +379,11 @@ function activate(context) {
   });
 
   // Bring back the instances that were open before the reload, then let VS Code
-  // hand their editor tabs back to us.
+  // hand their editor tabs back to us. Folder assignments are tidied once the
+  // whole set is back, never while it is still being rebuilt.
   manager.restoreOpen();
+  folders.prune(manager.list.map((s) => s.id));
+  tree.refresh();
 
   context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('nikui.session', {
     async deserializeWebviewPanel(panel, state) {

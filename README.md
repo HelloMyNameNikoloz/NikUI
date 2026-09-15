@@ -352,7 +352,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 510 checks, no dependencies, no network, no CLI
+    npm test             # 514 checks, no dependencies, no network, no CLI
     npm run test:webview # 59 checks driving the real webview in a browser
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 

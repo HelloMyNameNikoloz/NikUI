@@ -82,10 +82,15 @@ module.exports = async function () {
   check('getParent finds the user folder', tree.getParent(sessions[1]).__folder === true);
   check('an empty folder invites a drop', /drag instances here/.test(tree.folderItem({ id: queue.id, label: 'x', sessions: [] }).description));
 
-  // Closing an instance must not leave a dangling assignment.
+  // Closing an instance must not leave a dangling assignment — but only
+  // closing one. A reload rebuilds the list an instance at a time, and pruning
+  // against a half-rebuilt list used to throw away everyone else's folder.
   manager.list = sessions.filter((s) => s.id !== 's2');
   manager.emit('changed');
-  check('assignments are pruned when an instance goes away', !('s2' in folders.assign));
+  check('a shorter list on its own prunes nothing', 's2' in folders.assign);
+  manager.emit('removed', { id: 's2' });
+  check('the instance being removed is what clears its folder', !('s2' in folders.assign));
+  check('and nobody else loses theirs', 's5' in folders.assign);
 
   suite('every row reads the same way');
 
@@ -163,4 +168,32 @@ module.exports = async function () {
   checkEqual('an hour later it reads as idle', lookFor(stale).word, 'idle');
   check('and stops being green', lookFor(stale).color !== 'charts.green');
   checkEqual('the instance itself still knows it finished', stale.status, 'done');
+
+  suite('a reload does not forget which folder an instance was in');
+
+  // What a window reload actually looks like: assignments already on disk, and
+  // instances rebuilt one at a time, each firing 'changed' as it arrives.
+  const reloadFolders = new FolderStore({ workspaceState: memoryState() });
+  const shelf = reloadFolders.create('Review queue');
+  reloadFolders.place('a', shelf.id);
+  reloadFolders.place('b', shelf.id);
+  reloadFolders.place('c', shelf.id);
+
+  const restoring = Object.assign(new EventEmitter(), { list: [] });
+  new SessionTree(restoring, reloadFolders);
+
+  for (const id of ['a', 'b', 'c']) {
+    restoring.list.push(instance(id, '/Users/nikoloz/Codes/Peuka', id));
+    restoring.emit('changed');
+  }
+
+  checkEqual('every instance comes back in the folder it was in',
+    ['a', 'b', 'c'].map((id) => (reloadFolders.folderOf(id) || {}).id),
+    [shelf.id, shelf.id, shelf.id]);
+
+  suite('a project row is never blank');
+
+  const projectRow = tree.groupItem({ __group: true, root: '/Users/nikoloz/Codes/Peuka', label: 'Peuka', sessions: [] });
+  check('it carries a codicon rather than deferring to the file icon theme',
+    projectRow.iconPath && typeof projectRow.iconPath.id === 'string' && projectRow.iconPath.id.length > 0);
 };

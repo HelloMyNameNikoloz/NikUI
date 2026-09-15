@@ -72,8 +72,18 @@ class SessionTree {
     this.dropMimeTypes = [MIME];
     this.dragMimeTypes = [MIME];
 
+    // Deliberately not pruning here. A reload restores instances one at a time,
+    // and 'changed' fires after each: pruning against a list that is still half
+    // empty threw away the folder of every instance that had not been rebuilt
+    // yet. An assignment goes stale when its instance is removed, and that has
+    // its own event.
     manager.on('changed', () => {
-      this.folders.prune(manager.list.map((s) => s.id));
+      this._cache.clear();
+      this._onDidChangeTreeData.fire();
+    });
+
+    manager.on('removed', (session) => {
+      this.folders.place(session.id, null);
       this._cache.clear();
       this._onDidChangeTreeData.fire();
     });
@@ -227,7 +237,9 @@ class SessionTree {
     item.id = 'group:' + group.root;
     item.contextValue = 'projectGroup';
     item.resourceUri = vscode.Uri.file(group.root);
-    item.iconPath = vscode.ThemeIcon.Folder;
+    // A codicon, not ThemeIcon.Folder: that defers to the file icon theme, and
+    // the default theme draws no folder icons at all, so the row came out blank.
+    item.iconPath = new vscode.ThemeIcon('root-folder');
 
     item.description = summarise(group.sessions);
     item.tooltip = new vscode.MarkdownString(`**${group.label}**\n\n\`${group.root}\``);
