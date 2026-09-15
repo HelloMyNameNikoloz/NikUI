@@ -107,9 +107,11 @@ class SessionPanel {
       this.refreshStatus();
     };
     const onMeta = () => {
+      const cfg = readConfig();
       this.post({
         type: 'meta', meta: this.meta(), slashCommands: this.commandList(),
-        commandArgs: commandArgs(), ownCommands: OWN_COMMANDS
+        commandArgs: commandArgs(), ownCommands: this.ownCommands(cfg),
+        snippets: cfg.promptSnippets || {}
       });
       this.refreshChrome();
     };
@@ -154,6 +156,13 @@ class SessionPanel {
     };
   }
 
+  /** Everything the panel answers itself: its commands, and your snippets. */
+  ownCommands(cfg) {
+    return OWN_COMMANDS.concat(Object.keys((cfg && cfg.promptSnippets) || {})
+      .filter((name) => String(cfg.promptSnippets[name] || '').trim())
+      .map((name) => name.toLowerCase()));
+  }
+
   /**
    * The session's own list once it has one, otherwise the remembered list —
    * plus the commands NikUI answers itself, which the CLI has no reason to
@@ -163,7 +172,7 @@ class SessionPanel {
     const live = this.session.meta.slashCommands;
     const base = (live && live.length) ? live : (this.manager ? this.manager.knownCommands() : []);
     const merged = base.slice();
-    for (const own of OWN_COMMANDS) if (!merged.includes(own)) merged.push(own);
+    for (const own of this.ownCommands(readConfig())) if (!merged.includes(own)) merged.push(own);
     return merged;
   }
 
@@ -224,7 +233,8 @@ class SessionPanel {
           drainAt: this.session.drainAt || null,
           slashCommands: this.commandList(),
           commandArgs: commandArgs(),
-          ownCommands: OWN_COMMANDS,
+          ownCommands: this.ownCommands(cfg),
+          snippets: cfg.promptSnippets || {},
           showThinking: cfg.showThinking,
           singleEscape: !!cfg.interruptOnSingleEscape,
           font: cfg.fontFamily || '',
@@ -233,7 +243,9 @@ class SessionPanel {
         if (this.pendingStatus) { this.pendingStatus = false; this.openStatus(); }
         break;
       }
-      case 'send': this.session.submit(msg.text, msg.attachments); break;
+      case 'send':
+        this.session.submit(msg.text, msg.attachments, { sent: msg.sent, snippets: msg.snippets });
+        break;
       case 'status': this.postStatus(); break;
       case 'statusOpen':
         this.statusOpen = !!msg.open;
@@ -423,6 +435,7 @@ class SessionPanel {
   <script nonce="${nonce}" src="${media('icons.js')}"></script>
   <script nonce="${nonce}" src="${media('markdown.js')}"></script>
   <script nonce="${nonce}" src="${media('prompts.js')}"></script>
+  <script nonce="${nonce}" src="${media('snippets.js')}"></script>
   <script nonce="${nonce}" src="${media('charts.js')}"></script>
   <script nonce="${nonce}" src="${media('status.js')}"></script>
   <script nonce="${nonce}" src="${media('boot.js')}"></script>

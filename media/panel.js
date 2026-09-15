@@ -60,6 +60,7 @@
   let slashCmd = '';
   let commandArgs = {};
   let ownCommands = [];
+  let snippetText = {};
   let showThinking = true;
   let statsBase = { elapsedMs: 0, running: false, at: Date.now(), total: 0, cost: 0, turns: 0 };
   let attachSeq = 0;
@@ -236,6 +237,13 @@
       case 'user': {
         el.className = 'turn-user';
         let html = '<div class="said">' + esc(item.text) + '</div>';
+        if (item.snippets && item.snippets.length) {
+          html += '<div class="used-snippets">' + item.snippets.map(function (name) {
+            return '<span class="snippet-chip" title="' +
+              esc(snippetText[name] || 'A standing instruction was added to this prompt.') +
+              '">+' + esc(name) + '</span>';
+          }).join('') + '</div>';
+        }
         if (item.images && item.images.length) {
           html += '<div class="shots">' + item.images.map(function (im) {
             return '<img src="data:' + esc(im.mediaType) + ';base64,' + im.data + '" alt="' + esc(im.name || 'image') + '">';
@@ -747,9 +755,14 @@
       askForStatus();
       return;
     }
+    // A snippet adds a standing instruction to what you typed. The panel keeps
+    // showing your words; the model gets yours plus the instruction.
+    const shaped = window.snippets.expand(text, snippetText);
     vscode.postMessage({
       type: 'send',
-      text: text,
+      text: shaped.text,
+      sent: shaped.sent,
+      snippets: shaped.used,
       attachments: attachments.map((a) => ({ name: a.name, mediaType: a.mediaType, data: a.data }))
     });
     prompts.remember(text);
@@ -1134,6 +1147,7 @@
         commands = msg.slashCommands || [];
         commandArgs = msg.commandArgs || {};
         ownCommands = msg.ownCommands || [];
+        snippetText = msg.snippets || {};
         if (msg.font) document.documentElement.style.setProperty('--nik-font', msg.font);
         if (msg.fontSize) document.documentElement.style.setProperty('--nik-font-size', msg.fontSize + 'px');
         stream.innerHTML = msg.items.length ? '' : '<div class="empty">Ask Claude anything to start.</div>';
@@ -1167,6 +1181,7 @@
         if (msg.slashCommands) commands = msg.slashCommands;
         if (msg.commandArgs) commandArgs = msg.commandArgs;
         if (msg.ownCommands) ownCommands = msg.ownCommands;
+        if (msg.snippets) snippetText = msg.snippets;
         break;
       case 'status': setStatus(msg.status); break;
       case 'stats': setStats(msg.stats); break;

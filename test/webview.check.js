@@ -111,7 +111,8 @@ const drive = `
       meta: { label: 'x', cwd: '/tmp', home: '/tmp', model: 'claude-x', permissionMode: 'bypassPermissions' },
       status: 'idle',
       stats: { input: 1, output: 2, cacheRead: 3, cacheCreate: 4, total: 10, cost: 0.42, turns: 2, elapsedMs: 0, running: false, contextTokens: 60000, contextWindow: 200000 },
-      queue: [], slashCommands: ['status'], commandArgs: {}, showThinking: true
+      queue: [], slashCommands: ['status', 'table'], commandArgs: {}, showThinking: true,
+      ownCommands: ['status', 'table'], snippets: { table: 'TABLE INSTRUCTION' }
     });
 
     const mark = document.querySelector('.dropped');
@@ -134,10 +135,33 @@ const drive = `
     key(input, 'ArrowDown'); key(input, 'ArrowDown'); key(input, 'ArrowDown');
     out.draftCameBack = input.value;
 
+    // A snippet: the panel keeps your words, the model gets the instruction.
+    input.value = '/table fix the rollback';
+    key(input, 'Enter');
+    const snippetSend = window.__posted.filter((m) => m.type === 'send').pop() || {};
+    out.snippetText = snippetSend.text;
+    out.snippetSent = snippetSend.sent;
+    out.snippetUsed = (snippetSend.snippets || []).join(',');
+
+    post({ type: 'items', items: [{ id: 'us1', kind: 'user', text: 'fix the rollback',
+      snippets: ['table'], images: [] }] });
+    const snippetMark = document.querySelector('.used-snippets .snippet-chip');
+    out.snippetChip = snippetMark ? snippetMark.textContent : null;
+    out.snippetChipExplains = snippetMark ? snippetMark.getAttribute('title') : null;
+
+    // The palette offers it, tagged as ours.
+    input.value = '/tab';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const row = Array.from(document.querySelectorAll('#slash .row')).find((r) => /table/.test(r.textContent));
+    out.snippetInPalette = row ? row.textContent.replace(/\s+/g, ' ').trim() : null;
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const sendsBeforeStatus = window.__posted.filter((m) => m.type === 'send').length;
     input.value = '/status';
     key(input, 'Enter');
     out.statusRequests = window.__posted.filter((m) => m.type === 'status').length;
-    out.sentToCli = window.__posted.filter((m) => m.type === 'send').length;
+    out.sentToCli = window.__posted.filter((m) => m.type === 'send').length - sendsBeforeStatus;
     out.composerCleared = input.value === '';
 
     post({ type: 'statusReport', report: REPORT });
@@ -337,7 +361,7 @@ const checks = [
   ['the single-press setting restores the CLI behaviour', out.singleEscapeInterrupts === true],
   ['opening the sheet tells the host to keep it fresh', out.sheetOpenTold === true],
   ['and closing it tells the host to stop', out.sheetCloseTold === true],
-  ['a whole message can be copied, not just its code', out.copyAllButtons === 2],
+  ['a whole message can be copied, not just its code', out.copyAllButtons === 3],
   ['dropping a file has a visible target', out.dropTargetShown === true],
   ['which goes away again', out.dropTargetGone === true],
   ['the sheet announces itself as a dialog', out.sheetIsDialog === true],
@@ -346,6 +370,12 @@ const checks = [
   ['clearing the queue asks first', out.queueArmed === 'Clear 2?'],
   ['and the first click clears nothing', out.queueSurvivedFirstClick === 0],
   ['the second click clears it', out.queueClearedOnSecond === 1],
+  ['a snippet keeps your words in the panel', out.snippetText === 'fix the rollback'],
+  ['and sends them with the instruction', out.snippetSent === 'fix the rollback\n\nTABLE INSTRUCTION'],
+  ['naming which one was used', out.snippetUsed === 'table'],
+  ['the prompt is marked with it', out.snippetChip === '+table'],
+  ['and hovering the mark shows the instruction', /TABLE INSTRUCTION/.test(out.snippetChipExplains || '')],
+  ['the palette offers it as ours', /table/.test(out.snippetInPalette || '') && /NikUI/.test(out.snippetInPalette || '')],
   ['cmd+F opens find', out.findOpened === true],
   ['it finds every match', out.findMatches === 2],
   ['and counts them', out.findCount === '1 of 2'],
@@ -355,7 +385,7 @@ const checks = [
   ['and leaves nothing highlighted', out.findLeavesNoMarks === true],
   ['escape closes find', out.findClosed === true],
   ['and takes its highlights with it', out.findCleanedUp === true],
-  ['leaving the transcript exactly as it was', out.transcriptIntact === 2]
+  ['leaving the transcript exactly as it was', out.transcriptIntact === 3]
 ];
 
 let failed = 0;

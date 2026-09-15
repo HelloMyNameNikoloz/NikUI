@@ -1263,3 +1263,15 @@ body.dropping::after {
   color: var(--orange);
   white-space: nowrap;
 }
+
+/* The mark that a prompt carried a standing instruction the panel is not
+   repeating. Hover it to read the instruction. */
+.used-snippets { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.snippet-chip {
+  padding: 1px 8px;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: var(--fs-micro);
+  cursor: help;
+}

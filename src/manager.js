@@ -35,6 +35,20 @@ const BUILTIN_COMMANDS = [
   'release-notes', 'resume', 'review', 'status', 'terminal-setup', 'usage', 'vim'
 ];
 
+/**
+ * Yours merged over the built-in ones. VS Code replaces an object setting
+ * wholesale, so adding a snippet of your own would otherwise silently delete
+ * the ones that ship with NikUI; an empty string is how you turn one off.
+ */
+function readSnippets(cfg) {
+  let shipped = {};
+  try {
+    const declared = cfg.inspect && cfg.inspect('promptSnippets');
+    shipped = (declared && declared.defaultValue) || {};
+  } catch (_) { /* older host, or a stub */ }
+  return Object.assign({}, shipped, cfg.get('promptSnippets', {}));
+}
+
 function readConfig() {
   const cfg = vscode.workspace.getConfiguration('nikui');
   return {
@@ -49,6 +63,7 @@ function readConfig() {
     fontSize: cfg.get('fontSize', 13),
     showThinking: cfg.get('showThinking', true),
     notifyOnAttention: cfg.get('notifyOnAttention', true),
+    promptSnippets: readSnippets(cfg),
     interruptOnSingleEscape: cfg.get('interruptOnSingleEscape', false),
     maxItems: cfg.get('maxTranscriptItems', 400),
     keepPanelsWarm: cfg.get('keepHiddenPanelsWarm', false),
@@ -275,4 +290,4 @@ class SessionManager extends EventEmitter {
   }
 }
 
-module.exports = { SessionManager, readConfig };
+module.exports = { SessionManager, readConfig, readSnippets };

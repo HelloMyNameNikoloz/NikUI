@@ -86,6 +86,16 @@ owns the whole surface.
   carries a spoken summary, and a **CLI** button hands `/status` to the Claude
   Code CLI itself if you wanted its answer instead — as does typing
   `/status` with any argument.
+- **Prompt snippets.** A word like `/table` adds a standing instruction to the
+  prompt you just wrote: `/table fix the rollback` and `fix the rollback /table`
+  both send your text with the instruction appended, and the word itself never
+  reaches the CLI. The panel keeps showing your words, with a `+table` chip you
+  can hover to read what was added, so a long standing instruction is not
+  reprinted on every turn. They appear in the `/` palette tagged *NikUI*, and
+  they are yours to write: `nikui.promptSnippets` maps a word to its text, your
+  entries merged over the built-in one, and an empty string switches one off.
+  The one that ships asks for the current plan as a table — 🟢 done, 🟡 in
+  progress, 🔴 not started — scoped to the task in hand rather than the project.
 - **Prompt recall.** Up from an empty composer brings back the last prompt, and
   again the one before it; Down walks forward and, past the newest, hands back
   whatever was half-typed before recall started. Editing a recalled prompt ends
@@ -235,6 +245,7 @@ owns the whole surface.
 | `↑` | Previous prompt, from an empty composer; `↑` again goes further back |
 | `↓` | Forward again, and past the newest one, back to what you were typing |
 | `/` | Command palette — the CLI's commands plus NikUI's own, tagged *NikUI* |
+| `/table` | Append the standing "plan as a table" instruction to this prompt |
 | `Tab` | Fill in the highlighted command; again for its values |
 | `⌘F` / `Ctrl+F` | Find in this conversation |
 | `Enter` / `Shift`+`Enter` *(in find)* | Next / previous match |
@@ -302,6 +313,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.fontSize` | `13` | Conversation font size |
 | `nikui.showThinking` | `true` | Show thinking blocks, collapsed |
 | `nikui.groupByProject` | `auto` | Nest instances under their project folder |
+| `nikui.promptSnippets` | `/table` | Words that append a standing instruction to your prompt |
 | `nikui.maxTranscriptItems` | `400` | Messages an instance keeps in memory; 0 keeps everything |
 | `nikui.keepHiddenPanelsWarm` | `false` | Hold a hidden panel's webview in memory for instant switching |
 | `nikui.notifyOnAttention` | `true` | Tell you when an instance you cannot see is blocked or failed to start |
@@ -366,8 +378,8 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 532 checks, no dependencies, no network, no CLI
-    npm run test:webview # 62 checks driving the real webview in a browser
+    npm test             # 559 checks, no dependencies, no network, no CLI
+    npm run test:webview # 68 checks driving the real webview in a browser
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 
 The offline suite stubs the VS Code API (`test/helpers/vscode-stub.js`) and
@@ -405,6 +417,7 @@ then presses the keys a user would. It skips itself when no Chrome is installed
     media/status.js    the /status sheet: six sections, pure render
     media/charts.js    the SVG chart set the sheet draws with
     media/prompts.js   the composer's prompt recall ring
+    media/snippets.js  /table and friends: what you typed, plus a standing instruction
     media/panel.css    all the styling
     media/panel.js     webview front end
     media/markdown.js  dependency-free Markdown renderer

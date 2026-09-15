@@ -275,10 +275,17 @@ class Session extends EventEmitter {
 
   // ---- input --------------------------------------------------------------
 
-  send(text, attachments) {
+  /**
+   * `opts.sent` is what the model should receive when that differs from what
+   * was typed — a prompt snippet appends a standing instruction, and repeating
+   * it in the panel on every turn would bury the conversation in boilerplate.
+   */
+  send(text, attachments, opts) {
     const prompt = String(text || '').trim();
     const files = Array.isArray(attachments) ? attachments : [];
-    if (!prompt && !files.length) return;
+    const outgoing = String((opts && opts.sent) || prompt).trim();
+    const snippets = (opts && opts.snippets) || [];
+    if (!outgoing && !files.length) return;
     if (!this.isRunning) this.start();
     if (!this.isRunning) return;
 
@@ -296,6 +303,7 @@ class Session extends EventEmitter {
       id: `u${this._seq++}`,
       kind: 'user',
       text: prompt,
+      snippets: snippets.slice(),
       images: files.map((f) => ({ name: f.name, mediaType: f.mediaType, data: f.data })),
       at: Date.now()
     });
@@ -319,7 +327,7 @@ class Session extends EventEmitter {
       type: 'image',
       source: { type: 'base64', media_type: f.mediaType, data: f.data }
     }));
-    content.push({ type: 'text', text: prompt || 'See the attached image.' });
+    content.push({ type: 'text', text: outgoing || 'See the attached image.' });
 
     this._write({ type: 'user', message: { role: 'user', content } });
   }
@@ -329,21 +337,25 @@ class Session extends EventEmitter {
    * submitted while busy stacks up and drains in order once the instance is
    * genuinely finished.
    */
-  submit(text, attachments) {
+  submit(text, attachments, opts) {
     const hasContent = String(text || '').trim() || (attachments && attachments.length);
     if (!hasContent) return null;
     if (this.isBusy || this.queue.length) {
-      this.enqueue(text, attachments);
+      this.enqueue(text, attachments, opts);
       return 'queued';
     }
-    this.send(text, attachments);
+    this.send(text, attachments, opts);
     return 'sent';
   }
 
-  enqueue(text, attachments) {
+  enqueue(text, attachments, opts) {
     this.queue.push({
       id: 'q' + (this._seq++),
       text: String(text || ''),
+      // A queued prompt keeps whatever it was going to send, so waiting in the
+      // queue cannot quietly strip the instruction off it.
+      sent: (opts && opts.sent) || null,
+      snippets: (opts && opts.snippets) || [],
       attachments: Array.isArray(attachments) ? attachments : []
     });
     this.emit('queue');
@@ -413,7 +425,7 @@ class Session extends EventEmitter {
       if (!this.isReadyForQueue()) { this._scheduleDrain(1000); return; }
       const next = this.queue.shift();
       this.emit('queue');
-      this.send(next.text, next.attachments);
+      this.send(next.text, next.attachments, { sent: next.sent, snippets: next.snippets });
     }, delay === undefined ? QUEUE_DELAY_MS : delay);
   }
 

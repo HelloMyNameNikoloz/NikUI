@@ -60,6 +60,16 @@ module.exports = async function () {
   const kinds = posted.slice(-2).map((m) => m.type);
   checkEqual('the command opens the sheet and fills it', kinds, ['openStatus', 'statusReport']);
 
+  suite('the panel offers your snippets as commands');
+
+  stub.__config.promptSnippets = { table: 'TABLE INSTRUCTION', quiet: '   ' };
+  const { readConfig } = require('../src/manager.js');
+  const cfg = readConfig();
+  checkEqual('a configured snippet becomes one of ours', panel.ownCommands(cfg).sort(), ['status', 'table']);
+  check('an emptied one is not offered', panel.ownCommands(cfg).indexOf('quiet') < 0);
+  check('and it joins the list the palette shows', panel.commandList().includes('table'));
+  delete stub.__config.promptSnippets;
+
   suite('what the panel hands the webview');
 
   // A webview that was thrown away while hidden says hello again on its way
