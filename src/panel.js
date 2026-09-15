@@ -2,6 +2,7 @@
 
 const vscode = require('vscode');
 const os = require('os');
+const path = require('path');
 const { readConfig } = require('./manager');
 const { commandArgs } = require('./session');
 
@@ -70,12 +71,15 @@ class SessionPanel {
       this.refreshChrome();
     };
     const onReset = () => this.post({ type: 'reset' });
+    const onQueue = () => this.postQueue();
 
     session.on('items', onItems);
     session.on('status', onStatus);
     session.on('meta', onMeta);
     session.on('reset', onReset);
+    session.on('queue', onQueue);
     this.detach = () => {
+      session.off('queue', onQueue);
       session.off('items', onItems);
       session.off('status', onStatus);
       session.off('meta', onMeta);
@@ -104,6 +108,14 @@ class SessionPanel {
     const live = this.session.meta.slashCommands;
     if (live && live.length) return live;
     return this.manager ? this.manager.knownCommands() : [];
+  }
+
+  postQueue() {
+    this.post({
+      type: 'queue',
+      queue: this.session.queue.map((q) => ({ id: q.id, text: q.text, images: q.attachments.length })),
+      drainAt: this.session.drainAt || null
+    });
   }
 
   postStats() {
@@ -143,6 +155,8 @@ class SessionPanel {
           meta: this.meta(),
           status: this.session.status,
           stats: this.session.stats(),
+          queue: this.session.queue.map((q) => ({ id: q.id, text: q.text, images: q.attachments.length })),
+          drainAt: this.session.drainAt || null,
           slashCommands: this.commandList(),
           commandArgs: commandArgs(),
           showThinking: cfg.showThinking,
@@ -151,7 +165,10 @@ class SessionPanel {
         });
         break;
       }
-      case 'send': this.session.send(msg.text, msg.attachments); break;
+      case 'send': this.session.submit(msg.text, msg.attachments); break;
+      case 'unqueue': this.session.unqueue(msg.id); break;
+      case 'clearQueue': this.session.clearQueue(); break;
+      case 'openFile': await this.openFile(msg); break;
       case 'interrupt': this.session.interrupt(); break;
       case 'permission': {
         const item = this.session.items.find((i) => i.kind === 'permission' && i.requestId === msg.requestId);
@@ -160,6 +177,21 @@ class SessionPanel {
         break;
       }
       default: break;
+    }
+  }
+
+  /** Open a path the model mentioned, resolved against the instance's folder. */
+  async openFile(msg) {
+    const raw = String(msg.path || '').trim();
+    if (!raw) return;
+    const abs = path.isAbsolute(raw) ? raw : path.join(this.session.cwd || '', raw);
+    try {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(abs));
+      const line = Math.max(0, (Number(msg.line) || 1) - 1);
+      const at = new vscode.Range(line, 0, line, 0);
+      await vscode.window.showTextDocument(doc, { selection: at, preview: true, viewColumn: vscode.ViewColumn.Beside });
+    } catch (_) {
+      vscode.window.setStatusBarMessage('NikUI: could not open ' + raw, 3000);
     }
   }
 
@@ -193,6 +225,7 @@ class SessionPanel {
       <span class="title" id="title">Claude</span>
     </div>
     <div class="stats" id="stats"></div>
+    <div class="ctx" id="ctx" hidden><div class="ctx-bar"><i></i></div><span class="ctx-label"></span></div>
     <span class="spacer"></span>
     <div class="crumbs" id="crumbs"></div>
   </header>
@@ -205,6 +238,7 @@ class SessionPanel {
     <div class="composer-wrap">
       <button class="jump" id="jump" hidden>Jump to latest</button>
       <div class="slash" id="slash" hidden></div>
+      <div class="queue" id="queue" hidden></div>
       <div class="attachments" id="attachments"></div>
       <div class="composer">
         <textarea id="input" rows="1" placeholder="Message Claude…"></textarea>
@@ -217,6 +251,7 @@ class SessionPanel {
         <span><kbd>Shift</kbd>+<kbd>Enter</kbd> newline</span>
         <span><kbd>/</kbd> commands</span>
         <span><kbd>Esc</kbd> interrupt</span>
+        <span>send while busy to queue</span>
         <span>paste or drop an image</span>
       </div>
     </div>

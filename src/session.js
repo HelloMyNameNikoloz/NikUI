@@ -17,6 +17,9 @@ const STATUS = {
   STOPPED: 'stopped'
 };
 
+// Give any background work a beat to settle before the next queued prompt.
+const QUEUE_DELAY_MS = 5000;
+
 let counter = 0;
 const nextId = () => `nik-${Date.now().toString(36)}-${(counter++).toString(36)}`;
 
@@ -65,6 +68,10 @@ class Session extends EventEmitter {
     this._controlSeq = 0;
     this._seq = 0;
     this.replayed = false;
+    this.queue = [];
+    this._drainTimer = null;
+    this.contextTokens = 0;
+    this.contextWindow = 0;
   }
 
   get label() {
@@ -167,6 +174,7 @@ class Session extends EventEmitter {
   }
 
   dispose() {
+    this._clearDrain();
     this.stop();
     this.removeAllListeners();
     if (this._flushTimer) clearTimeout(this._flushTimer);
@@ -207,6 +215,82 @@ class Session extends EventEmitter {
     this._write({ type: 'user', message: { role: 'user', content } });
   }
 
+  /**
+   * Queue a prompt instead of dropping it while a turn is in flight. Anything
+   * submitted while busy stacks up and drains in order once the instance is
+   * genuinely finished.
+   */
+  submit(text, attachments) {
+    const hasContent = String(text || '').trim() || (attachments && attachments.length);
+    if (!hasContent) return null;
+    if (this.isBusy || this.queue.length) {
+      this.enqueue(text, attachments);
+      return 'queued';
+    }
+    this.send(text, attachments);
+    return 'sent';
+  }
+
+  enqueue(text, attachments) {
+    this.queue.push({
+      id: 'q' + (this._seq++),
+      text: String(text || ''),
+      attachments: Array.isArray(attachments) ? attachments : []
+    });
+    this.emit('queue');
+    // Only start the clock if nothing is running: the delay is measured from the
+    // end of the turn, not from when the prompt was typed.
+    if (this.isReadyForQueue()) this._scheduleDrain();
+  }
+
+  unqueue(id) {
+    const before = this.queue.length;
+    this.queue = this.queue.filter((q) => q.id !== id);
+    if (this.queue.length !== before) this.emit('queue');
+  }
+
+  clearQueue() {
+    if (!this.queue.length) return;
+    this.queue = [];
+    this._clearDrain();
+    this.emit('queue');
+  }
+
+  /**
+   * Ready means the turn is over and nothing is still running in the
+   * background — a tool left in flight would otherwise collide with the
+   * next prompt.
+   */
+  isReadyForQueue() {
+    if (!this.isRunning || this.isBusy) return false;
+    return !this.items.some((i) => i.kind === 'tool' && i.status !== 'done');
+  }
+
+  get queueDelayMs() {
+    return QUEUE_DELAY_MS;
+  }
+
+  _scheduleDrain(delay) {
+    if (this._drainTimer || !this.queue.length) return;
+    this.drainAt = Date.now() + (delay === undefined ? QUEUE_DELAY_MS : delay);
+    this.emit('queue');
+    this._drainTimer = setTimeout(() => {
+      this._drainTimer = null;
+      this.drainAt = null;
+      if (!this.queue.length) return;
+      if (!this.isReadyForQueue()) { this._scheduleDrain(1000); return; }
+      const next = this.queue.shift();
+      this.emit('queue');
+      this.send(next.text, next.attachments);
+    }, delay === undefined ? QUEUE_DELAY_MS : delay);
+  }
+
+  _clearDrain() {
+    if (this._drainTimer) clearTimeout(this._drainTimer);
+    this._drainTimer = null;
+    this.drainAt = null;
+  }
+
   /** Live counters for the header: elapsed time and tokens. */
   stats() {
     const u = this.usage;
@@ -221,7 +305,9 @@ class Session extends EventEmitter {
       cost: this.totalCost,
       turns: this.turns,
       elapsedMs: this.turnStartedAt ? Date.now() - this.turnStartedAt : this.lastDurationMs,
-      running: !!this.turnStartedAt
+      running: !!this.turnStartedAt,
+      contextTokens: this.contextTokens,
+      contextWindow: this.contextWindow
     };
   }
 
@@ -478,6 +564,16 @@ class Session extends EventEmitter {
     }
     this.pendingUsage = null;
     this.turns += 1;
+    // What the model had to read this turn is the live context size.
+    if (event.usage) {
+      const u2 = readUsage(event.usage);
+      this.contextTokens = u2.input + u2.cacheRead + u2.cacheCreate;
+    }
+    if (event.modelUsage) {
+      for (const m of Object.values(event.modelUsage)) {
+        if (m && m.contextWindow) { this.contextWindow = m.contextWindow; break; }
+      }
+    }
     this.lastDurationMs = event.duration_ms || (this.turnStartedAt ? Date.now() - this.turnStartedAt : 0);
     this.turnStartedAt = null;
     const interrupted = this._interrupted;
@@ -500,6 +596,7 @@ class Session extends EventEmitter {
       this.lastError = null;
       this._setStatus(STATUS.DONE);
     }
+    if (this.queue.length) { this._clearDrain(); this._scheduleDrain(); }
   }
 
   // Fires when the CLI asks to use a tool under a prompting permission mode.

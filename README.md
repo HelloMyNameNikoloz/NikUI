@@ -30,6 +30,15 @@ owns the whole surface.
   navigable. Options are seeded for `/effort` and learned at runtime by reading
   `Usage: /cmd <a|b|c>` out of the CLI's own replies.
 - **Copy buttons** on every code block, including tool input and output.
+- **Queued prompts.** Send while an instance is busy and the prompt stacks
+  instead of being dropped. The queue drains in order, five seconds after a turn
+  is genuinely finished — the gate also waits on any tool still running — and
+  every queued item can be removed or the whole queue cleared.
+- **Clickable file references.** `src/session.js:214` in prose or tool output
+  opens that file at that line, beside the conversation. URLs and email
+  addresses are left alone.
+- **Context budget meter** in the title bar: what the last turn had to read
+  against the model's context window, turning amber at 70% and red at 90%.
 - **Grouped by project.** Instances nest under their project folder — a git
   worktree groups with the repo it belongs to — with a per-group count, working
   count and summed cost. `nikui.groupByProject` is `auto` (nest only once more

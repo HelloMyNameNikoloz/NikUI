@@ -568,3 +568,88 @@ pre:hover .copy, .copy:focus-visible { opacity: 1; }
 /* Language chip moves left so it never sits under the copy button. */
 .msg-text pre[data-lang]:not([data-lang=""])::before { left: 15px; right: auto; }
 .msg-text pre[data-lang]:not([data-lang=""]) { padding-top: 26px; }
+
+/* ── Context budget ────────────────────────────────────────── */
+.ctx {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: var(--r-chip);
+  background: var(--fill-1);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground);
+}
+.ctx[hidden] { display: none !important; }
+.ctx-bar {
+  width: 46px; height: 4px; border-radius: 2px;
+  background: var(--fill-3); overflow: hidden;
+}
+.ctx-bar i {
+  display: block; height: 100%; width: 0;
+  border-radius: 2px; background: var(--accent);
+  transition: width 0.35s ease, background 0.3s ease;
+}
+.ctx.warn .ctx-bar i { background: var(--orange); }
+.ctx.hot  .ctx-bar i { background: var(--red); }
+.ctx.hot { color: var(--red); }
+
+/* ── Queued prompts ────────────────────────────────────────── */
+.queue {
+  margin-bottom: var(--s2);
+  border: 0.5px solid var(--hairline);
+  border-radius: var(--r-card);
+  background: var(--fill-1);
+  overflow: hidden;
+}
+.queue[hidden] { display: none !important; }
+.queue-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 11px;
+  font-size: var(--fs-small);
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 0.5px solid var(--hairline);
+  font-variant-numeric: tabular-nums;
+}
+.queue-head button.link {
+  margin-left: auto; padding: 2px 8px;
+  background: transparent; color: var(--accent);
+  border: none; font-size: var(--fs-small);
+}
+.queue-head button.link:hover { background: var(--fill-2); filter: none; }
+.queue-row {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 6px 11px;
+  font-size: var(--fs-small);
+}
+.queue-row + .queue-row { border-top: 0.5px solid var(--hairline); }
+.queue-row .n {
+  flex: 0 0 auto; width: 17px; height: 17px;
+  display: grid; place-items: center;
+  border-radius: 50%; background: var(--fill-2);
+  font-size: var(--fs-micro);
+  color: var(--vscode-descriptionForeground);
+}
+.queue-row .t {
+  flex: 1 1 auto; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.queue-row .imgs {
+  display: inline-flex; align-items: center; gap: 3px;
+  color: var(--vscode-descriptionForeground); font-size: var(--fs-micro);
+}
+.queue-row .drop {
+  flex: 0 0 auto; padding: 3px; border-radius: 50%;
+  background: transparent; color: var(--vscode-descriptionForeground);
+  border: none;
+}
+.queue-row .drop:hover { background: var(--fill-3); color: var(--vscode-foreground); filter: none; }
+
+/* ── File references ───────────────────────────────────────── */
+.fileref {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.fileref:hover { text-decoration-style: solid; }

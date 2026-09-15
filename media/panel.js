@@ -26,6 +26,8 @@
   let showThinking = true;
   let statsBase = { elapsedMs: 0, running: false, at: Date.now(), total: 0, cost: 0, turns: 0 };
   let attachSeq = 0;
+  let queued = [];
+  let drainAt = null;
 
   const esc = (s) => window.escapeHtml(String(s == null ? '' : s));
   const icon = window.icon;
@@ -115,11 +117,27 @@
       '\nTotal billed ' + fmtTokens(s.total || 0);
   }
 
+  function paintContext() {
+    const el = $('ctx');
+    const used = statsBase.contextTokens || 0;
+    const cap = statsBase.contextWindow || 0;
+    if (!cap || !used) { el.hidden = true; return; }
+    const pct = Math.min(100, Math.round((used / cap) * 1000) / 10);
+    el.hidden = false;
+    el.querySelector('i').style.width = Math.max(2, pct) + '%';
+    el.classList.toggle('warn', pct >= 70);
+    el.classList.toggle('hot', pct >= 90);
+    el.querySelector('.ctx-label').textContent = pct.toFixed(pct < 10 ? 1 : 0) + '%';
+    el.title = 'Context: ' + fmtTokens(used) + ' of ' + fmtTokens(cap) + ' tokens';
+  }
+
   setInterval(function () { if (statsBase.running) paintStats(); }, 1000);
+  setInterval(paintQueue, 1000);
 
   function setStats(s) {
     statsBase = Object.assign({}, s, { at: Date.now() });
     paintStats();
+    paintContext();
   }
 
   function setMeta(meta) {
@@ -267,17 +285,103 @@
     if (empty && items.length) empty.remove();
     for (const item of items) {
       const existing = nodes.get(item.id);
-      if (existing) { paint(existing, item); decorateCode(existing); }
+      if (existing) { paint(existing, item); decorateCode(existing); linkifyPaths(existing); }
       else {
         const el = document.createElement('div');
         el.dataset.id = item.id;
         paint(el, item);
         decorateCode(el);
+        linkifyPaths(el);
         nodes.set(item.id, el);
         stream.appendChild(el);
       }
     }
     if (follow) scrollDown();
+  }
+
+  // ── queue ────────────────────────────────────────────────────
+
+  function paintQueue() {
+    const el = $('queue');
+    if (!queued.length) { el.hidden = true; el.innerHTML = ''; return; }
+    const left = drainAt ? Math.max(0, Math.ceil((drainAt - Date.now()) / 1000)) : null;
+    const when = left !== null
+      ? (left > 0 ? 'sending in ' + left + 's' : 'sending…')
+      : 'waiting for this turn to finish';
+    el.hidden = false;
+    el.innerHTML =
+      '<div class="queue-head">' + icon('clock', 12) +
+      '<span>' + queued.length + ' queued · ' + esc(when) + '</span>' +
+      '<button class="link" data-clear="1">Clear</button></div>' +
+      queued.map(function (q, i) {
+        return '<div class="queue-row"><span class="n">' + (i + 1) + '</span>' +
+          '<span class="t">' + esc(q.text || '(image only)') + '</span>' +
+          (q.images ? '<span class="imgs">' + icon('image', 11) + q.images + '</span>' : '') +
+          '<button class="drop" data-unqueue="' + esc(q.id) + '" title="Remove">' + icon('x', 11) + '</button></div>';
+      }).join('');
+  }
+
+  $('queue').addEventListener('click', function (e) {
+    const drop = e.target.closest('[data-unqueue]');
+    if (drop) { vscode.postMessage({ type: 'unqueue', id: drop.dataset.unqueue }); return; }
+    if (e.target.closest('[data-clear]')) vscode.postMessage({ type: 'clearQueue' });
+  });
+
+  // ── file references ──────────────────────────────────────────
+
+  // Require either a directory separator or a known code extension, so prose
+  // like "example.com" is not turned into a link.
+  const PATH_RE = new RegExp(
+    '((?:[A-Za-z0-9._~-]+\\/)+[A-Za-z0-9._~-]+\\.[A-Za-z0-9]{1,8}' +
+    // Longest extensions first: otherwise "js" wins inside "json".
+    '|\\b[A-Za-z0-9._~-]+\\.(?:gradle|svelte|swift|scss|yaml|json|html|bash|toml|java|jsx|tsx|mjs|cjs|vue|php|sql|xml|txt|css|yml|zsh|cpp|hpp|md|py|kt|go|rs|rb|sh|js|ts|c|h))' +
+    // The extension must end here, so "package.json" is not read as "package.js".
+    '(?![A-Za-z0-9])' +
+    '(?::(\\d+))?(?::(\\d+))?', 'g');
+
+  function insideUrl(text, index) {
+    const back = text.slice(Math.max(0, index - 12), index);
+    return back.indexOf('://') >= 0 || /[\w)@]$/.test(back.slice(-1));
+  }
+
+  function linkifyPaths(root) {
+    const nodes = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (node) {
+        if (!node.nodeValue || node.nodeValue.length < 4) return NodeFilter.FILTER_REJECT;
+        let el = node.parentElement;
+        while (el && el !== root) {
+          if (el.tagName === 'A' || el.classList.contains('fileref')) return NodeFilter.FILTER_REJECT;
+          el = el.parentElement;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let n;
+    while ((n = walker.nextNode())) nodes.push(n);
+
+    for (const node of nodes) {
+      const text = node.nodeValue;
+      PATH_RE.lastIndex = 0;
+      let m, last = 0, frag = null;
+      while ((m = PATH_RE.exec(text)) !== null) {
+        if (insideUrl(text, m.index)) continue;
+        frag = frag || document.createDocumentFragment();
+        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const a = document.createElement('span');
+        a.className = 'fileref';
+        a.dataset.path = m[1];
+        if (m[2]) a.dataset.line = m[2];
+        a.textContent = m[0];
+        a.title = 'Open ' + m[1];
+        frag.appendChild(a);
+        last = m.index + m[0].length;
+      }
+      if (frag) {
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        node.parentNode.replaceChild(frag, node);
+      }
+    }
   }
 
   // ── attachments ──────────────────────────────────────────────
@@ -350,6 +454,11 @@
   function closeLightbox() { lightbox.hidden = true; lbImg.src = ''; }
 
   stream.addEventListener('click', function (e) {
+    const ref = e.target.closest('.fileref');
+    if (ref) {
+      vscode.postMessage({ type: 'openFile', path: ref.dataset.path, line: ref.dataset.line });
+      return;
+    }
     const img = e.target.closest('.shots img');
     if (img) openLightbox(img.src);
   });
@@ -502,11 +611,19 @@
         setMeta(msg.meta);
         setStatus(msg.status);
         setStats(msg.stats);
+        queued = msg.queue || [];
+        drainAt = msg.drainAt || null;
+        paintQueue();
         follow = true;
         jump.hidden = true;
         scrollDown();
         break;
       case 'items': upsert(msg.items); break;
+      case 'queue':
+        queued = msg.queue || [];
+        drainAt = msg.drainAt || null;
+        paintQueue();
+        break;
       case 'meta':
         setMeta(msg.meta);
         if (msg.slashCommands) commands = msg.slashCommands;
