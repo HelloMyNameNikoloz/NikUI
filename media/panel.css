@@ -653,3 +653,586 @@ pre:hover .copy, .copy:focus-visible { opacity: 1; }
   text-decoration-thickness: 1px;
 }
 .fileref:hover { text-decoration-style: solid; }
+
+/* ── /status sheet ─────────────────────────────────────────── */
+
+/* Chart palette. Both sets are run through the data-viz validator: fixed hue
+   order (blue, amber, purple, teal), inside the mode's lightness band, above
+   the chroma floor, and separable under protan/deutan simulation. The light
+   steps are chosen against white, not flipped from the dark ones. */
+:root {
+  --m1: #0a84ff;
+  --m2: #c57f14;
+  --m3: #bf5af2;
+  --m4: #00a3c4;
+  --m-dim: color-mix(in srgb, currentColor 28%, transparent);
+  --heat-1: #1a3857;
+  --heat-2: #164c84;
+  --heat-3: #1066bc;
+  --heat-4: #0a84ff;
+
+  /* Liquid glass. A pane is three things: a tint that lets the conversation
+     through, a film that catches the light at the top edge, and a rim that
+     picks out the edge itself — over a blurred, saturated backdrop. Light mode
+     gets its own steps; glass is not a dark pane with the opacity flipped. */
+  --lg-tint: color-mix(in srgb, var(--vscode-editor-background) 34%, transparent);
+  --lg-tint-deep: color-mix(in srgb, var(--vscode-editor-background) 52%, transparent);
+  --lg-film: linear-gradient(176deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03) 46%, rgba(255, 255, 255, 0));
+  --lg-sheen: rgba(255, 255, 255, 0.34);
+  --lg-rim: rgba(255, 255, 255, 0.10);
+  --lg-under: rgba(0, 0, 0, 0.34);
+  --lg-spec: radial-gradient(120% 80% at 12% -22%, rgba(255, 255, 255, 0.14), transparent 58%);
+  /* The lens edge: light catches the top-left of a pane and wraps round to a
+     fainter glow at the bottom-right. Drawn as a gradient border, not a flat
+     one, because a uniform hairline reads as a box and never as glass. */
+  --lg-edge: linear-gradient(150deg,
+    rgba(255, 255, 255, 0.40) 0%,
+    rgba(255, 255, 255, 0.10) 26%,
+    rgba(255, 255, 255, 0.02) 54%,
+    rgba(255, 255, 255, 0.15) 100%);
+  --lg-blur: brightness(1.22) saturate(150%);
+  --lg-blur-deep: brightness(1.32) saturate(165%) blur(6px);
+  --lg-lift: 0 10px 30px rgba(0, 0, 0, 0.30), 0 2px 5px rgba(0, 0, 0, 0.18);
+  --lg-lift-soft: 0 3px 12px rgba(0, 0, 0, 0.16);
+  --r-glass: 18px;
+}
+body.vscode-light, body.vscode-high-contrast-light {
+  --m1: #0b6bd3;
+  --m2: #a56410;
+  --m3: #9541cc;
+  --m4: #0293b0;
+  --heat-1: #cee1f6;
+  --heat-2: #91bcec;
+  --heat-3: #5497e2;
+  --heat-4: #0b6bd3;
+
+  --lg-tint: color-mix(in srgb, var(--vscode-editor-background) 40%, transparent);
+  --lg-tint-deep: color-mix(in srgb, var(--vscode-editor-background) 58%, transparent);
+  --lg-film: linear-gradient(176deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.40) 55%, rgba(255, 255, 255, 0.28));
+  --lg-sheen: rgba(255, 255, 255, 0.95);
+  --lg-rim: rgba(255, 255, 255, 0.85);
+  --lg-under: rgba(0, 0, 0, 0.07);
+  --lg-spec: radial-gradient(130% 72% at 16% -18%, rgba(255, 255, 255, 0.85), transparent 58%);
+  --lg-edge: linear-gradient(150deg,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0.55) 28%,
+    rgba(0, 0, 0, 0.06) 62%,
+    rgba(0, 0, 0, 0.10) 100%);
+  --lg-lift: 0 10px 28px rgba(0, 0, 0, 0.13), 0 1px 3px rgba(0, 0, 0, 0.07);
+  --lg-lift-soft: 0 2px 8px rgba(0, 0, 0, 0.07);
+  --lg-blur: brightness(1.06) saturate(140%);
+  --lg-blur-deep: brightness(1.04) saturate(150%) blur(6px);
+}
+
+.sheet {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; flex-direction: column;
+  /* The conversation stays visible underneath, defocused — the sheet reads as
+     a pane of glass laid over it rather than a new screen. */
+  /* The conversation is blurred once, here: a pane doing its own blur would be
+     refracting this layer anyway (a blurring parent is a backdrop root), and
+     leaving it sharp let text read through the gaps between panes. What the
+     panes add is the lift — brighter, more saturated, with a lens edge. */
+  background:
+    radial-gradient(120% 90% at 50% -20%, rgba(255, 255, 255, 0.05), transparent 62%),
+    color-mix(in srgb, var(--vscode-editor-background) 42%, transparent);
+  -webkit-backdrop-filter: saturate(200%) blur(34px);
+  backdrop-filter: saturate(200%) blur(34px);
+  animation: sheet-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.sheet[hidden] { display: none !important; }
+/* Settling, not sliding: the glass eases down and comes into focus. */
+@keyframes sheet-in {
+  from { opacity: 0; transform: scale(1.012) translateY(10px); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet { animation: none; }
+}
+
+.sheet-head {
+  flex: 0 0 auto; position: relative; z-index: 2;
+  display: flex; align-items: center; gap: var(--s3);
+  padding: 12px var(--s5);
+  background: var(--lg-film), var(--lg-tint);
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+  box-shadow: inset 0 0.5px 0 var(--lg-sheen), 0 1px 0 var(--lg-under), var(--lg-lift-soft);
+}
+.sheet-title { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.sheet-title b { font-weight: 590; }
+.sheet-title .dim, .dim { color: var(--vscode-descriptionForeground); }
+.sheet-actions { margin-left: auto; display: flex; align-items: center; gap: var(--s2); }
+
+.sheet-body { flex: 1 1 auto; display: flex; min-height: 0; }
+/* A floating rail rather than a bordered column: the glass has edges on all
+   four sides, so it reads as an object sitting on the sheet. */
+.sheet-nav {
+  flex: 0 0 auto; width: 186px;
+  margin: var(--s3) 0 var(--s3) var(--s3);
+  padding: var(--s2);
+  border: 1px solid transparent; border-radius: var(--r-glass);
+  background:
+    var(--lg-spec) padding-box,
+    var(--lg-film) padding-box,
+    var(--lg-tint) padding-box,
+    var(--lg-edge) border-box;
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+  box-shadow: inset 0 1px 0 var(--lg-sheen), inset 0 -1px 0 var(--lg-under), var(--lg-lift);
+  display: flex; flex-direction: column; gap: 2px;
+  overflow-y: auto;
+}
+.nav-item {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 8px 11px; border: none; border-radius: var(--r-chip);
+  background: transparent; color: var(--vscode-foreground);
+  font: inherit; font-size: var(--fs-small); text-align: left; cursor: pointer;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+.nav-item:hover { background: var(--fill-2); filter: none; }
+/* The selection is its own lozenge of brighter glass. */
+.nav-item.on {
+  font-weight: 590;
+  border: 1px solid transparent;
+  background:
+    var(--lg-spec) padding-box,
+    var(--lg-film) padding-box,
+    color-mix(in srgb, var(--vscode-foreground) 11%, transparent) padding-box,
+    var(--lg-edge) border-box;
+  box-shadow: inset 0 1px 0 var(--lg-sheen), var(--lg-lift-soft);
+}
+.nav-item kbd { margin-left: auto; opacity: 0.5; }
+
+.sheet-content {
+  flex: 1 1 auto; min-width: 0;
+  overflow-y: auto; padding: var(--s4) var(--s5) var(--s6);
+  display: grid; gap: var(--s3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+}
+.sheet-content:focus { outline: none; }
+.sheet-foot {
+  flex: 0 0 auto; position: relative; z-index: 2;
+  padding: 7px var(--s5);
+  background: var(--lg-film), var(--lg-tint);
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+  box-shadow: inset 0 0.5px 0 var(--lg-sheen), 0 -1px 0 var(--lg-under);
+  font-size: var(--fs-micro); color: var(--vscode-descriptionForeground);
+}
+
+/* Glass capsules for the sheet's own controls. */
+.sheet-actions button {
+  background:
+    var(--lg-spec) padding-box,
+    var(--lg-film) padding-box,
+    var(--lg-tint-deep) padding-box,
+    var(--lg-edge) border-box;
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+  border: 1px solid transparent; border-radius: var(--r-chip);
+  color: var(--vscode-foreground);
+  box-shadow: inset 0 1px 0 var(--lg-sheen), var(--lg-lift-soft);
+  transition: box-shadow 140ms ease, transform 140ms ease;
+}
+.sheet-actions button:hover {
+  filter: none; transform: translateY(-0.5px);
+  box-shadow: inset 0 1px 0 var(--lg-sheen), var(--lg-lift);
+}
+.sheet-actions button:active { transform: translateY(0.5px); }
+
+/* Every pane is the same material: tint, film, rim, lift — and a specular
+   highlight in the top-left corner, drawn on a layer of its own so it never
+   sits over the content. */
+.card, .hero {
+  position: relative;
+  border: 1px solid transparent; border-radius: var(--r-glass);
+  background:
+    var(--lg-spec) padding-box,
+    var(--lg-film) padding-box,
+    var(--lg-tint) padding-box,
+    var(--lg-edge) border-box;
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+  box-shadow:
+    inset 0 1px 0 var(--lg-sheen),
+    inset 0 -1px 0 var(--lg-under),
+    inset 0 10px 28px -20px var(--lg-sheen),
+    var(--lg-lift);
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+.card { padding: var(--s3) var(--s4) var(--s4); min-width: 0; }
+.card.wide { grid-column: 1 / -1; }
+.card h3 {
+  margin: 0 0 var(--s3); font-size: var(--fs-small); font-weight: 590;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+  display: flex; align-items: baseline; gap: var(--s2);
+}
+.card h3 .note { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+/* Hero — the one number the sheet leads with. */
+.hero {
+  grid-column: 1 / -1;
+  display: flex; align-items: flex-end; gap: var(--s5); flex-wrap: wrap;
+  padding: var(--s4) var(--s4) var(--s4) var(--s5);
+}
+.hero-label {
+  font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+.hero-value { font-size: 46px; line-height: 1.05; font-weight: 600; letter-spacing: -0.02em; }
+.hero-sub, .hero-meta { font-size: var(--fs-small); color: var(--vscode-descriptionForeground); }
+.hero-side { margin-left: auto; text-align: right; display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px; border-radius: var(--r-chip);
+  border: 1px solid transparent;
+  background:
+    var(--lg-film) padding-box,
+    color-mix(in srgb, var(--vscode-foreground) 8%, transparent) padding-box,
+    var(--lg-edge) border-box;
+  box-shadow: inset 0 1px 0 var(--lg-sheen), var(--lg-lift-soft);
+  font-size: var(--fs-small); font-weight: 590;
+}
+.sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--grey); display: inline-block; }
+.sdot.working { background: var(--orange); }
+.sdot.waiting, .sdot.error { background: var(--red); }
+.sdot.done { background: var(--green); }
+.sdot.idle { background: var(--grey); }
+.sdot.stopped { background: color-mix(in srgb, var(--grey) 60%, transparent); }
+
+.tiles {
+  grid-column: 1 / -1;
+  display: grid; gap: var(--s2);
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+}
+.tiles.small { grid-column: auto; }
+.tile {
+  position: relative;
+  border: 1px solid transparent; border-radius: 14px;
+  background:
+    var(--lg-spec) padding-box,
+    var(--lg-film) padding-box,
+    color-mix(in srgb, var(--vscode-foreground) 6%, transparent) padding-box,
+    var(--lg-edge) border-box;
+  -webkit-backdrop-filter: var(--lg-blur);
+  backdrop-filter: var(--lg-blur);
+  box-shadow: inset 0 1px 0 var(--lg-sheen), inset 0 -1px 0 var(--lg-under), var(--lg-lift-soft);
+  padding: 10px 12px;
+  transition: box-shadow 160ms ease, transform 160ms ease;
+}
+.tile:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 var(--lg-sheen), inset 0 -1px 0 var(--lg-under), var(--lg-lift); }
+.tile-label {
+  font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+.tile-value { font-size: 21px; font-weight: 590; letter-spacing: -0.01em; line-height: 1.3; }
+.tile-sub { font-size: var(--fs-micro); color: var(--vscode-descriptionForeground); }
+.tile.bad .tile-value { color: var(--red); }
+
+/* Charts. Marks carry classes; the palette lives here, never inline. */
+.chart { display: block; width: 100%; overflow: visible; }
+.chart-cols { height: 140px; }
+.chart-area { height: 130px; }
+.chart-meter, .chart-share { height: 12px; }
+.chart-hbar { height: 10px; }
+.chart .track { fill: var(--fill-2); }
+.chart .m1 { fill: var(--m1); }
+.chart .m2 { fill: var(--m2); }
+.chart .m3 { fill: var(--m3); }
+.chart .m4 { fill: var(--m4); }
+.chart .m-dim { fill: var(--m-dim); }
+.chart .level-ok { fill: var(--green); }
+.chart .level-warn { fill: var(--orange); }
+.chart .level-critical { fill: var(--red); }
+.chart .tick { fill: var(--vscode-editor-background); opacity: 0.85; }
+.chart .line { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.chart .line.m1 { stroke: var(--m1); }
+.chart .line.m2 { stroke: var(--m2); }
+.chart .line.m3 { stroke: var(--m3); }
+.chart .fill { opacity: 0.16; stroke: none; }
+.chart .hit { fill: transparent; }
+.chart .hit:hover { fill: currentColor; opacity: 0.06; }
+.chart rect[data-tip]:hover, .chart path[data-tip]:hover { opacity: 0.78; }
+
+.meter-row { display: flex; align-items: center; gap: var(--s3); }
+.meter-row .chart { flex: 1 1 auto; }
+.meter-value { font-size: 17px; font-weight: 590; font-variant-numeric: tabular-nums; }
+
+.legend { display: flex; flex-wrap: wrap; gap: var(--s3); margin-top: var(--s2); font-size: var(--fs-small); }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; color: var(--vscode-descriptionForeground); }
+.legend .key b { font-weight: 590; color: var(--vscode-foreground); font-variant-numeric: tabular-nums; }
+.swatch { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.swatch.m1 { background: var(--m1); }
+.swatch.m2 { background: var(--m2); }
+.swatch.m3 { background: var(--m3); }
+.swatch.m4 { background: var(--m4); }
+
+.axis {
+  display: flex; justify-content: space-between;
+  font-size: var(--fs-micro); color: var(--vscode-descriptionForeground); margin-top: 5px;
+}
+.hint-line { margin: var(--s2) 0 0; font-size: var(--fs-small); color: var(--vscode-descriptionForeground); }
+
+.hbars { display: flex; flex-direction: column; gap: 5px; }
+.hbar {
+  display: grid; grid-template-columns: minmax(84px, 176px) minmax(0, 1fr) auto minmax(0, 84px);
+  align-items: center; gap: var(--s3);
+  padding: 3px 6px; border-radius: 7px;
+  font-size: var(--fs-small);
+}
+.hbar[data-action] { cursor: pointer; }
+.hbar:hover, .hbar.on { background: var(--fill-2); }
+.hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { display: block; min-width: 0; }
+.hbar-value { font-variant-numeric: tabular-nums; font-weight: 590; }
+.hbar-note { font-size: var(--fs-micro); color: var(--vscode-descriptionForeground); }
+.hbar-note.bad { color: var(--red); }
+
+.heat { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; }
+.heat .cell { height: 26px; border-radius: 4px; background: var(--fill-1); }
+.heat .cell.s0 { background: var(--fill-1); }
+.heat .cell.s1 { background: var(--heat-1); }
+.heat .cell.s2 { background: var(--heat-2); }
+.heat .cell.s3 { background: var(--heat-3); }
+.heat .cell.s4 { background: var(--heat-4); }
+.heat-axis {
+  display: flex; justify-content: space-between; margin-top: 4px;
+  font-size: var(--fs-micro); color: var(--vscode-descriptionForeground);
+}
+
+.facts { margin: 0; display: grid; gap: 1px var(--s4); grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+.fact { display: flex; gap: var(--s3); align-items: baseline; padding: 3px 0; min-width: 0; }
+.fact dt { flex: 0 0 auto; width: 118px; color: var(--vscode-descriptionForeground); font-size: var(--fs-small); }
+.fact dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.fact dd.mono { font-family: var(--font-mono); font-size: var(--fs-small); }
+
+.grid { width: 100%; border-collapse: collapse; font-size: var(--fs-small); }
+.grid th {
+  text-align: left; font-weight: 400; padding: 4px 8px;
+  color: var(--vscode-descriptionForeground); font-size: var(--fs-micro);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom: 0.5px solid var(--hairline);
+}
+.grid td { padding: 5px 8px; border-bottom: 0.5px solid var(--hairline); }
+.grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.grid tr[data-action] { cursor: pointer; }
+.grid tr[data-action]:hover td { background: var(--fill-2); }
+.grid .link { color: var(--accent); }
+.grid code { font-family: var(--font-mono); font-size: var(--fs-small); }
+.badge {
+  margin-left: 6px; padding: 1px 7px; border-radius: var(--r-chip);
+  background: var(--lg-film), color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
+  box-shadow: inset 0 0.5px 0 var(--lg-sheen), inset 0 0 0 0.5px var(--lg-rim);
+  font-size: var(--fs-micro);
+  color: var(--vscode-descriptionForeground);
+}
+
+.tip {
+  position: fixed; top: 0; left: 0; z-index: 120;
+  max-width: 320px; padding: 6px 10px;
+  border-radius: 12px; border: 1px solid transparent;
+  background:
+    var(--lg-spec) padding-box,
+    var(--lg-film) padding-box,
+    var(--lg-tint-deep) padding-box,
+    var(--lg-edge) border-box;
+  -webkit-backdrop-filter: var(--lg-blur-deep);
+  backdrop-filter: var(--lg-blur-deep);
+  box-shadow: inset 0 1px 0 var(--lg-sheen), var(--lg-lift);
+  font-size: var(--fs-small); pointer-events: none;
+}
+.tip[hidden] { display: none !important; }
+
+/* A high-contrast theme is a request for flat, opaque surfaces: glass is the
+   first thing to go, and the edge becomes a real border. */
+body.vscode-high-contrast .sheet,
+body.vscode-high-contrast-light .sheet {
+  background: var(--vscode-editor-background);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+body.vscode-high-contrast .card, body.vscode-high-contrast .hero,
+body.vscode-high-contrast .tile, body.vscode-high-contrast .sheet-nav,
+body.vscode-high-contrast .tip, body.vscode-high-contrast .pill,
+body.vscode-high-contrast-light .card, body.vscode-high-contrast-light .hero,
+body.vscode-high-contrast-light .tile, body.vscode-high-contrast-light .sheet-nav,
+body.vscode-high-contrast-light .tip, body.vscode-high-contrast-light .pill {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-contrastBorder, currentColor);
+  box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+
+@media (max-width: 860px) {
+  .sheet-content { grid-template-columns: minmax(0, 1fr); }
+  .sheet-nav { width: 52px; }
+  .nav-item span, .nav-item kbd { display: none; }
+}
+
+/* The permission mode, stated in the header. Amber when nothing will stop a
+   tool call — that is the default, so silence would be the wrong signal. */
+.perm-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: var(--r-chip);
+  background: var(--fill-1);
+  font-size: var(--fs-micro);
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+.perm-chip.warn {
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  color: var(--orange);
+}
+
+/* Asleep: restored from a previous window, no process yet. Hollow, so it reads
+   as "nothing running here" rather than as another colour of activity. */
+.sdot.asleep {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--grey);
+}
+
+/* Where a conversation was cut to keep the panel light. */
+.dropped {
+  padding: 7px var(--s4);
+  border: 0.5px dashed var(--hairline);
+  border-radius: var(--r-card);
+  font-size: var(--fs-small);
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+}
+.tool .clipped {
+  margin-top: 5px;
+  font-size: var(--fs-micro);
+  color: var(--vscode-descriptionForeground);
+}
+
+/* The armed state of Escape: shown only for the two seconds it is armed. */
+.esc-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  padding: 6px 13px;
+  border-radius: var(--r-chip);
+  border: 0.5px solid var(--hairline);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: var(--shadow-sheet);
+  font-size: var(--fs-small);
+  color: var(--orange);
+  white-space: nowrap;
+  z-index: 21;
+}
+.esc-hint[hidden] { display: none !important; }
+.esc-hint kbd { color: var(--vscode-foreground); }
+
+/* ── Find in conversation ──────────────────────────────────── */
+.find {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 7px var(--s5);
+  border-bottom: 0.5px solid var(--hairline);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  position: relative;
+  z-index: 4;
+}
+.find[hidden] { display: none !important; }
+.find input {
+  flex: 0 1 320px; min-width: 0;
+  padding: 5px 10px;
+  border-radius: var(--r-ctrl);
+  border: 0.5px solid var(--hairline);
+  background: var(--fill-1);
+  color: var(--vscode-foreground);
+  font: inherit; font-size: var(--fs-small);
+}
+.find input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.find-count {
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+.find-note {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--vscode-descriptionForeground);
+}
+.find-note[hidden] { display: none !important; }
+.find button { padding: 3px 7px; font-size: var(--fs-small); }
+
+mark.hit {
+  background: color-mix(in srgb, var(--orange) 34%, transparent);
+  color: inherit;
+  border-radius: 3px;
+}
+mark.hit.on {
+  background: var(--orange);
+  color: #1f1f1f;
+}
+
+/* Copying a whole message, and the drop target for an image. */
+.copy-all { top: 6px; right: 8px; }
+.turn-user, .msg-text { position: relative; }
+
+body.dropping::after {
+  content: 'Drop images here to attach them';
+  position: fixed; inset: var(--s4);
+  z-index: 60;
+  display: grid; place-items: center;
+  border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: var(--r-sheet);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  font-size: var(--fs-body); font-weight: 590;
+  pointer-events: none;
+}
+
+/* For screen readers only: present in the accessibility tree, absent on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Context pressure: one meter per instance, name on the left, figure on the right. */
+.meter-line {
+  display: grid;
+  grid-template-columns: minmax(84px, 176px) minmax(0, 1fr) auto;
+  align-items: center; gap: var(--s3);
+  padding: 3px 6px; border-radius: 7px;
+  font-size: var(--fs-small);
+}
+.meter-line.on { background: var(--fill-2); }
+.meter-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meter-line .meter-value { font-size: var(--fs-small); }
+
+/* The fleet table is wide; let it scroll rather than crush its columns. */
+.grid-scroll { overflow-x: auto; }
+.card.wide-table .grid { min-width: 760px; }
+.spark { display: inline-block; width: 84px; vertical-align: middle; }
+.spark .chart { height: 20px; }
+
+/* One label per bar, in the same columns the bars are drawn in. */
+.axis-even {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+}
+.axis-even span { text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The hero's left column: let a long line ellipsise rather than push the
+   status side of the card off the edge. */
+.hero-main { min-width: 0; }

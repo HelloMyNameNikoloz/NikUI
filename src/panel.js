@@ -5,18 +5,30 @@ const os = require('os');
 const path = require('path');
 const { readConfig } = require('./manager');
 const { commandArgs } = require('./session');
+const { buildReport } = require('./report');
+const { transcriptPath } = require('./history');
 
 const DEFAULT_EMOJI = {
   idle: '⚪', working: '🟠', waiting: '🔴',
   done: '🟢', error: '🔴', stopped: '⚫'
 };
 
+// Commands the panel answers itself rather than passing to the CLI.
+const OWN_COMMANDS = ['status'];
+
 const panels = new Map();
 
 class SessionPanel {
   static show(session, context, manager) {
     const existing = panels.get(session.id);
-    if (existing) { existing.panel.reveal(existing.panel.viewColumn, false); return existing; }
+    if (existing) {
+      existing.panel.reveal(existing.panel.viewColumn, false);
+      // Revealing an existing tab is a selection too. The view-state event says
+      // so as well, but only the editor can fire that — anything that opens an
+      // instance should not have to hope it arrives.
+      if (manager) manager.focus(session);
+      return existing;
+    }
     const created = new SessionPanel(session, context, undefined, manager);
     panels.set(session.id, created);
     return created;
@@ -36,20 +48,35 @@ class SessionPanel {
     if (p) p.panel.dispose();
   }
 
+  /** Whether the user can already see this instance, and so needs no telling. */
+  static isVisible(sessionId) {
+    const p = panels.get(sessionId);
+    return !!(p && p.panel && p.panel.visible);
+  }
+
   constructor(session, context, existingPanel, manager) {
     this.manager = manager || null;
     this.session = session;
     this.context = context;
     this.disposables = [];
     this.ready = false;
+    this.pendingStatus = false;
+    // While the status sheet is open it has to keep up with the instance it is
+    // describing; throttled, because a streaming turn changes constantly.
+    this.statusOpen = false;
+    this.statusTimer = null;
 
+    // A hidden panel is rebuilt from the instance when it comes back — the
+    // conversation lives in the session, not in the webview — so holding every
+    // hidden webview in memory buys a little speed for a lot of RAM. The draft
+    // and the scroll position survive through the webview's own state.
     this.panel = existingPanel || vscode.window.createWebviewPanel(
       'nikui.session',
       session.label,
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
-        retainContextWhenHidden: true,
+        retainContextWhenHidden: !!readConfig().keepPanelsWarm,
         localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
       }
     );
@@ -63,15 +90,31 @@ class SessionPanel {
 
     this.panel.webview.onDidReceiveMessage((msg) => this.onMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    // Bringing a tab forward is a selection too, so the sidebar follows it.
+    if (this.panel.onDidChangeViewState) {
+      this.panel.onDidChangeViewState((e) => {
+        const live = e && e.webviewPanel ? e.webviewPanel : this.panel;
+        if (live.active && this.manager) this.manager.focus(this.session);
+      }, null, this.disposables);
+    }
+    if (this.manager && this.panel.active === true) this.manager.focus(this.session);
 
-    const onItems = (items) => { this.post({ type: 'items', items }); this.postStats(); };
-    const onStatus = (status) => { this.post({ type: 'status', status }); this.postStats(); this.refreshChrome(); };
+    const onItems = (items) => { this.post({ type: 'items', items }); this.postStats(); this.refreshStatus(); };
+    const onStatus = (status) => {
+      this.post({ type: 'status', status });
+      this.postStats();
+      this.refreshChrome();
+      this.refreshStatus();
+    };
     const onMeta = () => {
-      this.post({ type: 'meta', meta: this.meta(), slashCommands: this.commandList(), commandArgs: commandArgs() });
+      this.post({
+        type: 'meta', meta: this.meta(), slashCommands: this.commandList(),
+        commandArgs: commandArgs(), ownCommands: OWN_COMMANDS
+      });
       this.refreshChrome();
     };
     const onReset = () => this.post({ type: 'reset' });
-    const onQueue = () => this.postQueue();
+    const onQueue = () => { this.postQueue(); this.refreshStatus(); };
 
     session.on('items', onItems);
     session.on('status', onStatus);
@@ -87,7 +130,11 @@ class SessionPanel {
     };
 
     // Token counts move during a turn even when no item changes.
-    this.ticker = setInterval(() => { if (this.session.isBusy) this.postStats(); }, 2000);
+    this.ticker = setInterval(() => {
+      if (!this.session.isBusy) return;
+      this.postStats();
+      this.refreshStatus();
+    }, 2000);
   }
 
   meta() {
@@ -99,15 +146,25 @@ class SessionPanel {
       model: s.meta.model || readConfig().model || null,
       cost: s.totalCost,
       ticket: s.ticket,
-      effort: s.effort || null
+      effort: s.effort || null,
+      // Bypassing permissions means every tool runs without asking. That is the
+      // default here, so it has to be visible in the panel, not buried in
+      // settings — see the chip in the header.
+      permissionMode: s.permissionMode || null
     };
   }
 
-  /** The session's own list once it has one, otherwise the remembered list. */
+  /**
+   * The session's own list once it has one, otherwise the remembered list —
+   * plus the commands NikUI answers itself, which the CLI has no reason to
+   * mention and which would otherwise never appear when you type "/".
+   */
   commandList() {
     const live = this.session.meta.slashCommands;
-    if (live && live.length) return live;
-    return this.manager ? this.manager.knownCommands() : [];
+    const base = (live && live.length) ? live : (this.manager ? this.manager.knownCommands() : []);
+    const merged = base.slice();
+    for (const own of OWN_COMMANDS) if (!merged.includes(own)) merged.push(own);
+    return merged;
   }
 
   postQueue() {
@@ -127,7 +184,9 @@ class SessionPanel {
     const cfg = readConfig();
     const emoji = Object.assign({}, DEFAULT_EMOJI, cfg.statusEmoji || {});
     const glyph = emoji[this.session.status] || '';
-    this.panel.title = `${glyph} ${this.session.label}`.trim();
+    const name = this.manager && this.manager.displayName
+      ? this.manager.displayName(this.session) : this.session.label;
+    this.panel.title = `${glyph} ${name}`.trim();
     const icon = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'status', `${this.session.status}.svg`);
     this.panel.iconPath = { light: icon, dark: icon };
   }
@@ -152,6 +211,10 @@ class SessionPanel {
           type: 'init',
           sessionId: this.session.id,
           items: this.session.items,
+          // Older items were dropped from memory on purpose; the panel says so
+          // instead of pretending the conversation began where it does.
+          dropped: this.session.droppedItems || 0,
+          maxItems: this.session.maxItems || 0,
           meta: this.meta(),
           status: this.session.status,
           stats: this.session.stats(),
@@ -159,14 +222,29 @@ class SessionPanel {
           drainAt: this.session.drainAt || null,
           slashCommands: this.commandList(),
           commandArgs: commandArgs(),
+          ownCommands: OWN_COMMANDS,
           showThinking: cfg.showThinking,
+          singleEscape: !!cfg.interruptOnSingleEscape,
           font: cfg.fontFamily || '',
           fontSize: cfg.fontSize || 13
         });
+        if (this.pendingStatus) { this.pendingStatus = false; this.openStatus(); }
         break;
       }
       case 'send': this.session.submit(msg.text, msg.attachments); break;
+      case 'status': this.postStatus(); break;
+      case 'statusOpen':
+        this.statusOpen = !!msg.open;
+        if (!this.statusOpen && this.statusTimer) { clearTimeout(this.statusTimer); this.statusTimer = null; }
+        break;
+      case 'switch': this.switchTo(msg.id); break;
       case 'unqueue': this.session.unqueue(msg.id); break;
+      case 'promoteQueued': this.session.promote(msg.id); break;
+      case 'editQueued': {
+        const item = this.session.reclaim(msg.id);
+        if (item) this.post({ type: 'editPrompt', text: item.text || '' });
+        break;
+      }
       case 'clearQueue': this.session.clearQueue(); break;
       case 'openFile': await this.openFile(msg); break;
       case 'interrupt': this.session.interrupt(); break;
@@ -178,6 +256,66 @@ class SessionPanel {
       }
       default: break;
     }
+  }
+
+  /**
+   * Everything /status draws, gathered at the moment it is asked for. The
+   * facts only the host knows — the transcript on disk, the other instances,
+   * the editor itself — are handed to the builder; it derives the rest.
+   */
+  postStatus() {
+    const cfg = readConfig();
+    const report = buildReport({
+      session: this.session,
+      fleet: this.manager ? this.manager.list : [this.session],
+      env: {
+        transcriptPath: transcriptPath(this.session.cwd, this.session.claudeSessionId),
+        vscode: vscode.version,
+        node: process.versions.node,
+        electron: process.versions.electron || null,
+        platform: `${os.platform()} ${os.release()}`,
+        arch: os.arch(),
+        cpus: os.cpus().length,
+        memoryGb: Math.round(os.totalmem() / 1073741824),
+        extension: this.context.extension ? this.context.extension.packageJSON.version : null,
+        home: os.homedir(),
+        showThinking: cfg.showThinking,
+        groupByProject: vscode.workspace.getConfiguration('nikui').get('groupByProject', 'auto')
+      }
+    });
+    this.post({ type: 'statusReport', report });
+  }
+
+  /**
+   * Redraw the open sheet, at most once every second and a half. A sheet that
+   * quietly goes stale while a turn runs is worse than no sheet: every number
+   * on it is the sort of thing people read once and trust.
+   */
+  refreshStatus() {
+    if (!this.statusOpen || this.statusTimer) return;
+    this.statusTimer = setTimeout(() => {
+      this.statusTimer = null;
+      if (this.statusOpen) this.postStatus();
+    }, 1500);
+  }
+
+  /** Jump to another instance straight from the fleet table. */
+  switchTo(id) {
+    if (!this.manager || !id) return;
+    const target = this.manager.get(id);
+    if (!target || target.id === this.session.id) return;
+    SessionPanel.show(target, this.context, this.manager).focusInput();
+  }
+
+  /**
+   * Called for a panel that may have just been created, so the request waits
+   * for the webview to say hello rather than being posted into the void.
+   */
+  openStatus() {
+    if (!this.ready) { this.pendingStatus = true; return; }
+    this.statusOpen = true;
+    this.post({ type: 'openStatus' });
+    this.postStatus();
   }
 
   /** Open a path the model mentioned, resolved against the instance's folder. */
@@ -199,6 +337,7 @@ class SessionPanel {
 
   dispose() {
     if (this.ticker) clearInterval(this.ticker);
+    if (this.statusTimer) clearTimeout(this.statusTimer);
     if (this.detach) this.detach();
     panels.delete(this.session.id);
     for (const d of this.disposables) { try { d.dispose(); } catch (_) { /* already gone */ } }
@@ -230,6 +369,15 @@ class SessionPanel {
     <div class="crumbs" id="crumbs"></div>
   </header>
 
+  <div class="find" id="find" hidden>
+    <input id="find-input" type="text" placeholder="Find in this conversation" aria-label="Find in this conversation">
+    <span class="find-count" id="find-count">0 of 0</span>
+    <button class="icon-only" id="find-prev" title="Previous match (Shift+Enter)">↑</button>
+    <button class="icon-only" id="find-next" title="Next match (Enter)">↓</button>
+    <button class="icon-only" id="find-close" title="Close (Esc)">✕</button>
+    <span class="find-note" id="find-note" hidden></span>
+  </div>
+
   <div id="transcript">
     <div class="stream" id="stream"><div class="empty">Ask Claude anything to start.</div></div>
   </div>
@@ -237,6 +385,7 @@ class SessionPanel {
   <footer>
     <div class="composer-wrap">
       <button class="jump" id="jump" hidden>Jump to latest</button>
+      <div class="esc-hint" id="esc-hint" hidden>Press <kbd>Esc</kbd> again to interrupt this turn</div>
       <div class="slash" id="slash" hidden></div>
       <div class="queue" id="queue" hidden></div>
       <div class="attachments" id="attachments"></div>
@@ -250,12 +399,18 @@ class SessionPanel {
         <span><kbd>Enter</kbd> send</span>
         <span><kbd>Shift</kbd>+<kbd>Enter</kbd> newline</span>
         <span><kbd>/</kbd> commands</span>
-        <span><kbd>Esc</kbd> interrupt</span>
+        <span><kbd>↑</kbd> previous prompt</span>
+        <span><kbd>/status</kbd> dashboard</span>
+        <span><kbd>⌘F</kbd> find</span>
+        <span><kbd>Esc</kbd> <kbd>Esc</kbd> interrupt</span>
         <span>send while busy to queue</span>
         <span>paste or drop an image</span>
       </div>
     </div>
   </footer>
+
+  <div class="sheet" id="status" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden></div>
+  <div class="tip" id="tip" hidden></div>
 
   <div class="lightbox" id="lightbox" hidden>
     <button class="close" id="lb-close"></button>
@@ -265,6 +420,9 @@ class SessionPanel {
 
   <script nonce="${nonce}" src="${media('icons.js')}"></script>
   <script nonce="${nonce}" src="${media('markdown.js')}"></script>
+  <script nonce="${nonce}" src="${media('prompts.js')}"></script>
+  <script nonce="${nonce}" src="${media('charts.js')}"></script>
+  <script nonce="${nonce}" src="${media('status.js')}"></script>
   <script nonce="${nonce}" src="${media('boot.js')}"></script>
   <script nonce="${nonce}" src="${media('panel.js')}"></script>
 </body>
