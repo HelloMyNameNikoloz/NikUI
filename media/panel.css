@@ -1275,3 +1275,12 @@ body.dropping::after {
   font-size: var(--fs-micro);
   cursor: help;
 }
+
+/* Waiting on the quota: amber, because work is held rather than lost. */
+.card.waiting-card {
+  box-shadow:
+    inset 0 1px 0 var(--lg-sheen),
+    inset 0 0 0 1px color-mix(in srgb, var(--orange) 45%, transparent),
+    var(--lg-lift);
+}
+.card.waiting-card h3, .card.waiting-card .note { color: var(--orange); }

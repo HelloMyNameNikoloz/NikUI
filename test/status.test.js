@@ -109,6 +109,18 @@ module.exports = async function () {
   check('before anything is reported it says so', /Nothing reported yet/.test(unknown));
   check('rather than claiming a full tank', !/100% left/.test(unknown));
 
+  suite('while the window is waiting for the quota');
+
+  const waiting = report({ isPaused: true, pausedUntil: Date.now() + 5400000 });
+  waiting.pause = { since: Date.now() - 60000, until: Date.now() + 5400000, blind: false, limitType: 'five_hour' };
+  waiting.fleet.forEach((m) => { m.paused = true; });
+  const waitingFleet = sheet.renderSheet(waiting, 'fleet');
+  check('the fleet says what is holding', /Waiting for the quota/.test(waitingFleet));
+  check('and for how long', /in 1h/.test(waitingFleet));
+  check('it promises the queues are untouched', /Queues are untouched/.test(waitingFleet));
+  check('and that cut-off work gets picked up', /nudged to carry on/.test(waitingFleet));
+  check('the instance page says it too', /Waiting for the quota/.test(sheet.renderSheet(waiting, 'overview')));
+
   suite('counts that only cover a window say so');
 
   const trimmed = report({ droppedItems: 312, maxItems: 400 });

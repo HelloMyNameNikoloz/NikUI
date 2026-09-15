@@ -3,7 +3,7 @@ const { EventEmitter } = require('events');
 const { install } = require('./helpers/vscode-stub.js');
 
 install();
-const { watchForTrouble, watchForCrowding } = require('../src/extension.js');
+const { watchForTrouble, watchForCrowding, watchForQuota } = require('../src/extension.js');
 const { Session } = require('../src/session.js');
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -115,4 +115,40 @@ module.exports = async function () {
   running(1);
   running(5);
   checkEqual('it speaks up again after the crowd cleared', said.length, 2);
+
+  suite('running out of quota is not something you find out in the morning');
+
+  const quota = new EventEmitter();
+  const told = [];
+  let answer2;
+  let resumedManually = 0;
+  quota.resumeFromLimit = () => { resumedManually += 1; };
+
+  watchForQuota(quota, {
+    window: {
+      showWarningMessage: async (message, ...actions) => { told.push({ message, actions }); return answer2; },
+      setStatusBarMessage: (message) => told.push({ message, actions: [] })
+    }
+  });
+
+  answer2 = undefined;
+  quota.emit('paused', { until: Date.now() + 3600000, blind: false });
+  await settle();
+  checkEqual('the pause is announced', told.length, 1);
+  check('it says when things come back', /holding until/.test(told[0].message));
+  check('and offers to start them now', told[0].actions.indexOf('Resume now') === 0);
+
+  answer2 = 'Resume now';
+  quota.emit('paused', { until: Date.now() + 3600000, blind: false });
+  await settle();
+  checkEqual('taking that offer starts them', resumedManually, 1);
+
+  told.length = 0;
+  quota.emit('resumed', { woken: 3, manual: false });
+  check('and the window says so when the quota comes back on its own',
+    told.some((t) => /3 instances carrying on/.test(t.message)));
+
+  told.length = 0;
+  quota.emit('resumed', { woken: 3, manual: true });
+  checkEqual('but not when you did it yourself', told.length, 0);
 };

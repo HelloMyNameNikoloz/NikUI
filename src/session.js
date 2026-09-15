@@ -94,6 +94,13 @@ class Session extends EventEmitter {
     this.lastCompactedAt = opts.lastCompactedAt || 0;
     // Account-wide, so an instance starts with whatever the window already knows.
     this.limits = opts.limits || null;
+    // Held back until the account's quota resets. Not a status the CLI knows
+    // about — the process is alive and idle, we are simply not talking to it.
+    this.pausedUntil = 0;
+    this.pauseReason = null;
+    // Whether the pause caught it in the middle of something, which is what
+    // decides who gets nudged when the quota comes back.
+    this.interruptedByPause = false;
     this._turnTools = [];
 
     this.proc = null;
@@ -133,6 +140,10 @@ class Session extends EventEmitter {
 
   get isBusy() {
     return this.status === STATUS.WORKING || this.status === STATUS.WAITING;
+  }
+
+  get isPaused() {
+    return !!this.pausedUntil;
   }
 
   /** Restored from a previous window and not opened since: asleep, not dead. */
@@ -288,6 +299,9 @@ class Session extends EventEmitter {
     const outgoing = String((opts && opts.sent) || prompt).trim();
     const snippets = (opts && opts.snippets) || [];
     if (!outgoing && !files.length) return;
+    // Nothing goes out while the quota is spent; it waits in the queue instead
+    // of being lost or bounced back as an error.
+    if (this.isPaused && !(opts && opts.resumed)) { this.enqueue(text, attachments, opts); return; }
     if (!this.isRunning) this.start();
     if (!this.isRunning) return;
 
@@ -408,6 +422,7 @@ class Session extends EventEmitter {
    * next prompt.
    */
   isReadyForQueue() {
+    if (this.isPaused) return false;
     if (!this.isRunning || this.isBusy) return false;
     return !this.items.some((i) => i.kind === 'tool' && i.status !== 'done');
   }
@@ -477,6 +492,47 @@ class Session extends EventEmitter {
       }
     });
     this._setStatus(STATUS.WORKING);
+  }
+
+  /**
+   * Stop talking to the CLI until the account's quota comes back. Anything
+   * queued stays queued, anything sent meanwhile joins the queue, and a turn
+   * that was in flight is remembered so it can be picked up again.
+   */
+  pause({ until, reason }) {
+    const wasBusy = this.isBusy;
+    this.pausedUntil = until || 0;
+    this.pauseReason = reason || 'limit';
+    if (wasBusy) this.interruptedByPause = true;
+    this._clearDrain();
+    if (wasBusy) this._setStatus(STATUS.STOPPED);
+    this._notice(pauseMessage(this.pauseReason, this.pausedUntil), 'info');
+    this.emit('meta');
+    this.emit('queue');
+  }
+
+  /**
+   * Back to work. An instance that was cut off mid-turn is nudged to carry on;
+   * one that was only holding a queue simply starts draining it again. The
+   * queue itself is never touched either way.
+   */
+  resume({ nudge } = {}) {
+    if (!this.pausedUntil) return false;
+    const interrupted = this.interruptedByPause;
+    this.pausedUntil = 0;
+    this.pauseReason = null;
+    this.interruptedByPause = false;
+    this._notice('The quota reset. Picking up where this left off.', 'info');
+    this.emit('meta');
+
+    // Sent, not submitted: submitting would put the nudge at the back of the
+    // queue, which is both the wrong order — the interrupted work came first —
+    // and a change to a queue that is supposed to come through untouched. The
+    // queue drains after this turn, exactly as it would have done.
+    if (interrupted && nudge) this.send(nudge, [], { resumed: true });
+    else if (this.queue.length) this._scheduleDrain(0);
+    else this.emit('queue');
+    return true;
   }
 
   rename(title) {
@@ -571,6 +627,7 @@ class Session extends EventEmitter {
 
     const was = this.limits && this.limits.status;
     this.limits = limits;
+    if (limits.status === 'rejected') this.emit('exhausted', limits);
     // Being told you are nearly out, after the fact, is no use.
     if (limits.status !== was && limits.status !== 'allowed') {
       this._notice(describeLimit(limits), limits.status === 'rejected' ? 'error' : 'info');
@@ -866,6 +923,15 @@ class Session extends EventEmitter {
       costUsd: turnCost
     });
     this._logTurn(turnUsage, turnCost, event, interrupted);
+    // Belt and braces: if the rate limit event never arrives, the turn itself
+    // says so in words.
+    if (event.is_error && !interrupted && looksRateLimited(event.result)) {
+      this.emit('exhausted', {
+        status: 'rejected', type: null, used: 1, resetsAt: null,
+        windows: { fiveHour: null, week: null, weekOverage: null },
+        at: Date.now(), fromMessage: true
+      });
+    }
     if (event.is_error && !interrupted) {
       this.errors += 1;
       this.lastError = String(event.result || event.subtype || 'error');
@@ -997,6 +1063,19 @@ function window5(w) {
 
 const LIMIT_WORD = { five_hour: 'five-hour', seven_day: 'weekly', overage: 'overage' };
 
+/** The CLI's own wording, for when the structured event does not arrive. */
+const RATE_LIMITED = /usage limit reached|rate limit|quota (?:exceeded|reached)/i;
+const looksRateLimited = (text) => RATE_LIMITED.test(String(text || ''));
+
+function pauseMessage(reason, until) {
+  const when = until ? ' It should be back ' + new Date(until).toLocaleString() + '.' : '';
+  if (reason === 'limit') {
+    return 'Paused: the account\u2019s usage limit is spent, so nothing is being sent.' + when +
+      ' Anything you send meanwhile waits in the queue.';
+  }
+  return 'Paused.' + when;
+}
+
 /** What to say in the conversation when the account's limits start to bite. */
 function describeLimit(limits) {
   const which = LIMIT_WORD[limits.type] || (limits.type || '').replace(/_/g, ' ') || 'usage';
@@ -1074,4 +1153,7 @@ function flattenContent(content) {
   return typeof content === 'object' ? JSON.stringify(content) : String(content);
 }
 
-module.exports = { Session, STATUS, commandArgs, learnCommandArgs, clip, restoredStatus, describeLimit, seconds, TOOL_RESULT_MAX, DEFAULT_MAX_ITEMS };
+module.exports = {
+  Session, STATUS, commandArgs, learnCommandArgs, clip, restoredStatus,
+  describeLimit, looksRateLimited, seconds, TOOL_RESULT_MAX, DEFAULT_MAX_ITEMS
+};

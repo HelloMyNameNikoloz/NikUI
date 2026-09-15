@@ -285,6 +285,7 @@ class SessionPanel {
       env: {
         transcriptPath: transcriptPath(this.session.cwd, this.session.claudeSessionId),
         limits: (this.manager && this.manager.limits) || this.session.limits || null,
+        pause: (this.manager && this.manager.pause) || null,
         vscode: vscode.version,
         node: process.versions.node,
         electron: process.versions.electron || null,

@@ -118,6 +118,19 @@ owns the whole surface.
   a webview panel, so the panel brings its own.
 - **Copy buttons** on every code block, including tool input and output — and
   on every message, which copies the prose without the code-block buttons in it.
+- **Running out of quota does not cost you the night.** When the account's
+  usage limit is spent — the five-hour window or the weekly one — every instance
+  stops talking to the CLI instead of failing turn after turn, and each says so
+  in its own conversation. A minute after the limit resets they all start again:
+  an instance that was cut off mid-turn is nudged to carry on with what it was
+  doing, and one that was only holding a queue simply starts draining it.
+  **The queue is never touched** — not cleared, not reordered, and the nudge is
+  sent rather than queued, so the interrupted work comes first and everything
+  waiting follows in the order you left it. Anything you type while it is
+  paused joins the queue rather than failing. The pause outlives a window
+  reload, `nikui.pauseWhenQuotaRuns` turns the whole thing off, and
+  `nikui.resumePrompt` is the wording of the nudge. *NikUI: Resume Everything
+  Now* does not wait.
 - **Queued prompts.** Send while an instance is busy and the prompt stacks
   instead of being dropped — and the sidebar row says so (`working · 2 queued`),
   so a queue is not something you can only see from inside the panel. Clearing
@@ -324,6 +337,8 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.showThinking` | `true` | Show thinking blocks, collapsed |
 | `nikui.groupByProject` | `auto` | Nest instances under their project folder |
 | `nikui.promptSnippets` | `/table` | Words that append a standing instruction to your prompt |
+| `nikui.pauseWhenQuotaRuns` | `true` | Hold every instance when the usage limit is spent, and start them again when it resets |
+| `nikui.resumePrompt` | see below | What to send an instance that was cut off mid-turn, once the quota is back |
 | `nikui.maxTranscriptItems` | `400` | Messages an instance keeps in memory; 0 keeps everything |
 | `nikui.keepHiddenPanelsWarm` | `false` | Hold a hidden panel's webview in memory for instant switching |
 | `nikui.notifyOnAttention` | `true` | Tell you when an instance you cannot see is blocked or failed to start |
@@ -388,7 +403,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 588 checks, no dependencies, no network, no CLI
+    npm test             # 632 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 

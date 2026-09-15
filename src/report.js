@@ -223,6 +223,7 @@ function fleetMember(s, activeId, now) {
     status: s.status,
     busy: !s.isAsleep && !!s.isBusy,
     asleep: !!s.isAsleep,
+    paused: !!s.isPaused,
     running: !!s.isRunning,
     active: s.id === activeId,
     cwd: s.cwd,
@@ -335,7 +336,9 @@ function buildReport({ session, fleet = [], env = {}, now = Date.now() } = {}) {
       startedAt: session.startedAt || null,
       ageMs: wallMs,
       processUpMs: session.processStartedAt ? now - session.processStartedAt : 0,
-      lastError: session.lastError || null
+      lastError: session.lastError || null,
+      paused: !!session.isPaused,
+      pausedUntil: session.pausedUntil || null
     },
     config: {
       model: (session.meta && session.meta.model) || session.model || null,
@@ -457,6 +460,8 @@ function buildReport({ session, fleet = [], env = {}, now = Date.now() } = {}) {
     // What is left of the plan's own five-hour and weekly windows. Account-wide
     // and reported by the CLI, so it is the same figure whichever instance asks.
     limits: env.limits || session.limits || null,
+    // Set while the whole window is holding for the quota to come back.
+    pause: env.pause || null,
     env
   };
 }

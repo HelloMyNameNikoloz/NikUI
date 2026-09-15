@@ -8,6 +8,13 @@ const { Session } = require('./session');
 const STORAGE_KEY = 'nikui.sessions.v1';
 // The plan's limits belong to the account, not to a window or a folder.
 const LIMITS_KEY = 'nikui.limits.v1';
+const PAUSE_KEY = 'nikui.pause.v1';
+// A minute past the reset, because the window boundary is not to the second and
+// being turned away again would just start the whole dance over.
+const RESUME_GRACE_MS = 60000;
+// If the CLI never says when the quota comes back, look again in a while rather
+// than waiting for ever.
+const BLIND_RETRY_MS = 15 * 60000;
 // One number for both sides of a reload. Remembering more than we restore
 // loses rows silently, which is worse than remembering fewer.
 const KEEP = 20;
@@ -42,6 +49,20 @@ const BUILTIN_COMMANDS = [
  * wholesale, so adding a snippet of your own would otherwise silently delete
  * the ones that ship with NikUI; an empty string is how you turn one off.
  */
+/** When the quota says it comes back: the spent window's own reset, or the top-level one. */
+function pickReset(limits) {
+  if (!limits) return null;
+  const windows = limits.windows || {};
+  const byType = {
+    five_hour: windows.fiveHour,
+    seven_day: windows.week,
+    seven_day_overage_included: windows.weekOverage
+  }[limits.type];
+  const candidates = [byType && byType.resetsAt, limits.resetsAt]
+    .filter((v) => typeof v === 'number' && v > 0);
+  return candidates.length ? Math.min.apply(null, candidates) : null;
+}
+
 function readSnippets(cfg) {
   let shipped = {};
   try {
@@ -64,6 +85,10 @@ function readConfig() {
     fontFamily: cfg.get('fontFamily', ''),
     fontSize: cfg.get('fontSize', 13),
     showThinking: cfg.get('showThinking', true),
+    pauseOnLimit: cfg.get('pauseWhenQuotaRuns', true),
+    resumePrompt: cfg.get('resumePrompt',
+      'Your usage limit reset and NikUI has restarted this instance. Carry on with the task you were ' +
+      'working on before the pause, from where you left off. If it was already finished, say so and stop.'),
     notifyOnAttention: cfg.get('notifyOnAttention', true),
     promptSnippets: readSnippets(cfg),
     interruptOnSingleEscape: cfg.get('interruptOnSingleEscape', false),
@@ -80,6 +105,10 @@ class SessionManager extends EventEmitter {
     this.sessions = new Map();
     this.activeId = null;
     this.limits = context.globalState.get(LIMITS_KEY, null);
+    // A pause outlives the window it started in: the quota is the account's and
+    // the reset time does not care whether VS Code was open.
+    this.pause = context.globalState.get(PAUSE_KEY, null);
+    this._resumeTimer = null;
   }
 
   get list() {
@@ -172,6 +201,7 @@ class SessionManager extends EventEmitter {
     session.on('queue', () => this._changed(session));
     // Whichever instance hears about the account's limits, all of them know.
     session.on('limits', (limits) => this.rememberLimits(limits));
+    session.on('exhausted', (limits) => this.pauseForLimit(limits));
     session.on('meta', () => {
       this.rememberCommands(session.meta.slashCommands);
       this._changed(session);
@@ -179,6 +209,7 @@ class SessionManager extends EventEmitter {
 
     if (usage) Object.assign(session.usage, usage);
     this.sessions.set(session.id, session);
+    this._applyPause(session);
     if (autoStart !== false) session.start();
     this._changed(session);
     return session;
@@ -235,6 +266,78 @@ class SessionManager extends EventEmitter {
     this.emit('changed');
   }
 
+  /**
+   * The account has nothing left. Everything stops talking to the CLI until the
+   * quota resets — queues intact — and a timer brings it all back.
+   */
+  pauseForLimit(limits) {
+    const cfg = this.config;
+    if (cfg.pauseOnLimit === false) return false;
+
+    const resetsAt = pickReset(limits);
+    const until = resetsAt ? resetsAt + RESUME_GRACE_MS : Date.now() + BLIND_RETRY_MS;
+    if (this.pause && this.pause.until >= until) return false; // already waiting on this
+
+    this.pause = {
+      since: Date.now(),
+      until,
+      blind: !resetsAt,
+      limitType: (limits && limits.type) || null
+    };
+    this.context.globalState.update(PAUSE_KEY, this.pause);
+    for (const session of this.list) session.pause({ until, reason: 'limit' });
+    this._armResume();
+    this.emit('paused', this.pause);
+    this.emit('changed');
+    return true;
+  }
+
+  /** Back to work: every held instance is released, and the cut-off ones nudged. */
+  resumeFromLimit({ manual } = {}) {
+    if (!this.pause) return 0;
+    const nudge = this.config.resumePrompt;
+    this.pause = null;
+    this.context.globalState.update(PAUSE_KEY, null);
+    if (this._resumeTimer) { clearTimeout(this._resumeTimer); this._resumeTimer = null; }
+
+    let woken = 0;
+    for (const session of this.list) if (session.resume({ nudge })) woken += 1;
+    this.emit('resumed', { woken, manual: !!manual });
+    this.emit('changed');
+    return woken;
+  }
+
+  /**
+   * Hold anything made while the window is paused, so an instance started
+   * during the night does not sail past the quota everything else is waiting on.
+   */
+  _applyPause(session) {
+    if (this.pause) session.pause({ until: this.pause.until, reason: 'limit' });
+  }
+
+  _armResume() {
+    if (this._resumeTimer) { clearTimeout(this._resumeTimer); this._resumeTimer = null; }
+    if (!this.pause) return;
+    // A reset that has already been and gone (VS Code was closed for it) is
+    // still given the grace period rather than firing mid-activation.
+    const wait = Math.max(1000, Math.min(this.pause.until - Date.now(), 2147483000));
+    this._resumeTimer = setTimeout(() => {
+      this._resumeTimer = null;
+      if (!this.pause) return;
+      if (Date.now() + 500 < this.pause.until) { this._armResume(); return; }
+      this.resumeFromLimit();
+    }, wait);
+    if (this._resumeTimer.unref) this._resumeTimer.unref();
+  }
+
+  /** Called once the window has its instances back, so a pause survives a reload. */
+  restorePause() {
+    if (!this.pause) return false;
+    for (const session of this.list) session.pause({ until: this.pause.until, reason: 'limit' });
+    this._armResume();
+    return true;
+  }
+
   /** Kill the process but keep the instance: the conversation resumes on open. */
   sleep(id) {
     const session = this.sessions.get(id);
@@ -245,6 +348,7 @@ class SessionManager extends EventEmitter {
   }
 
   disposeAll() {
+    if (this._resumeTimer) { clearTimeout(this._resumeTimer); this._resumeTimer = null; }
     for (const session of this.list) session.dispose();
     this.sessions.clear();
   }
@@ -311,4 +415,4 @@ class SessionManager extends EventEmitter {
   }
 }
 
-module.exports = { SessionManager, readConfig, readSnippets };
+module.exports = { SessionManager, readConfig, readSnippets, pickReset, RESUME_GRACE_MS, BLIND_RETRY_MS };

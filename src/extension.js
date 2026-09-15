@@ -51,6 +51,7 @@ function activate(context) {
   followFocus(view, manager);
   watchForTrouble(manager, (session) => SessionPanel.show(session, context, manager));
   watchForCrowding(manager);
+  watchForQuota(manager);
 
   const resolve = (arg) => {
     if (!arg) return null;
@@ -151,6 +152,17 @@ function activate(context) {
     const session = await pickSession(arg);
     if (!session) return;
     SessionPanel.show(session, context, manager).openStatus();
+  });
+
+  register('nikui.resumeNow', () => {
+    if (!manager.pause) {
+      vscode.window.setStatusBarMessage('NikUI: nothing is waiting on the quota', 2500);
+      return;
+    }
+    const woken = manager.resumeFromLimit({ manual: true });
+    vscode.window.setStatusBarMessage(
+      woken ? `NikUI: started ${woken} instance${woken === 1 ? '' : 's'} again` : 'NikUI: nothing to start', 3000
+    );
   });
 
   register('nikui.sleep', async (arg) => {
@@ -383,6 +395,8 @@ function activate(context) {
   // whole set is back, never while it is still being rebuilt.
   manager.restoreOpen();
   folders.prune(manager.list.map((s) => s.id));
+  // A quota pause that started before the reload is still in force.
+  manager.restorePause();
   tree.refresh();
 
   context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('nikui.session', {
@@ -446,6 +460,32 @@ async function pickFolder(mgr) {
     return picked && picked.length ? { path: picked[0].fsPath } : null;
   }
   return { path: choice.path };
+}
+
+/**
+ * Running out of quota overnight should not mean finding everything stopped in
+ * the morning: it is announced when it happens, and announced again when the
+ * window comes back and the instances pick their work up.
+ */
+function watchForQuota(manager, deps) {
+  const win = (deps && deps.window) || vscode.window;
+
+  manager.on('paused', (pause) => {
+    const when = pause.blind ? 'in about 15 minutes' : new Date(pause.until).toLocaleTimeString();
+    win.showWarningMessage(
+      `NikUI: the usage limit is spent. Every instance is holding until ${when}, queues intact.`,
+      'Resume now'
+    ).then((choice) => {
+      if (choice === 'Resume now') manager.resumeFromLimit({ manual: true });
+    }, () => { /* dismissed */ });
+  });
+
+  manager.on('resumed', ({ woken, manual }) => {
+    if (!woken || manual) return;
+    win.setStatusBarMessage(
+      `NikUI: the quota reset — ${woken} instance${woken === 1 ? '' : 's'} carrying on`, 5000
+    );
+  });
 }
 
 /**
@@ -554,4 +594,4 @@ function deactivate() {
   if (manager) manager.disposeAll();
 }
 
-module.exports = { activate, deactivate, followFocus, watchForTrouble, watchForCrowding };
+module.exports = { activate, deactivate, followFocus, watchForTrouble, watchForCrowding, watchForQuota };

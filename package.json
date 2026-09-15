@@ -104,6 +104,11 @@
         "icon": "$(debug-stop)"
       },
       {
+        "command": "nikui.resumeNow",
+        "title": "NikUI: Resume Everything Now",
+        "icon": "$(debug-continue)"
+      },
+      {
         "command": "nikui.stop",
         "title": "NikUI: Close Instance (conversation stays in History)",
         "icon": "$(close)"
@@ -412,6 +417,16 @@
             "table": "Give me the whole plan for what we are working on right now as a table: one row per step, with \ud83d\udfe2 for done and verified, \ud83d\udfe1 for in progress, and \ud83d\udd34 for not started. Cover only the current task and the phase of it we are in — not the project's wider scope, and not earlier phases that are already finished. Carry on from the plan we are already working to rather than starting a new one; if there is no plan yet, make one first. Include the steps still outstanding, not only the finished ones, and end with one line on what is left."
           },
           "markdownDescription": "Words you can type to add a standing instruction to the prompt you just wrote. `/table fix the rollback` and `fix the rollback /table` both send your text with the instruction appended; the word itself never reaches the CLI. Yours are merged over the built-in ones — set a value to an empty string to switch that one off."
+        },
+        "nikui.pauseWhenQuotaRuns": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the account's usage limit is spent, hold every instance until it resets, then start them again. Prompts you send meanwhile wait in the queue rather than failing."
+        },
+        "nikui.resumePrompt": {
+          "type": "string",
+          "default": "Your usage limit reset and NikUI has restarted this instance. Carry on with the task you were working on before the pause, from where you left off. If it was already finished, say so and stop.",
+          "description": "What to send to an instance that was cut off mid-turn when the quota ran out, once it resets."
         },
         "nikui.notifyOnAttention": {
           "type": "boolean",

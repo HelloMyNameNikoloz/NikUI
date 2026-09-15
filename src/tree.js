@@ -13,6 +13,10 @@ const MIME = 'application/vnd.code.tree.nikui.sessions';
 // in it would have to be handled everywhere the other six are.
 const ASLEEP = { icon: 'debug-pause', color: 'disabledForeground', word: 'asleep' };
 
+// Held back until the account's quota resets. Amber, because it is not an
+// error and not nothing: work is waiting, and it will start again by itself.
+const PAUSED = { icon: 'watch', color: 'charts.orange', word: 'waiting for quota' };
+
 // A green dot means "this just finished, look at it". Five minutes later it
 // means nothing, so it stops being green and goes back to reading as idle.
 const DONE_FADES_AFTER_MS = 5 * 60 * 1000;
@@ -257,6 +261,9 @@ class SessionTree {
       [
         `**${name}** — ${look.word}`,
         '',
+        session.isPaused
+          ? `- Waiting for the account's usage limit to reset${session.pausedUntil ? ', at about ' + new Date(session.pausedUntil).toLocaleTimeString() : ''}. Anything you send meanwhile waits in the queue.`
+          : '',
         session.isAsleep
           ? '- Not running: restored from your last window, wearing the state it left off in. Opening it starts the process and picks the conversation back up.'
           : '',
@@ -310,6 +317,7 @@ function summarise(sessions) {
  */
 function lookFor(session, now) {
   const base = LOOK[session.status] || LOOK[STATUS.IDLE];
+  if (session.isPaused) return PAUSED;
   if (session.isAsleep) return { icon: ASLEEP.icon, color: base.color, word: base.word };
   // Green means "just finished". Only while the window has been open: a
   // restored row is reporting an outcome, not claiming freshness.
@@ -338,4 +346,4 @@ function describe(session, look) {
   return bits.join(' · ');
 }
 
-module.exports = { SessionTree, LOOK, ASLEEP, lookFor, describe, summarise, projectRoot, MIME, DONE_FADES_AFTER_MS };
+module.exports = { SessionTree, LOOK, ASLEEP, PAUSED, lookFor, describe, summarise, projectRoot, MIME, DONE_FADES_AFTER_MS };

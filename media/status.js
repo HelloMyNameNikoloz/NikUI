@@ -151,6 +151,18 @@
         ' used · resets ' + until(win.resetsAt)) + '</p>';
   }
 
+  function pausedCard(r) {
+    if (!r.pause) return '';
+    const held = (r.fleet || []).filter((m) => m.paused).length;
+    return card('Waiting for the quota',
+      '<p class="hint-line">' + esc(
+        (held || 'Every') + ' instance' + (held === 1 ? '' : 's') + ' ' + (held === 1 ? 'is' : 'are') +
+        ' holding until ' + (r.pause.blind ? 'the quota is checked again' : fmt.when(r.pause.until)) +
+        ' — ' + until(r.pause.until) + '. Queues are untouched, and anything you send meanwhile joins them. ' +
+        'Whatever was cut off mid-turn is nudged to carry on when the window comes back.') + '</p>',
+      { wide: true, klass: 'waiting-card', note: until(r.pause.until) });
+  }
+
   function limitsCard(r) {
     const limits = r.limits;
     if (!limits) {
@@ -241,6 +253,7 @@
         tip: (p) => 'Turn ' + p.turn.n + ' · ' + fmt.money(p.value) + ' · ' + fmt.ms(p.turn.durationMs)
       }) + spark(r), { wide: true, note: r.turns.length ? fmt.money(r.totals.avgCost) + ' average' : '' });
 
+    const paused = pausedCard(r);
     const plan = r.limits && r.limits.windows ? r.limits.windows : null;
     const planLine = plan && (plan.fiveHour || plan.week)
       ? card('Plan usage',
@@ -264,7 +277,7 @@
       tile('Focus', fmt.pct(r.totals.focusPct), 'of the session working') +
       '</div>', { wide: true }) : '';
 
-    return hero + kpis + context + planLine + costChart + recordCard;
+    return hero + kpis + paused + context + planLine + costChart + recordCard;
   }
 
   function spark(r) {
@@ -577,7 +590,7 @@
       tile('Open longest', oldest.label, fmt.ms(oldest.ageMs)) +
       '</div>', { wide: true }) : '';
 
-    return hero + tiles + limitsCard(r) + activity + costBars + tokenBars + pressure +
+    return hero + tiles + pausedCard(r) + limitsCard(r) + activity + costBars + tokenBars + pressure +
       projects + detailCard + records;
   }
 
