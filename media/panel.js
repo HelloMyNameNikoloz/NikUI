@@ -44,10 +44,27 @@
     return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
   }
 
-  function nearBottom() {
-    return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 140;
+  let follow = true;
+  const jump = $('jump');
+
+  function atBottom(slack) {
+    return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= (slack || 24);
   }
   function scrollDown() { scroller.scrollTop = scroller.scrollHeight; }
+
+  // Scrolling up means the reader is reading; never yank them back down.
+  scroller.addEventListener('scroll', function () {
+    const bottom = atBottom(24);
+    if (bottom === follow) return;
+    follow = bottom;
+    jump.hidden = follow;
+  }, { passive: true });
+
+  jump.addEventListener('click', function () {
+    follow = true;
+    jump.hidden = true;
+    scrollDown();
+  });
 
   function summarise(inputObj) {
     const i = inputObj || {};
@@ -157,7 +174,9 @@
         if (item.result !== undefined && item.result !== '') {
           body += '<div class="label">' + (item.isError ? 'Error' : 'Result') + '</div><pre>' + esc(item.result) + '</pre>';
         }
-        el.innerHTML = '<details' + (open ? ' open' : '') + '><summary>' + mark +
+        el.innerHTML = '<details' + (open ? ' open' : '') + '><summary>' +
+          '<span class="disc">' + icon('chevron', 12) + '</span>' +
+          '<span class="state">' + mark + '</span>' +
           '<span class="name">' + esc(item.name) + '</span>' +
           '<span class="summary-text">' + esc(summarise(item.input)) + '</span></summary>' +
           '<div class="body">' + body + '</div></details>';
@@ -206,7 +225,6 @@
   }
 
   function upsert(items) {
-    const stick = nearBottom();
     const empty = stream.querySelector('.empty');
     if (empty && items.length) empty.remove();
     for (const item of items) {
@@ -220,7 +238,7 @@
         stream.appendChild(el);
       }
     }
-    if (stick) scrollDown();
+    if (follow) scrollDown();
   }
 
   // ── attachments ──────────────────────────────────────────────
@@ -357,6 +375,8 @@
     paintAttachments();
     slashBox.hidden = true;
     autoGrow();
+    follow = true;
+    jump.hidden = true;
     scrollDown();
   }
 
@@ -384,6 +404,7 @@
     const msg = event.data;
     switch (msg.type) {
       case 'init':
+        vscode.setState({ sessionId: msg.sessionId });
         showThinking = msg.showThinking;
         commands = msg.slashCommands || [];
         if (msg.font) document.documentElement.style.setProperty('--nik-font', msg.font);
@@ -394,6 +415,8 @@
         setMeta(msg.meta);
         setStatus(msg.status);
         setStats(msg.stats);
+        follow = true;
+        jump.hidden = true;
         scrollDown();
         break;
       case 'items': upsert(msg.items); break;

@@ -1,9 +1,12 @@
 'use strict';
 
 const { spawn } = require('child_process');
+const fs = require('fs');
+const readline = require('readline');
 const { EventEmitter } = require('events');
 const path = require('path');
 const { nextTicket } = require('./ticket');
+const { transcriptPath } = require('./history');
 
 const STATUS = {
   IDLE: 'idle',
@@ -59,6 +62,7 @@ class Session extends EventEmitter {
     this._flushTimer = null;
     this._controlSeq = 0;
     this._seq = 0;
+    this.replayed = false;
   }
 
   get label() {
@@ -246,6 +250,54 @@ class Session extends EventEmitter {
     if (!this.proc || !this.proc.stdin.writable) return;
     try { this.proc.stdin.write(JSON.stringify(obj) + '\n'); }
     catch (err) { this._notice(`Write failed: ${err.message}`, 'error'); }
+  }
+
+  /**
+   * Rebuild the conversation from the on-disk transcript. Entries there carry
+   * the same message shapes as the live stream, so they go through the same
+   * handlers. Only the tail is replayed: transcripts reach hundreds of MB.
+   */
+  async replayTranscript(maxEntries) {
+    if (this.replayed || !this.claudeSessionId) return false;
+    const file = transcriptPath(this.cwd, this.claudeSessionId);
+    if (!file || !fs.existsSync(file)) return false;
+    this.replayed = true;
+
+    const keep = maxEntries || 250;
+    const window = [];
+    await new Promise((resolve) => {
+      const rl = readline.createInterface({
+        input: fs.createReadStream(file, { encoding: 'utf8' }),
+        crlfDelay: Infinity
+      });
+      rl.on('line', (line) => {
+        if (!line.trim()) return;
+        let entry;
+        try { entry = JSON.parse(line); } catch (_) { return; }
+        if (entry.isSidechain) return; // subagent chatter, not this conversation
+        if (entry.type !== 'user' && entry.type !== 'assistant') return;
+        if (!entry.message) return;
+        window.push(entry);
+        if (window.length > keep) window.shift();
+      });
+      rl.on('close', resolve);
+      rl.on('error', resolve);
+    });
+
+    for (const entry of window) {
+      if (entry.type === 'assistant') { this._handleAssistant(entry); continue; }
+      const content = entry.message.content;
+      const isToolResult = Array.isArray(content) && content.some((b) => b && b.type === 'tool_result');
+      if (isToolResult) { this._handleUser(entry); continue; }
+      let text = typeof content === 'string' ? content
+        : Array.isArray(content) ? (content.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n')) : '';
+      text = String(text || '').trim();
+      if (!text || text.startsWith('<')) continue;
+      this._upsert({ id: 'h' + (this._seq++), kind: 'user', text, images: [], at: Date.parse(entry.timestamp) || Date.now() });
+    }
+
+    if (window.length) this._notice('Restored from the saved transcript.', 'info');
+    return window.length > 0;
   }
 
   // ---- output parsing -----------------------------------------------------

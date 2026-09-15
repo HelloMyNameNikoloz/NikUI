@@ -26,6 +26,13 @@ owns the whole surface.
 - **Collapsible tool calls** showing the command, the input and the result.
 - **Interrupt** mid-turn (Esc or the Stop button) over the CLI's control channel.
 - **Resume** — instances remember their Claude session id across reloads.
+- **Instances survive a window reload.** They come back in the sidebar, VS Code
+  restores their editor tabs, and opening one replays its saved transcript and
+  reattaches the process with `--resume`. Processes are not respawned at
+  activation, so a reload never fires off a pile of CLI processes on its own.
+- **Reading beats following.** Auto-scroll sticks to the bottom only while you
+  are at the bottom; scroll up and it stops, with a Jump to latest pill to
+  re-arm it.
 
 ## Running it
 

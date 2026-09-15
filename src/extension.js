@@ -140,6 +140,19 @@ function activate(context) {
     SessionPanel.show(session, context).focusInput();
   });
 
+  // Bring back the instances that were open before the reload, then let VS Code
+  // hand their editor tabs back to us.
+  manager.restoreOpen();
+
+  context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('nikui.session', {
+    async deserializeWebviewPanel(panel, state) {
+      const id = state && state.sessionId;
+      const session = id ? manager.get(id) : null;
+      if (!session) { panel.dispose(); return; }
+      SessionPanel.adopt(panel, session, context);
+    }
+  }));
+
   context.subscriptions.push({ dispose: () => manager.disposeAll() });
 }
 

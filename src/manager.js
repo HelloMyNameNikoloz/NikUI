@@ -38,9 +38,11 @@ class SessionManager extends EventEmitter {
     return readConfig();
   }
 
-  create({ cwd, title, resume }) {
+  create({ id, cwd, title, ticket, resume, autoStart }) {
     const cfg = this.config;
     const session = new Session({
+      id,
+      ticket: ticket || null,
       cwd,
       customTitle: title || null,
       claudeSessionId: resume || null,
@@ -57,7 +59,7 @@ class SessionManager extends EventEmitter {
     session.on('meta', () => { this._changed(session); });
 
     this.sessions.set(session.id, session);
-    session.start();
+    if (autoStart !== false) session.start();
     this._changed(session);
     return session;
   }
@@ -99,12 +101,33 @@ class SessionManager extends EventEmitter {
   persist() {
     const data = this.list
       .filter((s) => s.claudeSessionId)
-      .map((s) => ({ cwd: s.cwd, customTitle: s.customTitle, ticket: s.ticket, claudeSessionId: s.claudeSessionId }));
+      .map((s) => ({ id: s.id, cwd: s.cwd, customTitle: s.customTitle, ticket: s.ticket, claudeSessionId: s.claudeSessionId }));
     this.context.workspaceState.update(STORAGE_KEY, data.slice(-20));
   }
 
   restorable() {
     return this.context.workspaceState.get(STORAGE_KEY, []);
+  }
+
+  /**
+   * Bring back the instances that were open before the window reloaded. The
+   * processes are not spawned here — opening a panel does that — so a reload
+   * never fires off a pile of CLI processes on its own.
+   */
+  restoreOpen() {
+    const saved = this.restorable().filter((s) => s.claudeSessionId && s.cwd);
+    for (const entry of saved.slice(-8)) {
+      if (this.sessions.has(entry.id)) continue;
+      this.create({
+        id: entry.id,
+        cwd: entry.cwd,
+        title: entry.customTitle,
+        ticket: entry.ticket,
+        resume: entry.claudeSessionId,
+        autoStart: false
+      });
+    }
+    return this.list.length;
   }
 }
 

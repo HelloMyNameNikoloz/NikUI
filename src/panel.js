@@ -20,18 +20,27 @@ class SessionPanel {
     return created;
   }
 
+  /** Rebind a panel that VS Code restored after a window reload. */
+  static adopt(panel, session, context) {
+    const existing = panels.get(session.id);
+    if (existing) { existing.panel.dispose(); }
+    const created = new SessionPanel(session, context, panel);
+    panels.set(session.id, created);
+    return created;
+  }
+
   static close(sessionId) {
     const p = panels.get(sessionId);
     if (p) p.panel.dispose();
   }
 
-  constructor(session, context) {
+  constructor(session, context, existingPanel) {
     this.session = session;
     this.context = context;
     this.disposables = [];
     this.ready = false;
 
-    this.panel = vscode.window.createWebviewPanel(
+    this.panel = existingPanel || vscode.window.createWebviewPanel(
       'nikui.session',
       session.label,
       vscode.ViewColumn.Active,
@@ -42,6 +51,10 @@ class SessionPanel {
       }
     );
 
+    this.panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
+    };
     this.panel.webview.html = this.html();
     this.refreshChrome();
 
@@ -103,13 +116,20 @@ class SessionPanel {
     this.panel.webview.postMessage(message);
   }
 
-  onMessage(msg) {
+  async onMessage(msg) {
     switch (msg.type) {
       case 'ready': {
         this.ready = true;
+        // A restored instance has no items yet; rebuild it from disk before the
+        // first paint, then bring its process back with --resume.
+        if (!this.session.items.length && this.session.claudeSessionId) {
+          try { await this.session.replayTranscript(); } catch (_) { /* fall through empty */ }
+        }
+        if (!this.session.isRunning) this.session.start();
         const cfg = readConfig();
         this.panel.webview.postMessage({
           type: 'init',
+          sessionId: this.session.id,
           items: this.session.items,
           meta: this.meta(),
           status: this.session.status,
@@ -173,6 +193,7 @@ class SessionPanel {
 
   <footer>
     <div class="composer-wrap">
+      <button class="jump" id="jump" hidden>Jump to latest</button>
       <div class="slash" id="slash" hidden></div>
       <div class="attachments" id="attachments"></div>
       <div class="composer">

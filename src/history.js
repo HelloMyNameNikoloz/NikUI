@@ -126,4 +126,9 @@ async function listSessions({ cwd, limit = 30 } = {}) {
   return out;
 }
 
-module.exports = { listSessions, slugFor, projectsRoot };
+function transcriptPath(cwd, sessionId) {
+  if (!cwd || !sessionId) return null;
+  return path.join(projectsRoot(), slugFor(cwd), sessionId + '.jsonl');
+}
+
+module.exports = { listSessions, slugFor, projectsRoot, transcriptPath };
