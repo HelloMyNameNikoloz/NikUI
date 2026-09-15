@@ -4,6 +4,7 @@ const vscode = require('vscode');
 const path = require('path');
 const { SessionManager } = require('./manager');
 const { SessionTree } = require('./tree');
+const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
 const { HistoryTree } = require('./historyTree');
 const { nextTicket } = require('./ticket');
@@ -12,9 +13,14 @@ let manager;
 
 function activate(context) {
   manager = new SessionManager(context);
-  const tree = new SessionTree(manager);
+  const folders = new FolderStore(context);
+  const tree = new SessionTree(manager, folders);
 
-  const view = vscode.window.createTreeView('nikui.sessions', { treeDataProvider: tree });
+  const view = vscode.window.createTreeView('nikui.sessions', {
+    treeDataProvider: tree,
+    dragAndDropController: tree,
+    canSelectMany: true
+  });
   context.subscriptions.push(view);
 
   const history = new HistoryTree();
@@ -132,6 +138,60 @@ function activate(context) {
 
   register('nikui.refresh', () => { tree.refresh(); history.refresh(); });
 
+  register('nikui.newFolder', async () => {
+    const name = await vscode.window.showInputBox({
+      prompt: 'Name for the new folder',
+      placeHolder: 'e.g. Peuka backend, Spikes, Reviews'
+    });
+    if (!name || !name.trim()) return;
+    folders.create(name);
+    tree.refresh();
+  });
+
+  register('nikui.renameFolder', async (node) => {
+    const id = folderIdOf(node);
+    if (!id) return;
+    const current = folders.get(id);
+    const name = await vscode.window.showInputBox({ prompt: 'Rename folder', value: current ? current.name : '' });
+    if (!name || !name.trim()) return;
+    folders.rename(id, name);
+    tree.refresh();
+  });
+
+  register('nikui.deleteFolder', async (node) => {
+    const id = folderIdOf(node);
+    if (!id) return;
+    const folder = folders.get(id);
+    if (!folder) return;
+    // Deleting a folder never touches the instances inside it.
+    folders.remove(id);
+    tree.refresh();
+    vscode.window.setStatusBarMessage(`NikUI: removed folder "${folder.name}"`, 2500);
+  });
+
+  register('nikui.moveToFolder', async (arg) => {
+    const session = await pickSession(arg);
+    if (!session) return;
+    const current = folders.folderOf(session.id);
+    const items = folders.list().map((f) => ({
+      label: (current && current.id === f.id ? '$(check) ' : '$(folder) ') + f.name,
+      folderId: f.id
+    }));
+    items.push({ label: '$(new-folder) New folder...', create: true });
+    if (current) items.push({ label: '$(close) Remove from folder', folderId: null });
+    const choice = await vscode.window.showQuickPick(items, { placeHolder: `Move ${session.label} to...` });
+    if (!choice) return;
+    if (choice.create) {
+      const name = await vscode.window.showInputBox({ prompt: 'Name for the new folder' });
+      if (!name || !name.trim()) return;
+      const made = folders.create(name);
+      folders.place(session.id, made.id);
+    } else {
+      folders.place(session.id, choice.folderId);
+    }
+    tree.refresh();
+  });
+
   register('nikui.refreshHistory', () => history.refresh());
 
   register('nikui.showHistory', async () => {
@@ -210,6 +270,13 @@ async function pickFolder(mgr) {
     return picked && picked.length ? { path: picked[0].fsPath } : null;
   }
   return choice;
+}
+
+function folderIdOf(node) {
+  if (!node) return null;
+  if (node.__folder) return node.id;
+  if (typeof node.id === 'string' && node.id.startsWith('folder:')) return node.id.slice(7);
+  return null;
 }
 
 function shortLabel(text) {

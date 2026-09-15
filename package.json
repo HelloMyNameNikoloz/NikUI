@@ -102,6 +102,26 @@
         "command": "nikui.showHistory",
         "title": "NikUI: Show History",
         "icon": "$(history)"
+      },
+      {
+        "command": "nikui.newFolder",
+        "title": "NikUI: New Folder",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "nikui.renameFolder",
+        "title": "NikUI: Rename Folder",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "nikui.deleteFolder",
+        "title": "NikUI: Delete Folder",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "nikui.moveToFolder",
+        "title": "NikUI: Move to Folder...",
+        "icon": "$(folder)"
       }
     ],
     "menus": {
@@ -130,6 +150,11 @@
           "command": "nikui.showHistory",
           "when": "view == nikui.sessions",
           "group": "navigation@3"
+        },
+        {
+          "command": "nikui.newFolder",
+          "when": "view == nikui.sessions",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -140,18 +165,33 @@
         },
         {
           "command": "nikui.rename",
-          "when": "view == nikui.sessions",
+          "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
           "group": "inline@2"
         },
         {
           "command": "nikui.restart",
-          "when": "view == nikui.sessions",
+          "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
           "group": "1_run@1"
         },
         {
           "command": "nikui.stop",
-          "when": "view == nikui.sessions",
+          "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
           "group": "inline@3"
+        },
+        {
+          "command": "nikui.moveToFolder",
+          "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
+          "group": "2_organise@1"
+        },
+        {
+          "command": "nikui.renameFolder",
+          "when": "view == nikui.sessions && viewItem == nikuiFolder",
+          "group": "inline@1"
+        },
+        {
+          "command": "nikui.deleteFolder",
+          "when": "view == nikui.sessions && viewItem == nikuiFolder",
+          "group": "inline@2"
         }
       ],
       "commandPalette": [
@@ -177,6 +217,14 @@
         },
         {
           "command": "nikui.resumeHistory",
+          "when": "false"
+        },
+        {
+          "command": "nikui.renameFolder",
+          "when": "false"
+        },
+        {
+          "command": "nikui.deleteFolder",
           "when": "false"
         }
       ]

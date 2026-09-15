@@ -39,6 +39,11 @@ owns the whole surface.
   addresses are left alone.
 - **Context budget meter** in the title bar: what the last turn had to read
   against the model's context window, turning amber at 70% and red at 90%.
+- **Your own folders.** Create named folders from the + on the Instances title
+  bar and drag instances into them (multi-select works). Drag onto empty space
+  to take one back out, or use Move to Folder... from its context menu. Folders
+  and their contents persist across reloads; deleting a folder never touches the
+  instances in it.
 - **Grouped by project.** Instances nest under their project folder — a git
   worktree groups with the repo it belongs to — with a per-group count, working
   count and summed cost. `nikui.groupByProject` is `auto` (nest only once more

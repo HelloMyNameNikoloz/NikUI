@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { STATUS } = require('./session');
 
+const MIME = 'application/vnd.code.tree.nikui.sessions';
+
 // Real coloured icons in the sidebar — the thing a terminal tab cannot do.
 const LOOK = {
   [STATUS.IDLE]:    { icon: 'circle-outline', color: 'descriptionForeground', word: 'idle' },
@@ -50,41 +52,99 @@ function projectRoot(cwd) {
 }
 
 class SessionTree {
-  constructor(manager) {
+  constructor(manager, folders) {
     this.manager = manager;
+    this.folders = folders;
     this._onDidChangeTreeData = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
-    manager.on('changed', () => this._onDidChangeTreeData.fire());
+    this._cache = new Map();
+
+    // Drag an instance onto a folder to file it there.
+    this.dropMimeTypes = [MIME];
+    this.dragMimeTypes = [MIME];
+
+    manager.on('changed', () => {
+      this.folders.prune(manager.list.map((s) => s.id));
+      this._cache.clear();
+      this._onDidChangeTreeData.fire();
+    });
   }
 
   refresh() {
     rootCache.clear();
-    this._groupCache = null;
+    this._cache.clear();
     this._onDidChangeTreeData.fire();
   }
 
-  groups() {
-    // Stable identity across calls: reveal() and getParent() compare objects,
-    // so rebuilding them every time breaks both.
-    const key = this.manager.list.map((x) => x.id).join(",");
-    if (this._groupKey === key && this._groupCache) return this._groupCache;
+  // ---- drag and drop ------------------------------------------------------
 
-    const byRoot = new Map();
-    for (const session of this.manager.list) {
-      const root = projectRoot(session.cwd);
-      if (!byRoot.has(root)) byRoot.set(root, []);
-      byRoot.get(root).push(session);
+  handleDrag(source, dataTransfer) {
+    const ids = source.filter((s) => s && !s.__folder && !s.__group).map((s) => s.id);
+    if (ids.length) dataTransfer.set(MIME, new vscode.DataTransferItem(ids));
+  }
+
+  async handleDrop(target, dataTransfer) {
+    const item = dataTransfer.get(MIME);
+    if (!item) return;
+
+    let ids = item.value;
+    if (typeof ids === 'string') {
+      try { ids = JSON.parse(ids); } catch (_) { ids = [ids]; }
     }
-    this._groupKey = key;
-    this._groupCache = [...byRoot.entries()]
-      .map(([root, sessions]) => ({
-        __group: true,
-        root,
-        label: path.basename(root) || root,
-        sessions
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-    return this._groupCache;
+    if (!Array.isArray(ids)) ids = [ids];
+
+    // Dropping on a folder files it there; on a project group or empty space
+    // it goes back to the top level; on another instance it joins that one.
+    let folderId = null;
+    if (target && target.__folder) folderId = target.id;
+    else if (target && !target.__group) {
+      const owner = this.folders.folderOf(target.id);
+      folderId = owner ? owner.id : null;
+    }
+
+    for (const id of ids) this.folders.place(id, folderId);
+    this.refresh();
+  }
+
+  // ---- structure ----------------------------------------------------------
+
+  // Stable identity across calls: reveal() and getParent() compare objects, so
+  // rebuilding them every time breaks both.
+  cached(key, build) {
+    if (this._cache.has(key)) return this._cache.get(key);
+    const value = build();
+    this._cache.set(key, value);
+    return value;
+  }
+
+  projectGroups(sessions) {
+    const key = 'g:' + sessions.map((s) => s.id).join(',');
+    return this.cached(key, () => {
+      const byRoot = new Map();
+      for (const session of sessions) {
+        const root = projectRoot(session.cwd);
+        if (!byRoot.has(root)) byRoot.set(root, []);
+        byRoot.get(root).push(session);
+      }
+      return [...byRoot.entries()]
+        .map(([root, list]) => ({ __group: true, root, label: path.basename(root) || root, sessions: list }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    });
+  }
+
+  userFolders(sessions) {
+    const defs = this.folders.list();
+    const key = 'f:' + defs.map((f) => f.id + ':' + f.name).join(',') + '|' +
+      sessions.map((s) => s.id + '>' + (this.folders.folderOf(s.id) || { id: '' }).id).join(',');
+    return this.cached(key, () => defs.map((def) => ({
+      __folder: true,
+      id: def.id,
+      label: def.name,
+      sessions: sessions.filter((s) => {
+        const owner = this.folders.folderOf(s.id);
+        return owner && owner.id === def.id;
+      })
+    })));
   }
 
   shouldGroup(groupCount) {
@@ -95,14 +155,39 @@ class SessionTree {
   }
 
   getChildren(element) {
-    if (element && element.__group) return element.sessions;
+    if (element && (element.__folder || element.__group)) return element.sessions;
     if (element) return [];
-    const groups = this.groups();
-    return this.shouldGroup(groups.length) ? groups : this.manager.list;
+
+    const all = this.manager.list;
+    const folders = this.userFolders(all);
+
+    // Without user folders nothing changes: project grouping as before.
+    const loose = folders.length ? all.filter((s) => !this.folders.folderOf(s.id)) : all;
+    const groups = this.projectGroups(loose);
+    const rest = this.shouldGroup(groups.length) ? groups : loose;
+    return folders.concat(rest);
   }
 
   getTreeItem(element) {
-    return element.__group ? this.groupItem(element) : this.sessionItem(element);
+    if (element.__folder) return this.folderItem(element);
+    if (element.__group) return this.groupItem(element);
+    return this.sessionItem(element);
+  }
+
+  folderItem(folder) {
+    const state = folder.sessions.length
+      ? vscode.TreeItemCollapsibleState.Expanded
+      : vscode.TreeItemCollapsibleState.Collapsed;
+    const item = new vscode.TreeItem(folder.label, state);
+    item.id = 'folder:' + folder.id;
+    item.contextValue = 'nikuiFolder';
+    item.iconPath = new vscode.ThemeIcon('folder');
+    const busy = folder.sessions.filter((s) => s.isBusy).length;
+    const bits = [String(folder.sessions.length)];
+    if (busy) bits.push(`${busy} working`);
+    item.description = folder.sessions.length ? bits.join(' · ') : 'empty — drag instances here';
+    item.tooltip = new vscode.MarkdownString(`**${folder.label}**\n\nDrag instances onto this folder to file them.`);
+    return item;
   }
 
   groupItem(group) {
@@ -145,8 +230,13 @@ class SessionTree {
   }
 
   getParent(element) {
-    if (!element || element.__group) return null;
-    const groups = this.groups();
+    if (!element || element.__group || element.__folder) return null;
+    const all = this.manager.list;
+    const owner = this.folders.folderOf(element.id);
+    if (owner) return this.userFolders(all).find((f) => f.id === owner.id) || null;
+    const folders = this.userFolders(all);
+    const loose = folders.length ? all.filter((s) => !this.folders.folderOf(s.id)) : all;
+    const groups = this.projectGroups(loose);
     if (!this.shouldGroup(groups.length)) return null;
     return groups.find((g) => g.sessions.includes(element)) || null;
   }
@@ -161,4 +251,4 @@ function describe(session, look) {
   return bits.join(' · ');
 }
 
-module.exports = { SessionTree, LOOK, projectRoot };
+module.exports = { SessionTree, LOOK, projectRoot, MIME };
