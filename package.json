@@ -40,6 +40,22 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "nikui.sessions",
+        "contents": "No instances yet.\n\nAn instance is one Claude Code process, running in one folder, with its own editor tab. You can run several at once.\n\n[Start an instance](command:nikui.newSession)\n\nIt asks which folder to run in. Past conversations are under History below, and can be reopened from there."
+      },
+      {
+        "view": "nikui.history",
+        "contents": "No past conversations in this workspace yet.\n\nEvery instance you run is written to a transcript and shows up here, so you can reopen it later.\n\n[Look in every folder](command:nikui.historyScope)",
+        "when": "nikui.historyScope == 'workspace'"
+      },
+      {
+        "view": "nikui.history",
+        "contents": "No past conversations on this machine yet.\n\nEvery instance you run is written to a transcript and shows up here.\n\n[Back to this workspace](command:nikui.historyScope)",
+        "when": "nikui.historyScope == 'all'"
+      }
+    ],
     "commands": [
       {
         "command": "nikui.newSession",
@@ -49,6 +65,19 @@
       {
         "command": "nikui.newSessionHere",
         "title": "NikUI: New Instance in Folder..."
+      },
+      {
+        "command": "nikui.newSessionInFolder",
+        "title": "NikUI: New Instance in This Folder",
+        "icon": "$(add)"
+      },
+      {
+        "command": "nikui.nextInstance",
+        "title": "NikUI: Next Instance"
+      },
+      {
+        "command": "nikui.previousInstance",
+        "title": "NikUI: Previous Instance"
       },
       {
         "command": "nikui.open",
@@ -65,8 +94,18 @@
         "icon": "$(debug-restart)"
       },
       {
+        "command": "nikui.status",
+        "title": "NikUI: Instance Status",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "nikui.sleep",
+        "title": "NikUI: Stop Process (keep the instance)",
+        "icon": "$(debug-stop)"
+      },
+      {
         "command": "nikui.stop",
-        "title": "NikUI: Close Instance",
+        "title": "NikUI: Close Instance (conversation stays in History)",
         "icon": "$(close)"
       },
       {
@@ -76,7 +115,7 @@
       },
       {
         "command": "nikui.clearStopped",
-        "title": "NikUI: Remove Stopped Instances",
+        "title": "NikUI: Remove Instances Whose Process Has Exited",
         "icon": "$(clear-all)"
       },
       {
@@ -91,8 +130,22 @@
       },
       {
         "command": "nikui.historyScope",
-        "title": "NikUI: Toggle History Scope",
-        "icon": "$(filter)"
+        "title": "NikUI: History — This Workspace or Everywhere",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "nikui.historyFilter",
+        "title": "NikUI: Filter History...",
+        "icon": "$(search)"
+      },
+      {
+        "command": "nikui.historyMore",
+        "title": "NikUI: Show More History"
+      },
+      {
+        "command": "nikui.deleteHistory",
+        "title": "NikUI: Delete Transcript...",
+        "icon": "$(trash)"
       },
       {
         "command": "nikui.resumeHistory",
@@ -134,16 +187,26 @@
         {
           "command": "nikui.clearStopped",
           "when": "view == nikui.sessions",
-          "group": "navigation@2"
+          "group": "navigation@9"
         },
         {
-          "command": "nikui.historyScope",
+          "command": "nikui.historyFilter",
           "when": "view == nikui.history",
           "group": "navigation@1"
         },
         {
+          "command": "nikui.historyScope",
+          "when": "view == nikui.history",
+          "group": "navigation@2"
+        },
+        {
           "command": "nikui.refreshHistory",
           "when": "view == nikui.history",
+          "group": "navigation@3"
+        },
+        {
+          "command": "nikui.newFolder",
+          "when": "view == nikui.sessions",
           "group": "navigation@2"
         },
         {
@@ -152,9 +215,9 @@
           "group": "navigation@3"
         },
         {
-          "command": "nikui.newFolder",
+          "command": "nikui.newSessionHere",
           "when": "view == nikui.sessions",
-          "group": "navigation@2"
+          "group": "1_new@1"
         }
       ],
       "view/item/context": [
@@ -174,6 +237,16 @@
           "group": "1_run@1"
         },
         {
+          "command": "nikui.status",
+          "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
+          "group": "1_run@2"
+        },
+        {
+          "command": "nikui.sleep",
+          "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
+          "group": "1_run@3"
+        },
+        {
           "command": "nikui.stop",
           "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
           "group": "inline@3"
@@ -182,6 +255,16 @@
           "command": "nikui.moveToFolder",
           "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
           "group": "2_organise@1"
+        },
+        {
+          "command": "nikui.newSessionInFolder",
+          "when": "view == nikui.sessions && viewItem == nikuiFolder",
+          "group": "inline@0"
+        },
+        {
+          "command": "nikui.deleteHistory",
+          "when": "view == nikui.history && viewItem == historyEntry",
+          "group": "9_danger@1"
         },
         {
           "command": "nikui.renameFolder",
@@ -216,7 +299,23 @@
           "when": "false"
         },
         {
+          "command": "nikui.sleep",
+          "when": "false"
+        },
+        {
           "command": "nikui.resumeHistory",
+          "when": "false"
+        },
+        {
+          "command": "nikui.newSessionInFolder",
+          "when": "false"
+        },
+        {
+          "command": "nikui.deleteHistory",
+          "when": "false"
+        },
+        {
+          "command": "nikui.historyMore",
           "when": "false"
         },
         {
@@ -229,6 +328,34 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "nikui.newSession",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n"
+      },
+      {
+        "command": "nikui.showHistory",
+        "key": "ctrl+alt+h",
+        "mac": "cmd+alt+h"
+      },
+      {
+        "command": "nikui.nextInstance",
+        "key": "ctrl+alt+]",
+        "mac": "cmd+alt+]"
+      },
+      {
+        "command": "nikui.previousInstance",
+        "key": "ctrl+alt+[",
+        "mac": "cmd+alt+["
+      },
+      {
+        "command": "nikui.status",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i",
+        "when": "activeWebviewPanelId == 'nikui.session'"
+      }
+    ],
     "configuration": {
       "title": "NikUI",
       "properties": {
@@ -275,6 +402,27 @@
           "type": "number",
           "default": 13,
           "description": "Conversation font size in px."
+        },
+        "nikui.notifyOnAttention": {
+          "type": "boolean",
+          "default": true,
+          "description": "Tell you when an instance you cannot see is waiting for an answer, or could not start at all."
+        },
+        "nikui.interruptOnSingleEscape": {
+          "type": "boolean",
+          "default": false,
+          "description": "Interrupt the running turn on the first Escape, the way the CLI does. Off by default: Escape is the key people press to dismiss things, so NikUI asks for a second press within two seconds before abandoning a turn."
+        },
+        "nikui.maxTranscriptItems": {
+          "type": "number",
+          "default": 400,
+          "minimum": 0,
+          "description": "How many messages, tool calls and results an instance keeps in memory. Older ones are dropped from the panel — the full record stays in the transcript on disk. 0 keeps everything, at the cost of memory on very long conversations."
+        },
+        "nikui.keepHiddenPanelsWarm": {
+          "type": "boolean",
+          "default": false,
+          "description": "Keep the webview of a hidden instance in memory so switching back is instant. Off by default: with several instances open it costs real memory, and a hidden panel is rebuilt from the instance the moment you return to it."
         },
         "nikui.showThinking": {
           "type": "boolean",
@@ -326,6 +474,7 @@
   },
   "scripts": {
     "test": "node test/run.js",
-    "test:live": "node test/live.check.js"
+    "test:live": "node test/live.check.js",
+    "test:webview": "node test/webview.check.js"
   }
 }

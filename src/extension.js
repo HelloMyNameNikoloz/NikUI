@@ -1,13 +1,16 @@
 'use strict';
 
 const vscode = require('vscode');
+const fs = require('fs');
 const path = require('path');
-const { SessionManager } = require('./manager');
+const { SessionManager, readConfig } = require('./manager');
 const { SessionTree } = require('./tree');
 const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
 const { HistoryTree } = require('./historyTree');
+const { projectsRoot } = require('./history');
 const { nextTicket } = require('./ticket');
+const { labelFor } = require('./label');
 
 let manager;
 
@@ -15,6 +18,7 @@ function activate(context) {
   manager = new SessionManager(context);
   const folders = new FolderStore(context);
   const tree = new SessionTree(manager, folders);
+  context.subscriptions.push(tree);
 
   const view = vscode.window.createTreeView('nikui.sessions', {
     treeDataProvider: tree,
@@ -26,6 +30,10 @@ function activate(context) {
   const history = new HistoryTree();
   const historyView = vscode.window.createTreeView('nikui.history', { treeDataProvider: history });
   context.subscriptions.push(historyView);
+  // Scope and filter live in the header, not in a status-bar message that has
+  // already gone by the time you wonder why the list looks short.
+  const showScope = () => { historyView.description = history.summary; };
+  showScope();
   // Transcripts are written continuously; re-read whenever the panel is shown.
   context.subscriptions.push(historyView.onDidChangeVisibility((e) => { if (e.visible) history.refresh(); }));
   manager.on('changed', () => history.refresh());
@@ -39,6 +47,10 @@ function activate(context) {
     const busy = manager.list.filter((s) => s.isBusy).length;
     view.badge = busy ? { value: busy, tooltip: `${busy} working` } : undefined;
   });
+
+  followFocus(view, manager);
+  watchForTrouble(manager, (session) => SessionPanel.show(session, context, manager));
+  watchForCrowding(manager);
 
   const resolve = (arg) => {
     if (!arg) return null;
@@ -70,6 +82,18 @@ function activate(context) {
     SessionPanel.show(session, context, manager).focusInput();
   });
 
+  register('nikui.newSessionInFolder', async (node) => {
+    const folderId = folderIdOf(node);
+    const folder = folderId ? folders.get(folderId) : null;
+    if (!folder) return;
+    const cwd = await pickFolder(manager);
+    if (!cwd) return;
+    const session = manager.create({ cwd: cwd.path });
+    folders.place(session.id, folder.id);
+    tree.refresh();
+    SessionPanel.show(session, context, manager).focusInput();
+  });
+
   register('nikui.newSessionHere', async () => {
     const picked = await vscode.window.showOpenDialog({
       canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: 'Start instance here'
@@ -83,6 +107,18 @@ function activate(context) {
     const session = await pickSession(arg);
     if (session) SessionPanel.show(session, context, manager).focusInput();
   });
+
+  const cycle = (step) => {
+    const list = manager.list;
+    if (!list.length) return;
+    const active = manager.active;
+    const at = active ? list.findIndex((s) => s.id === active.id) : -1;
+    const next = list[((at < 0 ? 0 : at + step) + list.length) % list.length];
+    if (next) SessionPanel.show(next, context, manager).focusInput();
+  };
+
+  register('nikui.nextInstance', () => cycle(1));
+  register('nikui.previousInstance', () => cycle(-1));
 
   register('nikui.interrupt', async (arg) => {
     const session = await pickSession(arg);
@@ -100,20 +136,62 @@ function activate(context) {
       { placeHolder: `Restart ${session.label}` }
     );
     if (!choice) return;
+    if (!choice.keep && session.hasHistory) {
+      const go = await vscode.window.showWarningMessage(
+        `Start ${session.label} over?`,
+        { modal: true, detail: 'The panel is cleared and a new Claude session begins, so this conversation is no longer the one being continued. The transcript stays on disk and can be reopened from History.' },
+        'Start over'
+      );
+      if (go !== 'Start over') return;
+    }
     session.restart({ keepContext: choice.keep });
+  });
+
+  register('nikui.status', async (arg) => {
+    const session = await pickSession(arg);
+    if (!session) return;
+    SessionPanel.show(session, context, manager).openStatus();
+  });
+
+  register('nikui.sleep', async (arg) => {
+    const session = await pickSession(arg);
+    if (!session) return;
+    if (!session.isRunning) {
+      vscode.window.setStatusBarMessage(`NikUI: ${session.label} is not running`, 2500);
+      return;
+    }
+    if (session.isBusy) {
+      const go = await vscode.window.showWarningMessage(
+        `${session.label} is still working. Stop its process?`,
+        { modal: true, detail: 'The turn is abandoned. The instance stays in the list and picks the conversation back up when you open it.' },
+        'Stop process'
+      );
+      if (go !== 'Stop process') return;
+    }
+    manager.sleep(session.id);
+    vscode.window.setStatusBarMessage(`NikUI: stopped ${session.label} — open it to pick up where it left off`, 3500);
   });
 
   register('nikui.stop', async (arg) => {
     const session = await pickSession(arg);
     if (!session) return;
-    // Closing an idle instance is cheap and reversible via History; only ask
-    // when it would kill a turn that is still running.
+    // Closing removes the row. That is fine for an instance with nothing in it,
+    // but anything with a conversation behind it gets asked first — the × on a
+    // row reads like "hide this", and it is not.
     if (session.isBusy) {
       const go = await vscode.window.showWarningMessage(
         `${session.label} is still working. Close it anyway?`,
-        { modal: true }, 'Close'
+        { modal: true, detail: 'The turn is abandoned and the instance leaves the list. The conversation stays in History and can be reopened.' },
+        'Close instance'
       );
-      if (go !== 'Close') return;
+      if (go !== 'Close instance') return;
+    } else if (session.hasHistory) {
+      const go = await vscode.window.showWarningMessage(
+        `Close ${session.label}?`,
+        { modal: true, detail: 'It leaves the list and its process is stopped. The conversation stays in History and can be reopened from there.' },
+        'Close instance'
+      );
+      if (go !== 'Close instance') return;
     }
     session.stop();
     SessionPanel.close(session.id);
@@ -132,12 +210,30 @@ function activate(context) {
     session.rename(value);
   });
 
-  register('nikui.clearStopped', () => {
-    const removed = manager.removeStopped();
-    vscode.window.setStatusBarMessage(
-      removed ? `NikUI: removed ${removed} stopped instance${removed === 1 ? '' : 's'}` : 'NikUI: nothing to remove',
-      3000
+  register('nikui.clearStopped', async () => {
+    // Only instances whose process ran and then exited. Instances restored from
+    // the last window have no process either, and clearing those unasked used
+    // to wipe the sidebar after every reload.
+    const dead = manager.stopped();
+    if (!dead.length) {
+      const asleep = manager.list.filter((s) => s.isAsleep).length;
+      vscode.window.setStatusBarMessage(
+        asleep
+          ? `NikUI: nothing to remove — ${asleep} instance${asleep === 1 ? '' : 's'} restored from your last window are asleep, not stopped`
+          : 'NikUI: nothing to remove',
+        4000
+      );
+      return;
+    }
+    const names = dead.map((s) => s.label).join(', ');
+    const go = await vscode.window.showWarningMessage(
+      `Remove ${dead.length} stopped instance${dead.length === 1 ? '' : 's'}?`,
+      { modal: true, detail: `${names}\n\nTheir processes have already exited. The conversations stay in History and can be reopened.` },
+      'Remove'
     );
+    if (go !== 'Remove') return;
+    const removed = manager.removeStopped();
+    vscode.window.setStatusBarMessage(`NikUI: removed ${removed} stopped instance${removed === 1 ? '' : 's'}`, 3000);
   });
 
   register('nikui.refresh', () => { tree.refresh(); history.refresh(); });
@@ -167,7 +263,17 @@ function activate(context) {
     if (!id) return;
     const folder = folders.get(id);
     if (!folder) return;
-    // Deleting a folder never touches the instances inside it.
+    // Deleting a folder never touches the instances inside it — but a folder
+    // with things in it looks like it would, so it says what happens to them.
+    const inside = manager.list.filter((s) => (folders.folderOf(s.id) || {}).id === id).length;
+    if (inside) {
+      const go = await vscode.window.showWarningMessage(
+        `Delete the folder "${folder.name}"?`,
+        { modal: true, detail: `The ${inside} instance${inside === 1 ? '' : 's'} in it are not closed — they move back to the top level.` },
+        'Delete folder'
+      );
+      if (go !== 'Delete folder') return;
+    }
     folders.remove(id);
     tree.refresh();
     vscode.window.setStatusBarMessage(`NikUI: removed folder "${folder.name}"`, 2500);
@@ -204,10 +310,53 @@ function activate(context) {
   });
 
   register('nikui.historyScope', () => {
-    const scope = history.toggleScope();
-    vscode.window.setStatusBarMessage(
-      scope === 'all' ? 'NikUI history: all folders' : 'NikUI history: this workspace', 2500
+    history.toggleScope();
+    showScope();
+  });
+
+  register('nikui.historyMore', () => history.showMore());
+
+  register('nikui.historyFilter', async () => {
+    const value = await vscode.window.showInputBox({
+      prompt: 'Filter conversations by name, opening prompt, folder or branch',
+      placeHolder: 'Leave empty to show everything',
+      value: history.filter
+    });
+    if (value === undefined) return;
+    history.setFilter(value);
+    showScope();
+  });
+
+  register('nikui.deleteHistory', async (entry) => {
+    if (!entry || !entry.file) return;
+    // Only ever a transcript. Nothing else on disk is this command's business,
+    // whatever it is handed.
+    const root = projectsRoot();
+    if (!entry.file.startsWith(root + path.sep) || !entry.file.endsWith('.jsonl')) {
+      vscode.window.showWarningMessage('NikUI: that is not a transcript.');
+      return;
+    }
+    // Never pull the transcript out from under a conversation that is open.
+    const live = manager.list.find((s) => s.claudeSessionId === entry.sessionId);
+    if (live) {
+      vscode.window.showWarningMessage(
+        `${live.label} is still open on that conversation. Close the instance first.`
+      );
+      return;
+    }
+    const go = await vscode.window.showWarningMessage(
+      `Delete the transcript for "${entry.label || entry.title}"?`,
+      { modal: true, detail: `${entry.file}\n\nThis removes the file from disk. It cannot be undone, and the conversation cannot be reopened afterwards.` },
+      'Delete'
     );
+    if (go !== 'Delete') return;
+    try {
+      fs.unlinkSync(entry.file);
+      vscode.window.setStatusBarMessage('NikUI: transcript deleted', 2500);
+    } catch (err) {
+      vscode.window.showErrorMessage(`NikUI: could not delete that transcript — ${err.message}`);
+    }
+    history.refresh();
   });
 
   register('nikui.resumeHistory', async (entry) => {
@@ -224,7 +373,7 @@ function activate(context) {
       resume: entry.sessionId,
       title: null,
       ticket,
-      autoLabel: ticket ? null : shortLabel(entry.title)
+      autoLabel: ticket ? null : (entry.label || labelFor(entry.title))
     });
     SessionPanel.show(session, context, manager).focusInput();
   });
@@ -245,27 +394,47 @@ function activate(context) {
   context.subscriptions.push({ dispose: () => manager.disposeAll() });
 }
 
+/**
+ * One question: which folder. Reopening a past conversation is what History is
+ * for — this picker used to offer both, and a list where half the rows start an
+ * instance and half resume one is a list nobody reads carefully.
+ */
 async function pickFolder(mgr) {
+  const separator = (label) => {
+    const kind = vscode.QuickPickItemKind && vscode.QuickPickItemKind.Separator;
+    return kind === undefined ? null : { label, kind };
+  };
+
   const items = [];
-  const folders = vscode.workspace.workspaceFolders || [];
-  for (const f of folders) {
-    items.push({ label: `$(folder) ${f.name}`, description: f.uri.fsPath, path: f.uri.fsPath });
+  const seen = new Set();
+  const workspace = vscode.workspace.workspaceFolders || [];
+
+  if (workspace.length) {
+    items.push(separator('This workspace'));
+    for (const f of workspace) {
+      seen.add(f.uri.fsPath);
+      items.push({ label: `$(folder) ${f.name}`, description: f.uri.fsPath, path: f.uri.fsPath });
+    }
   }
 
-  for (const saved of mgr.restorable()) {
-    if (!saved.claudeSessionId) continue;
-    items.push({
-      label: `$(history) ${saved.customTitle || saved.ticket || path.basename(saved.cwd)}`,
-      description: `resume · ${saved.cwd}`,
-      path: saved.cwd,
-      resume: saved.claudeSessionId,
-      title: saved.customTitle
-    });
+  // Folders this window has run an instance in before, newest last in storage.
+  const recent = [];
+  for (const saved of mgr.restorable().slice().reverse()) {
+    if (!saved.cwd || seen.has(saved.cwd)) continue;
+    seen.add(saved.cwd);
+    recent.push({ label: `$(folder) ${path.basename(saved.cwd)}`, description: saved.cwd, path: saved.cwd });
+  }
+  if (recent.length) {
+    items.push(separator('Used before'));
+    items.push(...recent.slice(0, 8));
   }
 
-  items.push({ label: '$(folder-opened) Browse...', description: 'Pick any folder', browse: true });
+  items.push(separator('Anywhere else'));
+  items.push({ label: '$(folder-opened) Browse...', description: 'Pick any folder on this machine', browse: true });
 
-  const choice = await vscode.window.showQuickPick(items, { placeHolder: 'Where should this instance run?' });
+  const choice = await vscode.window.showQuickPick(items.filter(Boolean), {
+    placeHolder: 'Which folder should this instance run in?'
+  });
   if (!choice) return null;
   if (choice.browse) {
     const picked = await vscode.window.showOpenDialog({
@@ -273,7 +442,102 @@ async function pickFolder(mgr) {
     });
     return picked && picked.length ? { path: picked[0].fsPath } : null;
   }
-  return choice;
+  return { path: choice.path };
+}
+
+/**
+ * Every instance is a real CLI process with its own model, and it is easy to
+ * forget one behind a tab. Said once per window, when the count first crosses
+ * the line, with the way to get the memory back.
+ */
+function watchForCrowding(manager, deps) {
+  const win = (deps && deps.window) || vscode.window;
+  const limit = (deps && deps.limit) || 8;
+  let told = false;
+
+  manager.on('changed', () => {
+    const running = manager.list.filter((s) => s.isRunning).length;
+    if (running < limit) { if (running <= limit / 2) told = false; return; }
+    if (told) return;
+    told = true;
+    win.showInformationMessage(
+      `${running} NikUI instances are running, each its own CLI process.`,
+      'Show me'
+    ).then((choice) => {
+      if (choice === 'Show me') vscode.commands.executeCommand('nikui.sessions.focus');
+    }, () => { /* dismissed */ });
+  });
+}
+
+/**
+ * Two things must never happen quietly: an instance blocked on a question
+ * nobody can see, and an instance that could not start at all — the second
+ * writes its error into a panel that, by definition, may never open.
+ *
+ * `open` is how to bring an instance to the front; injected so this can be
+ * driven without a window.
+ */
+function watchForTrouble(manager, open, deps) {
+  const win = (deps && deps.window) || vscode.window;
+  const settings = (deps && deps.readConfig) || readConfig;
+  const isVisible = (deps && deps.isVisible) || ((id) => SessionPanel.isVisible(id));
+  const told = new Map(); // session id -> what it was last told about
+
+  const enabled = () => {
+    try { return settings().notifyOnAttention !== false; } catch (_) { return true; }
+  };
+
+  manager.on('failed', async (session, message) => {
+    if (!enabled()) return;
+    told.set(session.id, 'error');
+    const choice = await win.showErrorMessage(`NikUI · ${session.label}: ${message}`, 'Open instance', 'Settings');
+    if (choice === 'Open instance') open(session);
+    else if (choice === 'Settings') {
+      vscode.commands.executeCommand('workbench.action.openSettings', 'nikui.claudePath');
+    }
+  });
+
+  manager.on('session-changed', async (session) => {
+    if (!session) return;
+    const was = told.get(session.id);
+    // Only the moment it starts waiting, and only when it cannot be seen.
+    if (session.status !== 'waiting') {
+      if (was === 'waiting') told.delete(session.id);
+      return;
+    }
+    if (was === 'waiting' || !enabled() || isVisible(session.id)) return;
+    told.set(session.id, 'waiting');
+    const pending = (session.items || []).filter((i) => i.kind === 'permission' && !i.resolved).pop();
+    const what = pending && pending.name ? ` to run ${pending.name}` : '';
+    const choice = await win.showWarningMessage(
+      `NikUI · ${session.label} is waiting for your answer${what}.`, 'Open instance'
+    );
+    if (choice === 'Open instance') open(session);
+  });
+}
+
+/**
+ * Picking an instance from the editor tabs has to move the sidebar highlight
+ * too — otherwise the row that looks selected is not the one on screen. The
+ * sidebar is left alone when it is hidden, so this never forces the view open.
+ */
+function followFocus(view, manager) {
+  const show = (session, retry) => {
+    if (!view || typeof view.reveal !== 'function' || view.visible === false) return;
+    let done;
+    try {
+      done = view.reveal(session, { select: true, focus: false, expand: true });
+    } catch (_) { done = null; }
+    if (done && typeof done.then === 'function') {
+      // A brand new instance can be focused before the tree has drawn its row;
+      // one retry after the refresh has landed is the difference between the
+      // selection following you and silently not.
+      done.then(undefined, () => {
+        if (retry) setTimeout(() => show(session, false), 150);
+      });
+    }
+  };
+  manager.on('focused', (session) => show(session, true));
 }
 
 function folderIdOf(node) {
@@ -283,14 +547,8 @@ function folderIdOf(node) {
   return null;
 }
 
-function shortLabel(text) {
-  const cleaned = String(text || '').replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
-  if (!cleaned) return null;
-  return cleaned.length > 28 ? cleaned.slice(0, 28).trimEnd() + '\u2026' : cleaned;
-}
-
 function deactivate() {
   if (manager) manager.disposeAll();
 }
 
-module.exports = { activate, deactivate };
+module.exports = { activate, deactivate, followFocus, watchForTrouble, watchForCrowding };

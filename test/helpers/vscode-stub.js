@@ -6,11 +6,12 @@ const path = require('path');
 const { EventEmitter } = require('events');
 
 function makeStub(overrides) {
-  const registered = { commands: {}, views: [], serializers: [] };
+  const registered = { commands: {}, views: [], serializers: [], treeViews: {}, panels: [] };
   const config = Object.assign({ groupByProject: 'auto' }, (overrides && overrides.config) || {});
 
   const stub = {
     __registered: registered,
+    version: '1.100.0',
     __config: config,
     EventEmitter: class {
       constructor() { this._e = new EventEmitter(); this.event = (fn) => { this._e.on('x', fn); return { dispose() {} }; }; }
@@ -27,17 +28,50 @@ function makeStub(overrides) {
     DataTransferItem: class { constructor(v) { this.value = v; } },
     Range: class { constructor(a, b, c, d) { Object.assign(this, { a, b, c, d }); } },
     TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+    QuickPickItemKind: { Separator: -1, Default: 0 },
     ViewColumn: { Active: -1, Beside: -2 },
     Uri: {
       file: (p) => ({ fsPath: p, toString: () => 'file://' + p }),
       joinPath: (base, ...rest) => ({ fsPath: path.join(base.fsPath, ...rest), toString() { return 'file://' + path.join(base.fsPath, ...rest); } })
     },
     window: {
-      createTreeView: (id) => { registered.views.push(id); return { badge: undefined, dispose() {}, onDidChangeVisibility: () => ({ dispose() {} }) }; },
-      createWebviewPanel: () => ({
-        webview: { html: '', cspSource: 'stub', options: {}, asWebviewUri: (u) => u, onDidReceiveMessage: () => ({ dispose() {} }), postMessage() {} },
-        onDidDispose: () => ({ dispose() {} }), reveal() {}, dispose() {}
-      }),
+      createTreeView: (id, options) => {
+        const view = {
+          // Kept so a test can reach the provider — and through it the manager —
+          // the same way the extension does.
+          provider: options && options.treeDataProvider,
+          badge: undefined, visible: true, revealed: [],
+          reveal(element, options) { this.revealed.push({ element, options }); return Promise.resolve(); },
+          dispose() {}, onDidChangeVisibility: () => ({ dispose() {} })
+        };
+        registered.views.push(id);
+        registered.treeViews[id] = view;
+        return view;
+      },
+      createWebviewPanel: (type, title, column, options) => {
+        const panel = {
+          __options: options || {},
+          active: true, visible: true, viewColumn: 1, title: '', iconPath: null,
+          webview: {
+            html: '', cspSource: 'stub', options: {}, asWebviewUri: (u) => u,
+            onDidReceiveMessage: (fn) => { panel.__onMessage = fn; return { dispose() {} }; },
+            posted: [], postMessage(m) { this.posted.push(m); }
+          },
+          onDidDispose: () => ({ dispose() {} }),
+          // Captured so a test can bring the tab forward the way VS Code does.
+          onDidChangeViewState: (fn) => { panel.__onViewState = fn; return { dispose() {} }; },
+          // The editor makes a revealed panel active, which is what tells the
+          // rest of the extension that the selection moved.
+          reveal() {
+            panel.active = true;
+            panel.visible = true;
+            if (panel.__onViewState) panel.__onViewState({ webviewPanel: panel });
+          },
+          dispose() {}
+        };
+        registered.panels.push(panel);
+        return panel;
+      },
       registerWebviewPanelSerializer: (type, s) => { registered.serializers.push(type); return { dispose() {} }; },
       showQuickPick: async () => undefined,
       showOpenDialog: async () => undefined,
