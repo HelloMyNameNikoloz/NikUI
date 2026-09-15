@@ -47,6 +47,7 @@ class Session extends EventEmitter {
     this.lastError = null;
     this.meta = { model: null, tools: [], slashCommands: [] };
     this.usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+    this.pendingUsage = null;
     this.turns = 0;
     this.turnStartedAt = null;
     this.lastDurationMs = 0;
@@ -204,12 +205,14 @@ class Session extends EventEmitter {
   /** Live counters for the header: elapsed time and tokens. */
   stats() {
     const u = this.usage;
+    const p = this.pendingUsage || { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
     return {
-      input: u.input,
-      output: u.output,
-      cacheRead: u.cacheRead,
-      cacheCreate: u.cacheCreate,
-      total: u.input + u.output + u.cacheRead + u.cacheCreate,
+      input: u.input + p.input,
+      output: u.output + p.output,
+      cacheRead: u.cacheRead + p.cacheRead,
+      cacheCreate: u.cacheCreate + p.cacheCreate,
+      total: u.input + u.output + u.cacheRead + u.cacheCreate +
+             p.input + p.output + p.cacheRead + p.cacheCreate,
       cost: this.totalCost,
       turns: this.turns,
       elapsedMs: this.turnStartedAt ? Date.now() - this.turnStartedAt : this.lastDurationMs,
@@ -399,7 +402,7 @@ class Session extends EventEmitter {
   _handleAssistant(event) {
     const msg = event.message;
     if (!msg || !Array.isArray(msg.content)) return;
-    if (msg.usage) this._addUsage(msg.usage, msg.id);
+    if (msg.usage) this.pendingUsage = readUsage(msg.usage);
     const msgId = msg.id || this._streamMsgId;
     const alreadyStreamed = msgId && this._streamedMsgIds.has(msgId);
 
@@ -425,6 +428,7 @@ class Session extends EventEmitter {
       if (alreadyStreamed) return; // deltas already rendered this block
 
       if (block.type === 'text' && block.text) {
+        if (learnCommandArgs(block.text)) this.emit('meta');
         this._upsert({ id: `${event.uuid || msgId}:${index}`, kind: 'text', text: block.text, streaming: false, agent: event.parent_tool_use_id || null });
       } else if (block.type === 'thinking' && block.thinking) {
         this._upsert({ id: `${event.uuid || msgId}:t${index}`, kind: 'thinking', text: block.thinking, streaming: false });
@@ -447,7 +451,22 @@ class Session extends EventEmitter {
   }
 
   _handleResult(event) {
-    if (typeof event.total_cost_usd === 'number') this.totalCost += event.total_cost_usd;
+    // total_cost_usd is cumulative for the session, so the turn's own cost is
+    // the delta and the session total is simply the latest value.
+    let turnCost = 0;
+    if (typeof event.total_cost_usd === 'number') {
+      turnCost = Math.max(0, event.total_cost_usd - this.totalCost);
+      this.totalCost = event.total_cost_usd;
+    }
+    // result.usage is per turn, unlike the assistant events, so this one sums.
+    if (event.usage) {
+      const u = readUsage(event.usage);
+      this.usage.input += u.input;
+      this.usage.output += u.output;
+      this.usage.cacheRead += u.cacheRead;
+      this.usage.cacheCreate += u.cacheCreate;
+    }
+    this.pendingUsage = null;
     this.turns += 1;
     this.lastDurationMs = event.duration_ms || (this.turnStartedAt ? Date.now() - this.turnStartedAt : 0);
     this.turnStartedAt = null;
@@ -462,7 +481,7 @@ class Session extends EventEmitter {
       text: interrupted ? 'Interrupted' : (event.is_error ? String(event.result || event.subtype || 'Error') : ''),
       durationMs: event.duration_ms || 0,
       numTurns: event.num_turns || 0,
-      costUsd: event.total_cost_usd || 0
+      costUsd: turnCost
     });
     if (event.is_error && !interrupted) {
       this.lastError = String(event.result || event.subtype || 'error');
@@ -515,20 +534,6 @@ class Session extends EventEmitter {
     }, 50);
   }
 
-  // Assistant events repeat cumulative usage for the same message id, so only
-  // the first sighting of each id counts.
-  _addUsage(usage, msgId) {
-    if (msgId) {
-      if (!this._usageSeen) this._usageSeen = new Set();
-      if (this._usageSeen.has(msgId)) return;
-      this._usageSeen.add(msgId);
-    }
-    this.usage.input += usage.input_tokens || 0;
-    this.usage.output += usage.output_tokens || 0;
-    this.usage.cacheRead += usage.cache_read_input_tokens || 0;
-    this.usage.cacheCreate += usage.cache_creation_input_tokens || 0;
-  }
-
   _notice(text, level) {
     this._upsert({ id: `n${this._seq++}`, kind: 'notice', text, level: level || 'info' });
   }
@@ -558,6 +563,41 @@ class Session extends EventEmitter {
 
 const toolItemId = (toolUseId) => `tool:${toolUseId}`;
 
+function readUsage(u) {
+  return {
+    input: u.input_tokens || 0,
+    output: u.output_tokens || 0,
+    cacheRead: u.cache_read_input_tokens || 0,
+    cacheCreate: u.cache_creation_input_tokens || 0
+  };
+}
+
+// Commands that take a fixed set of values. Seeded with the ones we know, then
+// extended at runtime by reading "Usage: /cmd <a|b|c>" out of the CLI's own reply.
+const COMMAND_ARGS = new Map([
+  ['effort', ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode', 'auto']]
+]);
+
+const USAGE_RE = /Usage:\s*\/([\w:.-]+)\s*<([^>]+)>/g;
+
+function learnCommandArgs(text) {
+  if (!text || text.indexOf('Usage:') < 0) return false;
+  let found = false;
+  let m;
+  USAGE_RE.lastIndex = 0;
+  while ((m = USAGE_RE.exec(text)) !== null) {
+    const values = m[2].split('|').map((v) => v.trim()).filter((v) => v && !/\s/.test(v));
+    if (values.length > 1) { COMMAND_ARGS.set(m[1], values); found = true; }
+  }
+  return found;
+}
+
+function commandArgs() {
+  const out = {};
+  for (const [k, v] of COMMAND_ARGS) out[k] = v;
+  return out;
+}
+
 function flattenContent(content) {
   if (content == null) return '';
   if (typeof content === 'string') return content;
@@ -570,4 +610,4 @@ function flattenContent(content) {
   return typeof content === 'object' ? JSON.stringify(content) : String(content);
 }
 
-module.exports = { Session, STATUS };
+module.exports = { Session, STATUS, commandArgs, learnCommandArgs };

@@ -3,6 +3,7 @@
 const vscode = require('vscode');
 const os = require('os');
 const { readConfig } = require('./manager');
+const { commandArgs } = require('./session');
 
 const DEFAULT_EMOJI = {
   idle: '⚪', working: '🟠', waiting: '🔴',
@@ -64,7 +65,7 @@ class SessionPanel {
     const onItems = (items) => { this.post({ type: 'items', items }); this.postStats(); };
     const onStatus = (status) => { this.post({ type: 'status', status }); this.postStats(); this.refreshChrome(); };
     const onMeta = () => {
-      this.post({ type: 'meta', meta: this.meta(), slashCommands: this.session.meta.slashCommands });
+      this.post({ type: 'meta', meta: this.meta(), slashCommands: this.session.meta.slashCommands, commandArgs: commandArgs() });
       this.refreshChrome();
     };
     const onReset = () => this.post({ type: 'reset' });
@@ -135,6 +136,7 @@ class SessionPanel {
           status: this.session.status,
           stats: this.session.stats(),
           slashCommands: this.session.meta.slashCommands || [],
+          commandArgs: commandArgs(),
           showThinking: cfg.showThinking,
           font: cfg.fontFamily || '',
           fontSize: cfg.fontSize || 13

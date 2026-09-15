@@ -20,6 +20,9 @@
   let commands = [];
   let slashMatches = [];
   let slashIndex = 0;
+  let slashMode = 'cmd';
+  let slashCmd = '';
+  let commandArgs = {};
   let showThinking = true;
   let statsBase = { elapsedMs: 0, running: false, at: Date.now(), total: 0, cost: 0, turns: 0 };
   let attachSeq = 0;
@@ -92,9 +95,10 @@
       bits.push('<span class="stat' + (running ? ' live' : '') + '">' + icon('clock', 12) +
         esc(fmtDuration(elapsed)) + '</span>');
     }
+    const headline = (statsBase.input || 0) + (statsBase.output || 0);
     if (statsBase.total > 0) {
       bits.push('<span class="stat" title="' + esc(tokenTitle()) + '">' + icon('hash', 12) +
-        esc(fmtTokens(statsBase.total)) + '</span>');
+        esc(fmtTokens(headline)) + '</span>');
     }
     if (statsBase.cost > 0) {
       bits.push('<span class="stat">$' + statsBase.cost.toFixed(3) + '</span>');
@@ -104,8 +108,11 @@
 
   function tokenTitle() {
     const s = statsBase;
-    return 'in ' + fmtTokens(s.input || 0) + ' · out ' + fmtTokens(s.output || 0) +
-      ' · cache read ' + fmtTokens(s.cacheRead || 0) + ' · cache write ' + fmtTokens(s.cacheCreate || 0);
+    return 'Input ' + fmtTokens(s.input || 0) +
+      '\nOutput ' + fmtTokens(s.output || 0) +
+      '\nCache read ' + fmtTokens(s.cacheRead || 0) +
+      '\nCache write ' + fmtTokens(s.cacheCreate || 0) +
+      '\nTotal billed ' + fmtTokens(s.total || 0);
   }
 
   setInterval(function () { if (statsBase.running) paintStats(); }, 1000);
@@ -224,16 +231,48 @@
     }
   }
 
+  function copyText(text, btn) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (_) { /* nothing else available in a webview */ }
+    ta.remove();
+    btn.classList.add('ok');
+    setTimeout(function () { btn.classList.remove('ok'); }, 1200);
+  }
+
+  // Any code block is worth copying; add the affordance after each render.
+  function decorateCode(el) {
+    el.querySelectorAll('pre').forEach(function (pre) {
+      if (pre.querySelector('.copy')) return;
+      const btn = document.createElement('button');
+      btn.className = 'copy';
+      btn.title = 'Copy';
+      btn.innerHTML = icon('check', 12);
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const code = pre.querySelector('code');
+        copyText((code || pre).textContent, btn);
+      });
+      pre.appendChild(btn);
+    });
+  }
+
   function upsert(items) {
     const empty = stream.querySelector('.empty');
     if (empty && items.length) empty.remove();
     for (const item of items) {
       const existing = nodes.get(item.id);
-      if (existing) paint(existing, item);
+      if (existing) { paint(existing, item); decorateCode(existing); }
       else {
         const el = document.createElement('div');
         el.dataset.id = item.id;
         paint(el, item);
+        decorateCode(el);
         nodes.set(item.id, el);
         stream.appendChild(el);
       }
@@ -243,9 +282,17 @@
 
   // ── attachments ──────────────────────────────────────────────
 
+  const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
   function addFiles(files) {
     for (const file of files) {
       if (!file || !/^image\//.test(file.type)) continue;
+      if (file.size > MAX_IMAGE_BYTES) {
+        upsert([{ id: 'n-big-' + Date.now(), kind: 'notice', level: 'error',
+          text: (file.name || 'That image') + ' is ' + Math.round(file.size / 1048576) +
+                'MB; the limit is 10MB.' }]);
+        continue;
+      }
       const reader = new FileReader();
       reader.onload = function () {
         const result = String(reader.result || '');
@@ -313,13 +360,27 @@
 
   function refreshSlash() {
     const value = input.value;
-    const m = value.match(/^\/([\w:.-]*)$/); // only while the whole line is one token
-    if (!m) { slashBox.hidden = true; return; }
-    const q = m[1].toLowerCase();
-    slashMatches = commands.filter((c) => c.toLowerCase().includes(q)).slice(0, 40);
+
+    const cmdMatch = value.match(/^\/([\w:.-]*)$/);
+    if (cmdMatch) {
+      const q = cmdMatch[1].toLowerCase();
+      slashMode = 'cmd';
+      slashCmd = '';
+      slashMatches = commands.filter((c) => c.toLowerCase().includes(q)).slice(0, 40);
+    } else {
+      // "/effort ma" — the command is settled, now offer its values.
+      const argMatch = value.match(/^\/([\w:.-]+)[ \t]+([^\s]*)$/);
+      const options = argMatch ? commandArgs[argMatch[1]] : null;
+      if (!argMatch || !options) { slashBox.hidden = true; return; }
+      const q = argMatch[2].toLowerCase();
+      slashMode = 'arg';
+      slashCmd = argMatch[1];
+      slashMatches = options.filter((v) => v.toLowerCase().startsWith(q));
+    }
+
     slashIndex = 0;
     if (!slashMatches.length) {
-      slashBox.innerHTML = '<div class="none">No matching command</div>';
+      slashBox.innerHTML = '<div class="none">No match</div>';
       slashBox.hidden = false;
       return;
     }
@@ -328,29 +389,43 @@
   }
 
   function paintSlash() {
-    slashBox.innerHTML = slashMatches.map(function (c, i) {
-      const parts = c.split(':');
-      const ns = parts.length > 1 ? parts[0] : '';
-      return '<div class="row' + (i === slashIndex ? ' on' : '') + '" data-cmd="' + esc(c) + '">' +
-        icon('slash', 12) + '<span class="cmd">' + esc(parts[parts.length - 1]) + '</span>' +
+    const rows = slashMatches.map(function (c, i) {
+      const parts = String(c).split(':');
+      const ns = slashMode === 'cmd' && parts.length > 1 ? parts[0] : '';
+      const label = slashMode === 'cmd' ? parts[parts.length - 1] : c;
+      return '<div class="row' + (i === slashIndex ? ' on' : '') + '" data-val="' + esc(c) + '">' +
+        icon(slashMode === 'cmd' ? 'slash' : 'chevron', 12) +
+        '<span class="cmd">' + esc(label) + '</span>' +
         (ns ? '<span class="ns">' + esc(ns) + '</span>' : '') + '</div>';
     }).join('');
+    const hint = slashMode === 'arg'
+      ? '<div class="palette-hint"><span>/' + esc(slashCmd) + '</span><span>Tab fills · Enter runs</span></div>'
+      : '<div class="palette-hint"><span>Commands</span><span>Tab or Enter selects</span></div>';
+    slashBox.innerHTML = hint + rows;
     const on = slashBox.querySelector('.row.on');
     if (on) on.scrollIntoView({ block: 'nearest' });
   }
 
+  // Returns 'filled' when more input is expected, 'ready' when the line is complete.
   function acceptSlash() {
-    if (slashBox.hidden || !slashMatches.length) return false;
-    input.value = '/' + slashMatches[slashIndex] + ' ';
+    if (slashBox.hidden || !slashMatches.length) return null;
+    const picked = slashMatches[slashIndex];
+    if (slashMode === 'cmd') {
+      input.value = '/' + picked + ' ';
+      autoGrow();
+      refreshSlash(); // a command with values shows them straight away
+      return slashBox.hidden ? 'ready' : 'filled';
+    }
+    input.value = '/' + slashCmd + ' ' + picked;
     slashBox.hidden = true;
     autoGrow();
-    return true;
+    return 'ready';
   }
 
   slashBox.addEventListener('click', function (e) {
-    const row = e.target.closest('[data-cmd]');
+    const row = e.target.closest('[data-val]');
     if (!row) return;
-    slashIndex = slashMatches.indexOf(row.dataset.cmd);
+    slashIndex = slashMatches.indexOf(row.dataset.val);
     acceptSlash();
     input.focus();
   });
@@ -385,7 +460,13 @@
     if (!slashBox.hidden && slashMatches.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); slashIndex = (slashIndex + 1) % slashMatches.length; paintSlash(); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); slashIndex = (slashIndex - 1 + slashMatches.length) % slashMatches.length; paintSlash(); return; }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) { if (acceptSlash()) { e.preventDefault(); return; } }
+      if (e.key === 'Tab') { if (acceptSlash()) { e.preventDefault(); return; } }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const outcome = acceptSlash();
+        if (outcome === 'ready' && slashMode === 'arg') send();
+        return;
+      }
       if (e.key === 'Escape') { e.preventDefault(); slashBox.hidden = true; return; }
     }
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); return; }
@@ -393,6 +474,11 @@
       if (!lightbox.hidden) { closeLightbox(); return; }
       vscode.postMessage({ type: 'interrupt' });
     }
+  });
+
+  input.addEventListener('blur', function () {
+    // Let a click on a row land before the palette disappears.
+    setTimeout(function () { if (document.activeElement !== input) slashBox.hidden = true; }, 120);
   });
 
   $('send').addEventListener('click', send);
@@ -407,6 +493,7 @@
         vscode.setState({ sessionId: msg.sessionId });
         showThinking = msg.showThinking;
         commands = msg.slashCommands || [];
+        commandArgs = msg.commandArgs || {};
         if (msg.font) document.documentElement.style.setProperty('--nik-font', msg.font);
         if (msg.fontSize) document.documentElement.style.setProperty('--nik-font-size', msg.fontSize + 'px');
         stream.innerHTML = msg.items.length ? '' : '<div class="empty">Ask Claude anything to start.</div>';
@@ -423,6 +510,7 @@
       case 'meta':
         setMeta(msg.meta);
         if (msg.slashCommands) commands = msg.slashCommands;
+        if (msg.commandArgs) commandArgs = msg.commandArgs;
         break;
       case 'status': setStatus(msg.status); break;
       case 'stats': setStats(msg.stats); break;

@@ -25,6 +25,11 @@ owns the whole surface.
   nested lists, blockquotes.
 - **Collapsible tool calls** showing the command, the input and the result.
 - **Interrupt** mid-turn (Esc or the Stop button) over the CLI's control channel.
+- **Two-stage command palette.** `/` lists the session's own commands; pick one
+  that takes a fixed set of values and its options appear immediately, arrow
+  navigable. Options are seeded for `/effort` and learned at runtime by reading
+  `Usage: /cmd <a|b|c>` out of the CLI's own replies.
+- **Copy buttons** on every code block, including tool input and output.
 - **Resume** — instances remember their Claude session id across reloads.
 - **Instances survive a window reload.** They come back in the sidebar, VS Code
   restores their editor tabs, and opening one replays its saved transcript and
@@ -85,14 +90,18 @@ Prompts go in as `{"type":"user","message":{...}}` lines. Interrupts go in as
 `{"type":"control_request","request":{"subtype":"interrupt"}}`. Output is JSONL
 which `src/session.js` normalises into flat render items.
 
-Two protocol details worth knowing before you edit that file:
+Three protocol details worth knowing before you edit that file:
 
 1. **Partial deltas and final messages overlap.** `stream_event` deltas paint
    text as it generates; the CLI then re-emits each block as its own `assistant`
    event. Those events carry a *single-block* `content` array, so the block index
    is always 0 and is useless as a key. Tools are keyed by their `tool_use` id;
    text already painted by deltas is skipped.
-2. **Thinking blocks are often signature-only** with empty text. The webview
+2. **`total_cost_usd` is cumulative for the session, and assistant-event usage is
+   a stale partial** for the in-flight message. The turn's own cost is the delta
+   against the previous total, and token counts must come from `result.usage`,
+   which is per turn. Summing either of the obvious fields is wrong.
+3. **Thinking blocks are often signature-only** with empty text. The webview
    hides those rather than showing an empty disclosure.
 
 ## Layout
