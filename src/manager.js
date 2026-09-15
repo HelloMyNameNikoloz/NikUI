@@ -59,7 +59,7 @@ class SessionManager extends EventEmitter {
     this.context.globalState.update(COMMANDS_KEY, list);
   }
 
-  create({ id, cwd, title, ticket, autoLabel, resume, autoStart }) {
+  create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage }) {
     const cfg = this.config;
     const session = new Session({
       id,
@@ -67,6 +67,7 @@ class SessionManager extends EventEmitter {
       cwd,
       customTitle: title || null,
       autoLabel: autoLabel || null,
+      totalCost: totalCost || 0,
       claudeSessionId: resume || null,
       claudePath: cfg.claudePath,
       model: cfg.model,
@@ -83,6 +84,7 @@ class SessionManager extends EventEmitter {
       this._changed(session);
     });
 
+    if (usage) Object.assign(session.usage, usage);
     this.sessions.set(session.id, session);
     if (autoStart !== false) session.start();
     this._changed(session);
@@ -126,7 +128,8 @@ class SessionManager extends EventEmitter {
   persist() {
     const data = this.list
       .filter((s) => s.claudeSessionId)
-      .map((s) => ({ id: s.id, cwd: s.cwd, customTitle: s.customTitle, autoLabel: s.autoLabel, ticket: s.ticket, claudeSessionId: s.claudeSessionId }));
+      .map((s) => ({ id: s.id, cwd: s.cwd, customTitle: s.customTitle, autoLabel: s.autoLabel, ticket: s.ticket,
+        claudeSessionId: s.claudeSessionId, totalCost: s.totalCost, usage: s.usage }));
     this.context.workspaceState.update(STORAGE_KEY, data.slice(-20));
   }
 
@@ -150,6 +153,8 @@ class SessionManager extends EventEmitter {
         ticket: entry.ticket,
         autoLabel: entry.autoLabel,
         resume: entry.claudeSessionId,
+        totalCost: entry.totalCost,
+        usage: entry.usage,
         autoStart: false
       });
     }

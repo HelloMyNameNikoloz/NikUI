@@ -51,7 +51,6 @@ class Session extends EventEmitter {
     this.lastError = null;
     this.meta = { model: null, tools: [], slashCommands: [] };
     this.usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
-    this.pendingUsage = null;
     this.turns = 0;
     this.turnStartedAt = null;
     this.lastDurationMs = 0;
@@ -138,6 +137,10 @@ class Session extends EventEmitter {
       }
       this.emit('meta');
     });
+
+    // total_cost_usd is cumulative per PROCESS and restarts at zero on resume,
+    // so anchor it to what this conversation has already cost.
+    this._costBaseline = this.totalCost;
 
     this._setStatus(STATUS.IDLE);
     this.emit('meta');
@@ -294,14 +297,12 @@ class Session extends EventEmitter {
   /** Live counters for the header: elapsed time and tokens. */
   stats() {
     const u = this.usage;
-    const p = this.pendingUsage || { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
     return {
-      input: u.input + p.input,
-      output: u.output + p.output,
-      cacheRead: u.cacheRead + p.cacheRead,
-      cacheCreate: u.cacheCreate + p.cacheCreate,
-      total: u.input + u.output + u.cacheRead + u.cacheCreate +
-             p.input + p.output + p.cacheRead + p.cacheCreate,
+      input: u.input,
+      output: u.output,
+      cacheRead: u.cacheRead,
+      cacheCreate: u.cacheCreate,
+      total: u.input + u.output + u.cacheRead + u.cacheCreate,
       cost: this.totalCost,
       turns: this.turns,
       elapsedMs: this.turnStartedAt ? Date.now() - this.turnStartedAt : this.lastDurationMs,
@@ -498,7 +499,12 @@ class Session extends EventEmitter {
   _handleAssistant(event) {
     const msg = event.message;
     if (!msg || !Array.isArray(msg.content)) return;
-    if (msg.usage) this.pendingUsage = readUsage(msg.usage);
+    // Every model call reports the prompt it was given; the newest one is the
+    // live context size. Summing them would multiply it by the number of calls.
+    if (msg.usage) {
+      const u = readUsage(msg.usage);
+      this.contextTokens = u.input + u.cacheRead + u.cacheCreate;
+    }
     const msgId = msg.id || this._streamMsgId;
     const alreadyStreamed = msgId && this._streamedMsgIds.has(msgId);
 
@@ -551,8 +557,9 @@ class Session extends EventEmitter {
     // the delta and the session total is simply the latest value.
     let turnCost = 0;
     if (typeof event.total_cost_usd === 'number') {
-      turnCost = Math.max(0, event.total_cost_usd - this.totalCost);
-      this.totalCost = event.total_cost_usd;
+      const conversationCost = this._costBaseline + event.total_cost_usd;
+      turnCost = Math.max(0, conversationCost - this.totalCost);
+      this.totalCost = conversationCost;
     }
     // result.usage is per turn, unlike the assistant events, so this one sums.
     if (event.usage) {
@@ -562,12 +569,14 @@ class Session extends EventEmitter {
       this.usage.cacheRead += u.cacheRead;
       this.usage.cacheCreate += u.cacheCreate;
     }
-    this.pendingUsage = null;
     this.turns += 1;
-    // What the model had to read this turn is the live context size.
-    if (event.usage) {
-      const u2 = readUsage(event.usage);
-      this.contextTokens = u2.input + u2.cacheRead + u2.cacheCreate;
+    // usage.iterations carries the final model call; its prompt is the context.
+    // The top-level usage is the sum over every call in the turn, so a turn with
+    // three tool calls would report roughly four times the real context.
+    const iterations = event.usage && event.usage.iterations;
+    if (Array.isArray(iterations) && iterations.length) {
+      const last = readUsage(iterations[iterations.length - 1]);
+      this.contextTokens = last.input + last.cacheRead + last.cacheCreate;
     }
     if (event.modelUsage) {
       for (const m of Object.values(event.modelUsage)) {
@@ -664,6 +673,8 @@ class Session extends EventEmitter {
       customTitle: this.customTitle,
       autoLabel: this.autoLabel,
       ticket: this.ticket,
+      totalCost: this.totalCost,
+      usage: this.usage,
       claudeSessionId: this.claudeSessionId
     };
   }

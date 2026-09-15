@@ -123,15 +123,26 @@ Four protocol details worth knowing before you edit that file:
    event. Those events carry a *single-block* `content` array, so the block index
    is always 0 and is useless as a key. Tools are keyed by their `tool_use` id;
    text already painted by deltas is skipped.
-2. **`total_cost_usd` is cumulative for the session, and assistant-event usage is
-   a stale partial** for the in-flight message. The turn's own cost is the delta
-   against the previous total, and token counts must come from `result.usage`,
-   which is per turn. Summing either of the obvious fields is wrong.
+2. **Every usage field means something other than it looks like.** `total_cost_usd`
+   is cumulative *per process* and restarts at zero when a conversation is
+   resumed, so a turn's cost is the delta against a baseline captured at spawn.
+   Assistant-event usage is a stale partial for the in-flight message. The
+   top-level `result.usage` is the sum over every model call in the turn, which
+   makes it right for token totals and badly wrong for context size — a turn with
+   three tool calls sums four prompts. Context is the *last* model call only,
+   from `usage.iterations` or the newest assistant event.
 3. **The init event only arrives after the first message**, so a freshly started
    instance reports no slash commands at all. The last list seen is remembered in
    globalState and seeded into new instances, with a built-in list behind that.
 4. **Thinking blocks are often signature-only** with empty text. The webview
    hides those rather than showing an empty disclosure.
+
+## Checking the numbers
+
+`node test/accounting.js` drives a real instance through a single-tool turn, a
+three-tool turn and a process restart, then cross-checks every figure the UI
+shows against the raw wire events — context against the last model call, token
+totals against `modelUsage`, and per-turn costs against `total_cost_usd`.
 
 ## Layout
 
