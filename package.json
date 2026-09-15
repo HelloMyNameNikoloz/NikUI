@@ -1,0 +1,257 @@
+{
+  "name": "nikui",
+  "displayName": "NikUI",
+  "description": "Multi-instance Claude Code client for VS Code with a styled webview and a status sidebar.",
+  "version": "0.1.0",
+  "publisher": "nikoloz",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "nikui",
+          "title": "NikUI",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "nikui": [
+        {
+          "id": "nikui.sessions",
+          "name": "Instances"
+        },
+        {
+          "id": "nikui.history",
+          "name": "History"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "nikui.newSession",
+        "title": "NikUI: New Instance",
+        "icon": "$(add)"
+      },
+      {
+        "command": "nikui.newSessionHere",
+        "title": "NikUI: New Instance in Folder..."
+      },
+      {
+        "command": "nikui.open",
+        "title": "NikUI: Open Instance"
+      },
+      {
+        "command": "nikui.interrupt",
+        "title": "NikUI: Interrupt",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "nikui.restart",
+        "title": "NikUI: Restart Instance",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "nikui.stop",
+        "title": "NikUI: Stop Instance",
+        "icon": "$(close)"
+      },
+      {
+        "command": "nikui.rename",
+        "title": "NikUI: Rename Instance",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "nikui.clearStopped",
+        "title": "NikUI: Remove Stopped Instances",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "nikui.refresh",
+        "title": "NikUI: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "nikui.refreshHistory",
+        "title": "NikUI: Refresh History",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "nikui.historyScope",
+        "title": "NikUI: Toggle History Scope",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "nikui.resumeHistory",
+        "title": "NikUI: Resume Conversation"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "nikui.newSession",
+          "when": "view == nikui.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "nikui.clearStopped",
+          "when": "view == nikui.sessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "nikui.historyScope",
+          "when": "view == nikui.history",
+          "group": "navigation@1"
+        },
+        {
+          "command": "nikui.refreshHistory",
+          "when": "view == nikui.history",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "nikui.interrupt",
+          "when": "view == nikui.sessions && viewItem == running",
+          "group": "inline@1"
+        },
+        {
+          "command": "nikui.rename",
+          "when": "view == nikui.sessions",
+          "group": "inline@2"
+        },
+        {
+          "command": "nikui.restart",
+          "when": "view == nikui.sessions",
+          "group": "1_run@1"
+        },
+        {
+          "command": "nikui.stop",
+          "when": "view == nikui.sessions",
+          "group": "1_run@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "nikui.open",
+          "when": "false"
+        },
+        {
+          "command": "nikui.rename",
+          "when": "false"
+        },
+        {
+          "command": "nikui.restart",
+          "when": "false"
+        },
+        {
+          "command": "nikui.stop",
+          "when": "false"
+        },
+        {
+          "command": "nikui.interrupt",
+          "when": "false"
+        },
+        {
+          "command": "nikui.resumeHistory",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "NikUI",
+      "properties": {
+        "nikui.claudePath": {
+          "type": "string",
+          "default": "claude",
+          "description": "Path to the claude executable."
+        },
+        "nikui.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model to pass to --model. Empty uses your Claude Code default."
+        },
+        "nikui.permissionMode": {
+          "type": "string",
+          "enum": [
+            "bypassPermissions",
+            "acceptEdits",
+            "plan",
+            "default"
+          ],
+          "default": "bypassPermissions",
+          "description": "Value passed to --permission-mode. Defaults to bypassPermissions."
+        },
+        "nikui.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra CLI arguments appended to every instance."
+        },
+        "nikui.autoTitleFromTicket": {
+          "type": "boolean",
+          "default": true,
+          "description": "Name instances from a PR/issue number found in your prompts."
+        },
+        "nikui.fontFamily": {
+          "type": "string",
+          "default": "",
+          "description": "Font for the conversation. Empty uses the VS Code UI font."
+        },
+        "nikui.fontSize": {
+          "type": "number",
+          "default": 13,
+          "description": "Conversation font size in px."
+        },
+        "nikui.showThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show thinking blocks (collapsed)."
+        },
+        "nikui.statusEmoji": {
+          "type": "object",
+          "default": {
+            "idle": "⚪",
+            "working": "🟠",
+            "waiting": "🔴",
+            "done": "🟢",
+            "error": "🔴",
+            "stopped": "⚫"
+          },
+          "description": "Emoji used per status in panel titles."
+        },
+        "nikui.effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            ""
+          ],
+          "default": "max",
+          "description": "Reasoning effort passed to --effort. Empty inherits your Claude Code default."
+        },
+        "nikui.outputStyle": {
+          "type": "string",
+          "default": "Concise",
+          "description": "Output style for every instance. Empty inherits your Claude Code default."
+        }
+      }
+    }
+  }
+}
