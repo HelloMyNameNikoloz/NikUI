@@ -285,13 +285,14 @@
     if (empty && items.length) empty.remove();
     for (const item of items) {
       const existing = nodes.get(item.id);
-      if (existing) { paint(existing, item); decorateCode(existing); linkifyPaths(existing); }
-      else {
+      if (existing) {
+        paint(existing, item);
+        if (!item.streaming) { decorateCode(existing); linkifyPaths(existing); }
+      } else {
         const el = document.createElement('div');
         el.dataset.id = item.id;
         paint(el, item);
-        decorateCode(el);
-        linkifyPaths(el);
+        if (!item.streaming) { decorateCode(el); linkifyPaths(el); }
         nodes.set(item.id, el);
         stream.appendChild(el);
       }
@@ -303,7 +304,10 @@
 
   function paintQueue() {
     const el = $('queue');
-    if (!queued.length) { el.hidden = true; el.innerHTML = ''; return; }
+    if (!queued.length) {
+      if (!el.hidden) { el.hidden = true; el.innerHTML = ''; }
+      return;
+    }
     const left = drainAt ? Math.max(0, Math.ceil((drainAt - Date.now()) / 1000)) : null;
     const when = left !== null
       ? (left > 0 ? 'sending in ' + left + 's' : 'sending…')

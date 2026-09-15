@@ -151,6 +151,22 @@ totals against `modelUsage`, and per-turn costs against `total_cost_usd`. `test/
 reload against storage written by an older version, checking instances, folders,
 running totals and tab restoration all come back without spawning anything.
 
+## Tests
+
+    npm test          # 126 checks, no dependencies, no network, no CLI
+    npm run test:live # 15 checks against the real claude binary (costs tokens)
+
+The offline suite stubs the VS Code API (`test/helpers/vscode-stub.js`) and
+drives the real modules: markdown and table rendering, ticket naming, the folder
+store, project grouping and drag and drop, file-reference matching, activation
+and command parity, history paths, and the stream parser fed synthetic events in
+exactly the shape the CLI emits.
+
+Two of those deserve naming, because both encode a bug that already bit:
+the parser test asserts a streamed block is not duplicated by the final
+single-block assistant event, and the cost test asserts a turn is charged the
+delta rather than the running total.
+
 ## Layout
 
     src/extension.js   activation, commands, folder picker
@@ -162,6 +178,7 @@ running totals and tab restoration all come back without spawning anything.
     media/panel.css    all the styling
     media/panel.js     webview front end
     media/markdown.js  dependency-free Markdown renderer
+    test/              offline suite plus an opt-in live check
 
 ## Not implemented yet
 

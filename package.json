@@ -323,5 +323,9 @@
         }
       }
     }
+  },
+  "scripts": {
+    "test": "node test/run.js",
+    "test:live": "node test/live.check.js"
   }
 }

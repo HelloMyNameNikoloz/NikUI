@@ -172,7 +172,18 @@ class Session extends EventEmitter {
       if (!keepContext) {
         this.items = [];
         this._itemIndex.clear();
+        this._streamedMsgIds.clear();
+        this._blockToItem.clear();
+        this._streamMsgId = null;
         this.totalCost = 0;
+        this._costBaseline = 0;
+        this.usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+        this.pendingUsage = null;
+        this.turns = 0;
+        this.lastDurationMs = 0;
+        this.contextTokens = 0;
+        this.lastError = null;
+        this.replayed = false;
         this.emit('reset');
       }
       this.start();
@@ -455,6 +466,10 @@ class Session extends EventEmitter {
     if (!ev) return;
     if (ev.type === 'message_start') {
       this._streamMsgId = ev.message && ev.message.id;
+      // Reconciliation only ever needs the message in flight, so keep these
+      // bounded instead of letting them grow with the conversation.
+      if (this._blockToItem.size > 256) this._blockToItem.clear();
+      if (this._streamedMsgIds.size > 256) this._streamedMsgIds.clear();
       return;
     }
     const msgId = this._streamMsgId;
