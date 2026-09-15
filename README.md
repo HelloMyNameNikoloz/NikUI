@@ -116,7 +116,7 @@ Prompts go in as `{"type":"user","message":{...}}` lines. Interrupts go in as
 `{"type":"control_request","request":{"subtype":"interrupt"}}`. Output is JSONL
 which `src/session.js` normalises into flat render items.
 
-Four protocol details worth knowing before you edit that file:
+Five protocol details worth knowing before you edit that file:
 
 1. **Partial deltas and final messages overlap.** `stream_event` deltas paint
    text as it generates; the CLI then re-emits each block as its own `assistant`
@@ -131,10 +131,16 @@ Four protocol details worth knowing before you edit that file:
    makes it right for token totals and badly wrong for context size — a turn with
    three tool calls sums four prompts. Context is the *last* model call only,
    from `usage.iterations` or the newest assistant event.
-3. **The init event only arrives after the first message**, so a freshly started
+3. **Cost is never computed here.** `total_cost_usd` already prices each token
+   type separately - cache reads at 0.1x input, cache writes at 1.25x (5m) or
+   2x (1h) - so the figure is taken as given and only ever differenced or
+   summed. Verified against a live turn: the CLI's number matches a
+   per-token-type calculation exactly, while charging cache at the input rate
+   would overstate it by 125%. A test guards against anyone adding a rate table.
+4. **The init event only arrives after the first message**, so a freshly started
    instance reports no slash commands at all. The last list seen is remembered in
    globalState and seeded into new instances, with a built-in list behind that.
-4. **Thinking blocks are often signature-only** with empty text. The webview
+5. **Thinking blocks are often signature-only** with empty text. The webview
    hides those rather than showing an empty disclosure.
 
 ## Checking the numbers
@@ -153,7 +159,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test          # 138 checks, no dependencies, no network, no CLI
+    npm test          # 143 checks, no dependencies, no network, no CLI
     npm run test:live # 15 checks against the real claude binary (costs tokens)
 
 The offline suite stubs the VS Code API (`test/helpers/vscode-stub.js`) and

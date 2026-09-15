@@ -114,7 +114,7 @@
       '\nOutput ' + fmtTokens(s.output || 0) +
       '\nCache read ' + fmtTokens(s.cacheRead || 0) +
       '\nCache write ' + fmtTokens(s.cacheCreate || 0) +
-      '\nTotal billed ' + fmtTokens(s.total || 0);
+      '\nTotal tokens ' + fmtTokens(s.total || 0);
   }
 
   function paintContext() {
