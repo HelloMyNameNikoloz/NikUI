@@ -139,10 +139,17 @@ Four protocol details worth knowing before you edit that file:
 
 ## Checking the numbers
 
-`node test/accounting.js` drives a real instance through a single-tool turn, a
+```
+node test/accounting.js   # live: cost, tokens and context against the wire
+node test/reload.js       # offline: window reload, old and new stored data
+```
+
+`test/accounting.js` drives a real instance through a single-tool turn, a
 three-tool turn and a process restart, then cross-checks every figure the UI
 shows against the raw wire events — context against the last model call, token
-totals against `modelUsage`, and per-turn costs against `total_cost_usd`.
+totals against `modelUsage`, and per-turn costs against `total_cost_usd`. `test/reload.js` replays a window
+reload against storage written by an older version, checking instances, folders,
+running totals and tab restoration all come back without spawning anything.
 
 ## Layout
 
