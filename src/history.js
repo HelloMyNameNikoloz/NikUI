@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
+const { labelFor } = require('./label');
 
 // Claude Code stores transcripts at ~/.claude/projects/<slug>/<session-id>.jsonl
 // where the slug is the cwd with every "/" and "." replaced by "-".
@@ -47,7 +48,15 @@ function readHead(file) {
       }
       text = String(text || '').trim();
       if (!text || text.startsWith('<')) return; // harness payload, not a real prompt
-      done({ title: clean(text), cwd: entry.cwd || null, at: entry.timestamp || null, branch: entry.gitBranch || null });
+      done({
+        title: clean(text),
+        // Naming reads the untruncated prompt: a ticket number often sits past
+        // the end of the title, in the tail of a pull request URL.
+        raw: text.slice(0, 400),
+        cwd: entry.cwd || null,
+        at: entry.timestamp || null,
+        branch: entry.gitBranch || null
+      });
       rl.close();
     });
     rl.on('close', () => done(null));
@@ -71,13 +80,16 @@ async function describe(file) {
   if (cached && cached.mtimeMs === stat.mtimeMs) return cached;
 
   const head = await readHead(file);
+  const fallback = path.basename(file, '.jsonl').slice(0, 8);
   const entry = {
     mtimeMs: stat.mtimeMs,
     sessionId: path.basename(file, '.jsonl'),
     file,
     size: stat.size,
     modified: stat.mtime,
-    title: head && head.title ? head.title : path.basename(file, '.jsonl').slice(0, 8),
+    title: head && head.title ? head.title : fallback,
+    // The short name, built the same way an instance builds its own.
+    label: (head && labelFor(head.raw)) || fallback,
     cwd: head && head.cwd ? head.cwd : null,
     branch: head ? head.branch : null
   };
