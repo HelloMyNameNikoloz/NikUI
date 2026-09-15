@@ -203,7 +203,9 @@ class SessionPanel {
         // A restored instance has no items yet; rebuild it from disk before the
         // first paint, then bring its process back with --resume.
         if (!this.session.items.length && this.session.claudeSessionId) {
-          try { await this.session.replayTranscript(); } catch (_) { /* fall through empty */ }
+          let replayed = false;
+          try { replayed = await this.session.replayTranscript(); } catch (_) { replayed = false; }
+          if (!replayed) this.session.noteMissingTranscript();
         }
         if (!this.session.isRunning) this.session.start();
         const cfg = readConfig();

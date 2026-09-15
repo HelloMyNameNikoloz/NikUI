@@ -71,6 +71,19 @@ module.exports = async function () {
   check('a hidden panel is not kept warm by default', panel.panel.__options
     ? panel.panel.__options.retainContextWhenHidden === false : true);
 
+  suite('a conversation that cannot be read back says so');
+
+  const lost = new Session({ cwd: '/tmp', claudeSessionId: 'no-such-session-id' });
+  lost.start = function () { this.everStarted = true; };
+  const lostPanel = SessionPanel.show(lost, context, manager);
+  await lostPanel.onMessage({ type: 'ready' });
+  const notice = lost.items.find((i) => i.kind === 'notice');
+  check('the panel is not left looking empty', !!notice);
+  check('it names the session it could not find', notice && /no-such-session-id/.test(notice.text));
+  check('and says where it looked', notice && /\.jsonl/.test(notice.text));
+  SessionPanel.close(lost.id);
+  lost.dispose();
+
   suite('the sheet keeps up while it is open');
 
   posted.length = 0;

@@ -183,7 +183,13 @@ owns the whole surface.
   remember twenty and restore eight, losing the rest without a word).
 - **Instances survive a window reload.** They come back in the sidebar, VS Code
   restores their editor tabs, and opening one replays its saved transcript and
-  reattaches the process with `--resume`. Processes are not respawned at
+  reattaches the process with `--resume`. The transcript is found by its session
+  id rather than by guessing at the folder: the CLI files a conversation under
+  the project it considers it to belong to, which for a folder opened inside
+  another project is the outer one, so deriving the path from the instance's own
+  folder found nothing and the panel came up empty on a conversation that was
+  right there on disk. If one really cannot be read back, the panel says which
+  session it is and where it looked, rather than looking like a new instance. Processes are not respawned at
   activation, so a reload never fires off a pile of CLI processes on its own.
 - **Bounded by design.** A conversation that runs all day stays light: one tool
   result keeps the first 20 KB and says how much was cut (Claude was given all
@@ -352,7 +358,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 514 checks, no dependencies, no network, no CLI
+    npm test             # 522 checks, no dependencies, no network, no CLI
     npm run test:webview # 59 checks driving the real webview in a browser
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 

@@ -525,6 +525,23 @@ class Session extends EventEmitter {
     return window.length > 0;
   }
 
+  /**
+   * An empty panel and a conversation that failed to load look identical, and
+   * the second one is alarming — the cost and the token count are right there
+   * in the header. Say which it is.
+   */
+  noteMissingTranscript() {
+    if (!this.claudeSessionId) return false;
+    const file = transcriptPath(this.cwd, this.claudeSessionId);
+    this._notice(
+      'This conversation could not be read back from disk, so nothing is shown above. ' +
+      `Its session is ${this.claudeSessionId}; NikUI looked for ${file}. ` +
+      'Sending a message still resumes it if the CLI can find it.',
+      'info'
+    );
+    return true;
+  }
+
   // ---- output parsing -----------------------------------------------------
 
   _onStdout(chunk) {

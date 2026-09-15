@@ -138,9 +138,60 @@ async function listSessions({ cwd, limit = 30 } = {}) {
   return out;
 }
 
+// Where a transcript has already been found, so the sweep below happens once
+// per conversation rather than every time the panel or /status asks.
+const located = new Map();
+
+/**
+ * The transcript for a session. It is usually under the slug of the instance's
+ * own folder, but not always: the CLI files a conversation under the project it
+ * considers it to belong to, which for a folder opened inside another project
+ * is the outer one. Deriving the path from the cwd alone therefore finds
+ * nothing, and the panel comes up empty on a conversation that is right there
+ * on disk. So: try the obvious place, then the folders above it, then look
+ * properly — and remember the answer.
+ */
 function transcriptPath(cwd, sessionId) {
   if (!cwd || !sessionId) return null;
-  return path.join(projectsRoot(), slugFor(cwd), sessionId + '.jsonl');
+
+  const cached = located.get(sessionId);
+  if (cached && exists(cached)) return cached;
+
+  const root = projectsRoot();
+  const file = sessionId + '.jsonl';
+
+  const direct = path.join(root, slugFor(cwd), file);
+  if (exists(direct)) return remember(sessionId, direct);
+
+  let dir = cwd;
+  for (let i = 0; i < 8; i++) {
+    const up = path.dirname(dir);
+    if (!up || up === dir) break;
+    dir = up;
+    const above = path.join(root, slugFor(dir), file);
+    if (exists(above)) return remember(sessionId, above);
+  }
+
+  let dirs = [];
+  try { dirs = fs.readdirSync(root, { withFileTypes: true }); } catch (_) { dirs = []; }
+  for (const entry of dirs) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(root, entry.name, file);
+    if (exists(candidate)) return remember(sessionId, candidate);
+  }
+
+  // Nothing yet — a conversation that has not written its first line still has
+  // a place it is going to appear.
+  return direct;
+}
+
+function remember(sessionId, file) {
+  located.set(sessionId, file);
+  return file;
+}
+
+function exists(file) {
+  try { return fs.existsSync(file); } catch (_) { return false; }
 }
 
 module.exports = { listSessions, slugFor, projectsRoot, transcriptPath };

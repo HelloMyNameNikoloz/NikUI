@@ -1,4 +1,5 @@
 'use strict';
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { install } = require('./helpers/vscode-stub.js');
@@ -78,4 +79,43 @@ module.exports = async function () {
   const more = view.getTreeItem({ __more: true, more: 17, sessionId: 'more' });
   checkEqual('the last row offers the rest', more.label, 'Show 17 more');
   checkEqual('and clicking it asks for them', more.command.command, 'nikui.historyMore');
+
+  suite('finding a transcript that is not where the folder says');
+
+  // The CLI files a conversation under the project it thinks it belongs to,
+  // which is not always the folder the instance runs in. Build that situation
+  // in a temporary home and check every way out of it.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'nikui-home-'));
+  const realHome = os.homedir;
+  os.homedir = () => home;
+  try {
+    const projects = path.join(home, '.claude', 'projects');
+    const put = (slug, id) => {
+      fs.mkdirSync(path.join(projects, slug), { recursive: true });
+      const file = path.join(projects, slug, id + '.jsonl');
+      fs.writeFileSync(file, '{}\n');
+      return file;
+    };
+
+    const exact = put('-work-app', 'aaaa');
+    checkEqual('the obvious place is still the first place looked',
+      transcriptPath('/work/app', 'aaaa'), exact);
+
+    // An instance running in a folder inside a project the CLI filed it under.
+    const above = put('-work-monorepo', 'bbbb');
+    checkEqual('a transcript filed under a parent folder is found',
+      transcriptPath('/work/monorepo/packages/mobile', 'bbbb'), above);
+
+    // And one filed somewhere else entirely — a folder that has since moved.
+    const elsewhere = put('-somewhere-quite-else', 'cccc');
+    checkEqual('and one filed somewhere else is found too',
+      transcriptPath('/work/app', 'cccc'), elsewhere);
+
+    checkEqual('a conversation with nothing written yet still has a place to appear',
+      transcriptPath('/work/app', 'dddd'), path.join(projects, '-work-app', 'dddd.jsonl'));
+    checkEqual('no session id, no path', transcriptPath('/work/app', null), null);
+  } finally {
+    os.homedir = realHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 };
