@@ -30,6 +30,9 @@ owns the whole surface.
   navigable. Options are seeded for `/effort` and learned at runtime by reading
   `Usage: /cmd <a|b|c>` out of the CLI's own replies.
 - **Copy buttons** on every code block, including tool input and output.
+- **History is always reachable.** Both views are pinned visible, the provider
+  never throws, and `NikUI: Show History` (also a button on the Instances title
+  bar) focuses it if it ever gets dismissed.
 - **Resume** — instances remember their Claude session id across reloads.
 - **Instances survive a window reload.** They come back in the sidebar, VS Code
   restores their editor tabs, and opening one replays its saved transcript and
@@ -90,7 +93,7 @@ Prompts go in as `{"type":"user","message":{...}}` lines. Interrupts go in as
 `{"type":"control_request","request":{"subtype":"interrupt"}}`. Output is JSONL
 which `src/session.js` normalises into flat render items.
 
-Three protocol details worth knowing before you edit that file:
+Four protocol details worth knowing before you edit that file:
 
 1. **Partial deltas and final messages overlap.** `stream_event` deltas paint
    text as it generates; the CLI then re-emits each block as its own `assistant`
@@ -101,7 +104,10 @@ Three protocol details worth knowing before you edit that file:
    a stale partial** for the in-flight message. The turn's own cost is the delta
    against the previous total, and token counts must come from `result.usage`,
    which is per turn. Summing either of the obvious fields is wrong.
-3. **Thinking blocks are often signature-only** with empty text. The webview
+3. **The init event only arrives after the first message**, so a freshly started
+   instance reports no slash commands at all. The last list seen is remembered in
+   globalState and seeded into new instances, with a built-in list behind that.
+4. **Thinking blocks are often signature-only** with empty text. The webview
    hides those rather than showing an empty disclosure.
 
 ## Layout

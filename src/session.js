@@ -38,6 +38,7 @@ class Session extends EventEmitter {
     this.autoTitle = opts.autoTitle !== false;
 
     this.customTitle = opts.customTitle || null;
+    this.autoLabel = opts.autoLabel || null;
     this.ticket = opts.ticket || null;
     this.claudeSessionId = opts.claudeSessionId || null;
 
@@ -67,7 +68,7 @@ class Session extends EventEmitter {
   }
 
   get label() {
-    return this.customTitle || this.ticket || path.basename(this.cwd || '') || 'claude';
+    return this.customTitle || this.ticket || this.autoLabel || path.basename(this.cwd || '') || 'claude';
   }
 
   get isRunning() {
@@ -297,9 +298,14 @@ class Session extends EventEmitter {
       text = String(text || '').trim();
       if (!text || text.startsWith('<')) continue;
       this._upsert({ id: 'h' + (this._seq++), kind: 'user', text, images: [], at: Date.parse(entry.timestamp) || Date.now() });
+      if (this.autoTitle && !this.customTitle) {
+        const t = nextTicket(this.ticket, text);
+        if (t !== this.ticket) this.ticket = t;
+      }
+      if (!this.autoLabel) this.autoLabel = shortLabel(text);
     }
 
-    if (window.length) this._notice('Restored from the saved transcript.', 'info');
+    if (window.length) { this._notice('Restored from the saved transcript.', 'info'); this.emit('meta'); }
     return window.length > 0;
   }
 
@@ -555,6 +561,7 @@ class Session extends EventEmitter {
       id: this.id,
       cwd: this.cwd,
       customTitle: this.customTitle,
+      autoLabel: this.autoLabel,
       ticket: this.ticket,
       claudeSessionId: this.claudeSessionId
     };
@@ -562,6 +569,17 @@ class Session extends EventEmitter {
 }
 
 const toolItemId = (toolUseId) => `tool:${toolUseId}`;
+
+// A readable stand-in when a conversation has no PR or issue number.
+function shortLabel(text) {
+  const cleaned = String(text || '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\[Image[^\]]*\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return null;
+  return cleaned.length > 28 ? cleaned.slice(0, 28).trimEnd() + '…' : cleaned;
+}
 
 function readUsage(u) {
   return {

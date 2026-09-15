@@ -380,7 +380,7 @@
 
     slashIndex = 0;
     if (!slashMatches.length) {
-      slashBox.innerHTML = '<div class="none">No match</div>';
+      slashBox.innerHTML = '<div class="none">' + (slashMode === 'cmd' && !commands.length ? 'Commands appear once the instance is running' : 'No match') + '</div>';
       slashBox.hidden = false;
       return;
     }

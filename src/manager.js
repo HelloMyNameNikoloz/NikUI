@@ -5,6 +5,17 @@ const { EventEmitter } = require('events');
 const { Session } = require('./session');
 
 const STORAGE_KEY = 'nikui.sessions.v1';
+const COMMANDS_KEY = 'nikui.slashCommands.v1';
+
+// The CLI only reports its command list in the init event, which it emits after
+// the first message. Remember the last list we saw so "/" works immediately on
+// a fresh instance, and fall back to the built-ins on a brand-new install.
+const BUILTIN_COMMANDS = [
+  'add-dir', 'agents', 'clear', 'compact', 'config', 'context', 'cost', 'doctor',
+  'effort', 'exit', 'export', 'help', 'hooks', 'init', 'install-github-app', 'mcp',
+  'memory', 'model', 'output-style', 'permissions', 'pr-comments', 'privacy-settings',
+  'release-notes', 'resume', 'review', 'status', 'terminal-setup', 'usage', 'vim'
+];
 
 function readConfig() {
   const cfg = vscode.workspace.getConfiguration('nikui');
@@ -38,13 +49,24 @@ class SessionManager extends EventEmitter {
     return readConfig();
   }
 
-  create({ id, cwd, title, ticket, resume, autoStart }) {
+  knownCommands() {
+    const saved = this.context.globalState.get(COMMANDS_KEY, []);
+    return saved && saved.length ? saved : BUILTIN_COMMANDS;
+  }
+
+  rememberCommands(list) {
+    if (!Array.isArray(list) || !list.length) return;
+    this.context.globalState.update(COMMANDS_KEY, list);
+  }
+
+  create({ id, cwd, title, ticket, autoLabel, resume, autoStart }) {
     const cfg = this.config;
     const session = new Session({
       id,
       ticket: ticket || null,
       cwd,
       customTitle: title || null,
+      autoLabel: autoLabel || null,
       claudeSessionId: resume || null,
       claudePath: cfg.claudePath,
       model: cfg.model,
@@ -56,7 +78,10 @@ class SessionManager extends EventEmitter {
     });
 
     session.on('status', () => { this._changed(session); });
-    session.on('meta', () => { this._changed(session); });
+    session.on('meta', () => {
+      this.rememberCommands(session.meta.slashCommands);
+      this._changed(session);
+    });
 
     this.sessions.set(session.id, session);
     if (autoStart !== false) session.start();
@@ -101,7 +126,7 @@ class SessionManager extends EventEmitter {
   persist() {
     const data = this.list
       .filter((s) => s.claudeSessionId)
-      .map((s) => ({ id: s.id, cwd: s.cwd, customTitle: s.customTitle, ticket: s.ticket, claudeSessionId: s.claudeSessionId }));
+      .map((s) => ({ id: s.id, cwd: s.cwd, customTitle: s.customTitle, autoLabel: s.autoLabel, ticket: s.ticket, claudeSessionId: s.claudeSessionId }));
     this.context.workspaceState.update(STORAGE_KEY, data.slice(-20));
   }
 
@@ -123,6 +148,7 @@ class SessionManager extends EventEmitter {
         cwd: entry.cwd,
         title: entry.customTitle,
         ticket: entry.ticket,
+        autoLabel: entry.autoLabel,
         resume: entry.claudeSessionId,
         autoStart: false
       });

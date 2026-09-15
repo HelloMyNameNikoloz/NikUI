@@ -6,6 +6,7 @@ const { SessionManager } = require('./manager');
 const { SessionTree } = require('./tree');
 const { SessionPanel } = require('./panel');
 const { HistoryTree } = require('./historyTree');
+const { nextTicket } = require('./ticket');
 
 let manager;
 
@@ -56,7 +57,7 @@ function activate(context) {
     const cwd = await pickFolder(manager);
     if (!cwd) return;
     const session = manager.create({ cwd: cwd.path, resume: cwd.resume, title: cwd.title });
-    SessionPanel.show(session, context).focusInput();
+    SessionPanel.show(session, context, manager).focusInput();
   });
 
   register('nikui.newSessionHere', async () => {
@@ -65,12 +66,12 @@ function activate(context) {
     });
     if (!picked || !picked.length) return;
     const session = manager.create({ cwd: picked[0].fsPath });
-    SessionPanel.show(session, context).focusInput();
+    SessionPanel.show(session, context, manager).focusInput();
   });
 
   register('nikui.open', async (arg) => {
     const session = await pickSession(arg);
-    if (session) SessionPanel.show(session, context).focusInput();
+    if (session) SessionPanel.show(session, context, manager).focusInput();
   });
 
   register('nikui.interrupt', async (arg) => {
@@ -123,6 +124,11 @@ function activate(context) {
 
   register('nikui.refreshHistory', () => history.refresh());
 
+  register('nikui.showHistory', async () => {
+    history.refresh();
+    await vscode.commands.executeCommand('nikui.history.focus');
+  });
+
   register('nikui.historyScope', () => {
     const scope = history.toggleScope();
     vscode.window.setStatusBarMessage(
@@ -135,9 +141,18 @@ function activate(context) {
     const cwd = entry.cwd || (vscode.workspace.workspaceFolders || [])[0]?.uri.fsPath;
     if (!cwd) { vscode.window.showWarningMessage('NikUI: that transcript has no folder recorded.'); return; }
     const live = manager.list.find((s) => s.claudeSessionId === entry.sessionId);
-    if (live) { SessionPanel.show(live, context).focusInput(); return; }
-    const session = manager.create({ cwd, resume: entry.sessionId, title: null });
-    SessionPanel.show(session, context).focusInput();
+    if (live) { SessionPanel.show(live, context, manager).focusInput(); return; }
+    // Recover a PR/issue number from the stored prompt so the instance is not
+    // just named after its folder.
+    const ticket = nextTicket(null, entry.title || '');
+    const session = manager.create({
+      cwd,
+      resume: entry.sessionId,
+      title: null,
+      ticket,
+      autoLabel: ticket ? null : shortLabel(entry.title)
+    });
+    SessionPanel.show(session, context, manager).focusInput();
   });
 
   // Bring back the instances that were open before the reload, then let VS Code
@@ -149,7 +164,7 @@ function activate(context) {
       const id = state && state.sessionId;
       const session = id ? manager.get(id) : null;
       if (!session) { panel.dispose(); return; }
-      SessionPanel.adopt(panel, session, context);
+      SessionPanel.adopt(panel, session, context, manager);
     }
   }));
 
@@ -185,6 +200,12 @@ async function pickFolder(mgr) {
     return picked && picked.length ? { path: picked[0].fsPath } : null;
   }
   return choice;
+}
+
+function shortLabel(text) {
+  const cleaned = String(text || '').replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return null;
+  return cleaned.length > 28 ? cleaned.slice(0, 28).trimEnd() + '\u2026' : cleaned;
 }
 
 function deactivate() {

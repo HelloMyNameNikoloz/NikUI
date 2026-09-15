@@ -30,11 +30,13 @@
       "nikui": [
         {
           "id": "nikui.sessions",
-          "name": "Instances"
+          "name": "Instances",
+          "visibility": "visible"
         },
         {
           "id": "nikui.history",
-          "name": "History"
+          "name": "History",
+          "visibility": "visible"
         }
       ]
     },
@@ -95,6 +97,11 @@
       {
         "command": "nikui.resumeHistory",
         "title": "NikUI: Resume Conversation"
+      },
+      {
+        "command": "nikui.showHistory",
+        "title": "NikUI: Show History",
+        "icon": "$(history)"
       }
     ],
     "menus": {
@@ -118,6 +125,11 @@
           "command": "nikui.refreshHistory",
           "when": "view == nikui.history",
           "group": "navigation@2"
+        },
+        {
+          "command": "nikui.showHistory",
+          "when": "view == nikui.sessions",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [

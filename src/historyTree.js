@@ -41,6 +41,16 @@ class HistoryTree {
 
   async getChildren(element) {
     if (element) return [];
+    try {
+      return await this._children();
+    } catch (err) {
+      // A tree provider that throws leaves the section empty and unrecoverable.
+      console.error('NikUI history:', err);
+      return [];
+    }
+  }
+
+  async _children() {
     const folders = vscode.workspace.workspaceFolders || [];
     if (this.scope === 'workspace' && folders.length) {
       // One sweep, then keep anything under a workspace folder (worktrees included).

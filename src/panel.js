@@ -13,19 +13,19 @@ const DEFAULT_EMOJI = {
 const panels = new Map();
 
 class SessionPanel {
-  static show(session, context) {
+  static show(session, context, manager) {
     const existing = panels.get(session.id);
     if (existing) { existing.panel.reveal(existing.panel.viewColumn, false); return existing; }
-    const created = new SessionPanel(session, context);
+    const created = new SessionPanel(session, context, undefined, manager);
     panels.set(session.id, created);
     return created;
   }
 
   /** Rebind a panel that VS Code restored after a window reload. */
-  static adopt(panel, session, context) {
+  static adopt(panel, session, context, manager) {
     const existing = panels.get(session.id);
     if (existing) { existing.panel.dispose(); }
-    const created = new SessionPanel(session, context, panel);
+    const created = new SessionPanel(session, context, panel, manager);
     panels.set(session.id, created);
     return created;
   }
@@ -35,7 +35,8 @@ class SessionPanel {
     if (p) p.panel.dispose();
   }
 
-  constructor(session, context, existingPanel) {
+  constructor(session, context, existingPanel, manager) {
+    this.manager = manager || null;
     this.session = session;
     this.context = context;
     this.disposables = [];
@@ -65,7 +66,7 @@ class SessionPanel {
     const onItems = (items) => { this.post({ type: 'items', items }); this.postStats(); };
     const onStatus = (status) => { this.post({ type: 'status', status }); this.postStats(); this.refreshChrome(); };
     const onMeta = () => {
-      this.post({ type: 'meta', meta: this.meta(), slashCommands: this.session.meta.slashCommands, commandArgs: commandArgs() });
+      this.post({ type: 'meta', meta: this.meta(), slashCommands: this.commandList(), commandArgs: commandArgs() });
       this.refreshChrome();
     };
     const onReset = () => this.post({ type: 'reset' });
@@ -96,6 +97,13 @@ class SessionPanel {
       ticket: s.ticket,
       effort: s.effort || null
     };
+  }
+
+  /** The session's own list once it has one, otherwise the remembered list. */
+  commandList() {
+    const live = this.session.meta.slashCommands;
+    if (live && live.length) return live;
+    return this.manager ? this.manager.knownCommands() : [];
   }
 
   postStats() {
@@ -135,7 +143,7 @@ class SessionPanel {
           meta: this.meta(),
           status: this.session.status,
           stats: this.session.stats(),
-          slashCommands: this.session.meta.slashCommands || [],
+          slashCommands: this.commandList(),
           commandArgs: commandArgs(),
           showThinking: cfg.showThinking,
           font: cfg.fontFamily || '',
