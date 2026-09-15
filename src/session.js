@@ -47,7 +47,10 @@ class Session extends EventEmitter {
 
     this.status = STATUS.IDLE;
     this.items = [];
-    this.totalCost = 0;
+    // Restored instances carry their running total; the baseline anchors the
+    // per-process cumulative the CLI reports.
+    this.totalCost = opts.totalCost || 0;
+    this._costBaseline = this.totalCost;
     this.lastError = null;
     this.meta = { model: null, tools: [], slashCommands: [] };
     this.usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
