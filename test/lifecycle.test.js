@@ -1,7 +1,7 @@
 'use strict';
 const { install, memoryState } = require('./helpers/vscode-stub.js');
 install();
-const { Session } = require('../src/session.js');
+const { Session, restoredStatus } = require('../src/session.js');
 const { SessionManager } = require('../src/manager.js');
 
 module.exports = function () {
@@ -105,6 +105,36 @@ module.exports = function () {
   checkEqual('the counters come back', [back.errors, back.interrupts], [2, 1]);
   checkEqual('and the instance knows how old it is', back.startedAt, 1700000000000);
   check('a restored instance is still asleep', back.isAsleep === true);
+
+  suite('a reload gives an instance back the state it ended in');
+
+  const ctx3 = { workspaceState: memoryState(), globalState: memoryState() };
+  const closing = new SessionManager(ctx3);
+  const finished = closing.create({ cwd: '/tmp', autoStart: false });
+  finished.claudeSessionId = 'sess-done';
+  finished.status = 'done';
+  finished.finishedAt = 1700000000000;
+  const failed = closing.create({ cwd: '/tmp', autoStart: false });
+  failed.claudeSessionId = 'sess-error';
+  failed.status = 'error';
+  const midTurn = closing.create({ cwd: '/tmp', autoStart: false });
+  midTurn.claudeSessionId = 'sess-working';
+  midTurn.status = 'working';
+  closing.persist();
+
+  const reopened = new SessionManager(ctx3);
+  reopened.restoreOpen();
+  const byId = (id) => reopened.list.find((s) => s.claudeSessionId === id);
+  checkEqual('a conversation that finished comes back finished', byId('sess-done').status, 'done');
+  checkEqual('with the moment it finished', byId('sess-done').finishedAt, 1700000000000);
+  checkEqual('one that errored comes back errored', byId('sess-error').status, 'error');
+  checkEqual('and one cut off mid-turn comes back stopped, not still working',
+    byId('sess-working').status, 'stopped');
+  check('none of them is running', reopened.list.every((s) => !s.isRunning && s.isAsleep));
+  checkEqual('the state a fresh instance starts in is unchanged', restoredStatus(undefined), 'idle');
+
+  closing.disposeAll();
+  reopened.disposeAll();
 
   before.disposeAll();
   after.disposeAll();

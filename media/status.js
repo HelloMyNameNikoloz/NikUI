@@ -69,8 +69,9 @@
     done: 'Done', error: 'Error', stopped: 'Stopped', asleep: 'Asleep'
   };
 
-  /** Asleep is derived, not a status the CLI reports, so it wins the label. */
-  const stateOf = (who) => (who.asleep ? 'asleep' : who.status);
+  /** The word for how a conversation left off; asleep is said separately. */
+  const stateOf = (who) => who.status || 'idle';
+  const word = (who) => STATUS_WORD[stateOf(who)] || stateOf(who);
 
   // ── building blocks ──────────────────────────────────────────
 
@@ -135,8 +136,12 @@
         ' tokens · ' + fmt.ms(t.workedMs) + ' of model time') + '</div>' +
       '</div>' +
       '<div class="hero-side">' +
-      '<div class="pill ' + esc(stateOf(r.instance)) + '">' + dot(stateOf(r.instance)) +
-        esc(STATUS_WORD[stateOf(r.instance)] || r.instance.status) + '</div>' +
+      '<div class="pill ' + esc(stateOf(r.instance)) + '">' +
+        dot(stateOf(r.instance) + (r.instance.asleep ? ' asleep' : '')) +
+        esc(word(r.instance)) + '</div>' +
+      (r.instance.asleep
+        ? '<div class="hero-meta">' + esc('not running — opens where it left off') + '</div>'
+        : '') +
       '<div class="hero-meta">' + esc(r.config.model || 'default model') +
         (r.config.effort ? ' · effort ' + esc(r.config.effort) : '') + '</div>' +
       '<div class="hero-meta">' + esc(r.instance.folder || r.instance.cwd || '') +
@@ -463,7 +468,7 @@
       action: 'switch:' + m.id,
       tip: m.cwd + (m.branch ? ' · ' + m.branch : ''),
       cells: [
-        dot(m.status) + '<span class="link">' + esc(m.label) + '</span>' +
+        dot(m.status + (m.asleep ? ' asleep' : '')) + '<span class="link">' + esc(m.label) + '</span>' +
           (m.active ? '<span class="badge">open</span>' : '') +
           (m.queue ? '<span class="badge">' + m.queue + ' queued</span>' : ''),
         '<span class="dim">' + esc(m.project || m.folder) + (m.branch ? ' · ' + esc(m.branch) : '') + '</span>',
@@ -572,7 +577,7 @@
       '<div class="sheet-head">' +
       '<div class="sheet-title">' + icon('sparkles', 15) +
       '<b>' + esc(report.instance.label) + '</b>' +
-      '<span class="dim">' + esc(STATUS_WORD[stateOf(report.instance)] || report.instance.status) + ' · ' +
+      '<span class="dim">' + esc(word(report.instance) + (report.instance.asleep ? ' · asleep' : '')) + ' · ' +
       esc(fmt.money(report.totals.cost)) + ' · ' + esc(fmt.tokens(report.totals.tokens.total)) + ' tokens</span>' +
       '</div>' +
       '<div class="sheet-actions">' +
@@ -595,7 +600,8 @@
       'NikUI status — ' + r.instance.label,
       'Folder    ' + r.instance.cwd + (r.git && r.git.branch ? '  (' + r.git.branch + ')' : ''),
       'Model     ' + (r.config.model || 'default') + '  effort ' + (r.config.effort || 'default'),
-      'Status    ' + stateOf(r.instance) + (r.instance.running ? ' · pid ' + r.instance.pid : ' · not running'),
+      'Status    ' + stateOf(r.instance) + (r.instance.running ? ' · pid ' + r.instance.pid
+        : r.instance.asleep ? ' · asleep' : ' · not running'),
       'Session   ' + (r.instance.claudeSessionId || 'not started'),
       '',
       'Cost      ' + fmt.money(r.totals.cost) + '  (' + fmt.money(r.totals.avgCost) + ' a turn, ' +

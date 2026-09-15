@@ -217,9 +217,10 @@ function fleetMember(s, activeId, now) {
   return {
     id: s.id,
     label: s.label,
-    // Asleep wins over whatever the status said when the window closed: an
-    // instance with no process cannot be working or waiting on anything.
-    status: s.isAsleep ? 'asleep' : s.status,
+    // Two different facts: how the conversation left off, and whether anything
+    // is running behind it. A restored instance keeps the first and reports the
+    // second, rather than one hiding the other.
+    status: s.status,
     busy: !s.isAsleep && !!s.isBusy,
     asleep: !!s.isAsleep,
     running: !!s.isRunning,

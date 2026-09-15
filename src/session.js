@@ -64,7 +64,11 @@ class Session extends EventEmitter {
     this.ticket = opts.ticket || null;
     this.claudeSessionId = opts.claudeSessionId || null;
 
-    this.status = STATUS.IDLE;
+    // A restored instance comes back wearing the state its conversation ended
+    // in. A turn that was still running when the window closed did not finish,
+    // and its process is gone, so that one comes back stopped rather than
+    // pretending it is still working.
+    this.status = restoredStatus(opts.status);
     this.items = [];
     // Restored instances carry their running total; the baseline anchors the
     // per-process cumulative the CLI reports.
@@ -76,7 +80,7 @@ class Session extends EventEmitter {
     this.turns = opts.turns || 0;
     this.turnStartedAt = null;
     this.lastDurationMs = 0;
-    this.finishedAt = 0;
+    this.finishedAt = opts.finishedAt || 0;
     // What /status reports on: one record per finished turn, plus the running
     // tallies that cannot be recovered from the items list.
     this.startedAt = opts.startedAt || Date.now();
@@ -871,6 +875,14 @@ class Session extends EventEmitter {
 
 const toolItemId = (toolUseId) => `tool:${toolUseId}`;
 
+/** The state an instance may come back in, after a reload or a restart. */
+function restoredStatus(status) {
+  if (!status || status === STATUS.WORKING || status === STATUS.WAITING) {
+    return status ? STATUS.STOPPED : STATUS.IDLE;
+  }
+  return status;
+}
+
 /** Say what to do about it, not just what happened. */
 function spawnMessage(claudePath, err) {
   if (err && err.code === 'ENOENT') {
@@ -929,4 +941,4 @@ function flattenContent(content) {
   return typeof content === 'object' ? JSON.stringify(content) : String(content);
 }
 
-module.exports = { Session, STATUS, commandArgs, learnCommandArgs, clip, TOOL_RESULT_MAX, DEFAULT_MAX_ITEMS };
+module.exports = { Session, STATUS, commandArgs, learnCommandArgs, clip, restoredStatus, TOOL_RESULT_MAX, DEFAULT_MAX_ITEMS };

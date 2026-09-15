@@ -81,7 +81,7 @@ class SessionTree {
     // Nothing else would redraw a quiet row, and "done" has to stop being green
     // eventually. Only fires when a row would actually change.
     this._fade = setInterval(() => {
-      const stale = manager.list.some((s) =>
+      const stale = manager.list.some((s) => !s.isAsleep &&
         s.status === STATUS.DONE && s.finishedAt && Date.now() - s.finishedAt > DONE_FADES_AFTER_MS);
       if (stale) this._onDidChangeTreeData.fire();
     }, 60000);
@@ -245,7 +245,9 @@ class SessionTree {
       [
         `**${name}** — ${look.word}`,
         '',
-        session.isAsleep ? '- Restored from your last window. Opening it starts the process and picks the conversation back up.' : '',
+        session.isAsleep
+          ? '- Not running: restored from your last window, wearing the state it left off in. Opening it starts the process and picks the conversation back up.'
+          : '',
         `- Folder: \`${session.cwd}\``,
         `- Model: ${session.meta.model || 'default'}`,
         session.permissionMode === 'bypassPermissions'
@@ -287,14 +289,23 @@ function summarise(sessions) {
   return bits.join(' · ');
 }
 
-/** What look a row wears: its status, unless it has never been woken up. */
+/**
+ * What look a row wears. Two different things are being said at once: what the
+ * conversation last did — which survives a reload, and is what the colour is
+ * for — and whether a process is running, which the icon carries. A restored
+ * instance therefore comes back green if that is how it left off, wearing the
+ * paused icon because nothing is running behind it yet.
+ */
 function lookFor(session, now) {
-  if (session.isAsleep) return ASLEEP;
+  const base = LOOK[session.status] || LOOK[STATUS.IDLE];
+  if (session.isAsleep) return { icon: ASLEEP.icon, color: base.color, word: base.word };
+  // Green means "just finished". Only while the window has been open: a
+  // restored row is reporting an outcome, not claiming freshness.
   if (session.status === STATUS.DONE && session.finishedAt &&
       (now || Date.now()) - session.finishedAt > DONE_FADES_AFTER_MS) {
     return LOOK[STATUS.IDLE];
   }
-  return LOOK[session.status] || LOOK[STATUS.IDLE];
+  return base;
 }
 
 /**

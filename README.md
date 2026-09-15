@@ -137,11 +137,15 @@ owns the whole surface.
   instance)** is the middle option the × is not: it kills the process to free
   the memory and leaves the row alone, and opening it again picks the
   conversation back up.
-- **Asleep is a state you can see.** An instance restored from your last window
-  wears a paused icon and the word *asleep*, in the sidebar and in `/status`,
-  with a tooltip saying that opening it starts the process and picks the
-  conversation back up. It is derived from "has never been started", not a
-  seventh value in the status machine the CLI drives.
+- **A reload gives you back what you had.** Instances come back wearing the
+  state their conversation ended in — green if the last turn finished, red if it
+  failed — because that is a fact about the work, and it survived the restart.
+  Whether a *process* is running is a different fact, and the icon carries it: a
+  restored instance wears a paused icon until you open it, and the fleet shows
+  it as a hollow dot in the same colour. A turn that was still running when the
+  window closed comes back stopped rather than pretending it is still working.
+  The distinction is derived from "has never been started", not added as a
+  seventh value to the status machine the CLI drives.
 - **Every row reads the same way**: *state · folder · cost*, in that order, for
   every instance. The folder only appears when it is not the project the row
   already sits under — a worktree, say. The old rule showed the folder *or* the
@@ -348,7 +352,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 498 checks, no dependencies, no network, no CLI
+    npm test             # 510 checks, no dependencies, no network, no CLI
     npm run test:webview # 59 checks driving the real webview in a browser
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 

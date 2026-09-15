@@ -103,12 +103,20 @@ module.exports = async function () {
   checkEqual('a free instance shows no price',
     row(Object.assign(instance('r5', '/Users/nikoloz/Codes/Peuka', 'eps'), { totalCost: 0 })), 'idle');
 
-  suite('asleep is not the same as idle');
+  suite('a reload gives a row back the state it had');
 
-  const restored = Object.assign(instance('r6', '/Users/nikoloz/Codes/Peuka', 'zeta'), { isAsleep: true });
-  checkEqual('a restored instance says so', row(restored), 'asleep · $0.50');
-  checkEqual('and wears its own icon', lookFor(restored).icon, ASLEEP.icon);
-  check('which is not the idle one', ASLEEP.icon !== lookFor(instance('r7', '/tmp', 'eta')).icon);
+  const restored = Object.assign(instance('r6', '/Users/nikoloz/Codes/Peuka', 'zeta'), {
+    isAsleep: true, status: 'done', finishedAt: Date.now() - 86400000
+  });
+  checkEqual('a conversation that finished comes back finished', row(restored), 'done · $0.50');
+  checkEqual('in the colour it had', lookFor(restored).color, 'charts.green');
+  check('however long ago that was', lookFor(restored).color === 'charts.green');
+  checkEqual('but wearing the icon of something with no process', lookFor(restored).icon, ASLEEP.icon);
+  check('which is not the icon of a live instance', ASLEEP.icon !== lookFor(instance('r7', '/tmp', 'eta')).icon);
+
+  const failed = Object.assign(instance('r8', '/tmp', 'theta'), { isAsleep: true, status: 'error' });
+  checkEqual('an instance that ended badly comes back red', lookFor(failed).color, 'charts.red');
+  checkEqual('and says so', row(failed), 'error · $0.50');
 
   const sleeper = new SessionTree(Object.assign(new EventEmitter(), { list: [restored] }), folders);
   const sleeperRow = sleeper.sessionItem(restored);

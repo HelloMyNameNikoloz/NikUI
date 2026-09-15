@@ -113,7 +113,8 @@ class SessionManager extends EventEmitter {
     this.context.globalState.update(COMMANDS_KEY, list);
   }
 
-  create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage, turnLog, startedAt, turns, errors, interrupts }) {
+  create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage, turnLog, startedAt,
+    turns, errors, interrupts, status, finishedAt }) {
     const cfg = this.config;
     const session = new Session({
       id,
@@ -136,7 +137,11 @@ class SessionManager extends EventEmitter {
       startedAt,
       turns,
       errors,
-      interrupts
+      interrupts,
+      // How the conversation left off, so the row looks the same after a reload
+      // as it did before one.
+      status,
+      finishedAt
     });
 
     session.on('status', () => { this._changed(session); });
@@ -223,6 +228,7 @@ class SessionManager extends EventEmitter {
         // have to be remembered too — a real cost above an empty chart is worse
         // than either on its own.
         startedAt: s.startedAt, turns: s.turns, errors: s.errors, interrupts: s.interrupts,
+        status: s.status, finishedAt: s.finishedAt,
         turnLog: (s.turnLog || []).slice(-KEEP_TURNS).map(slimTurn)
       }));
     this.context.workspaceState.update(STORAGE_KEY, data.slice(-KEEP));
@@ -255,6 +261,8 @@ class SessionManager extends EventEmitter {
         turns: entry.turns,
         errors: entry.errors,
         interrupts: entry.interrupts,
+        status: entry.status,
+        finishedAt: entry.finishedAt,
         autoStart: false
       });
     }

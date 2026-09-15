@@ -90,15 +90,19 @@ module.exports = async function () {
   check('the system tab shows the window', /In memory/.test(sheet.renderSheet(trimmed, 'system')));
   check('a conversation that fits still reads as a total', / in total/.test(sheet.renderSheet(r, 'tools')));
 
-  suite('an instance that is only asleep');
+  suite('an instance restored from the last window');
 
-  const sleeping = report({ isAsleep: true, isRunning: false, status: 'idle', isBusy: false });
+  // How it left off and whether anything is running are two different facts,
+  // and the sheet says both rather than letting one hide the other.
+  const sleeping = report({ isAsleep: true, isRunning: false, status: 'done', isBusy: false });
   const sleepingOverview = sheet.renderSheet(sleeping, 'overview');
-  check('the sheet says asleep, not idle', /Asleep/.test(sleepingOverview) && !/>Idle</.test(sleepingOverview));
+  check('it still says how the conversation left off', /Done/.test(sleepingOverview));
+  check('and that nothing is running behind it', /opens where it left off/.test(sleepingOverview));
+  check('the dot is that state, hollow', /sdot done asleep/.test(sleepingOverview));
   check('the system tab says what wakes it',
     /starts when you open it/.test(sheet.renderSheet(sleeping, 'system')));
-  check('the fleet row agrees', /sdot asleep/.test(sheet.renderSheet(sleeping, 'fleet')));
-  check('the plain-text summary agrees too', /Status    asleep/.test(sheet.asText(sleeping)));
+  check('the fleet row agrees', /sdot done asleep/.test(sheet.renderSheet(sleeping, 'fleet')));
+  check('the plain-text summary agrees too', /Status    done · asleep/.test(sheet.asText(sleeping)));
 
   suite('hostile input');
 

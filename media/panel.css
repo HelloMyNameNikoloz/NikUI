@@ -897,12 +897,19 @@ body.vscode-light, body.vscode-high-contrast-light {
   box-shadow: inset 0 1px 0 var(--lg-sheen), var(--lg-lift-soft);
   font-size: var(--fs-small); font-weight: 590;
 }
-.sdot { width: 7px; height: 7px; border-radius: 50%; background: var(--grey); display: inline-block; }
-.sdot.working { background: var(--orange); }
-.sdot.waiting, .sdot.error { background: var(--red); }
-.sdot.done { background: var(--green); }
-.sdot.idle { background: var(--grey); }
-.sdot.stopped { background: color-mix(in srgb, var(--grey) 60%, transparent); }
+/* One colour per state, so "not running" can be drawn as the same colour,
+   hollow, rather than as a colour of its own. */
+.sdot {
+  width: 7px; height: 7px; border-radius: 50%;
+  display: inline-block;
+  --sdot: var(--grey);
+  background: var(--sdot);
+}
+.sdot.working { --sdot: var(--orange); }
+.sdot.waiting, .sdot.error { --sdot: var(--red); }
+.sdot.done { --sdot: var(--green); }
+.sdot.idle { --sdot: var(--grey); }
+.sdot.stopped { --sdot: color-mix(in srgb, var(--grey) 60%, transparent); }
 
 .tiles {
   grid-column: 1 / -1;
@@ -1087,11 +1094,11 @@ body.vscode-high-contrast-light .tip, body.vscode-high-contrast-light .pill {
   color: var(--orange);
 }
 
-/* Asleep: restored from a previous window, no process yet. Hollow, so it reads
-   as "nothing running here" rather than as another colour of activity. */
+/* Asleep: restored from a previous window, no process yet. Hollow in the colour
+   of however the conversation left off. */
 .sdot.asleep {
   background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--grey);
+  box-shadow: inset 0 0 0 1.5px var(--sdot);
 }
 
 /* Where a conversation was cut to keep the panel light. */
