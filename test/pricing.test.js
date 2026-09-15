@@ -24,7 +24,8 @@ module.exports = function () {
     turnCost.every((l) => !/\d\s*\*\s*(input|output|cache)/i.test(l)));
 
   // No per-million-token rate constants anywhere in the extension.
-  const files = ['src/session.js', 'src/manager.js', 'src/panel.js', 'media/panel.js'];
+  const files = ['src/session.js', 'src/manager.js', 'src/panel.js', 'src/report.js',
+    'media/panel.js', 'media/status.js', 'media/charts.js'];
   const offenders = [];
   for (const rel of files) {
     const src = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');

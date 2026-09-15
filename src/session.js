@@ -6,6 +6,7 @@ const readline = require('readline');
 const { EventEmitter } = require('events');
 const path = require('path');
 const { nextTicket } = require('./ticket');
+const { shortLabel } = require('./label');
 const { transcriptPath } = require('./history');
 
 const STATUS = {
@@ -19,6 +20,24 @@ const STATUS = {
 
 // Give any background work a beat to settle before the next queued prompt.
 const QUEUE_DELAY_MS = 5000;
+
+// A `cat` of a large file, a failing test suite, a 40 MB log: one tool result
+// can be bigger than everything else in the conversation put together. The
+// model saw all of it either way, and the whole thing is in the transcript on
+// disk — what we keep is only what the panel is going to show.
+const TOOL_RESULT_MAX = 20000;
+
+// The live conversation is bounded too, so a long-running instance cannot grow
+// its memory, its postMessage payload or its DOM without limit. Overridable
+// per user; 0 means keep everything.
+const DEFAULT_MAX_ITEMS = 400;
+
+/** Cut a string to a budget, reporting what was there before. */
+function clip(text, max) {
+  const full = String(text == null ? '' : text);
+  if (!max || full.length <= max) return { text: full, length: full.length, clipped: false };
+  return { text: full.slice(0, max), length: full.length, clipped: true };
+}
 
 let counter = 0;
 const nextId = () => `nik-${Date.now().toString(36)}-${(counter++).toString(36)}`;
@@ -54,11 +73,26 @@ class Session extends EventEmitter {
     this.lastError = null;
     this.meta = { model: null, tools: [], slashCommands: [] };
     this.usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
-    this.turns = 0;
+    this.turns = opts.turns || 0;
     this.turnStartedAt = null;
     this.lastDurationMs = 0;
+    this.finishedAt = 0;
+    // What /status reports on: one record per finished turn, plus the running
+    // tallies that cannot be recovered from the items list.
+    this.startedAt = opts.startedAt || Date.now();
+    this.processStartedAt = null;
+    // Restored from the last window when there is one: the totals above came
+    // back, and these are what explain them.
+    this.turnLog = Array.isArray(opts.turnLog) ? opts.turnLog.slice() : [];
+    this.interrupts = opts.interrupts || 0;
+    this.errors = opts.errors || 0;
+    this._turnTools = [];
 
     this.proc = null;
+    // A restored instance has no process yet but is not "stopped" — it has
+    // simply never been opened in this window. Anything that cleans up dead
+    // instances has to tell those two apart.
+    this.everStarted = false;
     this._stdoutBuf = '';
     this._itemIndex = new Map();
     this._streamMsgId = null;
@@ -75,6 +109,10 @@ class Session extends EventEmitter {
     this._drainTimer = null;
     this.contextTokens = 0;
     this.contextWindow = 0;
+    this.maxItems = opts.maxItems === undefined ? DEFAULT_MAX_ITEMS : opts.maxItems;
+    // How many items have scrolled out of the window we keep. The panel says so
+    // rather than pretending the conversation started there.
+    this.droppedItems = 0;
   }
 
   get label() {
@@ -87,6 +125,16 @@ class Session extends EventEmitter {
 
   get isBusy() {
     return this.status === STATUS.WORKING || this.status === STATUS.WAITING;
+  }
+
+  /** Restored from a previous window and not opened since: asleep, not dead. */
+  get isAsleep() {
+    return !this.everStarted && !this.isRunning;
+  }
+
+  /** Whether closing this would throw away anything the user would miss. */
+  get hasHistory() {
+    return !!this.claudeSessionId || this.totalCost > 0 || this.items.length > 0;
   }
 
   // ---- lifecycle ----------------------------------------------------------
@@ -116,12 +164,13 @@ class Session extends EventEmitter {
         stdio: ['pipe', 'pipe', 'pipe']
       });
     } catch (err) {
-      this._fail(`Could not start ${this.claudePath}: ${err.message}`);
+      this._fail(spawnMessage(this.claudePath, err), err.code || null);
       return;
     }
     this.proc = proc;
+    this.everStarted = true;
 
-    proc.on('error', (err) => this._fail(`${this.claudePath}: ${err.message}`));
+    proc.on('error', (err) => this._fail(spawnMessage(this.claudePath, err), err.code || null));
     proc.stdout.setEncoding('utf8');
     proc.stdout.on('data', (chunk) => this._onStdout(chunk));
     proc.stderr.setEncoding('utf8');
@@ -145,6 +194,7 @@ class Session extends EventEmitter {
     // total_cost_usd is cumulative per PROCESS and restarts at zero on resume,
     // so anchor it to what this conversation has already cost.
     this._costBaseline = this.totalCost;
+    this.processStartedAt = Date.now();
 
     this._setStatus(STATUS.IDLE);
     this.emit('meta');
@@ -170,25 +220,39 @@ class Session extends EventEmitter {
     this.stop();
     setTimeout(() => {
       this.claudeSessionId = resumeId;
-      if (!keepContext) {
-        this.items = [];
-        this._itemIndex.clear();
-        this._streamedMsgIds.clear();
-        this._blockToItem.clear();
-        this._streamMsgId = null;
-        this.totalCost = 0;
-        this._costBaseline = 0;
-        this.usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
-        this.pendingUsage = null;
-        this.turns = 0;
-        this.lastDurationMs = 0;
-        this.contextTokens = 0;
-        this.lastError = null;
-        this.replayed = false;
-        this.emit('reset');
-      }
+      if (!keepContext) this.resetConversation();
       this.start();
     }, 300);
+  }
+
+  /**
+   * Everything a fresh start must forget. Kept in one place because a field
+   * left behind here shows up later as a wrong total in the status sheet.
+   */
+  resetConversation() {
+    this.items = [];
+    this._itemIndex.clear();
+    this._streamedMsgIds.clear();
+    this._blockToItem.clear();
+    this._streamMsgId = null;
+    this.totalCost = 0;
+    this._costBaseline = 0;
+    this.usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+    this.pendingUsage = null;
+    this.turns = 0;
+    this.lastDurationMs = 0;
+    this.turnStartedAt = null;
+    this.finishedAt = 0;
+    this.contextTokens = 0;
+    this.lastError = null;
+    this.replayed = false;
+    this.droppedItems = 0;
+    this.turnLog = [];
+    this.interrupts = 0;
+    this.errors = 0;
+    this._turnTools = [];
+    this.startedAt = Date.now();
+    this.emit('reset');
   }
 
   dispose() {
@@ -210,9 +274,14 @@ class Session extends EventEmitter {
     if (!this.isRunning) this.start();
     if (!this.isRunning) return;
 
+    let renamedFrom = null;
     if (this.autoTitle && !this.customTitle) {
       const t = nextTicket(this.ticket, prompt);
-      if (t !== this.ticket) { this.ticket = t; this.emit('meta'); }
+      if (t !== this.ticket) {
+        renamedFrom = this.ticket;
+        this.ticket = t;
+        this.emit('meta');
+      }
     }
 
     this._upsert({
@@ -222,7 +291,18 @@ class Session extends EventEmitter {
       images: files.map((f) => ({ name: f.name, mediaType: f.mediaType, data: f.data })),
       at: Date.now()
     });
+    // A tab that renames itself is startling if it happens behind your back.
+    // The first name is expected; a change of name is worth a line.
+    if (renamedFrom) {
+      this._notice(
+        `Renamed ${renamedFrom} → ${this.ticket}: this instance is now following ${this.ticket}. ` +
+        'Rename it yourself to pin a name.',
+        'info'
+      );
+    }
+
     this._interrupted = false;
+    this._turnTools = [];
     this.turnStartedAt = Date.now();
     this._setStatus(STATUS.WORKING);
 
@@ -262,6 +342,29 @@ class Session extends EventEmitter {
     // Only start the clock if nothing is running: the delay is measured from the
     // end of the turn, not from when the prompt was typed.
     if (this.isReadyForQueue()) this._scheduleDrain();
+  }
+
+  /** Move a queued prompt to the front, and send it now if nothing is running. */
+  promote(id) {
+    const at = this.queue.findIndex((q) => q.id === id);
+    if (at <= 0) {
+      if (at === 0 && this.isReadyForQueue()) { this._clearDrain(); this._scheduleDrain(0); }
+      return at === 0;
+    }
+    const [item] = this.queue.splice(at, 1);
+    this.queue.unshift(item);
+    this.emit('queue');
+    if (this.isReadyForQueue()) { this._clearDrain(); this._scheduleDrain(0); }
+    return true;
+  }
+
+  /** Take a prompt back out of the queue, text and all, to be edited. */
+  reclaim(id) {
+    const at = this.queue.findIndex((q) => q.id === id);
+    if (at < 0) return null;
+    const [item] = this.queue.splice(at, 1);
+    this.emit('queue');
+    return item;
   }
 
   unqueue(id) {
@@ -512,7 +615,10 @@ class Session extends EventEmitter {
       if (!item) return;
       item.streaming = false;
       if (item.kind === 'tool' && item.rawInput) {
-        try { item.input = JSON.parse(item.rawInput); } catch (_) { /* keep what streamed */ }
+        try {
+          item.input = JSON.parse(item.rawInput);
+          delete item.rawInput;
+        } catch (_) { /* keep what streamed, it may still be arriving */ }
       }
       this._touch(item);
     }
@@ -560,6 +666,32 @@ class Session extends EventEmitter {
     });
   }
 
+  /**
+   * One row per finished turn — what every chart in /status is drawn from.
+   * Capped so a long-lived instance cannot grow it without bound.
+   */
+  _logTurn(usage, costUsd, event, interrupted) {
+    if (interrupted) this.interrupts += 1;
+    const models = event.modelUsage ? Object.keys(event.modelUsage) : [];
+    this.turnLog.push({
+      n: this.turns,
+      at: Date.now(),
+      durationMs: this.lastDurationMs || 0,
+      costUsd,
+      input: usage.input,
+      output: usage.output,
+      cacheRead: usage.cacheRead,
+      cacheCreate: usage.cacheCreate,
+      contextTokens: this.contextTokens,
+      tools: this._turnTools.slice(),
+      model: models.length ? models[0] : (this.meta.model || null),
+      interrupted: !!interrupted,
+      isError: !!event.is_error && !interrupted
+    });
+    if (this.turnLog.length > 500) this.turnLog.splice(0, this.turnLog.length - 500);
+    this._turnTools = [];
+  }
+
   _handleUser(event) {
     const msg = event.message;
     if (!msg || !Array.isArray(msg.content)) return;
@@ -567,9 +699,15 @@ class Session extends EventEmitter {
       if (block.type !== 'tool_result') continue;
       const item = this._itemIndex.get(toolItemId(block.tool_use_id));
       if (!item) continue;
+      const result = clip(flattenContent(block.content), TOOL_RESULT_MAX);
       item.status = 'done';
       item.isError = !!block.is_error;
-      item.result = flattenContent(block.content);
+      item.result = result.text;
+      item.resultLength = result.length;
+      item.resultClipped = result.clipped;
+      // The parsed input is authoritative; the raw JSON it streamed in as is a
+      // second copy of the same bytes.
+      delete item.rawInput;
       this._touch(item);
     }
   }
@@ -584,13 +722,11 @@ class Session extends EventEmitter {
       this.totalCost = conversationCost;
     }
     // result.usage is per turn, unlike the assistant events, so this one sums.
-    if (event.usage) {
-      const u = readUsage(event.usage);
-      this.usage.input += u.input;
-      this.usage.output += u.output;
-      this.usage.cacheRead += u.cacheRead;
-      this.usage.cacheCreate += u.cacheCreate;
-    }
+    const turnUsage = event.usage ? readUsage(event.usage) : { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+    this.usage.input += turnUsage.input;
+    this.usage.output += turnUsage.output;
+    this.usage.cacheRead += turnUsage.cacheRead;
+    this.usage.cacheCreate += turnUsage.cacheCreate;
     this.turns += 1;
     // usage.iterations carries the final model call; its prompt is the context.
     // The top-level usage is the sum over every call in the turn, so a turn with
@@ -607,6 +743,8 @@ class Session extends EventEmitter {
     }
     this.lastDurationMs = event.duration_ms || (this.turnStartedAt ? Date.now() - this.turnStartedAt : 0);
     this.turnStartedAt = null;
+    // When the turn ended, so "done" can stop shouting after a while.
+    this.finishedAt = Date.now();
     const interrupted = this._interrupted;
     this._interrupted = false;
     this._upsert({
@@ -620,7 +758,9 @@ class Session extends EventEmitter {
       numTurns: event.num_turns || 0,
       costUsd: turnCost
     });
+    this._logTurn(turnUsage, turnCost, event, interrupted);
     if (event.is_error && !interrupted) {
+      this.errors += 1;
       this.lastError = String(event.result || event.subtype || 'error');
       this._setStatus(STATUS.ERROR);
     } else {
@@ -655,7 +795,27 @@ class Session extends EventEmitter {
     } else {
       this._itemIndex.set(item.id, item);
       this.items.push(item);
+      if (item.kind === 'tool') this._turnTools.push(item.name || 'tool');
+      this._trim();
       this._touch(item);
+    }
+  }
+
+  /**
+   * Drop the oldest items once the conversation outgrows its window. Anything
+   * still in flight stays — a running tool has a result coming that would have
+   * nothing to attach to, and an unanswered permission would strand the CLI.
+   */
+  _trim() {
+    if (!this.maxItems || this.items.length <= this.maxItems) return;
+    while (this.items.length > this.maxItems) {
+      const head = this.items[0];
+      const busy = (head.kind === 'tool' && head.status !== 'done') ||
+        (head.kind === 'permission' && !head.resolved);
+      if (busy) break; // and nothing behind it can go either
+      this.items.shift();
+      this._itemIndex.delete(head.id);
+      this.droppedItems += 1;
     }
   }
 
@@ -676,10 +836,17 @@ class Session extends EventEmitter {
     this._upsert({ id: `n${this._seq++}`, kind: 'notice', text, level: level || 'info' });
   }
 
-  _fail(message) {
+  /**
+   * Something went wrong that the instance cannot recover from on its own. It
+   * is announced as well as written into the transcript, because the panel it
+   * would be written into may not be open — and if the CLI never started, it
+   * never will be.
+   */
+  _fail(message, code) {
     this.lastError = message;
     this._notice(message, 'error');
     this._setStatus(STATUS.ERROR);
+    this.emit('failed', message, code || null);
   }
 
   _setStatus(status) {
@@ -704,15 +871,15 @@ class Session extends EventEmitter {
 
 const toolItemId = (toolUseId) => `tool:${toolUseId}`;
 
-// A readable stand-in when a conversation has no PR or issue number.
-function shortLabel(text) {
-  const cleaned = String(text || '')
-    .replace(/https?:\/\/\S+/g, '')
-    .replace(/\[Image[^\]]*\]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!cleaned) return null;
-  return cleaned.length > 28 ? cleaned.slice(0, 28).trimEnd() + '…' : cleaned;
+/** Say what to do about it, not just what happened. */
+function spawnMessage(claudePath, err) {
+  if (err && err.code === 'ENOENT') {
+    return `Could not run "${claudePath}". Install the Claude Code CLI, or point nikui.claudePath at it.`;
+  }
+  if (err && err.code === 'EACCES') {
+    return `"${claudePath}" is not executable. Check its permissions, or point nikui.claudePath elsewhere.`;
+  }
+  return `Could not start ${claudePath}: ${err && err.message ? err.message : 'unknown error'}`;
 }
 
 function readUsage(u) {
@@ -762,4 +929,4 @@ function flattenContent(content) {
   return typeof content === 'object' ? JSON.stringify(content) : String(content);
 }
 
-module.exports = { Session, STATUS, commandArgs, learnCommandArgs };
+module.exports = { Session, STATUS, commandArgs, learnCommandArgs, clip, TOOL_RESULT_MAX, DEFAULT_MAX_ITEMS };

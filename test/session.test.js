@@ -75,6 +75,38 @@ module.exports = function () {
   checkEqual('context window is picked up', s.contextWindow, 200000);
   checkEqual('turns counted', s.turns, 2);
 
+  suite('a tab that renames itself says so');
+
+  const named = new Session({ cwd: '/tmp' });
+  named._write = function () {};
+  Object.defineProperty(named, 'isRunning', { get: () => true });
+
+  named.send('start on https://github.com/peuka/backend/pull/1327 please');
+  checkEqual('the first number just names it', named.ticket, '1327');
+  checkEqual('and that is not worth a line in the transcript',
+    named.items.filter((i) => i.kind === 'notice').length, 0);
+
+  named.send('now switch to https://github.com/peuka/backend/pull/1801');
+  checkEqual('a new number renames it', named.ticket, '1801');
+  const notice = named.items.filter((i) => i.kind === 'notice').pop();
+  check('and that is announced', notice && /Renamed 1327 → 1801/.test(notice.text));
+  check('with a way to stop it happening again', notice && /Rename it yourself/.test(notice.text));
+  check('the notice comes after the prompt that caused it',
+    named.items.indexOf(notice) > named.items.findIndex((i) => i.kind === 'user' && /switch to/.test(i.text)));
+  named.dispose();
+
+  suite('the turn log behind /status');
+
+  checkEqual('one row per finished turn', s.turnLog.map((t) => t.n), [1, 2]);
+  checkEqual('each row carries its own cost, not the running total',
+    s.turnLog.map((t) => Number(t.costUsd.toFixed(6))), [0.01, 0.015]);
+  checkEqual('each row carries its own tokens', s.turnLog.map((t) => t.output), [49, 20]);
+  checkEqual('the duration comes off the wire', s.turnLog.map((t) => t.durationMs), [1200, 1200]);
+  checkEqual('the tools of a turn are named', s.turnLog[0].tools, ['Bash']);
+  checkEqual('a turn with no tools says so', s.turnLog[1].tools, []);
+  checkEqual('the context after the turn is kept', s.turnLog[1].contextTokens, 305);
+  checkEqual('the model that answered is kept', s.turnLog[0].model, 'claude-x');
+
   suite('context is not multiplied by tool calls');
 
   const c = new Session({ cwd: '/tmp' });
@@ -99,14 +131,17 @@ module.exports = function () {
 
   const before = { tokens: s.usage.output, turns: s.turns, cost: s.totalCost, context: s.contextTokens };
   check('there is state to clear', before.tokens > 0 && before.turns > 0 && before.cost > 0);
-  // Exercise the same reset the fresh-restart path performs.
-  s.items = []; s._itemIndex.clear(); s._streamedMsgIds.clear(); s._blockToItem.clear();
-  s.totalCost = 0; s._costBaseline = 0; s.usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
-  s.pendingUsage = null; s.turns = 0; s.contextTokens = 0; s.lastError = null; s.replayed = false;
+  check('the turns were logged for the status sheet', s.turnLog.length === before.turns);
+  // The real reset a fresh restart runs, not a copy of it.
+  s.resetConversation();
   const stats = s.stats();
   check('a fresh restart leaves no stale tokens', stats.output === 0 && stats.total === 0);
   check('a fresh restart leaves no stale turns or cost', stats.turns === 0 && stats.cost === 0);
   check('a fresh restart leaves no stale context', stats.contextTokens === 0);
+  check('a fresh restart leaves no stale history',
+    s.turnLog.length === 0 && s.items.length === 0 && s.errors === 0 && s.interrupts === 0);
+  check('nor a clock still running from the old conversation',
+    s.turnStartedAt === null && s.finishedAt === 0 && s.droppedItems === 0);
 
   suite('cost survives a resumed process');
 
