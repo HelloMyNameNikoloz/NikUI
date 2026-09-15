@@ -2,7 +2,7 @@
   "name": "nikui",
   "displayName": "NikUI",
   "description": "Multi-instance Claude Code client for VS Code with a styled webview and a status sidebar.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "nikoloz",
   "private": true,
   "license": "MIT",

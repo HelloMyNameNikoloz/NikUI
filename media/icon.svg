@@ -1,6 +1,7 @@
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"
-     stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M4 19V5l8.5 13V5"/>
-  <path d="M19.5 5.5v8.5"/>
-  <path d="M19.5 18.4h.01"/>
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+  <!-- Filled rather than stroked: VS Code renders activity-bar icons as a mask,
+       so shapes are more reliable than strokes across themes. -->
+  <path d="M3.4 20V4h3.2l5.8 9.7V4h3.2v16h-3.2L6.6 10.3V20z"/>
+  <rect x="18.1" y="4" width="3.1" height="10.6" rx="1.55"/>
+  <circle cx="19.65" cy="18.4" r="1.8"/>
 </svg>
