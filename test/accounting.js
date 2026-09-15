@@ -17,8 +17,21 @@ const summedCtx = (e) => (e.usage.input_tokens||0) + (e.usage.cache_read_input_t
 const mu = (e) => Object.values(e.modelUsage || {})[0] || {};
 
 const step = (fn, ms) => new Promise(r => setTimeout(() => { fn(); r(); }, ms));
-const untilResult = (n) => new Promise(r => {
-  const check = () => (raw.length >= n ? r() : setTimeout(check, 250));
+// Wait for the wire AND for the item the UI derives from it: results arrive
+// synchronously, items on a 50ms flush, and reading turnCosts[n] before that
+// flush is what used to crash this script with an unhelpful TypeError.
+const untilResult = (n, ms = 90000) => new Promise((resolve, reject) => {
+  const deadline = Date.now() + ms;
+  const check = () => {
+    if (raw.length >= n && turnCosts.length >= n) return resolve();
+    if (Date.now() > deadline) {
+      return reject(new Error(
+        `turn ${n} never finished: ${raw.length} result event(s) off the wire, ` +
+        `${turnCosts.length} costed turn(s) in the UI`
+      ));
+    }
+    setTimeout(check, 250);
+  };
   check();
 });
 
@@ -80,6 +93,12 @@ const untilResult = (n) => new Promise(r => {
   for (const [n, ok] of checks) { console.log((ok ? 'PASS  ' : 'FAIL  ') + n); if (!ok) bad++; }
   console.log(bad ? '\n' + bad + ' FAILED' : '\nALL ACCOUNTING CHECKS PASS');
   s.dispose();
-  setTimeout(() => process.exit(0), 300);
-})();
+  setTimeout(() => process.exit(bad ? 1 : 0), 300);
+})().catch((err) => {
+  console.error('\n' + err.message);
+  console.error('This harness drives the real CLI; a turn that never finished usually means ' +
+    'the binary could not start, or the model refused the prompt.');
+  try { s.dispose(); } catch (_) { /* already gone */ }
+  process.exit(1);
+});
 setTimeout(() => { console.log('TIMEOUT'); process.exit(1); }, 200000);
