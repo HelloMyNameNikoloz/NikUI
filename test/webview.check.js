@@ -104,6 +104,7 @@ const drive = `
       type: 'init', sessionId: 's1',
       items: [{ id: 'u1', kind: 'user', text: 'first prompt', images: [] },
               { id: 'u2', kind: 'user', text: 'second prompt', images: [] },
+              { id: 'c1', kind: 'compact', trigger: 'automatic', before: 181234, at: Date.now() },
               { id: 't1', kind: 'tool', name: 'Bash', input: { command: 'cat big.log' }, status: 'done',
                 result: 'y'.repeat(200), resultLength: 4200000, resultClipped: true }],
       dropped: 3, maxItems: 400,
@@ -117,6 +118,10 @@ const drive = `
     out.droppedNotice = mark ? mark.textContent : null;
     const clipped = document.querySelector('.tool .clipped');
     out.clipNotice = clipped ? clipped.textContent : null;
+
+    const boundary = document.querySelector('.compacted');
+    out.compactShown = boundary ? boundary.textContent : null;
+    out.compactExplained = boundary ? boundary.getAttribute('title') : null;
 
     const chip = document.querySelector('#crumbs .perm-chip');
     out.permissionChip = chip ? chip.textContent.trim() : null;
@@ -293,6 +298,9 @@ const checks = [
   ['dropped messages are accounted for, not hidden', /3 earlier messages/.test(out.droppedNotice || '')],
   ['and it says where the whole conversation is', /transcript/.test(out.droppedNotice || '')],
   ['a cut tool result says how much was cut', /4\.0 MB/.test(out.clipNotice || '')],
+  ['a compaction is drawn in the conversation', /Compacted here automatically/.test(out.compactShown || '')],
+  ['with how full the context had got', /181k tokens/.test(out.compactShown || '')],
+  ['and what it means for what is above it', /only a summary/.test(out.compactExplained || '')],
   ['and that Claude still saw all of it', /given all of it/.test(out.clipNotice || '')],
   ['a half-typed draft is saved before the page goes away', out.draftSaved === true],
   ['and where the reader was', out.scrollSaved === true],

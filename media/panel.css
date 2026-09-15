@@ -1243,3 +1243,23 @@ body.dropping::after {
 /* The hero's left column: let a long line ellipsise rather than push the
    status side of the card off the edge. */
 .hero-main { min-width: 0; }
+
+/* Where the conversation on screen stops being the conversation the model can
+   see. A rule rather than a bubble: it is a boundary, not a message. */
+.compacted {
+  display: flex; align-items: center; gap: var(--s3);
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--fs-small);
+}
+.compacted-line {
+  flex: 1 1 auto; height: 0;
+  border-top: 0.5px dashed color-mix(in srgb, var(--orange) 55%, transparent);
+}
+.compacted-text {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+  color: var(--orange);
+  white-space: nowrap;
+}

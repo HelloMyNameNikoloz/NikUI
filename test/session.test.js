@@ -75,6 +75,37 @@ module.exports = function () {
   checkEqual('context window is picked up', s.contextWindow, 200000);
   checkEqual('turns counted', s.turns, 2);
 
+  suite('the CLI compacting the context is not invisible');
+
+  const packed = new Session({ cwd: '/tmp' });
+  packed.contextTokens = 180000;
+  packed.contextWindow = 200000;
+
+  // The documented shape.
+  packed._handle({
+    type: 'system', subtype: 'compact_boundary',
+    compact_metadata: { trigger: 'auto', pre_tokens: 181234 }
+  });
+  const boundary = packed.items.find((i) => i.kind === 'compact');
+  check('a boundary lands in the conversation', !!boundary);
+  checkEqual('it knows it was not asked for', boundary.trigger, 'automatic');
+  checkEqual('and how full the context had got', boundary.before, 181234);
+  checkEqual('it is counted', packed.compactions, 1);
+  checkEqual('and the meter starts again from there', packed.contextTokens, 0);
+  check('the moment is remembered', packed.lastCompactedAt > 0);
+
+  // A shape we have not seen: the marker matters more than the field names.
+  packed._handle({ type: 'system', subtype: 'context_compacted', compactMetadata: { trigger: 'manual' } });
+  checkEqual('an unfamiliar spelling still registers', packed.compactions, 2);
+  checkEqual('including who asked for it', packed.items.filter((i) => i.kind === 'compact').pop().trigger, 'manual');
+
+  packed._handle({ type: 'system', subtype: 'stop_hook_summary' });
+  checkEqual('and a system event about something else is left alone', packed.compactions, 2);
+
+  packed.resetConversation();
+  checkEqual('a fresh start has never compacted', packed.compactions, 0);
+  packed.dispose();
+
   suite('a tab that renames itself says so');
 
   const named = new Session({ cwd: '/tmp' });

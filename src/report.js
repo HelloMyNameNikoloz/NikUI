@@ -251,6 +251,7 @@ function fleetMember(s, activeId, now) {
     toolErrors: read.toolErrors,
     errors: s.errors || 0,
     interrupts: s.interrupts || 0,
+    compactions: s.compactions || 0,
     queue: (s.queue || []).length,
     ageMs: s.startedAt ? now - s.startedAt : 0,
     lastTurnAt: last ? last.at : null,
@@ -378,6 +379,11 @@ function buildReport({ session, fleet = [], env = {}, now = Date.now() } = {}) {
       toolsRunning: read.toolsRunning,
       errors: session.errors || 0,
       interrupts: session.interrupts || 0,
+      // The CLI summarises the context when it fills. After one of these, the
+      // meter below is measuring the window since that point, not the whole
+      // conversation.
+      compactions: session.compactions || 0,
+      lastCompactedAt: session.lastCompactedAt || null,
       thinkingShare: (read.thinkingChars + read.textChars)
         ? read.thinkingChars / (read.thinkingChars + read.textChars) : 0,
       writtenChars: read.textChars + read.thinkingChars,

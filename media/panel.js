@@ -315,6 +315,19 @@
         break;
       }
 
+      case 'compact': {
+        el.className = 'compacted';
+        const before = item.before ? fmtBytes(item.before).replace(' characters', '') : '';
+        el.innerHTML = '<span class="compacted-line"></span>' +
+          '<span class="compacted-text">' +
+          esc(item.trigger === 'manual' ? 'Compacted here' : 'Compacted here automatically') +
+          esc(item.before ? ' · the context had reached ' + Math.round(item.before / 1000) + 'k tokens' : '') +
+          '</span><span class="compacted-line"></span>';
+        el.title = 'Everything above this line is still here for you to read, but the model now has ' +
+          'only a summary of it. Anything below is what it can actually see.';
+        break;
+      }
+
       case 'notice':
         el.className = 'notice' + (item.level === 'error' || item.level === 'stderr' ? ' error' : '');
         el.textContent = item.text;

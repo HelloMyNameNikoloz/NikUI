@@ -114,7 +114,7 @@ class SessionManager extends EventEmitter {
   }
 
   create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage, turnLog, startedAt,
-    turns, errors, interrupts, status, finishedAt }) {
+    turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt }) {
     const cfg = this.config;
     const session = new Session({
       id,
@@ -141,7 +141,9 @@ class SessionManager extends EventEmitter {
       // How the conversation left off, so the row looks the same after a reload
       // as it did before one.
       status,
-      finishedAt
+      finishedAt,
+      compactions,
+      lastCompactedAt
     });
 
     session.on('status', () => { this._changed(session); });
@@ -229,6 +231,7 @@ class SessionManager extends EventEmitter {
         // than either on its own.
         startedAt: s.startedAt, turns: s.turns, errors: s.errors, interrupts: s.interrupts,
         status: s.status, finishedAt: s.finishedAt,
+        compactions: s.compactions, lastCompactedAt: s.lastCompactedAt,
         turnLog: (s.turnLog || []).slice(-KEEP_TURNS).map(slimTurn)
       }));
     this.context.workspaceState.update(STORAGE_KEY, data.slice(-KEEP));
@@ -263,6 +266,8 @@ class SessionManager extends EventEmitter {
         interrupts: entry.interrupts,
         status: entry.status,
         finishedAt: entry.finishedAt,
+        compactions: entry.compactions,
+        lastCompactedAt: entry.lastCompactedAt,
         autoStart: false
       });
     }

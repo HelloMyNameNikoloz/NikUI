@@ -168,7 +168,14 @@
       (runway && runway.turnsLeft !== null
         ? ' · growing ' + fmt.tokens(runway.growthPerTurn) + ' a turn, room for about ' +
           runway.turnsLeft + ' more before compaction'
-        : '') + '</p>', { wide: true, note: r.totals.contextWindow ? '' : 'after the first turn' });
+        : '') + '</p>' +
+      (t.compactions
+        ? hint('Compacted ' + (t.compactions === 1 ? 'once' : t.compactions + ' times') +
+          (t.lastCompactedAt ? ', last at ' + fmt.time(t.lastCompactedAt) : '') +
+          ' — the CLI summarised the context when it filled, so this meter measures what has ' +
+          'been read since then, not the whole conversation.')
+        : ''),
+      { wide: true, note: r.totals.contextWindow ? '' : 'after the first turn' });
 
     const costPoints = r.turns.map((turn) => ({ value: turn.costUsd, turn }));
     const costChart = card('Cost per turn',
@@ -288,6 +295,8 @@
         r.instance.lastError ? 'last: ' + r.instance.lastError.slice(0, 40) : (r.totals.errors ? 'recovered since' : 'none'),
         { klass: r.totals.errors ? 'bad' : '' }) +
       tile('Interrupts', fmt.count(r.totals.interrupts), 'Esc pressed') +
+      tile('Compactions', fmt.count(r.totals.compactions),
+        r.totals.compactions ? 'context summarised' : 'context has fit so far') +
       tile('Permission asks', fmt.count(r.totals.messages.permission), r.config.permissionMode) +
       tile('Notices', fmt.count(r.totals.messages.notice), 'from the CLI') +
       '</div>', { wide: true });
@@ -614,6 +623,7 @@
       'Context   ' + fmt.tokens(r.totals.contextTokens) + ' of ' + fmt.tokens(r.totals.contextWindow) +
         ' (' + fmt.pct(r.totals.contextPct) + ')' +
         (r.runway && r.runway.turnsLeft !== null ? ' · ~' + r.runway.turnsLeft + ' turns of headroom' : ''),
+      'Compacted ' + (r.totals.compactions || 'never'),
       'Tools     ' + r.totals.toolCalls + ' calls, ' + r.totals.toolErrors + ' failed',
       'Top tools ' + (r.tools.slice(0, 5).map((t) => t.name + ' ' + t.calls).join(', ') || 'none'),
       'Files     ' + (r.files.slice(0, 5).map((f) => f.name + ' ' + f.count).join(', ') || 'none')

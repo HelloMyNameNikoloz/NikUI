@@ -114,6 +114,14 @@ owns the whole surface.
   addresses are left alone.
 - **Context budget meter** in the title bar: what the last turn had to read
   against the model's context window, turning amber at 70% and red at 90%.
+- **Compaction is visible.** The CLI decides when the context is full and
+  summarises it; NikUI never triggers that, and the meter falls back on its own
+  because it reads the context of the last model call. What NikUI adds is the
+  line in the conversation where it happened — *Compacted here automatically ·
+  the context had reached 181k tokens* — because the panel keeps every message
+  while the model, from that line on, has only a summary of them. `/status`
+  counts how many times it has happened and says that the meter measures the
+  window since the last one.
 - **Your own folders.** Create named folders from the + on the Instances title
   bar and drag instances into them (multi-select works). Each folder row has its
   own + to start an instance straight into it. Drag onto empty space to take one
@@ -358,8 +366,8 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 522 checks, no dependencies, no network, no CLI
-    npm run test:webview # 59 checks driving the real webview in a browser
+    npm test             # 532 checks, no dependencies, no network, no CLI
+    npm run test:webview # 62 checks driving the real webview in a browser
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 
 The offline suite stubs the VS Code API (`test/helpers/vscode-stub.js`) and

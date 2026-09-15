@@ -90,6 +90,8 @@ class Session extends EventEmitter {
     this.turnLog = Array.isArray(opts.turnLog) ? opts.turnLog.slice() : [];
     this.interrupts = opts.interrupts || 0;
     this.errors = opts.errors || 0;
+    this.compactions = opts.compactions || 0;
+    this.lastCompactedAt = opts.lastCompactedAt || 0;
     this._turnTools = [];
 
     this.proc = null;
@@ -254,6 +256,8 @@ class Session extends EventEmitter {
     this.turnLog = [];
     this.interrupts = 0;
     this.errors = 0;
+    this.compactions = 0;
+    this.lastCompactedAt = 0;
     this._turnTools = [];
     this.startedAt = Date.now();
     this.emit('reset');
@@ -526,6 +530,31 @@ class Session extends EventEmitter {
   }
 
   /**
+   * The line where the conversation the model can see stops being the
+   * conversation on screen. Field names are read generously: this is the CLI's
+   * event, and a marker that renders for an unexpected shape is better than one
+   * that silently does not.
+   */
+  _handleCompaction(event) {
+    const meta = event.compact_metadata || event.compactMetadata || event;
+    const trigger = meta.trigger || meta.reason || 'auto';
+    const before = Number(meta.pre_tokens || meta.preTokens || meta.tokens_before || 0) || 0;
+
+    this.compactions += 1;
+    this.lastCompactedAt = Date.now();
+    this._upsert({
+      id: `c${this._seq++}`,
+      kind: 'compact',
+      trigger: String(trigger).toLowerCase() === 'manual' ? 'manual' : 'automatic',
+      before,
+      at: Date.now()
+    });
+    // The window the meter is measuring starts again here.
+    this.contextTokens = 0;
+    this.emit('meta');
+  }
+
+  /**
    * An empty panel and a conversation that failed to load look identical, and
    * the second one is alarming — the cost and the token count are right there
    * in the header. Say which it is.
@@ -574,7 +603,14 @@ class Session extends EventEmitter {
   }
 
   _handleSystem(event) {
-    if (event.subtype !== 'init') return;
+    // Compaction is the CLI's own business — it decides when the context is
+    // full and summarises it. All we get is a boundary event, and all we have
+    // to do is not pretend it did not happen: our transcript keeps every
+    // message, while the model from here on has only a summary of them.
+    if (event.subtype !== 'init') {
+      if (/compact/i.test(event.subtype || '') || event.compact_metadata) this._handleCompaction(event);
+      return;
+    }
     this.claudeSessionId = event.session_id || this.claudeSessionId;
     this.meta = {
       model: event.model || null,
