@@ -142,8 +142,12 @@ class Session extends EventEmitter {
     this.proc = null;
     if (!proc) return;
     try { proc.stdin.end(); } catch (_) { /* already closed */ }
-    // Give it a moment to flush, then make sure it is gone.
+    // Give it a moment to flush, then make sure it is gone. A CLI that ignores
+    // SIGTERM would otherwise sit there holding memory.
     setTimeout(() => { try { proc.kill('SIGTERM'); } catch (_) { /* gone */ } }, 1500);
+    setTimeout(() => {
+      try { if (proc.exitCode === null && !proc.killed) proc.kill('SIGKILL'); } catch (_) { /* gone */ }
+    }, 5000);
     this.emit('meta');
   }
 

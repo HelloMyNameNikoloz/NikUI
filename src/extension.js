@@ -96,9 +96,19 @@ function activate(context) {
   register('nikui.stop', async (arg) => {
     const session = await pickSession(arg);
     if (!session) return;
+    // Closing an idle instance is cheap and reversible via History; only ask
+    // when it would kill a turn that is still running.
+    if (session.isBusy) {
+      const go = await vscode.window.showWarningMessage(
+        `${session.label} is still working. Close it anyway?`,
+        { modal: true }, 'Close'
+      );
+      if (go !== 'Close') return;
+    }
     session.stop();
     SessionPanel.close(session.id);
     manager.remove(session.id);
+    history.refresh();
   });
 
   register('nikui.rename', async (arg) => {

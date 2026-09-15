@@ -66,7 +66,7 @@
       },
       {
         "command": "nikui.stop",
-        "title": "NikUI: Stop Instance",
+        "title": "NikUI: Close Instance",
         "icon": "$(close)"
       },
       {
@@ -151,7 +151,7 @@
         {
           "command": "nikui.stop",
           "when": "view == nikui.sessions",
-          "group": "1_run@2"
+          "group": "inline@3"
         }
       ],
       "commandPalette": [

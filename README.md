@@ -30,6 +30,10 @@ owns the whole surface.
   navigable. Options are seeded for `/effort` and learned at runtime by reading
   `Usage: /cmd <a|b|c>` out of the CLI's own replies.
 - **Copy buttons** on every code block, including tool input and output.
+- **Close an instance** from the × on its row: the process is killed (SIGTERM,
+  then SIGKILL if it lingers) and the row disappears, while the conversation
+  stays in History to reopen later. You are only asked to confirm if a turn is
+  still running.
 - **History is always reachable.** Both views are pinned visible, the provider
   never throws, and `NikUI: Show History` (also a button on the Instances title
   bar) focuses it if it ever gets dismissed.
