@@ -116,6 +116,61 @@
 
   const hint = (text) => '<p class="hint-line">' + esc(text) + '</p>';
 
+  // ── the plan's own limits ────────────────────────────────────
+
+  const LIMIT_STATUS = {
+    allowed: 'within your limits',
+    allowed_warning: 'getting close',
+    rejected: 'used up'
+  };
+
+  /** "in 2h 40m", or the time if that is further off than a day. */
+  function until(at) {
+    if (!at) return 'unknown';
+    const left = at - Date.now();
+    if (left <= 0) return 'any moment';
+    if (left < 86400000) return 'in ' + fmt.ms(left);
+    return 'on ' + fmt.when(at);
+  }
+
+  function windowRow(label, win, noun) {
+    if (!win) {
+      return '<div class="meter-line"><span class="meter-name">' + esc(label) + '</span>' +
+        charts.meter(0, { klass: 'm-dim', label: label + ' not reported yet' }) +
+        '<span class="meter-value dim">—</span></div>';
+    }
+    const left = Math.max(0, 1 - win.used);
+    return '<div class="meter-line">' +
+      '<span class="meter-name">' + esc(label) + '</span>' +
+      charts.meter(Math.min(1, win.used), {
+        marks: [0.7, 0.9],
+        label: label + ': ' + fmt.pct(win.used) + ' used, resets ' + until(win.resetsAt)
+      }) +
+      '<span class="meter-value">' + esc(fmt.pct(left)) + ' left</span></div>' +
+      '<p class="hint-line">' + esc(fmt.pct(win.used) + ' of your ' + (noun || label.toLowerCase()) +
+        ' used · resets ' + until(win.resetsAt)) + '</p>';
+  }
+
+  function limitsCard(r) {
+    const limits = r.limits;
+    if (!limits) {
+      return card('Plan usage',
+        hint('Nothing reported yet. The CLI sends your five-hour and weekly usage when it changes, ' +
+          'so this fills in during the next turn.'), { wide: true });
+    }
+    const stale = Date.now() - (limits.at || 0) > 1800000;
+    const w = limits.windows || {};
+    return card('Plan usage',
+      windowRow('Five-hour session', w.fiveHour, 'five-hour window') +
+      windowRow('This week', w.week, 'weekly window') +
+      (w.weekOverage ? windowRow('Weekly, overage included', w.weekOverage, 'weekly window including overage') : '') +
+      (limits.overage ? hint('Currently running on overage credits.') : '') +
+      hint((LIMIT_STATUS[limits.status] || limits.status) +
+        (limits.resetsAt && limits.status !== 'allowed' ? ' · resets ' + until(limits.resetsAt) : '') +
+        ' · as of ' + fmt.time(limits.at) + (stale ? ' (nothing newer since)' : '')),
+      { wide: true, note: LIMIT_STATUS[limits.status] || '' });
+  }
+
   const dot = (status) => '<span class="sdot ' + esc(status) + '"></span>';
 
   // ── sections ─────────────────────────────────────────────────
@@ -186,6 +241,19 @@
         tip: (p) => 'Turn ' + p.turn.n + ' · ' + fmt.money(p.value) + ' · ' + fmt.ms(p.turn.durationMs)
       }) + spark(r), { wide: true, note: r.turns.length ? fmt.money(r.totals.avgCost) + ' average' : '' });
 
+    const plan = r.limits && r.limits.windows ? r.limits.windows : null;
+    const planLine = plan && (plan.fiveHour || plan.week)
+      ? card('Plan usage',
+        (plan.fiveHour ? '<div class="meter-line"><span class="meter-name">Five-hour</span>' +
+          charts.meter(Math.min(1, plan.fiveHour.used), { marks: [0.7, 0.9], label: 'Five-hour window ' + fmt.pct(plan.fiveHour.used) + ' used' }) +
+          '<span class="meter-value">' + esc(fmt.pct(Math.max(0, 1 - plan.fiveHour.used))) + ' left</span></div>' : '') +
+        (plan.week ? '<div class="meter-line"><span class="meter-name">This week</span>' +
+          charts.meter(Math.min(1, plan.week.used), { marks: [0.7, 0.9], label: 'Weekly window ' + fmt.pct(plan.week.used) + ' used' }) +
+          '<span class="meter-value">' + esc(fmt.pct(Math.max(0, 1 - plan.week.used))) + ' left</span></div>' : '') +
+        hint('Your account\u2019s limits, shared by every instance — the full picture is under Fleet.'),
+        { wide: true })
+      : '';
+
     const rec = r.records;
     const recordCard = rec ? card('Records', '<div class="tiles small">' +
       tile('Longest turn', fmt.ms(rec.longest.durationMs), 'turn ' + rec.longest.n) +
@@ -196,7 +264,7 @@
       tile('Focus', fmt.pct(r.totals.focusPct), 'of the session working') +
       '</div>', { wide: true }) : '';
 
-    return hero + kpis + context + costChart + recordCard;
+    return hero + kpis + context + planLine + costChart + recordCard;
   }
 
   function spark(r) {
@@ -509,7 +577,8 @@
       tile('Open longest', oldest.label, fmt.ms(oldest.ageMs)) +
       '</div>', { wide: true }) : '';
 
-    return hero + tiles + activity + costBars + tokenBars + pressure + projects + detailCard + records;
+    return hero + tiles + limitsCard(r) + activity + costBars + tokenBars + pressure +
+      projects + detailCard + records;
   }
 
   function system(r) {
@@ -624,6 +693,12 @@
         ' (' + fmt.pct(r.totals.contextPct) + ')' +
         (r.runway && r.runway.turnsLeft !== null ? ' · ~' + r.runway.turnsLeft + ' turns of headroom' : ''),
       'Compacted ' + (r.totals.compactions || 'never'),
+      'Plan      ' + (r.limits && r.limits.windows
+        ? ['fiveHour', 'week'].map((k) => {
+          const win = r.limits.windows[k];
+          return win ? (k === 'week' ? 'weekly ' : '5h ') + fmt.pct(Math.max(0, 1 - win.used)) + ' left' : null;
+        }).filter(Boolean).join(', ') || 'not reported'
+        : 'not reported'),
       'Tools     ' + r.totals.toolCalls + ' calls, ' + r.totals.toolErrors + ' failed',
       'Top tools ' + (r.tools.slice(0, 5).map((t) => t.name + ' ' + t.calls).join(', ') || 'none'),
       'Files     ' + (r.files.slice(0, 5).map((f) => f.name + ' ' + f.count).join(', ') || 'none')

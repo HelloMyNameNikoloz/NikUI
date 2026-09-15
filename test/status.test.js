@@ -81,6 +81,34 @@ module.exports = async function () {
   check('and names the records across the window', /Across the fleet/.test(fleet));
   check('a wide table can scroll instead of crushing its columns', /class="grid-scroll"/.test(fleet));
 
+  suite('what is left of the plan');
+
+  const now = Date.now();
+  const metered = report({
+    limits: {
+      status: 'allowed_warning', type: 'five_hour', used: 0.86, resetsAt: now + 3600000,
+      windows: {
+        fiveHour: { used: 0.86, resetsAt: now + 3600000 },
+        week: { used: 0.4, resetsAt: now + 200000000 },
+        weekOverage: null
+      },
+      at: now
+    }
+  });
+  const meteredFleet = sheet.renderSheet(metered, 'fleet');
+  check('the fleet shows the plan', /Plan usage/.test(meteredFleet));
+  check('the five-hour window by name', /Five-hour session/.test(meteredFleet));
+  check('and the weekly one', /This week/.test(meteredFleet));
+  check('it says what is left, not just what is gone', /14% left/.test(meteredFleet));
+  check('and when it comes back', /resets in/.test(meteredFleet));
+  check('a window under pressure is flagged amber', /level-warn/.test(meteredFleet));
+  check('the instance page shows it too', /Plan usage/.test(sheet.renderSheet(metered, 'overview')));
+  check('and the copyable summary', /5h 14% left, weekly 60% left/.test(sheet.asText(metered)));
+
+  const unknown = sheet.renderSheet(report({ limits: null }), 'fleet');
+  check('before anything is reported it says so', /Nothing reported yet/.test(unknown));
+  check('rather than claiming a full tank', !/100% left/.test(unknown));
+
   suite('counts that only cover a window say so');
 
   const trimmed = report({ droppedItems: 312, maxItems: 400 });

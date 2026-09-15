@@ -60,7 +60,17 @@ owns the whole surface.
   turn, how long since its last one, cost, and a spend sparkline) — every row
   clickable to jump straight there — and the records across the window.
 
-  Then: **This instance** with its cost, context meter and cost-per-turn trend;
+  Fleet also carries **Plan usage**: how much of your five-hour session window
+  and your weekly window is left, when each resets, and overage if you are on
+  it. The CLI reports these whenever they move — they come straight off the
+  `anthropic-ratelimit-unified-*` headers — so NikUI reads the event it was
+  already being sent and throwing away. They belong to the account rather than
+  to one instance, so whichever instance hears about them, every instance knows,
+  and the figures outlive a window reload. Getting close is said in the
+  conversation too, once, and running out is said as an error.
+
+  Then: **This instance** with its cost, context meter and cost-per-turn trend
+  (and the same two windows, in short);
   **Usage** with tokens per turn stacked by type, cumulative spend and output
   speed; **Tools** with what you have run, the files they touched most (click one
   to open it) and the shell commands; **Timeline** with turn durations, an
@@ -378,7 +388,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 559 checks, no dependencies, no network, no CLI
+    npm test             # 588 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 

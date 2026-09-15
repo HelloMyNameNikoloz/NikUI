@@ -454,6 +454,9 @@ function buildReport({ session, fleet = [], env = {}, now = Date.now() } = {}) {
       })()
     },
     projects: byProject(members),
+    // What is left of the plan's own five-hour and weekly windows. Account-wide
+    // and reported by the CLI, so it is the same figure whichever instance asks.
+    limits: env.limits || session.limits || null,
     env
   };
 }

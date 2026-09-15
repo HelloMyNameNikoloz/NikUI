@@ -75,6 +75,66 @@ module.exports = function () {
   checkEqual('context window is picked up', s.contextWindow, 200000);
   checkEqual('turns counted', s.turns, 2);
 
+  suite('what is left of the plan');
+
+  const metered = new Session({ cwd: '/tmp' });
+  const fiveHourReset = Math.floor(Date.now() / 1000) + 3600;
+  const weekReset = Math.floor(Date.now() / 1000) + 200000;
+
+  metered._handle({
+    type: 'rate_limit_event',
+    rate_limit_info: {
+      status: 'allowed', utilization: 0.4,
+      unifiedWindows: {
+        five_hour: { utilization: 0.4, resetsAt: fiveHourReset },
+        seven_day: { utilization: 0.12, resetsAt: weekReset }
+      }
+    },
+    uuid: 'u', session_id: 's'
+  });
+
+  check('the five-hour window is read', metered.limits.windows.fiveHour.used === 0.4);
+  check('and the weekly one', metered.limits.windows.week.used === 0.12);
+  checkEqual('reset times are milliseconds, not seconds',
+    metered.limits.windows.fiveHour.resetsAt, fiveHourReset * 1000);
+  checkEqual('a window nobody reported stays empty', metered.limits.windows.weekOverage, null);
+  checkEqual('being within them is not worth interrupting for',
+    metered.items.filter((i) => i.kind === 'notice').length, 0);
+
+  metered._handle({
+    type: 'rate_limit_event',
+    rate_limit_info: {
+      status: 'allowed_warning', rateLimitType: 'five_hour', utilization: 0.86,
+      resetsAt: fiveHourReset,
+      unifiedWindows: { five_hour: { utilization: 0.86, resetsAt: fiveHourReset } }
+    }
+  });
+  const warned = metered.items.filter((i) => i.kind === 'notice').pop();
+  check('getting close is said out loud', warned && /Approaching your five-hour limit/.test(warned.text));
+  check('with how much of it has gone', warned && /86%/.test(warned.text));
+
+  metered._handle({
+    type: 'rate_limit_event',
+    rate_limit_info: { status: 'allowed_warning', rateLimitType: 'five_hour', utilization: 0.88 }
+  });
+  checkEqual('and not repeated while it stays that way',
+    metered.items.filter((i) => i.kind === 'notice').length, 1);
+
+  metered._handle({
+    type: 'rate_limit_event',
+    rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day', resets_at: weekReset }
+  });
+  const blocked = metered.items.filter((i) => i.kind === 'notice').pop();
+  check('running out is an error, not a note', blocked && blocked.level === 'error');
+  check('and says which limit and when it comes back',
+    blocked && /weekly limit is used up/.test(blocked.text) && /resets/.test(blocked.text));
+  checkEqual('the snake-cased spelling is read too',
+    metered.limits.resetsAt, weekReset * 1000);
+
+  metered._handle({ type: 'rate_limit_event' });
+  checkEqual('an event with nothing in it changes nothing', metered.limits.status, 'rejected');
+  metered.dispose();
+
   suite('the CLI compacting the context is not invisible');
 
   const packed = new Session({ cwd: '/tmp' });

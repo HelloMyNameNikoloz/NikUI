@@ -6,6 +6,8 @@ const { EventEmitter } = require('events');
 const { Session } = require('./session');
 
 const STORAGE_KEY = 'nikui.sessions.v1';
+// The plan's limits belong to the account, not to a window or a folder.
+const LIMITS_KEY = 'nikui.limits.v1';
 // One number for both sides of a reload. Remembering more than we restore
 // loses rows silently, which is worse than remembering fewer.
 const KEEP = 20;
@@ -77,6 +79,7 @@ class SessionManager extends EventEmitter {
     this.context = context;
     this.sessions = new Map();
     this.activeId = null;
+    this.limits = context.globalState.get(LIMITS_KEY, null);
   }
 
   get list() {
@@ -147,6 +150,7 @@ class SessionManager extends EventEmitter {
       extraArgs: cfg.extraArgs,
       autoTitle: cfg.autoTitle,
       maxItems: cfg.maxItems,
+      limits: this.limits,
       // What the status sheet needs to keep telling the truth after a reload.
       turnLog,
       startedAt,
@@ -166,6 +170,8 @@ class SessionManager extends EventEmitter {
     session.on('failed', (message, code) => this.emit('failed', session, message, code));
     // A queued prompt changes what the row has to say about the instance.
     session.on('queue', () => this._changed(session));
+    // Whichever instance hears about the account's limits, all of them know.
+    session.on('limits', (limits) => this.rememberLimits(limits));
     session.on('meta', () => {
       this.rememberCommands(session.meta.slashCommands);
       this._changed(session);
@@ -212,6 +218,21 @@ class SessionManager extends EventEmitter {
     }
     if (dead.length) { this.emit('changed'); this.persist(); }
     return dead.length;
+  }
+
+  /**
+   * The freshest reading wins, and it outlives the window: usage limits are
+   * slow-moving and account-wide, so a reload should not start by knowing
+   * nothing about them.
+   */
+  rememberLimits(limits) {
+    if (!limits) return;
+    if (this.limits && this.limits.at && limits.at && limits.at < this.limits.at) return;
+    this.limits = limits;
+    for (const session of this.list) session.limits = limits;
+    this.context.globalState.update(LIMITS_KEY, limits);
+    this.emit('limits', limits);
+    this.emit('changed');
   }
 
   /** Kill the process but keep the instance: the conversation resumes on open. */

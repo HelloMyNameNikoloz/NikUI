@@ -92,6 +92,8 @@ class Session extends EventEmitter {
     this.errors = opts.errors || 0;
     this.compactions = opts.compactions || 0;
     this.lastCompactedAt = opts.lastCompactedAt || 0;
+    // Account-wide, so an instance starts with whatever the window already knows.
+    this.limits = opts.limits || null;
     this._turnTools = [];
 
     this.proc = null;
@@ -542,6 +544,42 @@ class Session extends EventEmitter {
   }
 
   /**
+   * What is left of the plan's own limits: the five-hour session window and the
+   * weekly one. The CLI reports these whenever they move, straight off the
+   * `anthropic-ratelimit-unified-*` headers, and they belong to the account
+   * rather than to this instance — so this normalises them and hands them up
+   * for every instance to share.
+   */
+  _handleRateLimit(event) {
+    const info = event.rate_limit_info || event.rateLimitInfo;
+    if (!info) return;
+
+    const windows = info.unifiedWindows || info.unified_windows || {};
+    const limits = {
+      status: info.status || 'allowed',
+      type: info.rateLimitType || info.rate_limit_type || null,
+      used: num(info.utilization),
+      resetsAt: seconds(info.resetsAt !== undefined ? info.resetsAt : info.resets_at),
+      overage: info.isUsingOverage === true || info.overageInUse === true,
+      windows: {
+        fiveHour: window5(windows.five_hour || windows.fiveHour),
+        week: window5(windows.seven_day || windows.sevenDay),
+        weekOverage: window5(windows.seven_day_overage_included || windows.sevenDayOverageIncluded)
+      },
+      at: Date.now()
+    };
+
+    const was = this.limits && this.limits.status;
+    this.limits = limits;
+    // Being told you are nearly out, after the fact, is no use.
+    if (limits.status !== was && limits.status !== 'allowed') {
+      this._notice(describeLimit(limits), limits.status === 'rejected' ? 'error' : 'info');
+    }
+    this.emit('limits', limits);
+    this.emit('meta');
+  }
+
+  /**
    * The line where the conversation the model can see stops being the
    * conversation on screen. Field names are read generously: this is the CLI's
    * event, and a marker that renders for an unexpected shape is better than one
@@ -609,7 +647,7 @@ class Session extends EventEmitter {
       case 'result': return this._handleResult(event);
       case 'control_request': return this._handleControlRequest(event);
       case 'control_response': return;
-      case 'rate_limit_event': return;
+      case 'rate_limit_event': return this._handleRateLimit(event);
       default: return;
     }
   }
@@ -940,6 +978,36 @@ class Session extends EventEmitter {
 
 const toolItemId = (toolUseId) => `tool:${toolUseId}`;
 
+const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+
+/** The CLI reports reset times in seconds; everything here is in milliseconds. */
+function seconds(value) {
+  const n = num(typeof value === 'string' ? Number(value) : value);
+  if (n === null) return null;
+  return n > 1e11 ? n : Math.round(n * 1000);
+}
+
+function window5(w) {
+  if (!w) return null;
+  const used = num(w.utilization);
+  const resetsAt = seconds(w.resetsAt !== undefined ? w.resetsAt : w.resets_at);
+  if (used === null && resetsAt === null) return null;
+  return { used: used === null ? 0 : used, resetsAt };
+}
+
+const LIMIT_WORD = { five_hour: 'five-hour', seven_day: 'weekly', overage: 'overage' };
+
+/** What to say in the conversation when the account's limits start to bite. */
+function describeLimit(limits) {
+  const which = LIMIT_WORD[limits.type] || (limits.type || '').replace(/_/g, ' ') || 'usage';
+  const when = limits.resetsAt ? ', resets ' + new Date(limits.resetsAt).toLocaleString() : '';
+  if (limits.status === 'rejected') {
+    return `Your ${which} limit is used up${when}. Claude will not answer again until it resets.`;
+  }
+  const pct = limits.used === null ? '' : ` (${Math.round(limits.used * 100)}% used)`;
+  return `Approaching your ${which} limit${pct}${when}.`;
+}
+
 /** The state an instance may come back in, after a reload or a restart. */
 function restoredStatus(status) {
   if (!status || status === STATUS.WORKING || status === STATUS.WAITING) {
@@ -1006,4 +1074,4 @@ function flattenContent(content) {
   return typeof content === 'object' ? JSON.stringify(content) : String(content);
 }
 
-module.exports = { Session, STATUS, commandArgs, learnCommandArgs, clip, restoredStatus, TOOL_RESULT_MAX, DEFAULT_MAX_ITEMS };
+module.exports = { Session, STATUS, commandArgs, learnCommandArgs, clip, restoredStatus, describeLimit, seconds, TOOL_RESULT_MAX, DEFAULT_MAX_ITEMS };

@@ -181,4 +181,34 @@ module.exports = function () {
   checkEqual('and takes it out of the queue', q.queue.map((x) => x.text), ['third', 'second']);
   checkEqual('reclaiming nothing returns nothing', q.reclaim('nope'), null);
   q.dispose();
+
+  suite('the plan\u2019s limits belong to the window, not to one instance');
+
+  const shared = { workspaceState: memoryState(), globalState: memoryState() };
+  const account = new SessionManager(shared);
+  const one = account.create({ cwd: '/tmp', autoStart: false });
+  const two = account.create({ cwd: '/tmp', autoStart: false });
+
+  const reading = { status: 'allowed', windows: { fiveHour: { used: 0.5, resetsAt: 1 } }, at: 1000 };
+  one._handle({
+    type: 'rate_limit_event',
+    rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.5, resetsAt: 1 } } }
+  });
+
+  check('the instance that heard it knows', one.limits && one.limits.windows.fiveHour.used === 0.5);
+  check('so does the window', account.limits && account.limits.windows.fiveHour.used === 0.5);
+  check('and so does every other instance', two.limits && two.limits.windows.fiveHour.used === 0.5);
+
+  const older = Object.assign({}, reading, { at: 1, windows: { fiveHour: { used: 0.1, resetsAt: 1 } } });
+  account.rememberLimits(older);
+  check('a stale reading does not overwrite a fresh one', account.limits.windows.fiveHour.used === 0.5);
+
+  check('and it outlives the window', !!shared.globalState.get('nikui.limits.v1', null));
+  const later = new SessionManager(shared);
+  check('so a reload starts out knowing', later.limits && later.limits.windows.fiveHour.used === 0.5);
+  const fresh = later.create({ cwd: '/tmp', autoStart: false });
+  check('including instances made afterwards', fresh.limits && fresh.limits.windows.fiveHour.used === 0.5);
+
+  account.disposeAll();
+  later.disposeAll();
 };
