@@ -180,6 +180,23 @@
         "command": "nikui.moveToFolder",
         "title": "NikUI: Move to Folder...",
         "icon": "$(folder)"
+      },
+      {
+        "command": "nikui.remoteStart",
+        "title": "NikUI: Start the local server",
+        "icon": "$(broadcast)"
+      },
+      {
+        "command": "nikui.remoteStop",
+        "title": "NikUI: Stop the local server"
+      },
+      {
+        "command": "nikui.remoteOpen",
+        "title": "NikUI: Open NikUI in a browser"
+      },
+      {
+        "command": "nikui.remoteMenu",
+        "title": "NikUI: Local server actions"
       }
     ],
     "menus": {
@@ -330,6 +347,10 @@
         {
           "command": "nikui.deleteFolder",
           "when": "false"
+        },
+        {
+          "command": "nikui.remoteMenu",
+          "when": "false"
         }
       ]
     },
@@ -414,7 +435,7 @@
             "type": "string"
           },
           "default": {
-            "table": "Give me the whole plan for what we are working on right now as a table: one row per step, with \ud83d\udfe2 for done and verified, \ud83d\udfe1 for in progress, and \ud83d\udd34 for not started. Cover only the current task and the phase of it we are in — not the project's wider scope, and not earlier phases that are already finished. Carry on from the plan we are already working to rather than starting a new one; if there is no plan yet, make one first. Include the steps still outstanding, not only the finished ones, and end with one line on what is left."
+            "table": "Give me the whole plan for what we are working on right now as a table: one row per step, with 🟢 for done and verified, 🟡 for in progress, and 🔴 for not started. Cover only the current task and the phase of it we are in — not the project's wider scope, and not earlier phases that are already finished. Carry on from the plan we are already working to rather than starting a new one; if there is no plan yet, make one first. Include the steps still outstanding, not only the finished ones, and end with one line on what is left."
           },
           "markdownDescription": "Words you can type to add a standing instruction to the prompt you just wrote. `/table fix the rollback` and `fix the rollback /table` both send your text with the instruction appended; the word itself never reaches the CLI. Yours are merged over the built-in ones — set a value to an empty string to switch that one off."
         },
@@ -493,6 +514,18 @@
           ],
           "default": "auto",
           "description": "Group instances by project folder in the sidebar. \"auto\" nests them only once more than one project is open."
+        },
+        "nikui.remote.port": {
+          "type": "number",
+          "default": 4517,
+          "minimum": 0,
+          "maximum": 65535,
+          "markdownDescription": "Port for the local server, bound to `127.0.0.1` only. `0` picks a free one. The server never binds to another address: reaching this laptop from elsewhere is a tunnel's job, not a listening socket's."
+        },
+        "nikui.remote.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Start the local server when the window opens. Off by default: NikUI runs Claude with permissions bypassed, so a socket into it is code execution on this machine, and it should never be listening without you having said so."
         }
       }
     }
@@ -500,6 +533,7 @@
   "scripts": {
     "test": "node test/run.js",
     "test:live": "node test/live.check.js",
-    "test:webview": "node test/webview.check.js"
+    "test:webview": "node test/webview.check.js",
+    "test:remote": "node test/remote.check.js"
   }
 }
