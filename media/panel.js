@@ -3,7 +3,10 @@
 (function () {
   'use strict';
 
-  const vscode = acquireVsCodeApi();
+  // The one call that knows what is hosting this page: the VS Code API in the
+  // panel, the same three methods over a socket in a browser. Nothing else in
+  // this file — or any other in media/ — depends on the answer.
+  const vscode = window.nikTransport();
   const $ = (id) => document.getElementById(id);
 
   // What has to survive VS Code throwing this webview away while the tab is

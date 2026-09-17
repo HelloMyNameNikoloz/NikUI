@@ -1,0 +1,140 @@
+/* What the page needs when the host is a browser instead of VS Code.
+
+   panel.css is built on a handful of --vscode-* variables that the editor
+   injects and a browser has never heard of. Rather than teaching every rule a
+   fallback, they are defined here once, from the OS colour scheme — and this
+   file is loaded only by the pages the local server serves, so the editor's own
+   theme is never argued with. */
+
+:root {
+  color-scheme: light dark;
+
+  --vscode-editor-background: #1f1f1f;
+  --vscode-foreground: #cccccc;
+  --vscode-descriptionForeground: #9d9d9d;
+  --vscode-input-background: #2b2b2b;
+  --vscode-input-foreground: #cccccc;
+  --vscode-contrastBorder: transparent;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --vscode-editor-background: #ffffff;
+    --vscode-foreground: #3b3b3b;
+    --vscode-descriptionForeground: #6a6a6a;
+    --vscode-input-background: #ffffff;
+    --vscode-input-foreground: #3b3b3b;
+  }
+}
+
+/* ---- the connection, stated ---------------------------------------------
+   A dead socket on a phone looks exactly like an agent that is thinking, so
+   the state is always on screen when the host is a browser. In the panel this
+   element exists and is never shown. */
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.link::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.link.on { color: #30d158; }
+.link.warn { color: #ff9f0a; }
+.link.off { color: #ff453a; }
+
+/* ---- the index ----------------------------------------------------------
+   Every instance in the window, as a list you can tap. The real phone home —
+   the fleet with its live states — is its own piece of work; this is the door. */
+
+body.home {
+  margin: 0;
+  padding: 28px 20px calc(28px + env(safe-area-inset-bottom));
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  -webkit-font-smoothing: antialiased;
+}
+
+body.home h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+body.home .lede {
+  margin: 2px 0 20px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12.5px;
+}
+
+body.home .rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 640px;
+}
+
+body.home .row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  grid-template-areas: "dot name cost" "dot cwd cost";
+  align-items: center;
+  column-gap: 10px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: inherit;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  /* A comfortable target for a thumb, not a mouse. */
+  min-height: 56px;
+}
+
+body.home .row:active { background: color-mix(in srgb, currentColor 12%, transparent); }
+
+body.home .sdot {
+  grid-area: dot;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8e8e93;
+}
+
+body.home .sdot.working { background: #ff9f0a; }
+body.home .sdot.waiting, body.home .sdot.error { background: #ff453a; }
+body.home .sdot.done { background: #30d158; }
+body.home .sdot.stopped { background: color-mix(in srgb, #8e8e93 55%, transparent); }
+
+body.home .row-name { grid-area: name; font-weight: 500; }
+body.home .row-cwd {
+  grid-area: cwd;
+  font-size: 11.5px;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.home .row-cost {
+  grid-area: cost;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}

@@ -71,6 +71,14 @@ module.exports = async function () {
   checkEqual('so every message the hub sends is one the client draws',
     [...hubSends].filter((t) => !clientHears.has(t)).sort(), []);
 
+  // The browser transport synthesises a couple of messages of its own — a
+  // `ready` on every reconnect, an `editPrompt` when a prompt cannot be sent.
+  // Both are the protocol's own; anything else would be a private dialect.
+  const shim = read('media/transport.js');
+  const shimMakes = new Set([...shim.matchAll(/type: '([a-zA-Z]+)'/g)].map((m) => m[1]));
+  checkEqual('the browser transport invents no messages of its own',
+    [...shimMakes].filter((t) => !TO_HOST.includes(t) && !TO_CLIENT.includes(t)).sort(), []);
+
   suite('a transport carries all of it');
 
   // Any object with an id and a post is a transport. This one is a list.
