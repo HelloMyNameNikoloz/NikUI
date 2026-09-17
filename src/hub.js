@@ -29,6 +29,7 @@ class SessionHub {
     this.host = host || {};
     this.clients = new Map();
     this.listeners = [];
+    this.watchers = new Set();
 
     const on = (event, fn) => {
       session.on(event, fn);
@@ -113,9 +114,20 @@ class SessionHub {
     this.broadcast({ type: 'stats', stats: this.session.stats() });
   }
 
-  /** For a transport that has its own work to do — a tab title, an icon. */
+  /**
+   * For a transport that has its own work to do when the instance moves — a tab
+   * title, an icon, a status bar. Every transport gets told, because more than
+   * one of them can be watching and the second must not silence the first.
+   */
+  onHost(fn) {
+    this.watchers.add(fn);
+    return () => this.watchers.delete(fn);
+  }
+
   emitHost(event) {
-    if (typeof this.host.onHostEvent === 'function') this.host.onHostEvent(event, this.session);
+    for (const fn of this.watchers) {
+      try { fn(event, this.session); } catch (_) { /* a transport's problem, not the session's */ }
+    }
   }
 
   // ---- messages a client sends --------------------------------------------
@@ -367,6 +379,7 @@ class SessionHub {
     this.ticker = null;
     for (const undo of this.listeners) { try { undo(); } catch (_) { /* already gone */ } }
     this.listeners = [];
+    this.watchers.clear();
     for (const entry of this.clients.values()) if (entry.statusTimer) clearTimeout(entry.statusTimer);
     this.clients.clear();
   }
@@ -394,9 +407,10 @@ function hubFor(session, host) {
   if (!hub) {
     hub = new SessionHub(session, host);
     hubs.set(session.id, hub);
-  } else if (host) {
-    hub.host = host;
   }
+  // A later transport joins what is already there: the host is the window's, not
+  // any one client's, so replacing it underneath the first would change what
+  // "open this file" means depending on who asked last.
   return hub;
 }
 
