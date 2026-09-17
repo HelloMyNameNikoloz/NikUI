@@ -6,7 +6,10 @@ const path = require('path');
 const { EventEmitter } = require('events');
 
 function makeStub(overrides) {
-  const registered = { commands: {}, views: [], serializers: [], treeViews: {}, panels: [] };
+  const registered = {
+    commands: {}, views: [], serializers: [], treeViews: {}, panels: [],
+    statusBars: [], opened: [], copied: []
+  };
   const config = Object.assign({ groupByProject: 'auto' }, (overrides && overrides.config) || {});
 
   const stub = {
@@ -32,6 +35,7 @@ function makeStub(overrides) {
     ViewColumn: { Active: -1, Beside: -2 },
     Uri: {
       file: (p) => ({ fsPath: p, toString: () => 'file://' + p }),
+      parse: (u) => ({ fsPath: u, toString: () => String(u) }),
       joinPath: (base, ...rest) => ({ fsPath: path.join(base.fsPath, ...rest), toString() { return 'file://' + path.join(base.fsPath, ...rest); } })
     },
     window: {
@@ -78,7 +82,20 @@ function makeStub(overrides) {
       showInputBox: async () => undefined,
       showWarningMessage: async () => undefined,
       showTextDocument: async () => ({}),
-      setStatusBarMessage: () => {}
+      showInformationMessage: async () => undefined,
+      setStatusBarMessage: () => {},
+      createOutputChannel: () => ({ appendLine() {}, dispose() {} }),
+      createStatusBarItem: () => {
+        const item = { text: '', tooltip: '', command: null, shown: false,
+          show() { this.shown = true; }, hide() { this.shown = false; }, dispose() {} };
+        registered.statusBars.push(item);
+        return item;
+      }
+    },
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    env: {
+      openExternal: async (uri) => { registered.opened.push(String(uri && uri.toString ? uri.toString() : uri)); return true; },
+      clipboard: { writeText: async (text) => { registered.copied.push(text); } }
     },
     commands: {
       registerCommand: (id, fn) => { registered.commands[id] = fn; return { dispose() {} }; },

@@ -12,6 +12,8 @@ const { HistoryTree } = require('./historyTree');
 const { projectsRoot } = require('./history');
 const { nextTicket } = require('./ticket');
 const { labelFor } = require('./label');
+const { createHost } = require('./host');
+const { RemoteServer } = require('./remote');
 
 let manager;
 
@@ -413,7 +415,99 @@ function activate(context) {
     }
   }));
 
+  serveLocally(context, manager);
+
   context.subscriptions.push({ dispose: () => { closeAllHubs(); manager.disposeAll(); } });
+}
+
+/**
+ * The same client, in a browser on this machine.
+ *
+ * Off unless you say so, and loud while it is on: NikUI runs Claude with
+ * permissions bypassed, so anything that can reach this server can run code
+ * here. The status bar item is not decoration — it is the answer to "is it
+ * listening right now", which should never need looking up.
+ */
+function serveLocally(context, manager) {
+  const bar = vscode.window.createStatusBarItem
+    ? vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
+    : null;
+  const out = vscode.window.createOutputChannel
+    ? vscode.window.createOutputChannel('NikUI server')
+    : null;
+
+  const server = new RemoteServer({
+    root: context.extensionUri.fsPath,
+    host: createHost(context, manager),
+    sessions: { list: () => manager.list, get: (id) => manager.get(id) },
+    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
+  });
+
+  const paint = () => {
+    if (!bar) return;
+    if (!server.listening) { bar.hide(); return; }
+    bar.text = `$(broadcast) NikUI :${server.port}`;
+    bar.tooltip = `NikUI is serving this window on 127.0.0.1:${server.port}. Click for actions.`;
+    bar.command = 'nikui.remoteMenu';
+    bar.show();
+  };
+
+  const start = async () => {
+    if (server.listening) return server;
+    const port = vscode.workspace.getConfiguration('nikui').get('remote.port', 4517);
+    try {
+      await server.start(port);
+    } catch (err) {
+      const why = err && err.code === 'EADDRINUSE'
+        ? `port ${port} is already taken — change nikui.remote.port`
+        : (err && err.message) || 'unknown error';
+      vscode.window.showWarningMessage('NikUI could not start the local server: ' + why);
+      return null;
+    }
+    paint();
+    return server;
+  };
+
+  const stop = async () => {
+    await server.stop();
+    paint();
+  };
+
+  const open = async () => {
+    if (!(await start())) return;
+    const url = server.url;
+    // The key rides in once and the page trades it for a cookie, so the address
+    // bar — and anything that screenshots it — keeps nothing worth stealing.
+    await vscode.env.openExternal(vscode.Uri.parse(url));
+  };
+
+  const menu = async () => {
+    const choice = await vscode.window.showQuickPick([
+      { label: '$(link-external) Open in a browser', id: 'open' },
+      { label: '$(clippy) Copy the link', id: 'copy' },
+      { label: '$(debug-stop) Stop the server', id: 'stop' }
+    ], { placeHolder: `NikUI is serving on 127.0.0.1:${server.port}` });
+    if (!choice) return;
+    if (choice.id === 'open') return open();
+    if (choice.id === 'stop') return stop();
+    if (choice.id === 'copy' && vscode.env.clipboard) {
+      await vscode.env.clipboard.writeText(server.url || '');
+      vscode.window.setStatusBarMessage('NikUI: link copied — it only works on this machine', 4000);
+    }
+  };
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('nikui.remoteStart', async () => {
+      if (await start()) vscode.window.setStatusBarMessage(`NikUI is serving on 127.0.0.1:${server.port}`, 4000);
+    }),
+    vscode.commands.registerCommand('nikui.remoteStop', stop),
+    vscode.commands.registerCommand('nikui.remoteOpen', open),
+    vscode.commands.registerCommand('nikui.remoteMenu', menu),
+    { dispose: () => { server.stop(); if (bar) bar.dispose(); if (out) out.dispose(); } }
+  );
+
+  if (vscode.workspace.getConfiguration('nikui').get('remote.autoStart', false)) start();
+  return server;
 }
 
 /**
@@ -600,4 +694,4 @@ function deactivate() {
   if (manager) manager.disposeAll();
 }
 
-module.exports = { activate, deactivate, followFocus, watchForTrouble, watchForCrowding, watchForQuota };
+module.exports = { activate, deactivate, followFocus, serveLocally, watchForTrouble, watchForCrowding, watchForQuota };

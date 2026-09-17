@@ -344,6 +344,8 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.notifyOnAttention` | `true` | Tell you when an instance you cannot see is blocked or failed to start |
 | `nikui.interruptOnSingleEscape` | `false` | Interrupt on the first Escape, the way the CLI does |
 | `nikui.statusEmoji` | see below | Emoji per status in tab titles |
+| `nikui.remote.port` | `4517` | Port for the local server, on `127.0.0.1` only; `0` picks a free one |
+| `nikui.remote.autoStart` | `false` | Start that server when the window opens |
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
 
@@ -371,6 +373,70 @@ against them. A message added to the webview and forgotten in the hub, or sent b
 the hub and never drawn, fails there. The same suite drives a plain in-memory
 client through every message in both directions, so a new transport has a
 conformance suite waiting for it rather than a reading exercise.
+
+## The same client, in a browser
+
+`NikUI: Start the local server` serves the client over HTTP on this machine, and
+`NikUI: Open NikUI in a browser` opens it. A status bar item appears while it is
+listening — clicking it offers the link, the clipboard and the off switch. It is
+off until you start it (`nikui.remote.autoStart` changes that), and the port is
+`nikui.remote.port`.
+
+The browser runs the same `media/*.js` as the panel. The one call that knew what
+was hosting the page — `acquireVsCodeApi()` — is now `window.nikTransport()`,
+which hands back the editor's API in the panel and the same three methods over a
+WebSocket in a browser. Nothing else in `media/` knows the difference, which is
+the only way the two clients stay one client.
+
+Over a socket, the client also has to survive the network going away. The
+transport reconnects with a growing backoff, and immediately when the device
+comes back online or the tab becomes visible again; on every reconnect it sends
+`ready` and the hub replies `init`, which is the same path a webview takes when
+VS Code throws it away and brings it back — so the transcript is rebuilt rather
+than appended to. A prompt sent while the socket is down is not swallowed: it
+comes straight back to the composer as an `editPrompt`, with the reason on
+screen. The connection state is always visible, because a dead socket on a phone
+looks exactly like an agent that is thinking.
+
+### Why it is safe to run, and where it stops
+
+NikUI runs Claude with `bypassPermissions` by default, so **anything that can
+reach this server can run code on this machine**. Everything about it follows
+from that:
+
+- It binds to `127.0.0.1`, and there is no setting that changes that. Reaching
+  the laptop from elsewhere is a tunnel's job, not a listening socket's.
+- Nothing is served without a key — not the page, not an asset, not the socket.
+  The key is 256 bits, minted fresh every time the server starts, and it is
+  traded for an `HttpOnly; SameSite=Strict` cookie on first load so it leaves the
+  address bar.
+- The `Host` header must be a loopback name, so a hostile site cannot point DNS
+  at `127.0.0.1` and have the browser treat this as its own origin.
+- A browser sends `Origin` on a WebSocket handshake and has no same-origin policy
+  to stop it opening one, so an `Origin` that is not ours is refused.
+- Only `media/` is servable, only by extension, and only after the resolved path
+  is confirmed to be inside it.
+
+What this is *not* is the phone story. A key in a URL is a bearer token, and a
+bearer token is only defensible because the listener is loopback: it is a lock on
+a door inside the house. The device-key pairing that makes a phone safe to let in
+is the next piece of work (issues #5 and #6), and it replaces `src/auth.js`
+wholesale — which is why that file is a seam with one method rather than an `if`.
+
+### The wire
+
+`src/wire.js` is the server half of RFC 6455 with no dependencies: the handshake,
+a frame reader and a frame writer. Fragmentation, ping/pong, 16- and 64-bit
+lengths and the close handshake are all there; masked server frames, extensions
+and compression are deliberately not, because each would be a path that is never
+exercised and never right. Every rule a client can break closes the socket with
+the code the spec asks for, rather than throwing.
+
+One warning, paid for in full: **do not check a protocol constant against a
+constant you wrote yourself.** The handshake GUID here was wrong, and the test
+that "verified" it hashed the same wrong constant and agreed. What caught it was
+connecting Node's own `WebSocket` — an implementation nobody here wrote — to the
+server. That check is now permanent, in `test/remote.test.js`.
 
 ## How it talks to Claude
 
@@ -428,8 +494,9 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 688 checks, no dependencies, no network, no CLI
+    npm test             # 792 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
+    npm run test:remote  # 19 checks driving the served client in a real browser
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 
 The offline suite stubs the VS Code API (`test/helpers/vscode-stub.js`) and
@@ -449,10 +516,14 @@ drops those silently, so the charts would come out wrong with nothing in the
 console to say why — and the protocol test fails if a message exists on one side
 of the wire and not the other.
 
-`npm run test:webview` is the one check that needs a browser: it serves the real
-panel HTML with the real `media/*.js`, posts the messages the host would post,
-then presses the keys a user would. It skips itself when no Chrome is installed
-(`CHROME=/path/to/chrome` to point it at one).
+`npm run test:webview` and `npm run test:remote` are the two checks that need a
+browser. The first serves the real panel HTML with the real `media/*.js`, posts
+the messages the host would post, then presses the keys a user would. The second
+starts the real server and drives a real Chrome over the DevTools protocol: it
+opens the page, waits for the socket, watches a turn arrive, types a prompt,
+opens `/status`, then kills the socket underneath it and checks the client
+reconnects with the conversation intact rather than doubled. Both skip themselves
+when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
 
 ## Layout
 
@@ -462,6 +533,11 @@ then presses the keys a user would. It skips itself when no Chrome is installed
     src/tree.js        sidebar provider with coloured status icons
     src/hub.js         one instance, many clients: the protocol, no VS Code in it
     src/panel.js       the webview client of that hub: tab title, icon, editor jobs
+    src/host.js        what only the editor can do, shared by every transport
+    src/page.js        the page itself, once, for whichever host serves it
+    src/remote.js      the local HTTP + WebSocket server: loopback, key, no vscode
+    src/auth.js        who may connect — the seam the device pairing replaces
+    src/wire.js        RFC 6455, server side, no dependencies
     src/ticket.js      PR/issue extraction and the switch rule
     src/label.js       the one naming rule, shared by instances and history
     src/report.js      everything /status measures, derived in one place
@@ -472,6 +548,9 @@ then presses the keys a user would. It skips itself when no Chrome is installed
     media/snippets.js  /table and friends: what you typed, plus a standing instruction
     media/panel.css    all the styling
     media/panel.js     webview front end
+    media/transport.js the one seam: the editor's API, or the same over a socket
+    media/browser.css  theme and connection state for when the host is a browser
+    media/theme.js     the OS colour scheme, in the terms panel.css understands
     media/markdown.js  dependency-free Markdown renderer
     test/              offline suite plus an opt-in live check
 

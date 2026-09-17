@@ -15,26 +15,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { findChrome } = require('./helpers/chrome.js');
 
 const ROOT = path.join(__dirname, '..');
-
-function findChrome() {
-  const candidates = [process.env.CHROME];
-  const cache = path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright');
-  try {
-    for (const dir of fs.readdirSync(cache)) {
-      if (!/^chromium/.test(dir)) continue;
-      for (const inner of ['chrome-headless-shell-mac-arm64/chrome-headless-shell',
-        'chrome-headless-shell-mac-x64/chrome-headless-shell',
-        'chrome-mac/Chromium.app/Contents/MacOS/Chromium']) {
-        candidates.push(path.join(cache, dir, inner));
-      }
-    }
-  } catch (_) { /* no playwright cache */ }
-  candidates.push('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
-  candidates.push('/Applications/Chromium.app/Contents/MacOS/Chromium');
-  return candidates.find((c) => c && fs.existsSync(c)) || null;
-}
 
 const chrome = findChrome();
 if (!chrome) {
