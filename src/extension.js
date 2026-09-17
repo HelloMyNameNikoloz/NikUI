@@ -7,6 +7,7 @@ const { SessionManager, readConfig } = require('./manager');
 const { SessionTree } = require('./tree');
 const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
+const { closeHub, closeAllHubs } = require('./hub');
 const { HistoryTree } = require('./historyTree');
 const { projectsRoot } = require('./history');
 const { nextTicket } = require('./ticket');
@@ -41,7 +42,11 @@ function activate(context) {
   // Keep the sidebar badge honest about how many instances are busy.
   // Whatever removes an instance, its panel goes with it; an orphaned panel
   // still holds a live reference and could respawn the process.
-  manager.on('removed', (session) => SessionPanel.close(session.id));
+  manager.on('removed', (session) => {
+    SessionPanel.close(session.id);
+    // Whoever else was watching — a second view, later a phone — goes with it.
+    closeHub(session.id);
+  });
 
   manager.on('changed', () => {
     const busy = manager.list.filter((s) => s.isBusy).length;
@@ -408,7 +413,7 @@ function activate(context) {
     }
   }));
 
-  context.subscriptions.push({ dispose: () => manager.disposeAll() });
+  context.subscriptions.push({ dispose: () => { closeAllHubs(); manager.disposeAll(); } });
 }
 
 /**
@@ -591,6 +596,7 @@ function folderIdOf(node) {
 }
 
 function deactivate() {
+  closeAllHubs();
   if (manager) manager.disposeAll();
 }
 

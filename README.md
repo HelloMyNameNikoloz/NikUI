@@ -347,6 +347,31 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
 
+## One instance, many clients
+
+A session does not know what is looking at it. `src/hub.js` owns that
+relationship: one hub per instance, however many clients, where a client is
+anything with an `id` and a `post(message)`. Everything that happens to the
+session — items, status, stats, meta, queue, reset — is broadcast to every client
+that has said `ready`. Everything a client asks for goes through one `receive`,
+and the few answers that belong to the asker alone — a status report, a prompt
+pulled back out of the queue — go back to that client only. The status sheet's
+open/closed state is per client too, so a phone with the sheet open does not make
+the panel redraw one it never opened.
+
+`src/panel.js` is now just the VS Code client of that hub: it builds the webview,
+attaches, forwards messages, and supplies the handful of things only the editor
+can do (opening a file at a line, bringing another instance to the front) as host
+functions. Nothing in `src/hub.js` requires `vscode`, which is what makes a second
+transport possible without a second copy of the rules.
+
+`test/protocol.test.js` holds the protocol as two lists — what a client may send,
+what the host may send — and reads both sides out of the source to compare
+against them. A message added to the webview and forgotten in the hub, or sent by
+the hub and never drawn, fails there. The same suite drives a plain in-memory
+client through every message in both directions, so a new transport has a
+conformance suite waiting for it rather than a reading exercise.
+
 ## How it talks to Claude
 
 Each instance spawns:
@@ -403,7 +428,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 632 checks, no dependencies, no network, no CLI
+    npm test             # 688 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 
@@ -415,13 +440,14 @@ geometry, instance lifecycle, the status report and every section of the sheet i
 draws, and the stream parser fed synthetic events in exactly the shape the CLI
 emits.
 
-Three of those deserve naming, because each encodes a bug that already bit or
-one that would be invisible until it shipped: the parser test asserts a streamed
+Four of those deserve naming, because each encodes a bug that already bit or one
+that would be invisible until it shipped: the parser test asserts a streamed
 block is not duplicated by the final single-block assistant event, the cost test
-asserts a turn is charged the delta rather than the running total, and the sheet
-test asserts no rendered mark carries an inline `style` attribute — the webview's
-CSP drops those silently, so the charts would come out wrong with nothing in the
-console to say why.
+asserts a turn is charged the delta rather than the running total, the sheet test
+asserts no rendered mark carries an inline `style` attribute — the webview's CSP
+drops those silently, so the charts would come out wrong with nothing in the
+console to say why — and the protocol test fails if a message exists on one side
+of the wire and not the other.
 
 `npm run test:webview` is the one check that needs a browser: it serves the real
 panel HTML with the real `media/*.js`, posts the messages the host would post,
@@ -434,7 +460,8 @@ then presses the keys a user would. It skips itself when no Chrome is installed
     src/session.js     one instance: process, stream parsing, state machine
     src/manager.js     collection of instances, config, persistence
     src/tree.js        sidebar provider with coloured status icons
-    src/panel.js       webview host, tab title and icon
+    src/hub.js         one instance, many clients: the protocol, no VS Code in it
+    src/panel.js       the webview client of that hub: tab title, icon, editor jobs
     src/ticket.js      PR/issue extraction and the switch rule
     src/label.js       the one naming rule, shared by instances and history
     src/report.js      everything /status measures, derived in one place
