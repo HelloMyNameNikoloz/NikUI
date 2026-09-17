@@ -31,6 +31,8 @@ module.exports = async function () {
 
   const panel = SessionPanel.show(session, context, manager);
   const posted = panel.panel.webview.posted;
+  // The panel is one client of the hub now, and speaks to it as any client does.
+  const say = (msg) => panel.hub.receive(panel.clientId, msg);
 
   // Nothing in this suite may spawn a CLI: the panel starts the instance the
   // moment the webview reports in.
@@ -39,12 +41,12 @@ module.exports = async function () {
   // A panel opened by the command has not loaded yet; the request must wait.
   panel.openStatus();
   checkEqual('nothing is posted into a webview that has not loaded', posted.length, 0);
-  await panel.onMessage({ type: 'ready' });
+  await say({ type: 'ready' });
   check('the sheet opens as soon as the webview is there',
     posted.some((m) => m.type === 'openStatus') && posted.some((m) => m.type === 'statusReport'));
   posted.length = 0;
 
-  await panel.onMessage({ type: 'status' });
+  await say({ type: 'status' });
   const message = posted.filter((m) => m.type === 'statusReport').pop();
   check('a status request is answered with a report', !!message);
   checkEqual('the report is about this instance', message.report.instance.id, session.id);
@@ -65,16 +67,16 @@ module.exports = async function () {
   stub.__config.promptSnippets = { table: 'TABLE INSTRUCTION', quiet: '   ' };
   const { readConfig } = require('../src/manager.js');
   const cfg = readConfig();
-  checkEqual('a configured snippet becomes one of ours', panel.ownCommands(cfg).sort(), ['status', 'table']);
-  check('an emptied one is not offered', panel.ownCommands(cfg).indexOf('quiet') < 0);
-  check('and it joins the list the palette shows', panel.commandList().includes('table'));
+  checkEqual('a configured snippet becomes one of ours', panel.hub.ownCommands(cfg).sort(), ['status', 'table']);
+  check('an emptied one is not offered', panel.hub.ownCommands(cfg).indexOf('quiet') < 0);
+  check('and it joins the list the palette shows', panel.hub.commandList().includes('table'));
   delete stub.__config.promptSnippets;
 
   suite('what the panel hands the webview');
 
   // A webview that was thrown away while hidden says hello again on its way
   // back, and gets the whole picture a second time.
-  await panel.onMessage({ type: 'ready' });
+  await say({ type: 'ready' });
   const init = posted.filter((m) => m.type === 'init').pop();
   check('the first paint says how much was dropped', init && typeof init.dropped === 'number');
   check('and how big the window is', init && init.maxItems > 0);
@@ -86,7 +88,7 @@ module.exports = async function () {
   const lost = new Session({ cwd: '/tmp', claudeSessionId: 'no-such-session-id' });
   lost.start = function () { this.everStarted = true; };
   const lostPanel = SessionPanel.show(lost, context, manager);
-  await lostPanel.onMessage({ type: 'ready' });
+  await lostPanel.hub.receive(lostPanel.clientId, { type: 'ready' });
   const notice = lost.items.find((i) => i.kind === 'notice');
   check('the panel is not left looking empty', !!notice);
   check('it names the session it could not find', notice && /no-such-session-id/.test(notice.text));
@@ -97,25 +99,26 @@ module.exports = async function () {
   suite('the sheet keeps up while it is open');
 
   posted.length = 0;
-  await panel.onMessage({ type: 'statusOpen', open: true });
-  check('the panel knows the sheet is open', panel.statusOpen === true);
-  check('nothing is pending until something changes', panel.statusTimer === null);
+  const seat = () => panel.hub.clients.get(panel.clientId);
+  await say({ type: 'statusOpen', open: true });
+  check('the hub knows this client has the sheet open', seat().statusOpen === true);
+  check('nothing is pending until something changes', seat().statusTimer === null);
 
-  panel.refreshStatus();
-  check('a change schedules a redraw', panel.statusTimer !== null);
-  panel.refreshStatus();
-  check('and a second change does not schedule a second one', panel.statusTimer !== null);
+  panel.hub.refreshStatus();
+  check('a change schedules a redraw', seat().statusTimer !== null);
+  panel.hub.refreshStatus();
+  check('and a second change does not schedule a second one', seat().statusTimer !== null);
 
-  await panel.onMessage({ type: 'statusOpen', open: false });
-  check('closing the sheet cancels the pending redraw', panel.statusTimer === null);
-  panel.refreshStatus();
-  check('and a closed sheet is never redrawn', panel.statusTimer === null);
+  await say({ type: 'statusOpen', open: false });
+  check('closing the sheet cancels the pending redraw', seat().statusTimer === null);
+  panel.hub.refreshStatus();
+  check('and a closed sheet is never redrawn', seat().statusTimer === null);
 
   suite('jumping to another instance');
 
-  await panel.onMessage({ type: 'switch', id: other.id });
+  await say({ type: 'switch', id: other.id });
   check('switching opens the other instance', !!stub.__registered.panels.length);
-  await panel.onMessage({ type: 'switch', id: 'nope' });
+  await say({ type: 'switch', id: 'nope' });
   check('an unknown instance is ignored', true);
 
   SessionPanel.close(other.id);
