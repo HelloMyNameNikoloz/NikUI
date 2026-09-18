@@ -87,6 +87,11 @@ class RemoteServer {
     });
     this.log = deps.log || (() => {});
     this.announcer = deps.announce || null;
+    // What this window is running, told to a device once it has proved itself.
+    // An app carries its own copy of the client, so the two can drift — and a
+    // phone showing a version of the client the laptop no longer speaks is the
+    // kind of problem that presents as everything being subtly wrong.
+    this.version = deps.version || require('../package.json').version;
     this.server = null;
     this.port = 0;
     this.clients = new Set();
@@ -477,7 +482,7 @@ ${this.appHead(nonce)}</head>
 <body class="home">
   <header class="home-head">
     <h1>NikUI</h1>
-    <div class="link" id="link" hidden></div>
+    <div class="link" id="link" role="status" aria-live="polite" hidden></div>
   </header>
   <p class="lede" id="lede">Connecting&hellip;</p>
   <div class="rows" id="rows"></div>
@@ -779,6 +784,7 @@ ${this.appHead(nonce)}</head>
       id: 'socket-' + (this.seq++),
       socket,
       wants: url.searchParams.get('session') || null,
+      version: this.version,
       address: (req.socket && req.socket.remoteAddress) || null,
       server: this,
       log: this.log
@@ -882,6 +888,7 @@ class RemoteClient {
     this.socket = opts.socket;
     this.server = opts.server;
     this.wants = opts.wants;
+    this.version = opts.version || null;
     this.address = opts.address;
     this.log = opts.log || (() => {});
     this.open = true;
@@ -942,7 +949,10 @@ class RemoteClient {
     // Set before the welcome goes out, so the welcome is the first thing inside
     // the envelope rather than the last thing outside it.
     this.box = box || null;
-    this.post(welcomeMessage || { type: '@welcome', device });
+    // Said once, to a client that has proved who it is: an app carrying its own
+    // copy of the client needs to know whether it is the same copy.
+    this.post(Object.assign({ type: '@welcome', device }, welcomeMessage || null,
+      this.version ? { version: this.version } : null));
     this.server.seat(this);
   }
 

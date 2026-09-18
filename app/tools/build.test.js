@@ -110,6 +110,26 @@ check('and that it may keep watching behind a notification of its own',
 check('with a status icon that is not the launcher icon squashed into a square',
   fs.existsSync(path.join(APP, 'android', 'app', 'src', 'main', 'res', 'drawable-xxhdpi', 'ic_stat_nikui.png')));
 
+// ---- pairing by pointing a camera --------------------------------------------
+//
+// The laptop draws a QR carrying nikui://pair#…; the phone's own camera offers
+// to open it. That only works if both platforms have been told this app is what
+// opens one — and the failure, on a phone, is the camera shrugging.
+
+const manifest = fs.readFileSync(
+  path.join(APP, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
+check('Android claims the pairing scheme', /android:scheme="nikui"/.test(manifest));
+check('as something a camera may hand it',
+  /android.intent.category.BROWSABLE/.test(manifest));
+
+const plist = fs.readFileSync(path.join(APP, 'ios', 'App', 'App', 'Info.plist'), 'utf8');
+check('iOS claims it too', /CFBundleURLSchemes/.test(plist) && /<string>nikui<\/string>/.test(plist));
+
+check('and the app knows what to do with one',
+  /appUrlOpen/.test(fs.readFileSync(path.join(APP, 'shell', 'connect.js'), 'utf8')));
+check('including when it was the thing that started it',
+  /getLaunchUrl/.test(fs.readFileSync(path.join(APP, 'shell', 'connect.js'), 'utf8')));
+
 // ---- the native code Xcode would otherwise never compile ---------------------
 //
 // Android finds sources by looking in a folder; Xcode only compiles what is

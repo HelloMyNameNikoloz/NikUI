@@ -110,6 +110,16 @@ module.exports = async function () {
   const port = server.port;
   const cookie = { cookie: 'nikui=' + auth.key };
 
+  suite('what a client is told about the window it reached');
+
+  {
+    const knowing = await ws.connect(`ws://127.0.0.1:${port}/socket`, { headers: cookie });
+    const { welcome } = await signIn(knowing, null);
+    checkEqual('the welcome says which client this window is running',
+      welcome.version, require('../package.json').version);
+    knowing.close(1000);
+  }
+
   suite('a second window is a normal thing to have open');
 
   const rival = new RemoteServer({ root: ROOT, host, sessions, localKey: auth });

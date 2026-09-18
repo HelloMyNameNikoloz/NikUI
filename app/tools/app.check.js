@@ -19,7 +19,7 @@ const REPO = path.join(APP, '..');
 const { findChrome, launch, wait } = require(path.join(REPO, 'test', 'helpers', 'chrome.js'));
 const { skipped } = require(path.join(REPO, 'test', 'helpers', 'skip.js'));
 const { SOURCE: CHIP } = require(path.join(REPO, 'test', 'helpers', 'chip.js'));
-const { SOURCE: BUZZ } = require(path.join(REPO, 'test', 'helpers', 'buzz.js'));
+const { SOURCE: PHONE } = require(path.join(REPO, 'test', 'helpers', 'phone.js'));
 const { Notifier } = require(path.join(REPO, 'src', 'notify.js'));
 
 const chrome = findChrome();
@@ -93,6 +93,9 @@ const record = (name, ok) => {
     sessions: { list: () => [session], get: (id) => (id === session.id ? session : null) },
     devices, identity, pairing, localKey: new LocalKey()
   });
+  // Deliberately not the version in the bundle: a phone carrying a different
+  // copy of the client from the laptop is the case worth seeing said out loud.
+  laptop.version = '99.99.99';
   await laptop.start(0);
 
   const bundle = await serveBundle(path.join(APP, 'www'));
@@ -105,14 +108,27 @@ const record = (name, ok) => {
   const phone = await launch(chrome);
   try {
     await phone.asPhone(390, 844);
-    // A phone that can show a notification, from the first screen onward.
-    await phone.beforeEachPage(BUZZ);
+    // The native bits of a phone, from the first screen onward.
+    await phone.beforeEachPage(PHONE);
 
     // ---- the way in --------------------------------------------------------
     await phone.navigate(appOrigin + '/index.html');
     record('an app with no laptop goes straight to the way in',
       await phone.until('location.pathname.endsWith("connect.html")', 6000));
-    record('and asks for exactly three things',
+    // The way in is two steps and nothing to fill in: pairing is meant to be
+    // pointing a camera at a laptop, so typing is behind a word rather than in
+    // front of one.
+    record('which asks for nothing at all to begin with',
+      (await phone.evaluate('[...document.querySelectorAll(".field input")].filter(i => i.offsetParent).length')) === 0);
+    record('and says what to do, in order',
+      (await phone.evaluate('document.querySelectorAll("#steps li").length')) === 2);
+    record('naming the command to run on the laptop',
+      /Pair a device/.test(await phone.evaluate('document.getElementById("steps").textContent')));
+    record('and the camera as the second step',
+      /camera/i.test(await phone.evaluate('document.getElementById("steps").textContent')));
+
+    await phone.evaluate('document.getElementById("type-instead").click()');
+    record('typing it is still there for when that does not work',
       (await phone.evaluate('document.querySelectorAll(".field input").length')) === 3);
     record('with the code field sized for a thumb',
       (await phone.evaluate('Math.round(document.getElementById("code").getBoundingClientRect().height)')) >= 44);
@@ -130,12 +146,26 @@ const record = (name, ok) => {
       host: `127.0.0.1:${laptop.port}`, scheme: 'http',
       fingerprint: identity.fingerprint, laptop: 'Check laptop'
     });
-    await phone.evaluate(`(() => {
-      document.getElementById('host').value = '127.0.0.1:${laptop.port}';
-      document.getElementById('code').value = '${open.code}';
-      document.getElementById('name').value = 'Check phone';
-      document.getElementById('form').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-    })()`);
+
+    // The way it is meant to happen: the phone's own camera reads the square on
+    // the laptop and hands the link to the app. Nothing is typed.
+    record('the laptop offers a code the app itself can open',
+      /^nikui:\/\/pair#/.test(pairing.state().appLink));
+    await phone.evaluate(`window.__buzz.scan(${JSON.stringify(pairing.state().appLink)})`);
+    record('scanning it turns the screen into one question',
+      await phone.until('!document.getElementById("invited").hidden', 6000));
+    record('which names the laptop asking',
+      /Check laptop/.test(await phone.evaluate('document.getElementById("invited").textContent')));
+    record('and its address, so it can be recognised',
+      new RegExp(`127.0.0.1:${laptop.port}`).test(
+        await phone.evaluate('document.getElementById("invited").textContent')));
+    record('nothing is filled in by hand',
+      (await phone.evaluate('document.getElementById("code").value')) === open.code);
+    record('and the phone says something happened',
+      (await phone.evaluate('window.__buzz.buzzes().length')) > 0);
+
+    await phone.evaluate(`document.getElementById('name').value = 'Check phone'`);
+    await phone.evaluate('document.getElementById("accept").click()');
 
     let paired = null;
     for (let i = 0; i < 100 && !paired; i++) {
@@ -336,6 +366,60 @@ const record = (name, ok) => {
     })()`)) === true);
 
     // ---- it looks like one thing -------------------------------------------
+    // ---- the polish, checked rather than asserted ---------------------------
+
+    await phone.navigate(appOrigin + '/settings.html');
+    record('a laptop running a different client says so',
+      await phone.until('/99.99.99/.test(document.body.textContent)', 10000));
+    record('in the words somebody can act on',
+      /Update the app to match/.test(await phone.evaluate('document.body.textContent')));
+
+    record('there is one paragraph saying what any of this is', (await phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.row')].find(r => /What is this/.test(r.textContent));
+      row.click();
+      const said = document.querySelector('.explain');
+      return !!said && said.textContent.length > 120;
+    })()`)) === true);
+    record('and it says what runs where',
+      /Nothing runs on this phone/i.test(await phone.evaluate('document.body.textContent')));
+
+    record('a tap that changes something is felt',
+      (await phone.evaluate('window.__buzz.buzzes().length')) > 0);
+
+    // Anybody who has asked their phone to stop animating things gets none of it.
+    await phone.prefers({ 'prefers-reduced-motion': 'reduce' });
+    await phone.navigate(appOrigin + '/index.html');
+    record('asking for less motion gets less motion',
+      (await phone.evaluate('getComputedStyle(document.querySelector(".screen")).animationName')) === 'none');
+    await phone.prefers({ 'prefers-reduced-motion': 'no-preference' });
+    await phone.navigate(appOrigin + '/index.html');
+    record('and not asking gets the one that makes it feel like one app',
+      (await phone.evaluate('getComputedStyle(document.querySelector(".screen")).animationName')) !== 'none');
+
+    // A tablet, or a phone on its side, must not stretch a 44pt row across
+    // eleven inches of glass.
+    await phone.asScreen(1024, 768);
+    await phone.navigate(appOrigin + '/settings.html');
+    await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+    record('a wider screen keeps the content readable rather than stretching it',
+      (await phone.evaluate('document.querySelector(".screen").getBoundingClientRect().width')) <= 600);
+    record('and centres it', (await phone.evaluate(`(() => {
+      const box = document.querySelector('.screen').getBoundingClientRect();
+      return Math.abs(box.left - (window.innerWidth - box.right)) < 4;
+    })()`)) === true);
+    await phone.asPhone(390, 844);
+
+    await phone.navigate(appOrigin + '/index.html');
+    record('every icon button says what it is, for anybody who cannot see it',
+      (await phone.evaluate(`[...document.querySelectorAll('button')]
+        .filter(b => !b.textContent.trim())
+        .every(b => !!b.getAttribute('aria-label'))`)) === true);
+    record('and the connection state announces itself when it changes',
+      (await phone.evaluate(`(() => {
+        const pill = document.getElementById('link');
+        return !!pill && (pill.getAttribute('aria-live') === 'polite' || pill.getAttribute('role') === 'status');
+      })()`)) === true);
+
     record('the app is dark whatever the phone is',
       (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');
 

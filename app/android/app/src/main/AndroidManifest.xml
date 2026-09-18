@@ -22,6 +22,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- A pairing code, read by the phone's own camera. The laptop draws
+                 a QR carrying nikui://pair#… and the camera offers to open it
+                 here — so pairing is pointing a phone at a screen rather than
+                 typing a tailnet address and eight characters. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nikui" />
+            </intent-filter>
+
         </activity>
 
         <!-- The only honest way Android lets an app keep listening while it is

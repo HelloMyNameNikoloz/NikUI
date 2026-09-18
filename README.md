@@ -880,8 +880,14 @@ instance it was about. Android can keep listening while the app is in a pocket,
 behind the quiet ongoing notification the system requires; an iPhone cannot, and
 the app says so rather than offering a switch that would do nothing.
 
+And pairing that is pointing a phone at a laptop. The pairing panel offers the
+same invitation in two forms — one the phone's camera hands to **the app**, one
+it hands to a browser — so connecting is: run the command, point the camera, tap
+*Pair*. No scanner in the app, no camera permission, no library. Typing the code
+is still there for when that does not work.
+
     npm run app          # build the bundle and sync both platforms
-    npm run test:app     # 73 checks driving the real bundle in a real browser
+    npm run test:app     # 94 checks driving the real bundle in a real browser
 
 [`app/README.md`](app/README.md) is the detail.
 

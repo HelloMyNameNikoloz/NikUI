@@ -55,7 +55,7 @@ ${head}</head>
     <span class="spacer"></span>
     <div class="crumbs" id="crumbs"></div>
     <div class="who" id="who" hidden></div>
-    <div class="link" id="link" hidden></div>
+    <div class="link" id="link" role="status" aria-live="polite" hidden></div>
   </header>
 
   <div class="find" id="find" hidden>

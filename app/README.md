@@ -56,10 +56,15 @@ client now works whether it was *served* by a laptop or *bundled* by an app:
 
 ## The screens
 
-**Connect** — three fields and one button. The address and the laptop's key
-fingerprint fill themselves in from a pairing link when there is one; the device
-names itself; the key is made before the button is pressed so tapping it does
-one thing and does it now.
+**Connect** — two steps and nothing to fill in. Run *NikUI: Pair a device* on the
+laptop, point the phone's camera at the square it shows. The camera hands the
+link to the app, which turns into one question — *Pair with My laptop?* — and one
+button. No scanner in the app, no camera permission, no library: the camera the
+person already knows how to use does the reading.
+
+Typing is still there, behind *Type the code instead*, for when that does not
+work. The key is made before either button is pressed, so tapping one does one
+thing and does it now.
 
 **Instances** — the fleet, live, with the connection state in the bar.
 
@@ -180,7 +185,46 @@ The status-bar icon is drawn by `tools/icons.js` in the same three bars as
 everything else, white on nothing, because Android keeps only the alpha of a
 notification icon and a launcher icon handed to it renders as a white square.
 
+## How pairing actually happens
+
+    laptop                                phone
+    NikUI: Pair a device  ──▶  QR  ──▶  the camera app
+                                          │
+                                          ├─ nikui://pair#…  ──▶  this app
+                                          └─ https://host/pair#…  ──▶  a browser
+
+One square, two things it can carry, chosen by a segmented control on the
+laptop's pairing panel. The app's is the default because the app is what most
+people are holding; a browser is one tap away for the times it is not. The code
+and the fingerprint live in the fragment either way — the part a browser never
+sends to a server, so not even the machine serving the page sees them in its own
+logs.
+
+Opening the app with a link never pairs on sight. It fills everything in and
+asks, because a link that pairs on sight is a link somebody else could send you.
+
+## Polish, specifically
+
+Things that are easy to claim and hard to keep, so each one is a check in
+`app/tools/app.check.js` rather than an intention:
+
+- **Motion** that respects `prefers-reduced-motion` — the check emulates the
+  preference both ways and asserts the animation is there and is not.
+- **A wider screen** — a tablet or a phone on its side keeps the content at
+  560px and centred, rather than stretching a 44pt row across eleven inches.
+- **Every icon button** carries a label for anybody who cannot see it, and the
+  connection state is a live region so a change is announced.
+- **A focus ring**, for anybody driving this with a keyboard or a switch.
+- **Haptics** on the three things that change something: a laptop inviting you,
+  pairing succeeding, and arming the row that forgets everything.
+- **Version drift** — the app carries its own copy of the client, so the laptop
+  says which one it is running in the welcome, and settings says plainly when
+  they differ. The symptom otherwise is never "the versions differ"; it is
+  everything being subtly wrong.
+- **One paragraph** in About saying what NikUI is, for somebody who opened the
+  app because it appeared on their phone.
+
 ## What is not here yet
 
-Phases 5 and 6 of the app plan: polish, and the store logistics — including
-APNs, which is the only way an iPhone is told while NikUI is closed.
+Phase 6 of the app plan: the store logistics — signing, provisioning, privacy
+labels, and APNs, which is the only way an iPhone is told while NikUI is closed.

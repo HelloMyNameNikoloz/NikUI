@@ -1,16 +1,17 @@
 'use strict';
 
-// A phone that can show a notification, as far as a browser is concerned.
+// The native bits of a phone, as far as a browser is concerned.
 //
-// Stands in for @capacitor/local-notifications and this app's own Watcher, so
-// the whole path can be driven for real: the laptop decides something is worth
-// telling, sends it down the socket the app is holding, and the app turns it
-// into a notification with the right words, the right channel and the right
-// instance attached to it. Everything up to the last inch is the real code.
+// Stands in for the four plugins the app talks to — notifications, this app's
+// own Watcher, haptics, and the one that hands over a link the camera scanned —
+// so the whole path can be driven for real: the laptop decides something is
+// worth telling, it goes down the socket the app is holding, and the app turns
+// it into a notification with the right words, channel and instance. Everything
+// up to the last inch is the real code.
 //
 // What it records is kept in localStorage, so it survives the app moving
-// between screens — which the app does constantly, and which is exactly when a
-// notification is most likely to be dropped.
+// between screens — which the app does constantly, and which is exactly when
+// something is most likely to be dropped.
 
 const SOURCE = `(function () {
   const SHELF = 'nikui.test.buzz';
@@ -54,6 +55,26 @@ const SOURCE = `(function () {
     stop: function () { const all = shelf(); all.watching = false; keep(all); return Promise.resolve(); }
   };
 
+  window.Capacitor.Plugins.Haptics = {
+    impact: function (options) {
+      const all = shelf();
+      all.buzzes = (all.buzzes || []).concat([(options && options.style) || 'LIGHT']);
+      keep(all);
+      return Promise.resolve();
+    }
+  };
+
+  // The link a camera scanned, handed over the way Capacitor hands it over.
+  const urlListeners = [];
+  window.Capacitor.Plugins.App = {
+    addListener: function (name, fn) {
+      if (name === 'appUrlOpen') urlListeners.push(fn);
+      return Promise.resolve({ remove: function () {} });
+    },
+    getLaunchUrl: function () { return Promise.resolve({ url: shelf().launchUrl || null }); },
+    exitApp: function () {}
+  };
+
   // What the test drives from outside.
   window.__buzz = {
     shown: function () { return shelf().shown; },
@@ -61,6 +82,14 @@ const SOURCE = `(function () {
     watching: function () { return shelf().watching; },
     clear: function () { const all = shelf(); all.shown = []; keep(all); },
     answerWith: function (verdict) { const all = shelf(); all.answer = verdict; keep(all); },
+    buzzes: function () { return shelf().buzzes || []; },
+    /** A QR the phone's camera just read, delivered the way the platform does. */
+    scan: function (url) {
+      for (const fn of urlListeners) fn({ url: url });
+      return urlListeners.length;
+    },
+    /** The same link, but as the thing that started the app. */
+    launchedWith: function (url) { const all = shelf(); all.launchUrl = url; keep(all); },
     /** Tap the last notification, the way the platform reports it. */
     tapLast: function () {
       const all = shelf();
