@@ -58,7 +58,8 @@ function describeEnv(context, manager, session, devices, awake) {
     awake: awake ? awake.state() : null,
     devices: devices ? devices.list().map((d) => ({
       name: d.name, control: !!d.control, lastSeenAt: d.lastSeenAt, pairedAt: d.pairedAt,
-      protection: d.protection || 'software', biometric: !!d.biometric
+      protection: d.protection || 'software', biometric: !!d.biometric,
+      reach: { push: !!d.push, apple: !!d.apns }
     })) : [],
     trail: devices ? devices.recent(20) : [],
     reach: reachState(),

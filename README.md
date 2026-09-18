@@ -348,6 +348,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.remote.autoStart` | `false` | Start that server when the window opens |
 | `nikui.remote.requireEncryption` | `true` | Refuse a device that will not seal the channel end to end |
 | `nikui.remote.appOnly` | `false` | Serve the app and nothing else outside this machine |
+| `nikui.apns.*` | empty | Apple team ID, key ID, `.p8` path and topic, for telling an iPhone something while the app is closed |
 | `nikui.keepAwake` | `false` | Hold this machine awake while an instance needs it |
 | `nikui.notifyDevices` | needs-you, quota, failed | Which things are worth sending to a paired phone |
 
@@ -886,8 +887,20 @@ it hands to a browser — so connecting is: run the command, point the camera, t
 *Pair*. No scanner in the app, no camera permission, no library. Typing the code
 is still there for when that does not work.
 
-    npm run app          # build the bundle and sync both platforms
-    npm run test:app     # 94 checks driving the real bundle in a real browser
+And a way to actually ship it. One version stamped into both platforms, a signed
+Android release build with the R8 keep rules Capacitor needs to survive
+shrinking, cleartext refused except to loopback, Apple's privacy manifest, and
+[`app/RELEASE.md`](app/RELEASE.md) — the runbook, including what each platform
+costs. Android needs nothing from anybody; an iPhone needs an Apple Developer
+account for anything past seven days.
+
+Which is also the last functional gap: an iPhone cannot keep a socket open, so
+being told while the app is *closed* goes through Apple's push network. That is
+implemented, tested to the socket, and inert until four settings are filled in.
+
+    npm run app             # build the bundle and sync both platforms
+    npm run test:app        # 99 checks driving the real bundle in a real browser
+    cd app && npm test      # 97 checks that the bundle is still a copy, and shippable
 
 [`app/README.md`](app/README.md) is the detail.
 

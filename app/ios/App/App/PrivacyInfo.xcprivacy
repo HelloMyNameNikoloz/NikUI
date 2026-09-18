@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  What this app collects: nothing.
+
+  It talks to one laptop, which is yours, over a connection sealed between the
+  two. There is no server of ours, no analytics, no advertising identifier and
+  no third-party SDK — the dependency list is Capacitor and four of its own
+  plugins, and none of them phones home.
+
+  The one required-reason API in use is UserDefaults, which the Preferences
+  plugin writes the paired laptop's address into so a WebView data reset does
+  not silently lose the pairing. Reason CA92.1: read and written only by this
+  app, on this device, never sent anywhere.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -23,6 +23,7 @@ const { Tailscale, Cloudflared } = require('./tunnel');
 const { Awake, shouldHold } = require('./awake');
 const { loadVapid } = require('./push');
 const { Notifier } = require('./notify');
+const { loadApns } = require('./apns');
 
 let manager;
 
@@ -588,9 +589,26 @@ function serveLocally(context, manager, awakeState) {
    * a turn finishing is available and off, because four agents finishing
    * overnight is a phone buzzing all night.
    */
+  // The only door in this product that goes through anybody else's machine, and
+  // the only one that needs an account: an iPhone with the app closed. Inert
+  // until somebody fills in four settings.
+  const apns = loadApns(() => {
+    try {
+      const cfg = vscode.workspace.getConfiguration('nikui');
+      return {
+        teamId: cfg.get('apns.teamId', ''),
+        keyId: cfg.get('apns.keyId', ''),
+        keyFile: cfg.get('apns.keyFile', ''),
+        bundleId: cfg.get('apns.bundleId', 'com.nikoloz.nikui'),
+        production: cfg.get('apns.production', true)
+      };
+    } catch (_) { return {}; }
+  });
+
   const notifier = new Notifier({
     devices,
     vapid,
+    apns,
     // A notification whose instance cannot be opened is a notification that
     // teaches you to ignore them.
     reachable: () => server.listening,

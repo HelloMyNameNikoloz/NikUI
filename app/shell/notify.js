@@ -35,6 +35,7 @@
   const plugins = () => (window.Capacitor && window.Capacitor.Plugins) || null;
   const local = () => { const p = plugins(); return (p && p.LocalNotifications) || null; };
   const watcher = () => { const p = plugins(); return (p && p.Watcher) || null; };
+  const appleToken = () => { const p = plugins(); return (p && p.AppleToken) || null; };
 
   function read() {
     try { return Object.assign({}, DEFAULTS, JSON.parse(window.localStorage.getItem(PREFS)) || {}); }
@@ -163,6 +164,52 @@
       .catch(function () { return background(); });
   }
 
+  // ---- being told while the app is not running at all -------------------------
+
+  /**
+   * On an iPhone, the socket is gone the moment the app leaves the screen, and
+   * no setting changes that. The only way to reach a closed app is Apple's own
+   * push network, which needs a token from iOS and an Apple Developer account
+   * behind the build. Android needs none of it and does not have this plugin.
+   *
+   * @returns {Promise<{supported: boolean, registered: boolean, why?: string}>}
+   */
+  function apple() {
+    const api = appleToken();
+    if (!api) return Promise.resolve({ supported: false, registered: false });
+    return Promise.resolve({ supported: true, registered: !!read().appleToken });
+  }
+
+  /**
+   * Ask iOS for a token and hand it to the laptop, over the socket it is
+   * already holding — which is authenticated and sealed, so it needs no
+   * endpoint, no second signature and no rate limit of its own.
+   */
+  function registerWithApple(send) {
+    const api = appleToken();
+    if (!api) return Promise.resolve({ supported: false, registered: false });
+    return api.register().then(function (out) {
+      const token = out && out.token;
+      if (!token) return { supported: true, registered: false, why: 'iOS gave no token' };
+      const next = read();
+      next.appleToken = token;
+      write(next);
+      if (send) send({ type: '@apple', token: token });
+      return { supported: true, registered: true };
+    }).catch(function (err) {
+      return {
+        supported: true, registered: false,
+        why: (err && (err.message || err.errorMessage)) || 'this phone would not register'
+      };
+    });
+  }
+
+  /** Said again on every connection, because a token outlives a socket. */
+  function offerApple(send) {
+    const token = read().appleToken;
+    if (token && send) send({ type: '@apple', token: token });
+  }
+
   // ---- wiring ----------------------------------------------------------------
 
   /** Where a notification came from, opened when it is tapped. */
@@ -200,13 +247,20 @@
 
     window.addEventListener('message', function (event) {
       const message = event.data;
-      if (!message || message.type !== '@notify') return;
-      raise(message);
+      if (!message) return;
+      if (message.type === '@notify') return void raise(message);
+      // A fresh socket has not been told where to reach this phone when it is
+      // closed. Tokens outlive connections; the laptop's record of one does not
+      // need to, because saying it again costs nothing.
+      if (message.type === '@welcome' && window.nikLink) {
+        offerApple(function (out) { window.nikLink.postMessage(out); });
+      }
     });
   }
 
   window.NikNotify = {
     prefs, setPref, wants, raise, test, permission, ask, background, watch,
+    apple, registerWithApple, offerApple,
     KINDS, DEFAULTS, idFor
   };
 

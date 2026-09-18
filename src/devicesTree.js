@@ -48,6 +48,7 @@ class DevicesTree {
       `- Paired ${when(device.pairedAt)}\n` +
       `- Last seen ${when(device.lastSeenAt)}\n` +
       `- Key ${device.fingerprint || 'unknown'}, ${held(device)}\n` +
+      `- Told about things by ${reached(device)}\n` +
       (device.rekeyedAt
         ? `- Replaced its key ${when(device.rekeyedAt)} (was ${device.previousFingerprint || 'unknown'})\n`
         : '') +
@@ -66,6 +67,18 @@ class DevicesTree {
  * Enclave"; that would take platform attestation, and a word that looked like a
  * guarantee without one would be worse than no word at all.
  */
+/**
+ * How this window can tell the device something. Worth saying because the three
+ * are not equivalent: a socket only works while the app is open, and the other
+ * two only work if somebody set them up.
+ */
+function reached(device) {
+  const ways = [];
+  if (device.apns) ways.push('Apple, while the app is closed');
+  if (device.push) ways.push('a push service');
+  return ways.length ? ways.join(' and ') : 'the socket it is holding, and only while it is';
+}
+
 function held(device) {
   const said = {
     'secure-enclave': 'which it says is in a Secure Enclave',

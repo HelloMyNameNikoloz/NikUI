@@ -153,6 +153,22 @@ class RemoteServer {
     return told;
   }
 
+  /**
+   * An iPhone saying where Apple can find it. Refused for anything that is not
+   * a paired device, because a token is a thing this window will later send to
+   * a third party and it should only ever be one a device it knows asked for.
+   */
+  rememberApple(device, token) {
+    if (!this.devices || !device || device.kind !== 'device') return false;
+    const kept = this.devices.subscribeApple(device.id, token);
+    if (!kept) {
+      this.log(`${device.name} offered something that is not a device token`);
+      return false;
+    }
+    this.log(`${device.name} can be reached through Apple when it is closed`);
+    return true;
+  }
+
   announceState() {
     for (const fn of this.stateWatchers) {
       try { fn(this.listening); } catch (_) { /* a watcher's problem */ }
@@ -1038,6 +1054,12 @@ class RemoteClient {
     } else if (msg.type === '@box') {
       return;
     }
+
+    // Where to reach this device when it is not running. Only an app has one,
+    // it only ever arrives on a socket the device has already proved itself on,
+    // and it is stored against that device's record — so forgetting the device
+    // forgets where to reach it, with no second list to remember to clean.
+    if (msg.type === '@apple') return this.server.rememberApple(this.device, msg.token);
 
     if (msg.type.charCodeAt(0) === 64) return; // '@' frames are the transport's, not the session's
     if (!this.binding) return;

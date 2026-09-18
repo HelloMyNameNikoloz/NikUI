@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Everything this app says goes over TLS, and the app refuses to be talked out
+  of it: cleartext is permitted to exactly three names, all of which mean "this
+  machine" — loopback on a device, and the address an Android emulator uses for
+  the computer running it. There is no laptop on the internet that any of these
+  can reach.
+
+  The connection is sealed end to end inside that TLS as well (see
+  src/secure.js), so this is the outer of two envelopes rather than the only one.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

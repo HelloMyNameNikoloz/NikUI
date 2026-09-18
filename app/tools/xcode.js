@@ -24,7 +24,13 @@ const PROJECT = path.join(APP, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj')
 
 // Folders under ios/App/App/ holding this app's own native code, and the group
 // each becomes in the navigator.
-const FOLDERS = ['SecureKey'];
+const FOLDERS = ['SecureKey', 'AppleToken'];
+
+// Files that have to be *in the bundle* rather than compiled. The privacy
+// manifest is the one that matters: a submission without it is rejected, and
+// a manifest sitting in the folder unlisted is exactly as absent as no manifest
+// at all.
+const RESOURCES = ['PrivacyInfo.xcprivacy'];
 
 /** A pbxproj identifier: 24 hex characters, and the same ones every time. */
 const idFor = (what) => crypto.createHash('sha256').update('nikui:' + what)
@@ -72,6 +78,29 @@ function ensure(text, folder, file) {
   return { text: out, added: true };
 }
 
+/** A file that ships inside the app rather than being compiled into it. */
+function ensureResource(text, file) {
+  const fileId = idFor('file:' + file);
+  const buildId = idFor('resource:' + file);
+  if (text.includes(fileId)) return { text, added: false };
+
+  let out = text.replace('/* Begin PBXBuildFile section */',
+    '/* Begin PBXBuildFile section */\n' +
+    `\t\t${buildId} /* ${file} in Resources */ = {isa = PBXBuildFile; fileRef = ${fileId} /* ${file} */; };`);
+
+  out = out.replace('/* Begin PBXFileReference section */',
+    '/* Begin PBXFileReference section */\n' +
+    `\t\t${fileId} /* ${file} */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = ${file}; sourceTree = "<group>"; };`);
+
+  out = out.replace(/(504EC3061FED79650016851F \/\* App \*\/ = \{\n\t\t\tisa = PBXGroup;\n\t\t\tchildren = \(\n)/,
+    `$1\t\t\t\t${fileId} /* ${file} */,\n`);
+
+  out = out.replace(/(isa = PBXResourcesBuildPhase;\n\t\t\tbuildActionMask = \d+;\n\t\t\tfiles = \(\n)/,
+    `$1\t\t\t\t${buildId} /* ${file} in Resources */,\n`);
+
+  return { text: out, added: true };
+}
+
 function sync() {
   if (!fs.existsSync(PROJECT)) return { added: 0, present: 0 };
   let text = fs.readFileSync(PROJECT, 'utf8');
@@ -86,6 +115,13 @@ function sync() {
       text = result.text;
       if (result.added) added++;
     }
+  }
+  for (const file of RESOURCES) {
+    if (!fs.existsSync(path.join(APP, 'ios', 'App', 'App', file))) continue;
+    present++;
+    const result = ensureResource(text, file);
+    text = result.text;
+    if (result.added) added++;
   }
   if (added) fs.writeFileSync(PROJECT, text);
   return { added, present };

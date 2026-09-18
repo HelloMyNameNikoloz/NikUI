@@ -49,8 +49,18 @@ const SOURCE = `(function () {
     }
   };
 
+  // Which phone this is. A real one is one or the other; the stand-in is told,
+  // because both branches of "how do I hear about this while the app is shut"
+  // need driving and no single device has both.
   window.Capacitor.Plugins.Watcher = {
-    status: function () { return Promise.resolve({ supported: true, running: shelf().watching, platform: 'android' }); },
+    status: function () {
+      const all = shelf();
+      return Promise.resolve({
+        supported: all.platform !== 'ios',
+        running: all.watching,
+        platform: all.platform || 'android'
+      });
+    },
     start: function () { const all = shelf(); all.watching = true; keep(all); return Promise.resolve(); },
     stop: function () { const all = shelf(); all.watching = false; keep(all); return Promise.resolve(); }
   };
@@ -61,6 +71,17 @@ const SOURCE = `(function () {
       all.buzzes = (all.buzzes || []).concat([(options && options.style) || 'LIGHT']);
       keep(all);
       return Promise.resolve();
+    }
+  };
+
+  // An iPhone asking iOS where Apple can reach it. Present only on iOS, which
+  // is why the app asks whether it is there rather than which platform it is on.
+  window.Capacitor.Plugins.AppleToken = {
+    isSupported: function () { return Promise.resolve({ supported: true, platform: 'ios' }); },
+    register: function () {
+      const all = shelf();
+      if (all.appleRefusal) return Promise.reject(new Error(all.appleRefusal));
+      return Promise.resolve({ token: 'f'.repeat(64) });
     }
   };
 
@@ -90,6 +111,8 @@ const SOURCE = `(function () {
     },
     /** The same link, but as the thing that started the app. */
     launchedWith: function (url) { const all = shelf(); all.launchUrl = url; keep(all); },
+    appleRefuses: function (why) { const all = shelf(); all.appleRefusal = why || null; keep(all); },
+    beAn: function (kind) { const all = shelf(); all.platform = kind; keep(all); },
     /** Tap the last notification, the way the platform reports it. */
     tapLast: function () {
       const all = shelf();

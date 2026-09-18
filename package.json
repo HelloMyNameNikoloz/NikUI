@@ -638,6 +638,31 @@
           "default": false,
           "markdownDescription": "Serve the app and nothing else. From anywhere but this machine, only pairing, the socket, the health probe and the push key exist \u2014 no page, no client, no service worker, no manifest. The app carries its own copy of the client, so it needs none of them. Off by default, because it turns off the browser at `/` that some people use instead of the app."
         },
+        "nikui.apns.teamId": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Your Apple Developer team ID, for telling an iPhone something while the NikUI app is closed. iOS suspends an app the moment it leaves the screen, so Apple\u2019s own push network is the only way to reach one \u2014 and it needs an Apple Developer account. Leave this empty and nothing is sent; Android needs none of it."
+        },
+        "nikui.apns.keyId": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The Key ID of an APNs auth key from your Apple Developer account."
+        },
+        "nikui.apns.keyFile": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `.p8` file that key came in. The key itself is never copied into settings \u2014 only where to find it."
+        },
+        "nikui.apns.bundleId": {
+          "type": "string",
+          "default": "com.nikoloz.nikui",
+          "markdownDescription": "The app\u2019s bundle identifier, which Apple calls the topic. Change this only if you rebuilt the app under an identifier of your own."
+        },
+        "nikui.apns.production": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Send to Apple\u2019s production network. Turn off for a build installed straight from Xcode, which gets a sandbox token \u2014 a production token sent to sandbox, or the other way round, is refused as `BadDeviceToken`."
+        },
         "nikui.keepAwake": {
           "type": "boolean",
           "default": false,
