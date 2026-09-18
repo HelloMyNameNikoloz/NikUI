@@ -19,7 +19,7 @@ const { DevicesTree } = require('./devicesTree');
 const { PairingWindow } = require('./pairing');
 const { PairPanel } = require('./pairPanel');
 const { loadIdentity } = require('./identity');
-const { Tailscale } = require('./tunnel');
+const { Tailscale, Cloudflared } = require('./tunnel');
 const { Awake, shouldHold } = require('./awake');
 const { loadVapid } = require('./push');
 const { Notifier } = require('./notify');
@@ -520,6 +520,9 @@ function serveLocally(context, manager, awakeState) {
   // The mesh in front of the server, when there is one. Nothing binds anywhere
   // but loopback either way: this asks Tailscale's own proxy to forward to us.
   const tailscale = new Tailscale();
+  const cloudflared = new Cloudflared({
+    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
+  });
   let weExposed = false;
 
   /**
@@ -625,7 +628,61 @@ function serveLocally(context, manager, awakeState) {
     if (next === 'Copy the address' && vscode.env.clipboard) await vscode.env.clipboard.writeText(out.url);
   };
 
+  /**
+   * The other way out, and the one you have to read something first.
+   *
+   * A tailnet is a set of devices you authorised. A public hostname is the
+   * internet, and the difference is the whole of the threat model's third
+   * attacker — so this says exactly what changes, and does not proceed until
+   * somebody has said yes to that sentence rather than to a button.
+   */
+  const reachPublicly = async () => {
+    if (!(await start())) return;
+    const choice = await vscode.window.showWarningMessage(
+      'Open a public address for this window?',
+      {
+        modal: true,
+        detail: 'This puts a hostname on the internet that forwards to this window. ' +
+          'Nobody can reach an instance without a paired device — but the pairing page ' +
+          'becomes reachable by anyone who learns the address, and NikUI runs Claude with ' +
+          'permissions bypassed, so a device that pairs and is granted control can run any ' +
+          'command here.\n\n' +
+          'Tailscale is the better path if you can use it: a tailnet is devices you already ' +
+          'authorised. THREAT-MODEL.md in the repository is the long version.'
+      },
+      'Open it anyway', 'Read the threat model'
+    );
+    if (choice === 'Read the threat model') {
+      const file = vscode.Uri.joinPath(context.extensionUri, 'THREAT-MODEL.md');
+      return vscode.commands.executeCommand('markdown.showPreview', file);
+    }
+    if (choice !== 'Open it anyway') return;
+
+    const opened = await cloudflared.expose(server.port);
+    if (!opened.ok) {
+      vscode.window.showWarningMessage('NikUI could not open a public tunnel: ' + opened.reason);
+      return;
+    }
+    weExposed = true;
+    server.publicHost = opened.host;
+    paint();
+    const next = await vscode.window.showWarningMessage(
+      `NikUI is on the internet at ${opened.url} until you close it or this window.`,
+      'Pair a device', 'Close it now'
+    );
+    if (next === 'Pair a device') return pair();
+    if (next === 'Close it now') return unreach();
+  };
+
   const unreach = async () => {
+    if (cloudflared.running) {
+      await cloudflared.hide();
+      weExposed = false;
+      server.publicHost = null;
+      paint();
+      vscode.window.setStatusBarMessage('NikUI: the public address is closed', 4000);
+      return;
+    }
     if (!weExposed) {
       vscode.window.setStatusBarMessage('NikUI: this window was not reachable from the tailnet', 4000);
       return;
@@ -662,9 +719,12 @@ function serveLocally(context, manager, awakeState) {
       server.exposed
         ? { label: '$(circle-slash) Stop being reachable from my phone', id: 'unreach' }
         : { label: '$(radio-tower) Reach this window from my phone', id: 'reach' },
+      server.exposed
+        ? null
+        : { label: '$(globe) Open a public address (read this first)', id: 'public' },
       { label: '$(clippy) Copy the link', id: 'copy' },
       { label: '$(debug-stop) Stop the server', id: 'stop' }
-    ], {
+    ].filter(Boolean), {
       placeHolder: server.exposed
         ? `NikUI is reachable at ${server.publicScheme}://${server.publicHost}`
         : `NikUI is serving on 127.0.0.1:${server.port}`
@@ -673,6 +733,7 @@ function serveLocally(context, manager, awakeState) {
     if (choice.id === 'open') return open();
     if (choice.id === 'pair') return pair();
     if (choice.id === 'reach') return reach();
+    if (choice.id === 'public') return reachPublicly();
     if (choice.id === 'unreach') return unreach();
     if (choice.id === 'stop') return stop();
     if (choice.id === 'copy' && vscode.env.clipboard) {
@@ -752,12 +813,14 @@ function serveLocally(context, manager, awakeState) {
     vscode.commands.registerCommand('nikui.pairDevice', pair),
     vscode.commands.registerCommand('nikui.reachFromPhone', reach),
     vscode.commands.registerCommand('nikui.stopReaching', unreach),
+    vscode.commands.registerCommand('nikui.reachPublicly', reachPublicly),
     vscode.commands.registerCommand('nikui.grantControl', async (node) => grant(await pick(node))),
     vscode.commands.registerCommand('nikui.revokeControl', async (node) => revoke(await pick(node))),
     vscode.commands.registerCommand('nikui.forgetDevice', async (node) => forget(await pick(node))),
     vscode.commands.registerCommand('nikui.renameDevice', async (node) => rename(await pick(node))),
     { dispose: () => {
       if (weExposed) tailscale.hide();
+      cloudflared.hide();
       server.dispose();
       if (bar) bar.dispose();
       if (out) out.dispose();

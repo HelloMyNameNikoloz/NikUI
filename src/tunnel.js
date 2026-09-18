@@ -1,7 +1,7 @@
 'use strict';
 
 const fs = require('fs');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 /**
  * Reaching this laptop from a phone that is somewhere else.
@@ -181,4 +181,116 @@ function matchesDomain(domain, name) {
   return false;
 }
 
-module.exports = { Tailscale, PLACES, matchesDomain };
+/**
+ * The other way out: a public hostname, through Cloudflare.
+ *
+ * Second choice on purpose, and gated behind something you have to read. A
+ * tailnet is a set of devices you authorised; a `trycloudflare.com` hostname is
+ * the internet, and the difference is the whole of the threat model's third
+ * attacker. It is here because a tailnet needs an app on the phone and there are
+ * places that will not have one.
+ *
+ * What it does have going for it: TLS to the edge, so Web Crypto works and a
+ * device can hold a key, and nothing of ours listening anywhere but loopback.
+ */
+class Cloudflared {
+  constructor(deps) {
+    const d = deps || {};
+    this.places = d.places || CLOUDFLARE_PLACES;
+    this.exists = d.exists || ((file) => { try { return fs.existsSync(file); } catch (_) { return false; } });
+    this.spawn = d.spawn || spawn;
+    this.log = d.log || (() => {});
+    this.proc = null;
+    this.url = null;
+  }
+
+  find() {
+    return this.places.find((place) => this.exists(place)) || null;
+  }
+
+  get running() {
+    return !!this.proc;
+  }
+
+  /**
+   * Start a quick tunnel and wait for it to say where it is.
+   *
+   * @returns {Promise<{ok: true, host: string, url: string} | {ok: false, reason: string}>}
+   */
+  expose(port, options) {
+    const timeout = (options && options.timeoutMs) || 25000;
+    if (this.proc) return Promise.resolve({ ok: true, host: hostOf(this.url), url: this.url });
+    const binary = this.find();
+    if (!binary) {
+      return Promise.resolve({
+        ok: false,
+        reason: 'cloudflared is not installed. Tailscale is the better path if you can use it; ' +
+          'otherwise install cloudflared and try again.'
+      });
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (answer) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(answer);
+      };
+
+      const proc = this.spawn(binary, [
+        'tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${port}`
+      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+      this.proc = proc;
+
+      // cloudflared announces the hostname it was given on its way up, and the
+      // only way to know it is to read it: a quick tunnel has no other record.
+      const watch = (chunk) => {
+        const text = String(chunk);
+        const found = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i.exec(text);
+        if (found && !this.url) {
+          this.url = found[0] + '/';
+          this.log('public tunnel at ' + this.url);
+          done({ ok: true, host: hostOf(this.url), url: this.url });
+        }
+      };
+      if (proc.stdout) proc.stdout.on('data', watch);
+      if (proc.stderr) proc.stderr.on('data', watch);
+
+      proc.on('error', (err) => {
+        this.proc = null;
+        done({ ok: false, reason: (err && err.message) || 'cloudflared would not start' });
+      });
+      proc.on('exit', (code) => {
+        this.proc = null;
+        this.url = null;
+        done({ ok: false, reason: 'cloudflared stopped' + (code == null ? '' : ' with code ' + code) });
+      });
+
+      const timer = setTimeout(() => {
+        done({ ok: false, reason: 'cloudflared did not say where it was within ' + Math.round(timeout / 1000) + 's' });
+      }, timeout);
+      if (timer.unref) timer.unref();
+    });
+  }
+
+  hide() {
+    if (!this.proc) return Promise.resolve({ ok: true });
+    const proc = this.proc;
+    this.proc = null;
+    this.url = null;
+    try { proc.kill(); } catch (_) { /* already gone */ }
+    this.log('public tunnel closed');
+    return Promise.resolve({ ok: true });
+  }
+}
+
+const CLOUDFLARE_PLACES = [
+  '/usr/local/bin/cloudflared',
+  '/opt/homebrew/bin/cloudflared',
+  '/usr/bin/cloudflared'
+];
+
+const hostOf = (url) => { try { return new URL(url).host; } catch (_) { return null; } };
+
+module.exports = { Tailscale, Cloudflared, PLACES, CLOUDFLARE_PLACES, matchesDomain };

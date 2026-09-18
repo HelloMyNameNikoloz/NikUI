@@ -240,6 +240,11 @@
       {
         "command": "nikui.stopReaching",
         "title": "NikUI: Stop being reachable from my phone"
+      },
+      {
+        "command": "nikui.reachPublicly",
+        "title": "NikUI: Open a public address for this window",
+        "icon": "$(globe)"
       }
     ],
     "menus": {
