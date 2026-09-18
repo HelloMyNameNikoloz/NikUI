@@ -35,7 +35,7 @@ const TO_CLIENT = [
 // message sealed in it. It is listed here because it is part of the protocol,
 // not an implementation detail of one end.
 const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate', '@box', '@notify'];
-const CONTROL_TO_HOST = ['@auth', '@box'];
+const CONTROL_TO_HOST = ['@auth', '@box', '@apple'];
 
 function quietSession() {
   const s = new Session({ cwd: '/tmp' });
@@ -108,12 +108,13 @@ module.exports = async function () {
       .concat([...read('media/home.js').matchAll(/type === '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
       // The app's own shell speaks the protocol too: a frame only it acts on is
       // still a frame, and a frame nothing acts on is still a mistake.
-      .concat([...read('app/shell/notify.js').matchAll(/type !== '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
+      .concat([...read('app/shell/notify.js').matchAll(/type === '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
   );
   // What the shim puts on the wire, as against what it hands to its own page:
   // an offline refusal is synthesised locally and must still be a message the
   // protocol names, but it is not something the host ever sees.
-  const sentByClient = new Set([...shim.matchAll(/send\(\{\s*type: '(@[a-zA-Z]+)'/g)].map((m) => m[1]));
+  const sentByClient = new Set([...shim.matchAll(/send\(\{\s*type: '(@[a-zA-Z]+)'/g)].map((m) => m[1])
+    .concat([...read('app/shell/notify.js').matchAll(/type: '(@[a-zA-Z]+)'/g)].map((m) => m[1])));
   const synthesised = new Set([...shim.matchAll(/data: \{ type: '(@?[a-zA-Z]+)'/g)].map((m) => m[1]));
   const heardByHost = new Set([...server.matchAll(/type !== '(@[a-zA-Z]+)'/g)].map((m) => m[1]));
 

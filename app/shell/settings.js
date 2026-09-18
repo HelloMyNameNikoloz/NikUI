@@ -26,7 +26,8 @@
     notify: null,           // what this phone has been told it may show
     watching: null,         // whether it can keep listening in a pocket
     laptopVersion: null,    // what the laptop is running, as it said on connecting
-    explaining: false       // the one paragraph that says what any of this is
+    explaining: false,      // the one paragraph that says what any of this is
+    apple: null             // whether this iPhone can be reached while closed
   };
 
   const el = (tag, className, text) => {
@@ -283,10 +284,26 @@
           tap: () => window.NikNotify.watch(!away.running).then((now) => { state.watching = now; draw(); }),
           chevron: true
         });
+      } else if (state.apple && state.apple.supported) {
+        // iOS cannot keep a socket open, so the only way to reach a closed app
+        // is Apple's own network — which needs a token from this phone and an
+        // Apple Developer account behind the build. Both failures are named,
+        // because "notifications do not arrive" is the least useful sentence
+        // in this product.
+        row(telling, {
+          label: 'While NikUI is closed',
+          hint: state.apple.registered
+            ? 'Your laptop can reach this iPhone through Apple when the app is not running.'
+            : state.apple.why || 'iPhone cannot listen in the background. Apple can pass a message on.',
+          value: state.apple.registered ? 'On' : 'Set up',
+          tone: state.apple.registered ? 'good' : '',
+          tap: state.apple.registered ? null : setUpApple,
+          chevron: !state.apple.registered
+        });
       } else {
         row(telling, {
           label: 'While NikUI is closed',
-          hint: 'iPhone stops apps listening in the background. There is no setting for it.',
+          hint: 'This phone cannot listen in the background, and cannot be reached any other way.',
           value: 'Not possible'
         });
       }
@@ -505,6 +522,21 @@
     });
   }
 
+  /** Ask iOS for a token, and hand it to the laptop over the socket. */
+  function setUpApple() {
+    const api = window.NikNotify;
+    if (!api || !api.registerWithApple) return;
+    flash('Asking Apple…');
+    api.registerWithApple(function (message) {
+      if (window.nikLink) window.nikLink.postMessage(message);
+    }).then(function (now) {
+      state.apple = now;
+      draw();
+      if (now.registered) { buzz('medium'); flash('Done.'); }
+      else flash(now.why || 'This phone would not register.');
+    });
+  }
+
   function copyDiagnostics() {
     const lines = [
       'NikUI app ' + state.version.app + ' · client ' + state.version.client +
@@ -515,6 +547,7 @@
       'notifications: ' + String(state.notify) +
         (window.NikNotify ? ' · ' + JSON.stringify(window.NikNotify.prefs()) : ''),
       'background: ' + JSON.stringify(state.watching),
+      'while closed: ' + JSON.stringify(state.apple),
       'permission: ' + (state.control === null ? 'unknown' : state.control ? 'can steer' : 'watching only'),
       'device id: ' + ((state.device && state.device.id) || 'not paired'),
       'key kept in: ' + ((state.device && state.device.protection) || 'software') +
@@ -581,6 +614,7 @@
     if (window.NikNotify) {
       window.NikNotify.permission().then((verdict) => { state.notify = verdict; draw(); });
       window.NikNotify.background().then((watching) => { state.watching = watching; draw(); });
+      window.NikNotify.apple().then((apple) => { state.apple = apple; draw(); });
     }
   }
 })();

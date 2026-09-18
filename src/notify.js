@@ -42,6 +42,10 @@ class Notifier {
     // nothing outside this machine can reach it at all — which is most of the
     // time, because the tunnel is opt-in.
     this.toSockets = deps.toSockets || (() => 0);
+    // The third door, and the only one that needs an account with anybody:
+    // Apple's, for an iPhone that is not running. Inert until configured.
+    this.apns = deps.apns || null;
+    this.toApple = deps.sendApple || require('./apns').send;
     // What each instance was last announced for, so the same state is not sent
     // twice as it flickers.
     this.told = new Map();
@@ -75,11 +79,30 @@ class Notifier {
       if (!attached) this.log(`"${message.title}" not sent: nothing can reach this window`);
       return { sent: 0, failed: 0, attached, skipped: !attached };
     }
-    const subscribers = this.devices.subscribers();
-    if (!subscribers.length) return { sent: 0, failed: 0, attached, skipped: !attached };
-
     let sent = 0;
     let failed = 0;
+
+    // An iPhone with the app closed is reachable only through Apple. Skipped
+    // entirely, and silently, until somebody has set that up — there is nothing
+    // to warn about in a door that was never fitted.
+    if (this.apns && this.apns.state().configured) {
+      for (const device of this.devices.appleSubscribers()) {
+        const outcome = await this.toApple(device.apns.token, body,
+          { apns: this.apns, now: this.now() });
+        if (outcome.ok) { sent++; continue; }
+        failed++;
+        this.log(`${device.name} did not get "${message.title}" from Apple: ${outcome.reason || ''}`);
+        if (outcome.gone) {
+          this.devices.unsubscribeApple(device.id);
+          this.devices.record({ device, action: 'notifications stopped', allowed: true,
+            detail: 'Apple says this device is gone' });
+        }
+      }
+    }
+
+    const subscribers = this.devices.subscribers();
+    if (!subscribers.length) return { sent, failed, attached, skipped: !attached && !sent && !failed };
+
     for (const device of subscribers) {
       const outcome = await this.sender(device.push, body, {
         vapid: this.vapid,

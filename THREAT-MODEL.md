@@ -311,9 +311,20 @@ A notification says what is happening on this machine, so where it goes matters.
   key (RFC 8291) and the sender proved with a short-lived signed token (RFC
   8292), so Apple's or Google's service knows only that a message exists.
 
+- Through **Apple's push network**, for an iPhone with the app closed, the alert
+  text is *not* encrypted end to end — APNs shows the alert without the app
+  running, so Apple necessarily sees it. This is the only place in the product
+  where anything readable leaves the two machines, it is off unless an Apple
+  Developer account has been configured, and it is why the titles name an
+  instance rather than quoting it.
+
 The titles and bodies name an instance and, for a permission request, the tool
 being asked about. That is the same information the socket already carries, and
 it is the minimum that makes a notification worth reading.
+
+The device token itself arrives on an authenticated, sealed socket and is stored
+against that device's record, so forgetting the device forgets where to reach it.
+A token offered by anything that is not a paired device is refused.
 
 **What a device says about where its key is kept is a claim, not a measurement.**
 Nothing on the laptop can tell a Secure Enclave from a phone that says "Secure

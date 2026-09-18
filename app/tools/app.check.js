@@ -347,6 +347,39 @@ const record = (name, ok) => {
     record('and turning it on starts the watcher',
       await phone.until('window.__buzz.watching() === true', 6000));
 
+    // ---- the one door that goes through somebody else's machine --------------
+    //
+    // An iPhone cannot keep a socket open, so the only way to reach a closed
+    // app is Apple. That needs a token from the phone, which travels up the
+    // socket it is already holding rather than through an endpoint of its own.
+
+    // Now as an iPhone, which cannot keep a socket open at all.
+    await phone.evaluate('window.__buzz.beAn("ios")');
+    await phone.navigate(appOrigin + '/settings.html');
+    await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+    record('an iPhone is not offered a thing it cannot do',
+      (await phone.evaluate(`[...document.querySelectorAll('.row')]
+        .every(r => !/Keep watching in the background/.test(r.textContent))`)) === true);
+    record('and is offered the only thing that does reach it while closed',
+      await phone.until(`[...document.querySelectorAll('.row')]
+        .some(r => /While NikUI is closed/.test(r.textContent))`, 6000));
+    await phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.row')].find(r => /While NikUI is closed/.test(r.textContent));
+      row.click();
+    })()`);
+    let appleToken = null;
+    for (let i = 0; i < 120 && !appleToken; i++) {
+      const held = devices.get(paired.id);
+      if (held && held.apns) appleToken = held.apns.token;
+      if (!appleToken) await wait(50);
+    }
+    record('setting it up tells the laptop where Apple can find this phone', !!appleToken);
+    record('as the token iOS gave it', appleToken === 'f'.repeat(64));
+    record('and the app says so afterwards',
+      await phone.until('/While NikUI is closed/.test(document.body.textContent) && ' +
+        '[...document.querySelectorAll(".row")].some(r => /While NikUI is closed/.test(r.textContent) && /On/.test(r.textContent))', 8000));
+
+
     record('tapping a notification opens the instance it was about',
       await (async () => {
         await phone.evaluate('window.__buzz.clear()');

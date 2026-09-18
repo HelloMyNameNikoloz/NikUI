@@ -684,6 +684,15 @@
     return said + (d.biometric ? ', biometric' : '');
   }
 
+  /** How this window can tell a device something when nobody is looking at it. */
+  function reachedBy(d) {
+    const reach = d.reach || {};
+    if (reach.apple && reach.push) return 'reachable while closed';
+    if (reach.apple) return 'reachable while closed';
+    if (reach.push) return 'reachable by push';
+    return 'told only while open';
+  }
+
   function remote(r) {
     const e = r.env || {};
     const devices = e.devices || [];
@@ -705,7 +714,7 @@
       ? facts(devices.map((d) => [
         d.name,
         (d.control ? 'can steer' : 'watching only') +
-          ' · ' + heldIn(d) +
+          ' · ' + heldIn(d) + ' · ' + reachedBy(d) +
           (d.lastSeenAt ? ' · last seen ' + fmt.when(d.lastSeenAt) : '')
       ]))
       : '<p class="muted">No devices are paired. Only this machine can reach this window.</p>',

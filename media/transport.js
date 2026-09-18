@@ -544,7 +544,12 @@
    */
   window.nikTransport = function () {
     if (typeof acquireVsCodeApi === 'function') return acquireVsCodeApi();
-    return socketTransport(window.NIKUI_REMOTE || {});
+    const made = socketTransport(window.NIKUI_REMOTE || {});
+    // The live one, for anything outside the client that has to say something
+    // on this socket rather than open a second one. There is exactly one such
+    // thing: the app telling the laptop where Apple can reach this phone.
+    window.nikLink = made;
+    return made;
   };
 
   // Exported so the offline suite can drive it with a fake socket.

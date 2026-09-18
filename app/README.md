@@ -18,7 +18,9 @@ cd app && npm test     # check the bundle is still a copy, not a fork
                                 connect.js, settings.js, notify.js
     app/tools/build.js          builds www/ from media/ — never edited by hand
     app/tools/icons.js          launcher icons from the same mark as everything else
-    app/tools/xcode.js          puts native sources into project.pbxproj
+    app/tools/version.js        one version, stamped into both platforms
+    app/tools/xcode.js          puts native sources and resources into project.pbxproj
+    app/RELEASE.md              how to get a build onto a phone, and what it costs
     app/tools/build.test.js     proves www/ is a copy of media/, file by file
     app/tools/app.check.js      the app, driven in a browser against a real laptop
     app/www/                    generated, git-ignored
@@ -26,6 +28,7 @@ cd app && npm test     # check the bundle is still a copy, not a fork
     …/ios/App/App/SecureKey/    the Secure Enclave half of the key plugin
     …/android/…/securekey/      the Android Keystore half
     …/android/…/watcher/        the foreground service that keeps watching
+    …/ios/App/App/AppleToken/   the device token, for being told while closed
 
 ## The one rule
 
@@ -224,7 +227,53 @@ Things that are easy to claim and hard to keep, so each one is a check in
 - **One paragraph** in About saying what NikUI is, for somebody who opened the
   app because it appeared on their phone.
 
+## Being told while the app is closed
+
+Three doors, and only the third goes through anybody else's machine:
+
+| | when it works | what it needs |
+| --- | --- | --- |
+| the socket | while the app is on screen | nothing |
+| a foreground service | Android, in a pocket | nothing |
+| Apple's push network | iPhone, closed | an Apple Developer account |
+
+An iPhone cannot keep a socket open — iOS suspends an app the moment it leaves
+the screen, and no entitlement changes that. So the only way to reach a closed
+one is APNs, which needs a paid account, an auth key, and a token from the
+phone. The token travels up the socket the app is already holding, because that
+connection is authenticated and sealed already; there is no endpoint for it, no
+second signature, and no rate limit of its own.
+
+It is inert until four settings are filled in, and `Settings → Notifications →
+While NikUI is closed` says which ones are missing in words rather than in
+setting names. `app/RELEASE.md` is the runbook.
+
+Deliberately **not** `@capacitor/push-notifications`: it brings Firebase with it
+for Android, and Android needs none of this.
+
+## Shipping it
+
+`app/RELEASE.md` is the whole of it. The short version:
+
+- **Android** needs nothing from anybody. `npm run release:android` produces a
+  signed APK; the key comes from `android/keystore.properties`, which is
+  git-ignored and stays that way.
+- **iPhone** is free for seven days from Xcode, and needs the Apple Developer
+  Program ($99/year) for anything longer — or for notifications while the app
+  is closed.
+
+One version: `app/package.json` is it, and `npm run sync` stamps it into
+`build.gradle` and both Xcode configurations. The build number is derived —
+`major × 10000 + minor × 100 + patch` — so it always goes up and can be read
+backwards. Four files used to hold four different numbers.
+
+The release build shrinks and obfuscates, which is where the one real trap is:
+Capacitor finds plugin methods by reflection, so R8 removes them unless told
+not to, and the failure happens in release builds only. `proguard-rules.pro`
+holds the rules and `npm test` checks they are still there.
+
 ## What is not here yet
 
-Phase 6 of the app plan: the store logistics — signing, provisioning, privacy
-labels, and APNs, which is the only way an iPhone is told while NikUI is closed.
+Nothing in the plan. What remains is not code: none of the native halves —
+the Secure Enclave, the Keystore, the foreground service, the device token —
+has run on a physical phone, because none has been attached to this machine.
