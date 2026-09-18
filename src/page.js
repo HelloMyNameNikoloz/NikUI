@@ -13,7 +13,7 @@
 // wires them together, and transport.js must exist before panel.js asks for it.
 const SCRIPTS = [
   'icons.js', 'markdown.js', 'prompts.js', 'snippets.js',
-  'charts.js', 'status.js', 'transport.js', 'boot.js', 'panel.js'
+  'charts.js', 'status.js', 'device.js', 'transport.js', 'boot.js', 'panel.js'
 ];
 
 /**
@@ -73,6 +73,7 @@ ${head}</head>
       <div class="esc-hint" id="esc-hint" hidden>Press <kbd>Esc</kbd> again to interrupt this turn</div>
       <div class="slash" id="slash" hidden></div>
       <div class="queue" id="queue" hidden></div>
+      <div class="watching" id="watching" hidden>Watching only — this device has not been granted control.</div>
       <div class="attachments" id="attachments"></div>
       <div class="composer">
         <textarea id="input" rows="1" placeholder="Message Claude…"></textarea>

@@ -6,6 +6,19 @@ const { buildReport } = require('./report');
 // Commands NikUI answers itself rather than passing to the CLI.
 const OWN_COMMANDS = ['status'];
 
+/**
+ * The messages that change something, as opposed to the ones that only watch.
+ *
+ * A paired device may watch as soon as it is paired; steering is a separate
+ * grant, because sending a prompt to an instance running with permissions
+ * bypassed is arbitrary code execution on this machine. The client hides these
+ * controls when it has no grant — that is courtesy. This list is the rule.
+ */
+const STEERING = new Set([
+  'send', 'interrupt', 'permission', 'unqueue', 'promoteQueued',
+  'editQueued', 'clearQueue', 'openFile', 'switch'
+]);
+
 // A sheet that quietly goes stale while a turn runs is worse than no sheet, and
 // a streaming turn changes constantly. Per client, because one open sheet must
 // not drive redraws for a client that has none.
@@ -77,12 +90,32 @@ class SessionHub {
     if (!client || !client.id) throw new Error('a client needs an id');
     this.clients.set(client.id, {
       client,
+      // Who this is, when anybody knows: a socket always carries a device, the
+      // editor's own webview carries none and is trusted like the editor.
+      device: client.device || null,
       ready: false,
       statusOpen: false,
       statusTimer: null,
       pendingStatus: false
     });
     return client;
+  }
+
+  /**
+   * A device's grant changed while it was connected. Nothing is re-paired and
+   * no socket is dropped: the seat is simply worth more, or less, from now on.
+   */
+  setDevice(clientId, device) {
+    const entry = this.clients.get(clientId);
+    if (!entry) return false;
+    entry.device = device || null;
+    safePost(entry.client, { type: '@device', device: entry.device });
+    return true;
+  }
+
+  /** Whether this seat may change anything, rather than only watch. */
+  mayControl(entry) {
+    return !entry || !entry.device || entry.device.control !== false;
   }
 
   detach(clientId) {
@@ -141,6 +174,21 @@ class SessionHub {
     const entry = this.clients.get(clientId);
     if (!entry || !msg || typeof msg.type !== 'string') return;
     const session = this.session;
+
+    if (STEERING.has(msg.type)) {
+      if (!this.mayControl(entry)) {
+        // Refused, said so, and written down: a refused attempt is the entry
+        // you would most want to find afterwards.
+        this.note(entry, msg.type, false);
+        this.send(clientId, {
+          type: '@refused',
+          what: msg.type,
+          reason: 'This device can watch but not steer. Grant it control in the editor.'
+        });
+        return;
+      }
+      this.note(entry, msg.type, true);
+    }
 
     switch (msg.type) {
       case 'ready':
@@ -210,6 +258,22 @@ class SessionHub {
       default:
         break;
     }
+  }
+
+  /**
+   * What a device did, for the trail in /status. The editor's own panel is not
+   * written down — the audit is about what arrived from somewhere else.
+   */
+  note(entry, action, allowed) {
+    if (!entry || !entry.device) return;
+    if (typeof this.host.audit !== 'function') return;
+    this.host.audit({
+      device: entry.device,
+      action,
+      allowed,
+      instance: this.session.label,
+      sessionId: this.session.id
+    });
   }
 
   /** A client has loaded and wants the whole picture. */
@@ -426,4 +490,4 @@ function closeAllHubs() {
   for (const id of [...hubs.keys()]) closeHub(id);
 }
 
-module.exports = { SessionHub, hubFor, closeHub, closeAllHubs, OWN_COMMANDS, STATUS_REFRESH_MS };
+module.exports = { SessionHub, hubFor, closeHub, closeAllHubs, OWN_COMMANDS, STEERING, STATUS_REFRESH_MS };
