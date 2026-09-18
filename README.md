@@ -352,6 +352,31 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.keepAwake` | `false` | Hold this machine awake while an instance needs it |
 | `nikui.notifyDevices` | needs-you, quota, failed | Which things are worth sending to a paired phone |
 
+### One place for all of it
+
+`NikUI: Settings` — from the palette, or the `…` on any of the three views —
+opens every setting NikUI contributes in one searchable list, grouped, each
+showing what it is set to now and what it is for, with a dot beside anything no
+longer at its default. Booleans toggle in place and the list stays open;
+enums open a picker; objects open the Settings editor, which does JSON
+properly. The list is built from `contributes.configuration`, so it cannot fall
+behind the settings it shows.
+
+The same list also carries the handful of things that are *actions* rather than
+settings — start or stop the server, be reachable or stop being, pair a device —
+because "where do I turn this on" and "where do I do this" are the same question.
+
+### What a paired device is paired with
+
+**The extension, not one window.** The laptop's key and the list of paired
+devices live in `globalState`, which every VS Code window shares — so a phone
+pairs once and is known to all of them, and forgetting it forgets it everywhere.
+
+What a device *sees* is one window at a time. Each window runs its own server on
+its own port and serves only its own instances, and `Reach this window from my
+phone` puts the tailnet in front of the port of the window you ran it in. Open
+two windows and run it in the second, and the phone follows to the second.
+
 ### Commands for the server and devices
 
 | Command | Does |
@@ -362,6 +387,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `NikUI: Let this device send prompts` | Grants control, with a dialog that says what that means |
 | `NikUI: Make this device watch only` | Takes it back, on the socket it is holding now |
 | `NikUI: Forget this device` | Deletes its key and closes its connection |
+| `NikUI: Settings` | Everything above, and every setting below, in one list |
 | `NikUI: Reach this window from my phone` | Puts the tailnet in front of the server |
 | `NikUI: Stop being reachable from my phone` | Takes it back off |
 | `NikUI: Open a public address for this window` | A public tunnel, after a dialog that says what that means |

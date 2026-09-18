@@ -23,6 +23,7 @@ const { Tailscale, Cloudflared } = require('./tunnel');
 const { Awake, shouldHold } = require('./awake');
 const { loadVapid } = require('./push');
 const { Notifier } = require('./notify');
+const { openSettings, schemaFrom } = require('./settingsMenu');
 const { loadApns } = require('./apns');
 
 let manager;
@@ -963,6 +964,43 @@ function serveLocally(context, manager, awakeState) {
     vscode.commands.registerCommand('nikui.remoteStop', stop),
     vscode.commands.registerCommand('nikui.remoteOpen', open),
     vscode.commands.registerCommand('nikui.remoteMenu', menu),
+    // One place for everything, reachable from every view's menu and from the
+    // palette. The settings themselves come from package.json, so this cannot
+    // fall behind them.
+    vscode.commands.registerCommand('nikui.settings', () => openSettings({
+      schema: schemaFrom(context.extensionUri.fsPath),
+      actions: [
+        server.listening
+          ? {
+            label: '$(debug-stop) Stop the local server',
+            description: `listening on 127.0.0.1:${server.port}`,
+            run: stop
+          }
+          : {
+            label: '$(broadcast) Start the local server',
+            description: 'nothing is listening',
+            detail: 'A socket into this window is code execution on this machine, so it is off until you say so',
+            run: start
+          },
+        server.exposed
+          ? {
+            label: '$(circle-slash) Stop being reachable from my phone',
+            description: `${server.publicScheme}://${server.publicHost}`,
+            run: unreach
+          }
+          : {
+            label: '$(radio-tower) Reach this window from my phone',
+            detail: 'Puts the tailnet in front of the server. Nothing new listens.',
+            run: reach
+          },
+        { label: '$(device-mobile) Pair a device', run: pair },
+        {
+          label: '$(list-unordered) Devices, and what they did',
+          detail: `${devices.list().length} paired`,
+          run: () => vscode.commands.executeCommand('nikui.devices.focus')
+        }
+      ]
+    })),
     vscode.commands.registerCommand('nikui.pairDevice', pair),
     vscode.commands.registerCommand('nikui.reachFromPhone', reach),
     vscode.commands.registerCommand('nikui.stopReaching', unreach),

@@ -245,6 +245,12 @@
         "command": "nikui.reachPublicly",
         "title": "NikUI: Open a public address for this window",
         "icon": "$(globe)"
+      },
+      {
+        "command": "nikui.settings",
+        "title": "Settings",
+        "category": "NikUI",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
@@ -293,6 +299,21 @@
           "command": "nikui.pairDevice",
           "when": "view == nikui.devices",
           "group": "navigation"
+        },
+        {
+          "command": "nikui.settings",
+          "when": "view == nikui.sessions",
+          "group": "z_settings@1"
+        },
+        {
+          "command": "nikui.settings",
+          "when": "view == nikui.history",
+          "group": "z_settings@1"
+        },
+        {
+          "command": "nikui.settings",
+          "when": "view == nikui.devices",
+          "group": "z_settings@1"
         }
       ],
       "view/item/context": [
