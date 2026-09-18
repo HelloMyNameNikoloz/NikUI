@@ -61,11 +61,16 @@ function request(options) {
  * with nothing to prove says exactly that, and is seated on the key it arrived
  * with, which is what stops an unprompted welcome from meaning anything.
  */
-async function signIn(client, device) {
+async function signIn(client, device, options) {
   const challenge = await client.waitFor('@challenge');
-  client.send(device
-    ? await device.answer(challenge, device.id)
-    : { type: '@auth', device: null, nonce: 'a-nonce-from-a-client-with-nothing-to-prove' });
+  if (!device) {
+    client.send({ type: '@auth', device: null, nonce: 'a-nonce-from-a-client-with-nothing-to-prove' });
+    return { challenge, welcome: await client.waitFor('@welcome') };
+  }
+  const answer = await device.answer(challenge, device.id, options);
+  client.send(answer);
+  // Everything after the answer is inside the envelope the answer agreed.
+  if (device.box) client.seal(device.box);
   return { challenge, welcome: await client.waitFor('@welcome') };
 }
 

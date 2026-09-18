@@ -690,6 +690,17 @@
     const trail = e.trail || [];
     if (!devices.length && !trail.length) return '';
 
+    // What protects the way in, before the list of who has come through it.
+    const reach = e.reach || {};
+    const how = card('How a phone reaches this window', facts([
+      ['Connections', reach.sealed
+        ? 'Sealed end to end — a device must agree a key before it may say anything'
+        : 'Not required to be sealed — traffic is readable by whatever carries it'],
+      ['Served from here', reach.appOnly
+        ? 'The app only — no page, no client, no worker outside this machine'
+        : 'The app and a browser page']
+    ]), { wide: true });
+
     const who = card('Paired devices', devices.length
       ? facts(devices.map((d) => [
         d.name,
@@ -716,7 +727,7 @@
       : '<p class="muted">Nothing has arrived from a device yet.</p>',
       { wide: true });
 
-    return who + log;
+    return how + who + log;
   }
 
   const SECTIONS = [

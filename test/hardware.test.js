@@ -22,6 +22,7 @@ const { Gate, LocalKey } = require('../src/auth.js');
 const { loadIdentity, verifyWith, readPublicKey, fingerprintOf, fromBase64 } = require('../src/identity.js');
 const { makeSecureDevice } = require('./helpers/hardware.js');
 const { makeDevice } = require('./helpers/device.js');
+const laptopSecure = require('../src/secure.js');
 
 // media/device.js is a browser file; these two functions are the reason it has
 // an export at all, and they are pure.
@@ -125,17 +126,28 @@ module.exports = async function () {
   const chipSpki = b64(spkiFromPublicKey(Buffer.from(chip.exportedPublicKey(), 'base64')));
   const chipFingerprint = readPublicKey(chipSpki).fingerprint;
 
+  // Every connection seals itself, so every message built by hand here has to
+  // carry a throwaway key and name it in what it signs — exactly as the real
+  // client does. Testing the move over a plain connection would be testing a
+  // combination that no longer happens.
+  const sealing = (challenge) => {
+    const mine = laptopSecure.ephemeral();
+    return { epk: mine.spki, suffix: ':' + laptopSecure.binding(challenge.ephemeral.spki, mine.spki) };
+  };
+
   /** What media/device.js sends when a replacement key is waiting. */
   const moveMessage = async (challenge, opts) => {
     const settings = opts || {};
     const mine = crypto.randomBytes(24).toString('base64url');
     const offered = settings.offer || chipSpki;
     const claimed = settings.claim || readPublicKey(offered).fingerprint;
-    const words = `nikui-rekey:${challenge.nonce}:${mine}:${claimed}`;
+    const seal = sealing(challenge);
+    const words = `nikui-rekey:${challenge.nonce}:${mine}:${claimed}` + seal.suffix;
     return {
       type: '@auth',
       device: settings.as || seated.id,
       nonce: mine,
+      epk: seal.epk,
       signature: settings.authorise === null ? 'not-a-signature'
         : await (settings.authorise || browserKey).sign(words),
       rekey: {
@@ -171,11 +183,12 @@ module.exports = async function () {
     gate.answer(nowOnly, await browserKey.answer(nowOnly, seated.id)).ok === false);
   const withChip = gate.challenge();
   const mine = crypto.randomBytes(24).toString('base64url');
+  const chipSeal = sealing(withChip);
   check('and the new one does',
     gate.answer(withChip, {
-      type: '@auth', device: seated.id, nonce: mine,
+      type: '@auth', device: seated.id, nonce: mine, epk: chipSeal.epk,
       signature: b64(p1363FromSignature(Buffer.from(
-        chip.sign(`nikui-auth:${withChip.nonce}:${mine}`), 'base64')))
+        chip.sign(`nikui-auth:${withChip.nonce}:${mine}` + chipSeal.suffix), 'base64')))
     }).ok === true);
 
   suite('and nothing else can move it');
@@ -194,15 +207,18 @@ module.exports = async function () {
     return gate2.answer(challenge, message, { address: '127.0.0.1' });
   };
 
-  const words = (challenge, nonce, fingerprint) =>
-    `nikui-rekey:${challenge.nonce}:${nonce}:${fingerprint}`;
+  // Each builder below asks for its own throwaway key, so `words` needs the
+  // suffix handed to it rather than making one nobody else saw.
+  const words = (challenge, nonce, fingerprint, suffix) =>
+    `nikui-rekey:${challenge.nonce}:${nonce}:${fingerprint}` + (suffix || '');
 
   const stranger = await makeDevice('Somebody else');
   check('a key the device did not authorise is refused', (await attempt(async (c) => {
     const n = crypto.randomBytes(24).toString('base64url');
-    const w = words(c, n, readPublicKey(targetSpki).fingerprint);
+    const seal = sealing(c);
+    const w = words(c, n, readPublicKey(targetSpki).fingerprint, seal.suffix);
     return {
-      type: '@auth', device: record.id, nonce: n,
+      type: '@auth', device: record.id, nonce: n, epk: seal.epk,
       signature: await stranger.sign(w),
       rekey: { publicKey: targetSpki, signature: b64(p1363FromSignature(Buffer.from(target.sign(w), 'base64'))) }
     };
@@ -211,9 +227,10 @@ module.exports = async function () {
   check('a key nobody holds is refused, so a device cannot be locked out',
     (await attempt(async (c) => {
       const n = crypto.randomBytes(24).toString('base64url');
-      const w = words(c, n, readPublicKey(targetSpki).fingerprint);
+      const seal = sealing(c);
+      const w = words(c, n, readPublicKey(targetSpki).fingerprint, seal.suffix);
       return {
-        type: '@auth', device: record.id, nonce: n,
+        type: '@auth', device: record.id, nonce: n, epk: seal.epk,
         signature: await owner.sign(w),
         rekey: { publicKey: targetSpki, signature: await owner.sign(w) }
       };
@@ -224,9 +241,10 @@ module.exports = async function () {
   check('a key swapped for the authorised one in flight is refused',
     (await attempt(async (c) => {
       const n = crypto.randomBytes(24).toString('base64url');
-      const w = words(c, n, readPublicKey(targetSpki).fingerprint);
+      const seal = sealing(c);
+      const w = words(c, n, readPublicKey(targetSpki).fingerprint, seal.suffix);
       return {
-        type: '@auth', device: record.id, nonce: n,
+        type: '@auth', device: record.id, nonce: n, epk: seal.epk,
         signature: await owner.sign(w),
         rekey: { publicKey: swapSpki, signature: b64(p1363FromSignature(Buffer.from(swap.sign(w), 'base64'))) }
       };
@@ -235,16 +253,18 @@ module.exports = async function () {
   check('a request to move stripped back to a plain answer is refused',
     (await attempt(async (c) => {
       const n = crypto.randomBytes(24).toString('base64url');
-      const w = words(c, n, readPublicKey(targetSpki).fingerprint);
-      return { type: '@auth', device: record.id, nonce: n, signature: await owner.sign(w) };
+      const seal = sealing(c);
+      const w = words(c, n, readPublicKey(targetSpki).fingerprint, seal.suffix);
+      return { type: '@auth', device: record.id, nonce: n, epk: seal.epk, signature: await owner.sign(w) };
     })).ok === false);
 
   check('and a plain answer dressed up as a move is refused',
     (await attempt(async (c) => {
       const n = crypto.randomBytes(24).toString('base64url');
+      const seal = sealing(c);
       return {
-        type: '@auth', device: record.id, nonce: n,
-        signature: await owner.sign(`nikui-auth:${c.nonce}:${n}`),
+        type: '@auth', device: record.id, nonce: n, epk: seal.epk,
+        signature: await owner.sign(`nikui-auth:${c.nonce}:${n}` + seal.suffix),
         rekey: { publicKey: targetSpki, signature: b64(p1363FromSignature(Buffer.from(target.sign('x'), 'base64'))) }
       };
     })).ok === false);
@@ -252,9 +272,10 @@ module.exports = async function () {
   const replayable = gate2.challenge();
   const once = await (async () => {
     const n = crypto.randomBytes(24).toString('base64url');
-    const w = words(replayable, n, readPublicKey(targetSpki).fingerprint);
+    const seal = sealing(replayable);
+    const w = words(replayable, n, readPublicKey(targetSpki).fingerprint, seal.suffix);
     return {
-      type: '@auth', device: record.id, nonce: n,
+      type: '@auth', device: record.id, nonce: n, epk: seal.epk,
       signature: await owner.sign(w),
       rekey: { publicKey: targetSpki, signature: b64(p1363FromSignature(Buffer.from(target.sign(w), 'base64'))) }
     };
@@ -267,9 +288,10 @@ module.exports = async function () {
   const otherRecord = devices2.add({ name: other.name, publicKey: other.publicKey });
   check('two devices cannot end up sharing one key', (await attempt(async (c) => {
     const n = crypto.randomBytes(24).toString('base64url');
-    const w = words(c, n, readPublicKey(targetSpki).fingerprint);
+    const seal = sealing(c);
+    const w = words(c, n, readPublicKey(targetSpki).fingerprint, seal.suffix);
     return {
-      type: '@auth', device: otherRecord.id, nonce: n,
+      type: '@auth', device: otherRecord.id, nonce: n, epk: seal.epk,
       signature: await other.sign(w),
       rekey: { publicKey: targetSpki, signature: b64(p1363FromSignature(Buffer.from(target.sign(w), 'base64'))) }
     };
@@ -283,9 +305,10 @@ module.exports = async function () {
     check('a replacement that is not a P-256 key is refused: ' + String(nonsense).slice(0, 12),
       (await attempt(async (c) => {
         const n = crypto.randomBytes(24).toString('base64url');
+        const seal = sealing(c);
         return {
-          type: '@auth', device: record.id, nonce: n,
-          signature: await owner.sign(words(c, n, 'x')),
+          type: '@auth', device: record.id, nonce: n, epk: seal.epk,
+          signature: await owner.sign(words(c, n, 'x', seal.suffix)),
           rekey: { publicKey: nonsense, signature: 'x' }
         };
       })).ok === false);

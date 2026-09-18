@@ -37,6 +37,21 @@ function createHost(context, manager, extras) {
 }
 
 /** What the status report can only learn from the editor and the machine. */
+/**
+ * What protects a connection from here, in the two words that decide it: is
+ * every device required to seal the channel, and is anything but the app
+ * served at all.
+ */
+function reachState() {
+  let cfg;
+  try { cfg = require('vscode').workspace.getConfiguration('nikui'); }
+  catch (_) { return { sealed: true, appOnly: false }; }
+  return {
+    sealed: cfg.get('remote.requireEncryption', true),
+    appOnly: cfg.get('remote.appOnly', false)
+  };
+}
+
 function describeEnv(context, manager, session, devices, awake) {
   const cfg = readConfig();
   return {
@@ -46,6 +61,7 @@ function describeEnv(context, manager, session, devices, awake) {
       protection: d.protection || 'software', biometric: !!d.biometric
     })) : [],
     trail: devices ? devices.recent(20) : [],
+    reach: reachState(),
     transcriptPath: transcriptPath(session.cwd, session.claudeSessionId),
     limits: (manager && manager.limits) || session.limits || null,
     pause: (manager && manager.pause) || null,

@@ -112,6 +112,17 @@ class Client extends EventEmitter {
         const text = payload.toString('utf8');
         let parsed = text;
         try { parsed = JSON.parse(text); } catch (_) { /* leave it */ }
+        // A sealed connection carries envelopes; the test wants what is inside.
+        // Opened here rather than at every call site, so a test reads the same
+        // way whether or not the channel it is on happens to be sealed.
+        if (this.box && parsed && parsed.type === '@box') {
+          const inside = this.box.open(parsed);
+          if (inside === null) {
+            this.sealingFailed = true;
+            continue;
+          }
+          try { parsed = JSON.parse(inside); } catch (_) { parsed = inside; }
+        }
         this.messages.push(parsed);
         this.emit('message', parsed);
       } else if (opcode === wire.OP.PING) {
@@ -131,7 +142,21 @@ class Client extends EventEmitter {
   }
 
   send(message) {
-    this.raw(wire.OP.TEXT, typeof message === 'string' ? message : JSON.stringify(message));
+    const out = this.box && typeof message === 'object' && message && message.type !== '@auth'
+      ? this.box.seal(JSON.stringify(message))
+      : message;
+    this.raw(wire.OP.TEXT, typeof out === 'string' ? out : JSON.stringify(out));
+  }
+
+  /**
+   * From here on this connection is sealed, in both directions.
+   *
+   * Set after the answer goes out, because the answer itself travels in the
+   * clear — it is what agrees the key that everything after is sealed with.
+   */
+  seal(box) {
+    this.box = box || null;
+    return this;
   }
 
   /** Every frame exactly as given — for the tests that break the rules on purpose. */

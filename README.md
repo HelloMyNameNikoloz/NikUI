@@ -346,6 +346,8 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.statusEmoji` | see below | Emoji per status in tab titles |
 | `nikui.remote.port` | `4517` | Port for the local server, on `127.0.0.1` only; `0` picks a free one. A second window takes the next free port rather than refusing |
 | `nikui.remote.autoStart` | `false` | Start that server when the window opens |
+| `nikui.remote.requireEncryption` | `true` | Refuse a device that will not seal the channel end to end |
+| `nikui.remote.appOnly` | `false` | Serve the app and nothing else outside this machine |
 | `nikui.keepAwake` | `false` | Hold this machine awake while an instance needs it |
 | `nikui.notifyDevices` | needs-you, quota, failed | Which things are worth sending to a paired phone |
 
@@ -854,11 +856,23 @@ encodings now have to be exactly right — Apple hands back a bare EC point,
 both platforms sign to DER — so both conversions happen once, in JavaScript, and
 `test/hardware.test.js` runs them through the laptop's real verifier.
 
-Still to come: TLS pinning, which closes the relay the threat model names as
-open.
+And a connection nothing in between can read. Every socket between a device and
+this laptop now agrees a throwaway key at the handshake and seals every frame
+after it — AES-256-GCM, a key per direction, fresh for each connection. Both
+ends name both throwaway keys inside the signatures they were already
+exchanging, so the agreement cannot be swapped, stripped or replayed. TLS still
+carries all of it; this is the layer that survives TLS being wrong, which is the
+relay the threat model used to name as open.
+
+Two switches go with it, both in the status-bar menu:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `nikui.remote.requireEncryption` | on | A device that will not seal the channel is refused |
+| `nikui.remote.appOnly` | off | Outside this machine, only pairing, the socket, the pulse and the push key exist — no page, no client, no worker, no manifest |
 
     npm run app          # build the bundle and sync both platforms
-    npm run test:app     # 46 checks driving the real bundle in a real browser
+    npm run test:app     # 54 checks driving the real bundle in a real browser
 
 [`app/README.md`](app/README.md) is the detail.
 

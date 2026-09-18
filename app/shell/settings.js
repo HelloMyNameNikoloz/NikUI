@@ -20,7 +20,9 @@
     version: { client: '…', app: '…' },
     health: null,           // round trip in ms, when it answered
     key: null,              // where the key is held, and what this device could do better
-    moving: null            // a word for what the move is doing, while it does it
+    moving: null,           // a word for what the move is doing, while it does it
+    sealed: null,           // whether this connection is sealed end to end
+    showing: null           // a fingerprint opened up to be read out loud
   };
 
   const el = (tag, className, text) => {
@@ -74,6 +76,12 @@
 
   const shortKey = (key) => (key ? String(key).slice(0, 8) + '…' : 'none');
 
+  /**
+   * A fingerprint in chunks a person can read aloud and compare without
+   * losing their place. Four groups is the most anybody checks properly.
+   */
+  const groups = (key) => String(key || '').replace(/(.{6})/g, '$1 ').trim();
+
   /** Where a key is kept, said the way a person would say it. */
   const HELD = {
     'secure-enclave': 'Secure Enclave',
@@ -119,6 +127,37 @@
       tap: () => { state.connection = 'checking'; state.health = null; draw(); probe(); },
       chevron: true
     });
+
+    // ---- what protects this connection ------------------------------------
+    //
+    // Put directly under the connection it is about, and said in one word that
+    // is either right or wrong: there is no useful middle state to explain.
+
+    const safety = group('Security',
+      state.sealed
+        ? 'Sealed with a key this phone and your laptop agree fresh every time they connect. Nothing carrying it can read it.'
+        : 'This connection is protected by HTTPS alone until it is sealed.');
+
+    row(safety, {
+      label: 'This connection',
+      dot: state.sealed ? 'live' : state.sealed === false ? 'gone' : 'busy',
+      value: state.sealed === null ? 'Checking…' : state.sealed ? 'End-to-end encrypted' : 'Not sealed',
+      tone: state.sealed ? 'good' : state.sealed === false ? 'warn' : ''
+    });
+
+    row(safety, {
+      label: 'Check it is really your laptop',
+      hint: state.showing ? null : 'Compare four groups of letters with the ones on your laptop',
+      value: state.showing ? null : 'Show',
+      tap: () => { state.showing = state.showing ? null : (state.where.fingerprint || ''); draw(); },
+      chevron: !state.showing
+    });
+
+    if (state.showing) {
+      const proof = el('p', 'proof');
+      proof.textContent = groups(state.showing);
+      safety.parentNode.insertBefore(proof, safety.nextSibling);
+    }
 
     const permission = group('What this device may do',
       state.control === false
@@ -237,6 +276,7 @@
       if (message.type === '@welcome' || message.type === '@device') {
         state.connection = 'live';
         state.control = message.device ? message.device.control !== false : null;
+        state.sealed = !!(transport && transport.sealed && transport.sealed());
         draw();
       } else if (message.type === '@denied') {
         state.connection = 'refused';
@@ -337,6 +377,7 @@
       'NikUI app ' + state.version.app + ' · client ' + state.version.client,
       'laptop: ' + state.where.scheme + '://' + state.where.host,
       'connection: ' + state.connection + (state.health != null ? ' (' + state.health + ' ms)' : ''),
+      'sealed: ' + (state.sealed === null ? 'unknown' : state.sealed ? 'end to end' : 'no'),
       'permission: ' + (state.control === null ? 'unknown' : state.control ? 'can steer' : 'watching only'),
       'device id: ' + ((state.device && state.device.id) || 'not paired'),
       'key kept in: ' + ((state.device && state.device.protection) || 'software') +
