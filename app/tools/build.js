@@ -34,7 +34,7 @@ const CLIENT_FILES = SCRIPTS.concat([
   'panel.css', 'browser.css', 'mobile.js', 'home.js', 'device.js'
 ]);
 
-const SHELL_FILES = ['app.css', 'app.js', 'connect.js', 'settings.js'];
+const SHELL_FILES = ['app.css', 'app.js', 'notify.js', 'connect.js', 'settings.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -141,6 +141,7 @@ function conversationPage() {
     head: '<link rel="stylesheet" href="media/browser.css">\n' +
       '<link rel="stylesheet" href="app.css">\n' +
       '<script src="app.js"></script>\n' +
+      '<script src="notify.js"></script>\n' +
       '<script src="media/mobile.js" defer></script>\n',
     boot: 'document.body.classList.add(\'app\', \'app-conversation\');'
   })
@@ -159,7 +160,7 @@ function homePage() {
     body: `  <header class="bar">
     <span class="bar-title">Instances</span>
     <div class="bar-right">
-      <div class="link" id="link" hidden></div>
+      <div class="link" id="link" role="status" aria-live="polite" hidden></div>
       <button class="bar-button" id="to-settings" aria-label="Settings"></button>
     </div>
   </header>
@@ -167,7 +168,7 @@ function homePage() {
     <p class="lede" id="lede">Connecting&hellip;</p>
     <div class="rows" id="rows"></div>
   </main>`,
-    scripts: ['app.js', 'media/device.js', 'media/transport.js', 'media/home.js']
+    scripts: ['app.js', 'notify.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'media/home.js']
   });
 }
 
@@ -176,12 +177,28 @@ function connectPage() {
     file: 'connect.html',
     title: 'Connect',
     cls: 'connect',
-    body: `  <main class="screen welcome">
+    body: `  <main class="screen welcome" id="screen">
     <div class="mark" id="mark"></div>
     <h1 id="headline">Connect to your laptop</h1>
-    <p class="lede" id="lede">Open <strong>NikUI: Pair a device</strong> in VS Code. It shows a code and an address.</p>
+    <p class="lede" id="lede">Two steps, and the second one is pointing this phone at a screen.</p>
 
-    <form class="pane" id="form" autocomplete="off">
+    <!-- What somebody sees first: what to do, in order, with nothing to fill in.
+         Scanning the code opens this app with everything already in it, so the
+         fields below are the fallback rather than the way. -->
+    <ol class="steps" id="steps">
+      <li><span>1</span><p>On your laptop, run <strong>NikUI: Pair a device</strong>.</p></li>
+      <li><span>2</span><p>Point this phone's camera at the square it shows.</p></li>
+    </ol>
+
+    <!-- Arrived by scanning: everything is known, so there is one thing to do. -->
+    <div class="pane invited" id="invited" hidden>
+      <p class="invited-from" id="invited-from">your laptop</p>
+      <p class="invited-where" id="invited-where"></p>
+      <button class="primary" id="accept" type="button">Pair</button>
+      <button class="quiet" id="decline" type="button">Not now</button>
+    </div>
+
+    <form class="pane" id="form" autocomplete="off" hidden>
       <label class="field">
         <span class="field-label">Address</span>
         <input id="host" type="text" inputmode="url" autocapitalize="none" autocorrect="off"
@@ -200,7 +217,8 @@ function connectPage() {
       <button class="quiet" id="paste" type="button">Paste a pairing link instead</button>
     </form>
 
-    <p class="note" id="note"></p>
+    <button class="quiet" id="type-instead" type="button">Type the code instead</button>
+    <p class="note" id="note" role="status" aria-live="polite"></p>
     <ul class="terms">
       <li id="held">This device makes a key that never leaves it.</li>
       <li>Pairing lets it <strong>watch</strong>. Sending prompts is a separate permission you grant on the laptop.</li>
@@ -221,7 +239,7 @@ function settingsPage() {
     <div class="bar-right"></div>
   </header>
   <main class="screen" id="screen"></main>`,
-    scripts: ['app.js', 'media/device.js', 'media/transport.js', 'settings.js']
+    scripts: ['app.js', 'notify.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'settings.js']
   });
 }
 

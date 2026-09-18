@@ -52,6 +52,10 @@
     let said = 0;             // how many times the pill has been written to
     let holdUntil = 0;        // a message that has to be read before it is replaced
     let paired = false;       // this device has an identity, so it must verify
+    let opening = null;       // the sealed channel for this socket, once agreed
+    let box = null;           // the same thing, once it has been built
+    let outgoing = null;      // sealing is asynchronous; order is not optional
+    let incoming = null;      // and neither is the order things are opened in
 
     function url() {
       // An app carries the client in a bundle, so there is no page address to
@@ -110,6 +114,8 @@
       socket = null;
       seated = false;
       expecting = null;
+      opening = null;
+      box = null;
       if (open) { try { open.close(1000, 'reconnecting'); } catch (_) { /* already gone */ } }
       connect();
     }
@@ -117,6 +123,17 @@
     // The state of the connection is also the button for doing something about
     // it: on a phone, the thing you want when it says offline is to try again.
     if (pill) pill.addEventListener('click', retryNow);
+
+    // Two moments when waiting out a backoff is obviously wrong: the phone has
+    // just been picked up, and the network has just come back. A page that sits
+    // there saying "reconnecting" for eight more seconds while somebody stares
+    // at it is a page that looks broken.
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) retryNow();
+      });
+    }
+    if (window.addEventListener) window.addEventListener('online', retryNow);
 
     /**
      * Anything this transport makes up for its own page.
@@ -134,10 +151,47 @@
       }, 0);
     }
 
-    /** Inbound frames arrive exactly as the webview's do: a message event. */
+    /**
+     * In. Sealed frames are opened before anything looks at them, one at a
+     * time and in order — the counter inside each one is only meaningful in
+     * sequence, and a reordered stream would look like a replay.
+     */
     function deliver(data) {
       let message = null;
       try { message = JSON.parse(data); } catch (_) { return; }
+      if (message && message.type === '@box') {
+        if (!opening) return; // nothing was agreed; there is nothing to open it with
+        const on = socket;
+        incoming = (incoming || Promise.resolve())
+          .then(function () { return opening; })
+          .then(function (sealed) {
+            if (!sealed || on !== socket) return null;
+            return sealed.open(message);
+          })
+          .then(function (inside) {
+            if (inside === null || inside === undefined) {
+              if (on !== socket) return;
+              // A frame that will not open is not a glitch to skip past: either
+              // the key is wrong or somebody is editing the stream.
+              stopped = 'could not open what the laptop sent';
+              show('off', 'Could not read the laptop’s reply');
+              try { on.close(1008, 'unsealed'); } catch (_) { /* gone */ }
+              return;
+            }
+            handle(inside);
+          })
+          .catch(function () { /* the socket will say so */ });
+        return;
+      }
+      handle(data, message);
+    }
+
+    /** One message, already out of its envelope if it was in one. */
+    function handle(data, parsed) {
+      let message = parsed;
+      if (message === undefined) {
+        try { message = JSON.parse(data); } catch (_) { return; }
+      }
       if (message && typeof message.type === 'string' && message.type.charAt(0) === '@') {
         if (handshake(message)) return;
       }
@@ -175,7 +229,8 @@
         window.nikDevice.load().then(function (record) {
           return window.nikDevice.verifyLaptop(
             record, message.serverKey || awaited.serverKey,
-            'nikui-host:' + awaited.mine + ':' + awaited.theirs, message.signature
+            'nikui-host:' + awaited.mine + ':' + awaited.theirs + (awaited.suffix || ''),
+            message.signature
           );
         }).then(function (ok) {
           if (ok) {
@@ -245,13 +300,34 @@
           return;
         }
         const mine = randomNonce();
-        // Remembered so the welcome can be checked against what was asked, not
-        // against whatever the answer happens to contain.
-        expecting = { mine: mine, theirs: challenge.nonce, serverKey: challenge.serverKey };
-        // Which may also be a request to start using a better key — see
-        // media/device.js. The transport does not need to know which; it sends
-        // what the identity says to send.
-        return window.nikDevice.authMessage(record, challenge.nonce, mine).then(send);
+        // A throwaway key for this one connection, when the laptop offered one.
+        // Both keys go into what this device signs, so an impostor cannot swap
+        // either for its own, and cannot strip the offer to force a connection
+        // it could read.
+        return agreeKey(challenge).then(function (seal) {
+          const suffix = seal ? ':' + seal.binding : '';
+          // Remembered so the welcome can be checked against what was asked, not
+          // against whatever the answer happens to contain.
+          expecting = {
+            mine: mine, theirs: challenge.nonce, serverKey: challenge.serverKey, suffix: suffix
+          };
+          // Which may also be a request to start using a better key — see
+          // media/device.js. The transport does not need to know which; it sends
+          // what the identity says to send.
+          return window.nikDevice.authMessage(record, challenge.nonce, mine, suffix)
+            .then(function (message) {
+              if (seal) message.epk = seal.mine.spki;
+              // Started before the answer goes out, so a laptop that replies
+              // the instant it reads it is never replying to a client with
+              // nothing to open the reply with. `send` still sends the answer
+              // itself in the clear: it is what agrees the key.
+              if (seal) {
+                opening = window.nikSecure.clientBox(seal.mine, challenge.epk, challenge.nonce, mine);
+                opening.then(function (sealed) { box = sealed; });
+              }
+              send(message);
+            });
+        });
       }).catch(function () {
         stopped = 'could not sign';
         show('off', 'This device could not sign in');
@@ -282,6 +358,25 @@
       }).catch(function () { /* the next connection asks again */ });
     }
 
+    /**
+     * The throwaway key half of the handshake, when both ends can do it.
+     *
+     * A client with no identity to prove does not seal: there would be nothing
+     * binding the agreement to anybody, which is encryption that proves nothing
+     * and hides the fact. That client is the laptop's own browser, on loopback,
+     * holding the key — the one case where there is no network to hide from.
+     */
+    function agreeKey(challenge) {
+      if (!challenge.epk || !window.nikSecure || !window.nikSecure.available()) {
+        return Promise.resolve(null);
+      }
+      return window.nikSecure.ephemeral().then(function (mine) {
+        return window.nikSecure.binding(challenge.epk, mine.spki).then(function (binding) {
+          return { mine: mine, binding: binding };
+        });
+      }).catch(function () { return null; });
+    }
+
     function randomNonce() {
       const bytes = new Uint8Array(24);
       (window.crypto || {}).getRandomValues(bytes);
@@ -310,6 +405,11 @@
         tries = 0;
         seated = false;
         expecting = null;
+        // Every connection agrees its own key, so nothing survives a reconnect.
+        opening = null;
+        box = null;
+        outgoing = null;
+        incoming = null;
         // Not live yet: the socket is open, but nothing may be said on it until
         // the server has decided who is holding it. `ready` waits for @welcome.
         show('warn', 'Signing in…');
@@ -361,8 +461,22 @@
       retry = setTimeout(connect, wait + Math.floor(Math.random() * 250));
     }
 
+    /**
+     * Out. Handshake frames go in the clear — there is nothing agreed to seal
+     * them with yet, and nothing in them worth hiding. Everything after is
+     * sealed, in the order it was said: sealing is asynchronous, and a queue
+     * that let two messages race would deliver them with counters that no
+     * longer match the order the other end reads them in.
+     */
     function send(message) {
-      socket.send(JSON.stringify(message));
+      if (!box) return socket.send(JSON.stringify(message));
+      const on = socket;
+      outgoing = (outgoing || Promise.resolve())
+        .then(function () { return box.seal(JSON.stringify(message)); })
+        .then(function (frame) {
+          if (on.readyState === 1) on.send(JSON.stringify(frame));
+        })
+        .catch(function () { /* a dead socket is not a message to retry */ });
     }
 
     function live() {
@@ -418,6 +532,8 @@
       reconnect: reconnect,
       // For the tests, and for anyone wondering in a console why nothing moves.
       __socket: function () { return socket; },
+      /** Whether this connection is sealed, for anything that wants to say so. */
+      sealed: function () { return !!box; },
       __state: function () { return live() ? 'online' : (stopped ? 'refused' : (tries ? 'reconnecting' : 'offline')); }
     };
   }
@@ -428,7 +544,12 @@
    */
   window.nikTransport = function () {
     if (typeof acquireVsCodeApi === 'function') return acquireVsCodeApi();
-    return socketTransport(window.NIKUI_REMOTE || {});
+    const made = socketTransport(window.NIKUI_REMOTE || {});
+    // The live one, for anything outside the client that has to say something
+    // on this socket rather than open a second one. There is exactly one such
+    // thing: the app telling the laptop where Apple can reach this phone.
+    window.nikLink = made;
+    return made;
   };
 
   // Exported so the offline suite can drive it with a fake socket.

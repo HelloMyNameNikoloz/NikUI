@@ -20,7 +20,14 @@
     version: { client: '…', app: '…' },
     health: null,           // round trip in ms, when it answered
     key: null,              // where the key is held, and what this device could do better
-    moving: null            // a word for what the move is doing, while it does it
+    moving: null,           // a word for what the move is doing, while it does it
+    sealed: null,           // whether this connection is sealed end to end
+    showing: null,          // a fingerprint opened up to be read out loud
+    notify: null,           // what this phone has been told it may show
+    watching: null,         // whether it can keep listening in a pocket
+    laptopVersion: null,    // what the laptop is running, as it said on connecting
+    explaining: false,      // the one paragraph that says what any of this is
+    apple: null             // whether this iPhone can be reached while closed
   };
 
   const el = (tag, className, text) => {
@@ -74,6 +81,21 @@
 
   const shortKey = (key) => (key ? String(key).slice(0, 8) + '…' : 'none');
 
+  /** A small physical confirmation that a tap did something. */
+  function buzz(style) {
+    const plugins = app.native();
+    const haptics = plugins && plugins.Haptics;
+    if (!haptics || !haptics.impact) return;
+    const call = haptics.impact({ style: (style || 'light').toUpperCase() });
+    if (call && call.catch) call.catch(function () {});
+  }
+
+  /**
+   * A fingerprint in chunks a person can read aloud and compare without
+   * losing their place. Four groups is the most anybody checks properly.
+   */
+  const groups = (key) => String(key || '').replace(/(.{6})/g, '$1 ').trim();
+
   /** Where a key is kept, said the way a person would say it. */
   const HELD = {
     'secure-enclave': 'Secure Enclave',
@@ -119,6 +141,37 @@
       tap: () => { state.connection = 'checking'; state.health = null; draw(); probe(); },
       chevron: true
     });
+
+    // ---- what protects this connection ------------------------------------
+    //
+    // Put directly under the connection it is about, and said in one word that
+    // is either right or wrong: there is no useful middle state to explain.
+
+    const safety = group('Security',
+      state.sealed
+        ? 'Sealed with a key this phone and your laptop agree fresh every time they connect. Nothing carrying it can read it.'
+        : 'This connection is protected by HTTPS alone until it is sealed.');
+
+    row(safety, {
+      label: 'This connection',
+      dot: state.sealed ? 'live' : state.sealed === false ? 'gone' : 'busy',
+      value: state.sealed === null ? 'Checking…' : state.sealed ? 'End-to-end encrypted' : 'Not sealed',
+      tone: state.sealed ? 'good' : state.sealed === false ? 'warn' : ''
+    });
+
+    row(safety, {
+      label: 'Check it is really your laptop',
+      hint: state.showing ? null : 'Compare four groups of letters with the ones on your laptop',
+      value: state.showing ? null : 'Show',
+      tap: () => { state.showing = state.showing ? null : (state.where.fingerprint || ''); draw(); },
+      chevron: !state.showing
+    });
+
+    if (state.showing) {
+      const proof = el('p', 'proof');
+      proof.textContent = groups(state.showing);
+      safety.parentNode.insertBefore(proof, safety.nextSibling);
+    }
 
     const permission = group('What this device may do',
       state.control === false
@@ -176,6 +229,86 @@
     row(identity, { label: 'Laptop key pinned', value: shortKey(state.where.fingerprint), mono: true });
     row(identity, { label: 'Paired', value: ago(state.where.pairedAt) });
 
+    // ---- being told -------------------------------------------------------
+    //
+    // One switch to turn it on, which is also the moment the phone is asked for
+    // permission — never at launch, because a permission dialog before anybody
+    // has asked for anything is a dialog that gets refused.
+
+    const wanted = window.NikNotify ? window.NikNotify.prefs() : { on: false };
+    const allowed = state.notify;
+
+    const telling = group('Notifications', allowed === 'denied'
+      ? 'This phone is set to show nothing from NikUI. Open its Settings to change that.'
+      : 'Your laptop decides what is worth telling you. This decides which of those reach you here.');
+
+    row(telling, {
+      label: 'Tell me things',
+      hint: allowed === 'denied' ? 'Blocked by this phone' : null,
+      value: wanted.on && allowed === 'granted' ? 'On' : 'Off',
+      tone: wanted.on && allowed === 'granted' ? 'good' : allowed === 'denied' ? 'bad' : '',
+      tap: toggleNotifications,
+      chevron: true
+    });
+
+    if (wanted.on && allowed === 'granted') {
+      for (const [key, , label, hint] of (window.NikNotify.KINDS || [])) {
+        row(telling, {
+          label, hint,
+          value: wanted[key] ? 'On' : 'Off',
+          tone: wanted[key] ? 'good' : '',
+          tap: () => { window.NikNotify.setPref(key, !wanted[key]); draw(); }
+        });
+      }
+      row(telling, {
+        label: 'Send me one now',
+        hint: 'To see what it looks like, and that it arrives',
+        tap: () => window.NikNotify.test().then((ok) => flash(ok ? 'Sent.' : 'This phone would not show it.')),
+        chevron: true
+      });
+    }
+
+    // Keeping the socket open while the app is not on screen. Android allows
+    // it behind a quiet ongoing notification; iOS does not allow it at all,
+    // and says so rather than offering a switch that would do nothing.
+    const away = state.watching || { supported: false, running: false };
+    if (wanted.on && allowed === 'granted') {
+      if (away.supported) {
+        row(telling, {
+          label: 'Keep watching in the background',
+          hint: away.running
+            ? 'A quiet notification says so, because this phone requires one'
+            : 'Off — you are only told while NikUI is open',
+          value: away.running ? 'On' : 'Off',
+          tone: away.running ? 'good' : '',
+          tap: () => window.NikNotify.watch(!away.running).then((now) => { state.watching = now; draw(); }),
+          chevron: true
+        });
+      } else if (state.apple && state.apple.supported) {
+        // iOS cannot keep a socket open, so the only way to reach a closed app
+        // is Apple's own network — which needs a token from this phone and an
+        // Apple Developer account behind the build. Both failures are named,
+        // because "notifications do not arrive" is the least useful sentence
+        // in this product.
+        row(telling, {
+          label: 'While NikUI is closed',
+          hint: state.apple.registered
+            ? 'Your laptop can reach this iPhone through Apple when the app is not running.'
+            : state.apple.why || 'iPhone cannot listen in the background. Apple can pass a message on.',
+          value: state.apple.registered ? 'On' : 'Set up',
+          tone: state.apple.registered ? 'good' : '',
+          tap: state.apple.registered ? null : setUpApple,
+          chevron: !state.apple.registered
+        });
+      } else {
+        row(telling, {
+          label: 'While NikUI is closed',
+          hint: 'This phone cannot listen in the background, and cannot be reached any other way.',
+          value: 'Not possible'
+        });
+      }
+    }
+
     const look = group('Text size');
     const sizes = [['small', 'Small'], ['medium', 'Default'], ['large', 'Large']];
     const current = app.prefs().textSize;
@@ -189,15 +322,44 @@
     }
 
     const about = group('About');
+    row(about, {
+      label: 'What is this?',
+      tap: () => { state.explaining = !state.explaining; draw(); },
+      value: state.explaining ? null : 'Read',
+      chevron: !state.explaining
+    });
     row(about, { label: 'App', value: state.version.app, mono: true });
-    row(about, { label: 'Client', value: state.version.client, mono: true,
-      hint: 'The same files the editor’s panel runs' });
+
+    // The app carries its own copy of the client. When the laptop is running a
+    // different one, everything still works until suddenly it does not, and the
+    // symptom is never "the versions differ" — so it is said here, plainly,
+    // rather than left to be worked out.
+    const drifted = state.laptopVersion && state.laptopVersion !== state.version.client;
+    row(about, {
+      label: 'Client', value: state.version.client, mono: true,
+      tone: drifted ? 'warn' : '',
+      hint: drifted
+        ? 'Your laptop is running ' + state.laptopVersion + '. Update the app to match.'
+        : state.laptopVersion
+          ? 'The same version your laptop is running'
+          : 'The same files the editor’s panel runs'
+    });
     row(about, {
       label: 'Copy diagnostics',
       hint: 'Everything on this screen, as text',
       tap: copyDiagnostics,
       chevron: true
     });
+
+    if (state.explaining) {
+      const words = el('p', 'group-note explain');
+      words.textContent = 'NikUI runs Claude Code on your laptop. This app is the same screen the ' +
+        'editor shows, on your phone: you can watch what every instance is doing from anywhere, ' +
+        'and — if you grant it on the laptop — answer and send prompts. Nothing runs on this ' +
+        'phone. It holds a key that proves it is yours, and everything it says is sealed between ' +
+        'the two.';
+      about.parentNode.appendChild(words);
+    }
 
     const danger = group('Undo',
       'Forgetting deletes this device’s key. The laptop keeps its record until you remove it there too.');
@@ -235,8 +397,10 @@
       const message = event.data;
       if (!message || typeof message.type !== 'string') return;
       if (message.type === '@welcome' || message.type === '@device') {
+        if (message.version) state.laptopVersion = message.version;
         state.connection = 'live';
         state.control = message.device ? message.device.control !== false : null;
+        state.sealed = !!(transport && transport.sealed && transport.sealed());
         draw();
       } else if (message.type === '@denied') {
         state.connection = 'refused';
@@ -332,11 +496,58 @@
     });
   });
 
+  /**
+   * On means two things at once — this phone allowing it, and this app wanting
+   * it — so the switch does both, in that order, and says which one said no.
+   */
+  function toggleNotifications() {
+    const api = window.NikNotify;
+    if (!api) return;
+    const now = api.prefs();
+    if (now.on) {
+      api.setPref('on', false);
+      // Nothing to listen for means nothing to stay awake for.
+      return api.watch(false).then((watching) => { state.watching = watching; draw(); });
+    }
+    return api.ask().then((verdict) => {
+      state.notify = verdict;
+      if (verdict !== 'granted') {
+        draw();
+        flash(verdict === 'unavailable' ? 'Not available here.' : 'This phone said no.');
+        return;
+      }
+      api.setPref('on', true);
+      buzz('medium');
+      draw();
+    });
+  }
+
+  /** Ask iOS for a token, and hand it to the laptop over the socket. */
+  function setUpApple() {
+    const api = window.NikNotify;
+    if (!api || !api.registerWithApple) return;
+    flash('Asking Apple…');
+    api.registerWithApple(function (message) {
+      if (window.nikLink) window.nikLink.postMessage(message);
+    }).then(function (now) {
+      state.apple = now;
+      draw();
+      if (now.registered) { buzz('medium'); flash('Done.'); }
+      else flash(now.why || 'This phone would not register.');
+    });
+  }
+
   function copyDiagnostics() {
     const lines = [
-      'NikUI app ' + state.version.app + ' · client ' + state.version.client,
+      'NikUI app ' + state.version.app + ' · client ' + state.version.client +
+        (state.laptopVersion ? ' · laptop ' + state.laptopVersion : ''),
       'laptop: ' + state.where.scheme + '://' + state.where.host,
       'connection: ' + state.connection + (state.health != null ? ' (' + state.health + ' ms)' : ''),
+      'sealed: ' + (state.sealed === null ? 'unknown' : state.sealed ? 'end to end' : 'no'),
+      'notifications: ' + String(state.notify) +
+        (window.NikNotify ? ' · ' + JSON.stringify(window.NikNotify.prefs()) : ''),
+      'background: ' + JSON.stringify(state.watching),
+      'while closed: ' + JSON.stringify(state.apple),
       'permission: ' + (state.control === null ? 'unknown' : state.control ? 'can steer' : 'watching only'),
       'device id: ' + ((state.device && state.device.id) || 'not paired'),
       'key kept in: ' + ((state.device && state.device.protection) || 'software') +
@@ -377,6 +588,7 @@
     node.dataset.armed = '1';
     node.querySelector('b').textContent = 'Tap again to forget';
     node.classList.add('danger');
+    buzz('heavy');
     setTimeout(() => {
       if (!node.isConnected) return;
       node.dataset.armed = '';
@@ -399,5 +611,10 @@
     app.version().then((v) => { state.version = v; draw(); });
     refreshKey();
     probe();
+    if (window.NikNotify) {
+      window.NikNotify.permission().then((verdict) => { state.notify = verdict; draw(); });
+      window.NikNotify.background().then((watching) => { state.watching = watching; draw(); });
+      window.NikNotify.apple().then((apple) => { state.apple = apple; draw(); });
+    }
   }
 })();

@@ -250,6 +250,72 @@ module.exports = async function () {
   manager.emit('failed', { id: 'w3', label: 'gamma' }, 'again');
   await new Promise((r) => setTimeout(r, 120));
   checkEqual('and it can be let go of', heard.length, 0);
+
+  suite('a phone that is already here is told down the socket it is holding');
+
+  // The push path needs a tunnel, a push service and a phone reachable from
+  // outside. A phone with the app open needs none of those — it is connected,
+  // right now, over a socket this window is already holding.
+
+  const attached = [];
+  const bothWays = new Notifier({
+    devices: fakeDevices([{ id: 'd1', name: 'A phone', push: subscription }]),
+    vapid, now: () => 1000,
+    toSockets: (message) => { attached.push(message); return 2; },
+    send: async () => ({ ok: true })
+  });
+
+  const reachedBoth = await bothWays.announce('needs-you', { title: 'alpha needs an answer', tag: 'x', session: 'nik-1' });
+  checkEqual('the socket is told', attached.length, 1);
+  checkEqual('and so is the push service', reachedBoth.sent, 1);
+  checkEqual('and it says how many were already here', reachedBoth.attached, 2);
+  checkEqual('what goes down the socket is the same thing that goes up the wire',
+    attached[0].title, 'alpha needs an answer');
+  check('and it names the instance, so a tap can open it', attached[0].session === 'nik-1');
+  check('and which kind it was, so the phone can filter it', attached[0].kind === 'needs-you');
+
+  attached.length = 0;
+  const shutAway = new Notifier({
+    devices: fakeDevices([{ id: 'd1', name: 'A phone', push: subscription }]),
+    vapid, now: () => 1000,
+    reachable: () => false,
+    toSockets: (message) => { attached.push(message); return 1; },
+    send: async () => ({ ok: true })
+  });
+  const anyway = await shutAway.announce('failed', { title: 'beta failed', tag: 'y' });
+  checkEqual('a window nothing outside can reach still tells the phone that is here',
+    attached.length, 1);
+  checkEqual('and does not pretend it pushed anything', anyway.sent, 0);
+  check('nor that it skipped everything', anyway.skipped === false);
+
+  attached.length = 0;
+  const nobody = new Notifier({
+    devices: fakeDevices([]), vapid, now: () => 1000,
+    toSockets: () => 0, send: async () => ({ ok: true })
+  });
+  const silence = await nobody.announce('failed', { title: 'gamma failed', tag: 'z' });
+  check('with nobody anywhere, it says it skipped', silence.skipped === true);
+
+  attached.length = 0;
+  const breaking = new Notifier({
+    devices: fakeDevices([]), vapid, now: () => 1000,
+    toSockets: () => { throw new Error('the socket went away mid-sentence'); },
+    send: async () => ({ ok: true })
+  });
+  let survived = false;
+  try { await breaking.announce('failed', { title: 'delta failed', tag: 'w' }); }
+  catch (_) { survived = true; }
+  check('a socket that dies while being written to does not take the announcement with it', !survived);
+
+  const notWanted = new Notifier({
+    devices: fakeDevices([]), vapid, now: () => 1000,
+    settings: () => ({ failed: false }),
+    toSockets: (m) => { attached.push(m); return 1; },
+    send: async () => ({ ok: true })
+  });
+  attached.length = 0;
+  await notWanted.announce('failed', { title: 'never said', tag: 'v' });
+  checkEqual('and what this window does not want told is not told either way', attached.length, 0);
 };
 
 function fakeDevices(list) {

@@ -202,14 +202,19 @@ is the reason a phone will not silently start talking to a different laptop.
 ### The connection handshake, examined
 
 ```
-laptop                                        phone
-  |  @challenge { nonce, serverKey, fp }        |
-  |-------------------------------------------->|
-  |  @auth { device, nonce, signature }         |   over "nikui-auth:<theirs>:<mine>"
-  |<--------------------------------------------|
-  |  @welcome { device, signature }             |   over "nikui-host:<mine>:<theirs>"
-  |-------------------------------------------->|   phone verifies before seating
+laptop                                          phone
+  |  @challenge { nonce, serverKey, fp, epk }     |
+  |---------------------------------------------->|
+  |  @auth { device, nonce, epk, signature }       |  over "nikui-auth:<theirs>:<mine>:<binding>"
+  |<----------------------------------------------|
+  |  @box { @welcome { device, signature } }       |  over "nikui-host:<mine>:<theirs>:<binding>"
+  |---------------------------------------------->|  phone verifies before seating
+  |  @box { … }  every frame, both ways, from here on
 ```
+
+`epk` is a throwaway ECDH key made for this one connection and discarded with
+it. `binding` is `SHA-256(laptop's epk ‖ phone's epk)`, and both signatures
+cover it — see below.
 
 - The laptop's nonce is minted per socket, so a captured `@auth` replayed on a
   new connection is refused — verified by a test.
@@ -217,6 +222,45 @@ laptop                                        phone
   cannot be replayed at a different connection either.
 - Nothing is delivered to the session until both directions have checked out.
   Anything sent before that is dropped, not queued.
+
+### The sealed channel, examined
+
+TLS already carries all of this, and the handshake above already means nobody
+can *be* the laptop. What TLS alone does not survive is somebody who holds a
+certificate for the address — a compromised certificate authority, a relay that
+terminates TLS, a configuration profile installed on the phone. They still could
+not impersonate the laptop. Without this layer they could read everything.
+
+So both ends agree a key that neither could have known in advance, and every
+frame after the handshake is sealed with it: AES-256-GCM, a separate key for
+each direction, a counter folded into the nonce, and a strictly increasing
+counter on receipt.
+
+- **Machine-in-the-middle on the key agreement**: both signatures cover the
+  binding, which names both throwaway keys. Swapping either for one of your own
+  produces a signature the long-term key cannot have made.
+- **Downgrade**: stripping `epk` to force a plain connection changes what was
+  signed, so the signature fails — and with `nikui.remote.requireEncryption` on,
+  which is the default, an unsealed connection is refused before that.
+- **Replay of a whole connection**: the keys are derived from both nonces as
+  well as the shared secret, so nothing from an old connection opens on a new one.
+- **Replay of one frame**: counters are strictly increasing and a repeat opens to
+  nothing.
+- **Tampering**: GCM's tag fails, and a frame that will not open closes the
+  socket rather than being skipped.
+- **Reflection**: the two directions use different keys, so a frame the laptop
+  sent cannot be played back at the laptop.
+- **Forward secrecy**: the throwaway keys are gone when the socket closes.
+  Stealing either long-term key tomorrow does not open a recording of today.
+- **Key confusion**: a point that is not on P-256, a key on another curve, and a
+  key of another kind are all refused before any agreement is attempted.
+
+All of it is in `test/secure.test.js`, and the two implementations —
+`src/secure.js` for the laptop, `media/secure.js` for the browser — are checked
+against each other there, because two implementations of one format is a
+standing offer to drift apart.
+
+This is not an excuse to drop TLS. It is the layer that survives TLS being wrong.
 
 ### Replacing a device's own key, examined
 
@@ -255,6 +299,33 @@ window, a line in the audit trail, the previous fingerprint kept on the record,
 and both shown in the device's tooltip. The recovery is the same as for any
 compromised device — forget it, and pair again.
 
+### Telling a phone something, examined
+
+A notification says what is happening on this machine, so where it goes matters.
+
+- Down a **socket**, it goes only to a client that has already completed the
+  handshake and is a paired device — so it is inside the sealed channel, and the
+  network carrying it sees an `@box` frame like any other. Nothing new is
+  exposed: the socket already carried the whole conversation.
+- Through a **push service**, the payload is encrypted to the subscription's own
+  key (RFC 8291) and the sender proved with a short-lived signed token (RFC
+  8292), so Apple's or Google's service knows only that a message exists.
+
+- Through **Apple's push network**, for an iPhone with the app closed, the alert
+  text is *not* encrypted end to end — APNs shows the alert without the app
+  running, so Apple necessarily sees it. This is the only place in the product
+  where anything readable leaves the two machines, it is off unless an Apple
+  Developer account has been configured, and it is why the titles name an
+  instance rather than quoting it.
+
+The titles and bodies name an instance and, for a permission request, the tool
+being asked about. That is the same information the socket already carries, and
+it is the minimum that makes a notification worth reading.
+
+The device token itself arrives on an authenticated, sealed socket and is stored
+against that device's record, so forgetting the device forgets where to reach it.
+A token offered by anything that is not a paired device is refused.
+
 **What a device says about where its key is kept is a claim, not a measurement.**
 Nothing on the laptop can tell a Secure Enclave from a phone that says "Secure
 Enclave"; that would take Android Key Attestation or Apple's equivalent, which
@@ -277,6 +348,10 @@ so an arbitrary string cannot reach a screen.
 | The script nonce is from the cryptographic generator | `src/page.js` `randomNonce()` |
 | The local key is refused when forwarded or when the Host is not loopback | `src/auth.js` `LocalKey.check()` |
 | A replacement device key must be authorised by the key it replaces, and prove itself | `src/auth.js` `Gate.answer()` |
+| A device must seal the channel before it may say anything | `src/auth.js` `Gate.answer()`, `requireSealed` |
+| Once sealed, a plaintext frame closes the socket | `src/remote.js` `deliver()` |
+| Outside this machine, app-only serves four routes and no page | `src/remote.js` `isAppRoute()` |
+| A notification down a socket goes only to seated devices, inside the sealed channel | `src/remote.js` `notifyDevices()` |
 | Two devices can never share one key | `src/devices.js` `rekey()` |
 | Steering needs a grant, checked on the host | `src/hub.js` `STEERING` |
 | Starting an instance needs that grant too | `src/hub.js` `hello()` |

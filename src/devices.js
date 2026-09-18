@@ -179,6 +179,38 @@ class DeviceStore {
     return device;
   }
 
+  /**
+   * Where to reach an iPhone that is not running.
+   *
+   * A different thing from a web-push subscription and kept separately: one is
+   * a browser's, one is the app's, and a phone can hold both without either
+   * meaning the other.
+   */
+  subscribeApple(id, token) {
+    const devices = this.list();
+    const device = devices.find((d) => d.id === id);
+    if (!device) return null;
+    const hex = String(token || '').replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+    if (hex.length < 32 || hex.length > 200) return null;
+    device.apns = { token: hex, at: this.now() };
+    this.save(devices);
+    return device;
+  }
+
+  unsubscribeApple(id) {
+    const devices = this.list();
+    const device = devices.find((d) => d.id === id);
+    if (!device || !device.apns) return false;
+    delete device.apns;
+    this.save(devices);
+    return true;
+  }
+
+  /** Every iPhone that has told us where to find it. */
+  appleSubscribers() {
+    return this.list().filter((device) => device.apns && device.apns.token);
+  }
+
   /** A subscription the push service says is dead is not worth keeping. */
   unsubscribe(id) {
     const devices = this.list();

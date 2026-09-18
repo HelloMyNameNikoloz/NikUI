@@ -90,6 +90,7 @@ class PairingWindow {
       expiresAt: this.open.expiresAt,
       msLeft: Math.max(0, this.open.expiresAt - this.now()),
       link: this.link(),
+      appLink: this.appLink(),
       host: this.open.host,
       scheme: this.open.scheme,
       fingerprint: this.open.fingerprint,
@@ -106,12 +107,37 @@ class PairingWindow {
   link() {
     if (!this.open) return null;
     const at = this.open;
-    const params = [
+    return `${at.scheme}://${at.host || '127.0.0.1'}/pair#${this.fragment()}`;
+  }
+
+  /**
+   * The same invitation, addressed to the app instead of to a browser.
+   *
+   * A phone's own camera reads a QR and offers to open what is in it. An
+   * ordinary https link opens a browser, which is right when the browser is the
+   * client and wrong when the app is — so the app claims a scheme of its own and
+   * the laptop can offer either. One tap, no typing, no camera permission and no
+   * scanner in the app: the camera the person already knows how to use does it.
+   *
+   * The host travels in the fragment here because a custom scheme has no
+   * authority worth the name — and the fragment is the part a browser never
+   * sends anywhere, which is where the code belongs regardless.
+   */
+  appLink() {
+    if (!this.open) return null;
+    const at = this.open;
+    return `nikui://pair#${this.fragment()}&h=${encodeURIComponent(at.host || '127.0.0.1')}` +
+      `&s=${encodeURIComponent(at.scheme || 'http')}`;
+  }
+
+  /** The secret half, which is the same either way. */
+  fragment() {
+    const at = this.open;
+    return [
       'c=' + encodeURIComponent(at.code),
       at.fingerprint ? 'f=' + encodeURIComponent(at.fingerprint) : null,
       at.laptop ? 'n=' + encodeURIComponent(at.laptop) : null
     ].filter(Boolean).join('&');
-    return `${at.scheme}://${at.host || '127.0.0.1'}/pair#${params}`;
   }
 
   /**

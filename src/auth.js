@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { readPublicKey, verifyWith } = require('./identity');
+const secure = require('./secure');
 
 /**
  * Who is allowed to talk to the local server.
@@ -70,6 +71,11 @@ class Gate {
     this.devices = deps.devices || null;
     this.identity = deps.identity || null;
     this.now = deps.now || (() => Date.now());
+    // Whether a paired device may connect without sealing the channel. On, by
+    // default, because everything that ships here can seal it — and a setting
+    // whose safe value is the harder one to reach is a setting that ends up on
+    // the wrong value.
+    this.requireSealed = deps.requireSealed === undefined ? () => true : deps.requireSealed;
   }
 
   get key() {
@@ -99,11 +105,15 @@ class Gate {
     };
   }
 
-  /** The opening move: a nonce this server will expect signed. */
+  /**
+   * The opening move: a nonce this server will expect signed, and a throwaway
+   * key for this one connection.
+   */
   challenge() {
     return {
       nonce: crypto.randomBytes(32).toString('base64url'),
-      at: this.now()
+      at: this.now(),
+      ephemeral: secure.ephemeral()
     };
   }
 
@@ -111,6 +121,10 @@ class Gate {
     return {
       type: '@challenge',
       nonce: state.nonce,
+      // Offered to everyone; used by anything that knows what it is for. A
+      // client that ignores it gets a plain connection, and is refused if this
+      // window insists on a sealed one.
+      epk: state.ephemeral ? state.ephemeral.spki : null,
       // Sent every time so a device can check it is still talking to the laptop
       // it paired with, rather than to whatever now answers on this address.
       serverKey: this.identity ? this.identity.publicKeySpki : null,
@@ -152,9 +166,24 @@ class Gate {
       if (!replacement) return { ok: false, reason: 'that is not a key this laptop can use' };
     }
 
-    const signed = replacement
+    // A device that means to seal the channel offers its own throwaway key, and
+    // says so *inside its signature*: both keys are named in what it signs, so
+    // one swapped in flight invalidates the signature, and stripping the offer
+    // to force a plain connection invalidates it too.
+    let sealing = null;
+    if (message.epk !== undefined && message.epk !== null && state.ephemeral) {
+      if (!secure.readEphemeral(String(message.epk))) {
+        return { ok: false, reason: 'that is not a key this laptop can agree with' };
+      }
+      sealing = secure.binding(state.ephemeral.spki, String(message.epk));
+    } else if (this.requireSealed()) {
+      return { ok: false, reason: 'this laptop only accepts sealed connections' };
+    }
+
+    const suffix = sealing ? ':' + sealing : '';
+    const signed = (replacement
       ? `nikui-rekey:${state.nonce}:${theirNonce}:${replacement.fingerprint}`
-      : `nikui-auth:${state.nonce}:${theirNonce}`;
+      : `nikui-auth:${state.nonce}:${theirNonce}`) + suffix;
 
     // The key being replaced authorises the replacement. Anything else would be
     // a way to take over a device record by asking.
@@ -189,14 +218,22 @@ class Gate {
       type: '@welcome',
       device: seat,
       // The server's half of the proof, over the device's nonce.
-      signature: this.identity ? this.identity.sign(`nikui-host:${theirNonce}:${state.nonce}`) : null
+      signature: this.identity
+        ? this.identity.sign(`nikui-host:${theirNonce}:${state.nonce}` + suffix)
+        : null
     };
     // Said explicitly, so the device knows the moment it is safe to stop being
     // able to sign with the key it just replaced.
     if (rekeyed) {
       welcome.rekeyed = { fingerprint: rekeyed.fingerprint, protection: rekeyed.protection };
     }
-    return { ok: true, device: seat, welcome, rekeyed };
+    // The channel itself, if one was agreed. Built only after the signature
+    // checked out, so a box never exists for a connection that was refused.
+    const box = sealing
+      ? secure.serverBox(state.ephemeral, String(message.epk), state.nonce, theirNonce)
+      : null;
+    if (sealing && !box) return { ok: false, reason: 'that key would not agree' };
+    return { ok: true, device: seat, welcome, rekeyed, box, sealed: !!box };
   }
 }
 

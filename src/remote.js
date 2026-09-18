@@ -60,6 +60,8 @@ class RemoteServer {
    * @param {object} [deps.hubs]      { hubFor, closeHub } — injectable for tests
    * @param {Function} [deps.watchFleet] subscribe to "the window changed"
    * @param {Function} [deps.announce] tell a person something happened
+   * @param {() => boolean} [deps.requireSealed] must a device seal the channel
+   * @param {() => boolean} [deps.appOnly] serve the app only, never a page
    * @param {(line: string) => void} [deps.log]
    */
   constructor(deps) {
@@ -71,13 +73,25 @@ class RemoteServer {
     this.pairing = deps.pairing || null;
     this.vapid = deps.vapid || null;
     this.hubs = deps.hubs || require('./hub');
+    // Read through a function rather than copied at construction, so changing
+    // the setting takes effect on the next connection rather than the next
+    // window — a security setting you have to restart to apply is a security
+    // setting that stays wrong.
+    this.requireSealed = deps.requireSealed || (() => true);
+    this.appOnly = deps.appOnly || (() => false);
     this.gate = deps.gate || new Gate({
       localKey: deps.localKey || new LocalKey(),
       devices: this.devices,
-      identity: this.identity
+      identity: this.identity,
+      requireSealed: () => this.requireSealed()
     });
     this.log = deps.log || (() => {});
     this.announcer = deps.announce || null;
+    // What this window is running, told to a device once it has proved itself.
+    // An app carries its own copy of the client, so the two can drift — and a
+    // phone showing a version of the client the laptop no longer speaks is the
+    // kind of problem that presents as everything being subtly wrong.
+    this.version = deps.version || require('../package.json').version;
     this.server = null;
     this.port = 0;
     this.clients = new Set();
@@ -118,6 +132,41 @@ class RemoteServer {
   announce(event) {
     if (!this.announcer) return;
     try { this.announcer(event); } catch (_) { /* a listener's problem, not the server's */ }
+  }
+
+  /**
+   * Something a person should see, to every device that is already here.
+   *
+   * Not a session message: it belongs to the device rather than to any one
+   * instance, so it goes to every socket a device is holding, whether that
+   * socket is watching the window or one conversation in it.
+   *
+   * @returns {number} how many were told
+   */
+  notifyDevices(message) {
+    let told = 0;
+    for (const client of this.clients) {
+      if (!client.device || client.device.kind !== 'device') continue;
+      client.post(Object.assign({ type: '@notify' }, message));
+      told++;
+    }
+    return told;
+  }
+
+  /**
+   * An iPhone saying where Apple can find it. Refused for anything that is not
+   * a paired device, because a token is a thing this window will later send to
+   * a third party and it should only ever be one a device it knows asked for.
+   */
+  rememberApple(device, token) {
+    if (!this.devices || !device || device.kind !== 'device') return false;
+    const kept = this.devices.subscribeApple(device.id, token);
+    if (!kept) {
+      this.log(`${device.name} offered something that is not a device token`);
+      return false;
+    }
+    this.log(`${device.name} can be reached through Apple when it is closed`);
+    return true;
   }
 
   announceState() {
@@ -377,6 +426,15 @@ class RemoteServer {
     }
     if (cors) for (const [name, value] of Object.entries(cors)) res.setHeader(name, value);
 
+    // App-only: from anywhere but this machine, the only things that exist are
+    // the ones the app actually uses. No page, no client, no worker, no
+    // manifest — nothing to find, nothing to render, nothing to get wrong.
+    // Loopback is untouched, because that is this laptop's own browser.
+    if (this.appOnly() && !this.isLoopbackHost(req) && !isAppRoute(req.method, route)) {
+      this.refuse(req, 'app-only: ' + route);
+      return plain(res, 404, 'No such page');
+    }
+
     if (req.method === 'POST' && route === '/pair') return this.pair(req, res);
     if (req.method === 'POST' && route === '/push/subscribe') return this.subscribe(req, res);
     if (req.method !== 'GET' && req.method !== 'HEAD') return plain(res, 405, 'Only GET');
@@ -440,12 +498,13 @@ ${this.appHead(nonce)}</head>
 <body class="home">
   <header class="home-head">
     <h1>NikUI</h1>
-    <div class="link" id="link" hidden></div>
+    <div class="link" id="link" role="status" aria-live="polite" hidden></div>
   </header>
   <p class="lede" id="lede">Connecting&hellip;</p>
   <div class="rows" id="rows"></div>
   <script nonce="${nonce}">window.NIKUI_REMOTE = ${jsonForScript({ session: null, socket: '/socket' })};</script>
   <script nonce="${nonce}" src="/media/device.js"></script>
+  <script nonce="${nonce}" src="/media/secure.js"></script>
   <script nonce="${nonce}" src="/media/transport.js"></script>
   <script nonce="${nonce}" src="/media/home.js"></script>
 </body>
@@ -741,6 +800,7 @@ ${this.appHead(nonce)}</head>
       id: 'socket-' + (this.seq++),
       socket,
       wants: url.searchParams.get('session') || null,
+      version: this.version,
       address: (req.socket && req.socket.remoteAddress) || null,
       server: this,
       log: this.log
@@ -844,6 +904,7 @@ class RemoteClient {
     this.socket = opts.socket;
     this.server = opts.server;
     this.wants = opts.wants;
+    this.version = opts.version || null;
     this.address = opts.address;
     this.log = opts.log || (() => {});
     this.open = true;
@@ -851,6 +912,11 @@ class RemoteClient {
     this.binding = null;
     this.pending = null;
     this.awaitingPong = 0;
+    // The sealed channel, once the handshake agrees one. Null means this
+    // connection is carrying plaintext inside TLS and nothing more — which is
+    // only ever this machine's own browser, on loopback.
+    this.box = null;
+    this.sealed = false;
 
     this.socket.setNoDelay(true);
     this.socket.setTimeout(0);
@@ -887,11 +953,22 @@ class RemoteClient {
     if (this.deadline.unref) this.deadline.unref();
   }
 
-  welcome(device, welcomeMessage) {
+  /**
+   * @param {object} device
+   * @param {object} [welcomeMessage]
+   * @param {object} [box] the sealed channel, when one was agreed
+   */
+  welcome(device, welcomeMessage, box) {
     if (this.deadline) { clearTimeout(this.deadline); this.deadline = null; }
     this.device = device;
     this.pending = null;
-    this.post(welcomeMessage || { type: '@welcome', device });
+    // Set before the welcome goes out, so the welcome is the first thing inside
+    // the envelope rather than the last thing outside it.
+    this.box = box || null;
+    // Said once, to a client that has proved who it is: an app carrying its own
+    // copy of the client needs to know whether it is the same copy.
+    this.post(Object.assign({ type: '@welcome', device }, welcomeMessage || null,
+      this.version ? { version: this.version } : null));
     this.server.seat(this);
   }
 
@@ -916,7 +993,12 @@ class RemoteClient {
       this.log(`${this.id} is not keeping up; closing`);
       return this.close(wire.CLOSE.POLICY, 'too far behind');
     }
-    this.write(wire.encodeText(JSON.stringify(message)));
+    let frame = message;
+    if (this.box) {
+      try { frame = this.box.seal(JSON.stringify(message)); }
+      catch (_) { return this.close(wire.CLOSE.POLICY, 'this connection has said enough'); }
+    }
+    this.write(wire.encodeText(JSON.stringify(frame)));
   }
 
   deliver(text) {
@@ -944,6 +1026,7 @@ class RemoteClient {
         return this.welcome(localDevice(), this.gate.localWelcome(this.pending, msg));
       }
       if (!verdict.ok) return this.deny(verdict.reason);
+      this.sealed = !!verdict.sealed;
       if (verdict.rekeyed) {
         // A device replacing its own key is exactly what a stolen key would do
         // to make the theft permanent, so it is never silent: the trail has it,
@@ -956,8 +1039,27 @@ class RemoteClient {
           biometric: !!verdict.rekeyed.biometric
         });
       }
-      return this.welcome(verdict.device, verdict.welcome);
+      return this.welcome(verdict.device, verdict.welcome, verdict.box);
     }
+
+    // Once the channel is sealed it stays sealed: a plaintext frame arriving
+    // afterwards is either a mistake or somebody trying to talk around the
+    // envelope, and neither is a message.
+    if (this.box) {
+      if (msg.type !== '@box') return this.close(wire.CLOSE.POLICY, 'that was not sealed');
+      const inside = this.box.open(msg);
+      if (inside === null) return this.close(wire.CLOSE.POLICY, 'that did not open');
+      try { msg = JSON.parse(inside); } catch (_) { return; }
+      if (!msg || typeof msg.type !== 'string') return;
+    } else if (msg.type === '@box') {
+      return;
+    }
+
+    // Where to reach this device when it is not running. Only an app has one,
+    // it only ever arrives on a socket the device has already proved itself on,
+    // and it is stored against that device's record — so forgetting the device
+    // forgets where to reach it, with no second list to remember to clean.
+    if (msg.type === '@apple') return this.server.rememberApple(this.device, msg.token);
 
     if (msg.type.charCodeAt(0) === 64) return; // '@' frames are the transport's, not the session's
     if (!this.binding) return;
@@ -1050,6 +1152,20 @@ function html(res, body, csp) {
 }
 
 /** The shape of an id this window makes: see nextId() in session.js. */
+/**
+ * What an app asks for, and only in the way it asks for it.
+ *
+ * The socket is not here because it never reaches this function — it is an
+ * upgrade, guarded separately. `/pair` is a POST from an app and a page in a
+ * browser, and app-only means the page does not exist: the method is the whole
+ * difference, so the method is checked.
+ */
+function isAppRoute(method, route) {
+  if (route === '/health' || route === '/push/key') return method === 'GET' || method === 'HEAD';
+  if (route === '/pair' || route === '/push/subscribe') return method === 'POST';
+  return false;
+}
+
 const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 // A subscription is only accepted for a minute after the device signed for it.

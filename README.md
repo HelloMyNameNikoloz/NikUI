@@ -346,6 +346,9 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.statusEmoji` | see below | Emoji per status in tab titles |
 | `nikui.remote.port` | `4517` | Port for the local server, on `127.0.0.1` only; `0` picks a free one. A second window takes the next free port rather than refusing |
 | `nikui.remote.autoStart` | `false` | Start that server when the window opens |
+| `nikui.remote.requireEncryption` | `true` | Refuse a device that will not seal the channel end to end |
+| `nikui.remote.appOnly` | `false` | Serve the app and nothing else outside this machine |
+| `nikui.apns.*` | empty | Apple team ID, key ID, `.p8` path and topic, for telling an iPhone something while the app is closed |
 | `nikui.keepAwake` | `false` | Hold this machine awake while an instance needs it |
 | `nikui.notifyDevices` | needs-you, quota, failed | Which things are worth sending to a paired phone |
 
@@ -854,11 +857,50 @@ encodings now have to be exactly right — Apple hands back a bare EC point,
 both platforms sign to DER — so both conversions happen once, in JavaScript, and
 `test/hardware.test.js` runs them through the laptop's real verifier.
 
-Still to come: TLS pinning, which closes the relay the threat model names as
-open.
+And a connection nothing in between can read. Every socket between a device and
+this laptop now agrees a throwaway key at the handshake and seals every frame
+after it — AES-256-GCM, a key per direction, fresh for each connection. Both
+ends name both throwaway keys inside the signatures they were already
+exchanging, so the agreement cannot be swapped, stripped or replayed. TLS still
+carries all of it; this is the layer that survives TLS being wrong, which is the
+relay the threat model used to name as open.
 
-    npm run app          # build the bundle and sync both platforms
-    npm run test:app     # 46 checks driving the real bundle in a real browser
+Two switches go with it, both in the status-bar menu:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `nikui.remote.requireEncryption` | on | A device that will not seal the channel is refused |
+| `nikui.remote.appOnly` | off | Outside this machine, only pairing, the socket, the pulse and the push key exist — no page, no client, no worker, no manifest |
+
+And notifications that need nothing outside the two machines. What the laptop
+already decided was worth telling you now also goes **down the socket the app is
+holding**, so a phone with the app open is told without a push service, an
+account anywhere, or the laptop being reachable from outside at all. The phone
+decides which kinds are worth interrupting for, and tapping one opens the
+instance it was about. Android can keep listening while the app is in a pocket,
+behind the quiet ongoing notification the system requires; an iPhone cannot, and
+the app says so rather than offering a switch that would do nothing.
+
+And pairing that is pointing a phone at a laptop. The pairing panel offers the
+same invitation in two forms — one the phone's camera hands to **the app**, one
+it hands to a browser — so connecting is: run the command, point the camera, tap
+*Pair*. No scanner in the app, no camera permission, no library. Typing the code
+is still there for when that does not work.
+
+And a way to actually ship it. One version stamped into both platforms, a signed
+Android release build with the R8 keep rules Capacitor needs to survive
+shrinking, cleartext refused except to loopback, Apple's privacy manifest, and
+[`app/RELEASE.md`](app/RELEASE.md) — the runbook, including what each platform
+costs. Android needs nothing from anybody; an iPhone needs an Apple Developer
+account for anything past seven days.
+
+Which is also the last functional gap: an iPhone cannot keep a socket open, so
+being told while the app is *closed* goes through Apple's push network. That is
+implemented, tested to the socket, and inert until four settings are filled in.
+
+    npm run app             # build the bundle and sync both platforms
+    npm run test:app        # 99 checks driving the real bundle in a real browser
+    cd app && npm test      # 97 checks that the bundle is still a copy, and shippable
 
 [`app/README.md`](app/README.md) is the detail.
 

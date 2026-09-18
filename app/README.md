@@ -15,16 +15,20 @@ cd app && npm test     # check the bundle is still a copy, not a fork
 
     app/capacitor.config.json   appId, the dark field colour, the schemes
     app/shell/                  the app's own screens: app.css, app.js,
-                                connect.js, settings.js
+                                connect.js, settings.js, notify.js
     app/tools/build.js          builds www/ from media/ — never edited by hand
     app/tools/icons.js          launcher icons from the same mark as everything else
-    app/tools/xcode.js          puts native sources into project.pbxproj
+    app/tools/version.js        one version, stamped into both platforms
+    app/tools/xcode.js          puts native sources and resources into project.pbxproj
+    app/RELEASE.md              how to get a build onto a phone, and what it costs
     app/tools/build.test.js     proves www/ is a copy of media/, file by file
     app/tools/app.check.js      the app, driven in a browser against a real laptop
     app/www/                    generated, git-ignored
     app/android, app/ios        the native projects, committed
     …/ios/App/App/SecureKey/    the Secure Enclave half of the key plugin
     …/android/…/securekey/      the Android Keystore half
+    …/android/…/watcher/        the foreground service that keeps watching
+    …/ios/App/App/AppleToken/   the device token, for being told while closed
 
 ## The one rule
 
@@ -55,10 +59,15 @@ client now works whether it was *served* by a laptop or *bundled* by an app:
 
 ## The screens
 
-**Connect** — three fields and one button. The address and the laptop's key
-fingerprint fill themselves in from a pairing link when there is one; the device
-names itself; the key is made before the button is pressed so tapping it does
-one thing and does it now.
+**Connect** — two steps and nothing to fill in. Run *NikUI: Pair a device* on the
+laptop, point the phone's camera at the square it shows. The camera hands the
+link to the app, which turns into one question — *Pair with My laptop?* — and one
+button. No scanner in the app, no camera permission, no library: the camera the
+person already knows how to use does the reading.
+
+Typing is still there, behind *Type the code instead*, for when that does not
+work. The key is made before either button is pressed, so tapping one does one
+thing and does it now.
 
 **Instances** — the fleet, live, with the connection state in the bar.
 
@@ -123,7 +132,148 @@ the record. That last part is deliberate: a stolen key is how somebody would
 make a theft permanent, and the defence is not to forbid the move but to make
 sure it is never quiet.
 
+## The connection
+
+Sealed, end to end, on top of TLS. At the handshake both ends make a throwaway
+ECDH key, name both of them inside the signatures they were already exchanging,
+and from the welcome onwards every frame is AES-256-GCM with a key per direction
+and a counter that cannot repeat. The throwaway keys go with the socket, so a
+recording of today is not readable by somebody who steals a long-term key
+tomorrow.
+
+This is not a replacement for TLS — it is what survives TLS being wrong: a
+compromised certificate authority, a relay that terminates TLS, a configuration
+profile installed on the phone. Without it, any of those reads everything.
+
+Settings says so in one word, and offers the laptop's fingerprint in four
+readable groups so it can be compared with the one on the laptop's own screen.
+
+The laptop has two switches for it: `nikui.remote.requireEncryption` (on by
+default — a device that will not seal is refused) and `nikui.remote.appOnly`
+(off by default — with it on, nothing outside the laptop is served but pairing,
+the socket, the pulse and the push key; the app carries its own client and needs
+no page).
+
+## Being told
+
+The laptop already decides what is worth telling somebody about — an instance
+waiting for an answer, the quota running out, an instance failing, and
+optionally every turn finishing. That decision is made once, in
+`src/notify.js`, and now leaves by two doors instead of one:
+
+- **down the socket the app is already holding**, as an `@notify` frame. No push
+  service, no account anywhere, no tunnel — the device is *here*, so it is told
+  here. This is the path the app uses.
+- **through a push service**, as before, for a phone with the page installed
+  from a browser.
+
+The phone then decides which of those are worth interrupting for, with its own
+switches, and raises a real system notification. Tapping it opens the instance
+it was about. Two channels — one that makes a sound because something cannot go
+on without you, one that does not — so the phone's own settings can separate
+them.
+
+**Keeping the socket open when the app is not on screen** is where the two
+platforms differ, and the app says which one it is on rather than pretending:
+
+- **Android** can, behind the quiet ongoing notification the system requires
+  (`WatchService`, `foregroundServiceType="dataSync"`, importance `MIN`, no
+  sound, no badge). It is off until asked for.
+- **iOS** cannot. The system suspends an app the moment it leaves the screen,
+  and there is no entitlement that changes that for this purpose. Settings says
+  so in one line instead of offering a switch that would do nothing. The
+  groundwork for APNs is what phase 6 is for; it needs a developer account.
+
+The status-bar icon is drawn by `tools/icons.js` in the same three bars as
+everything else, white on nothing, because Android keeps only the alpha of a
+notification icon and a launcher icon handed to it renders as a white square.
+
+## How pairing actually happens
+
+    laptop                                phone
+    NikUI: Pair a device  ──▶  QR  ──▶  the camera app
+                                          │
+                                          ├─ nikui://pair#…  ──▶  this app
+                                          └─ https://host/pair#…  ──▶  a browser
+
+One square, two things it can carry, chosen by a segmented control on the
+laptop's pairing panel. The app's is the default because the app is what most
+people are holding; a browser is one tap away for the times it is not. The code
+and the fingerprint live in the fragment either way — the part a browser never
+sends to a server, so not even the machine serving the page sees them in its own
+logs.
+
+Opening the app with a link never pairs on sight. It fills everything in and
+asks, because a link that pairs on sight is a link somebody else could send you.
+
+## Polish, specifically
+
+Things that are easy to claim and hard to keep, so each one is a check in
+`app/tools/app.check.js` rather than an intention:
+
+- **Motion** that respects `prefers-reduced-motion` — the check emulates the
+  preference both ways and asserts the animation is there and is not.
+- **A wider screen** — a tablet or a phone on its side keeps the content at
+  560px and centred, rather than stretching a 44pt row across eleven inches.
+- **Every icon button** carries a label for anybody who cannot see it, and the
+  connection state is a live region so a change is announced.
+- **A focus ring**, for anybody driving this with a keyboard or a switch.
+- **Haptics** on the three things that change something: a laptop inviting you,
+  pairing succeeding, and arming the row that forgets everything.
+- **Version drift** — the app carries its own copy of the client, so the laptop
+  says which one it is running in the welcome, and settings says plainly when
+  they differ. The symptom otherwise is never "the versions differ"; it is
+  everything being subtly wrong.
+- **One paragraph** in About saying what NikUI is, for somebody who opened the
+  app because it appeared on their phone.
+
+## Being told while the app is closed
+
+Three doors, and only the third goes through anybody else's machine:
+
+| | when it works | what it needs |
+| --- | --- | --- |
+| the socket | while the app is on screen | nothing |
+| a foreground service | Android, in a pocket | nothing |
+| Apple's push network | iPhone, closed | an Apple Developer account |
+
+An iPhone cannot keep a socket open — iOS suspends an app the moment it leaves
+the screen, and no entitlement changes that. So the only way to reach a closed
+one is APNs, which needs a paid account, an auth key, and a token from the
+phone. The token travels up the socket the app is already holding, because that
+connection is authenticated and sealed already; there is no endpoint for it, no
+second signature, and no rate limit of its own.
+
+It is inert until four settings are filled in, and `Settings → Notifications →
+While NikUI is closed` says which ones are missing in words rather than in
+setting names. `app/RELEASE.md` is the runbook.
+
+Deliberately **not** `@capacitor/push-notifications`: it brings Firebase with it
+for Android, and Android needs none of this.
+
+## Shipping it
+
+`app/RELEASE.md` is the whole of it. The short version:
+
+- **Android** needs nothing from anybody. `npm run release:android` produces a
+  signed APK; the key comes from `android/keystore.properties`, which is
+  git-ignored and stays that way.
+- **iPhone** is free for seven days from Xcode, and needs the Apple Developer
+  Program ($99/year) for anything longer — or for notifications while the app
+  is closed.
+
+One version: `app/package.json` is it, and `npm run sync` stamps it into
+`build.gradle` and both Xcode configurations. The build number is derived —
+`major × 10000 + minor × 100 + patch` — so it always goes up and can be read
+backwards. Four files used to hold four different numbers.
+
+The release build shrinks and obfuscates, which is where the one real trap is:
+Capacitor finds plugin methods by reflection, so R8 removes them unless told
+not to, and the failure happens in release builds only. `proguard-rules.pro`
+holds the rules and `npm test` checks they are still there.
+
 ## What is not here yet
 
-Phases 3 to 6 of the app plan: TLS pinning, an app-only mode that stops the
-laptop serving HTML at all, native push, and the store logistics.
+Nothing in the plan. What remains is not code: none of the native halves —
+the Secure Enclave, the Keystore, the foreground service, the device token —
+has run on a physical phone, because none has been attached to this machine.

@@ -22,6 +22,7 @@ class Notifier {
    * @param {object} deps.vapid     this window's sending identity
    * @param {() => object} [deps.settings] which kinds are wanted
    * @param {Function} [deps.send]  push.send, injected for the tests
+   * @param {(message: object) => number} [deps.toSockets] tell devices that are already here
    * @param {() => number} [deps.now]
    * @param {(line: string) => void} [deps.log]
    */
@@ -36,6 +37,15 @@ class Notifier {
     // Whether a device could act on what it is told. Default yes, so nothing
     // that does not supply one goes quiet by accident.
     this.reachable = deps.reachable || (() => true);
+    // A device with the app open is already connected. Telling it over the
+    // socket it is holding is immediate, costs no push service, and works when
+    // nothing outside this machine can reach it at all — which is most of the
+    // time, because the tunnel is opt-in.
+    this.toSockets = deps.toSockets || (() => 0);
+    // The third door, and the only one that needs an account with anybody:
+    // Apple's, for an iPhone that is not running. Inert until configured.
+    this.apns = deps.apns || null;
+    this.toApple = deps.sendApple || require('./apns').send;
     // What each instance was last announced for, so the same state is not sent
     // twice as it flickers.
     this.told = new Map();
@@ -53,21 +63,48 @@ class Notifier {
   /**
    * Send one thing to every device that asked to be told.
    *
-   * @returns {Promise<{sent: number, failed: number, skipped: boolean}>}
+   * @returns {Promise<{sent: number, failed: number, attached: number, skipped: boolean}>}
    */
   async announce(kind, message) {
-    if (!this.wants(kind)) return { sent: 0, failed: 0, skipped: true };
-    if (!this.reachable()) {
-      this.log(`"${message.title}" not sent: nothing can reach this window`);
-      return { sent: 0, failed: 0, skipped: true };
-    }
-    const subscribers = this.devices.subscribers();
-    if (!subscribers.length) return { sent: 0, failed: 0, skipped: true };
+    if (!this.wants(kind)) return { sent: 0, failed: 0, attached: 0, skipped: true };
+    const body = Object.assign({ kind, at: this.now() }, message);
 
+    // Down the sockets first, because that path needs nothing outside this
+    // machine — no tunnel, no push service, no account anywhere.
+    let attached = 0;
+    try { attached = this.toSockets(body) || 0; }
+    catch (err) { this.log(`could not tell attached devices: ${err && err.message}`); }
+
+    if (!this.reachable()) {
+      if (!attached) this.log(`"${message.title}" not sent: nothing can reach this window`);
+      return { sent: 0, failed: 0, attached, skipped: !attached };
+    }
     let sent = 0;
     let failed = 0;
+
+    // An iPhone with the app closed is reachable only through Apple. Skipped
+    // entirely, and silently, until somebody has set that up — there is nothing
+    // to warn about in a door that was never fitted.
+    if (this.apns && this.apns.state().configured) {
+      for (const device of this.devices.appleSubscribers()) {
+        const outcome = await this.toApple(device.apns.token, body,
+          { apns: this.apns, now: this.now() });
+        if (outcome.ok) { sent++; continue; }
+        failed++;
+        this.log(`${device.name} did not get "${message.title}" from Apple: ${outcome.reason || ''}`);
+        if (outcome.gone) {
+          this.devices.unsubscribeApple(device.id);
+          this.devices.record({ device, action: 'notifications stopped', allowed: true,
+            detail: 'Apple says this device is gone' });
+        }
+      }
+    }
+
+    const subscribers = this.devices.subscribers();
+    if (!subscribers.length) return { sent, failed, attached, skipped: !attached && !sent && !failed };
+
     for (const device of subscribers) {
-      const outcome = await this.sender(device.push, Object.assign({ kind, at: this.now() }, message), {
+      const outcome = await this.sender(device.push, body, {
         vapid: this.vapid,
         subject: this.subject,
         // Something needing an answer is worth waking a screen for; the rest
@@ -89,8 +126,9 @@ class Notifier {
         }
       }
     }
-    this.log(`"${message.title}" → ${sent} device${sent === 1 ? '' : 's'}${failed ? `, ${failed} failed` : ''}`);
-    return { sent, failed, skipped: false };
+    this.log(`"${message.title}" → ${sent} device${sent === 1 ? '' : 's'}` +
+      (attached ? `, ${attached} already here` : '') + (failed ? `, ${failed} failed` : ''));
+    return { sent, failed, attached, skipped: false };
   }
 
   // ---- the three things ----------------------------------------------------
@@ -103,6 +141,7 @@ class Notifier {
       title: `${label(session)} needs an answer`,
       body: asking ? `Allow ${asking.name}?` : 'It is waiting for you before it can go on.',
       tag: 'needs-you:' + session.id,
+      session: session.id,
       url: '/s/' + session.id
     });
   }
@@ -114,6 +153,7 @@ class Notifier {
       title: `${label(session)} failed`,
       body: String(message || 'It stopped without finishing.').slice(0, 160),
       tag: 'failed:' + session.id,
+      session: session.id,
       url: '/s/' + session.id
     });
   }
@@ -123,6 +163,7 @@ class Notifier {
       title: `${label(session)} finished`,
       body: 'The turn is done.',
       tag: 'finished:' + session.id,
+      session: session.id,
       url: '/s/' + session.id
     });
   }

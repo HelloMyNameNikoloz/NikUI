@@ -15,7 +15,7 @@ const crypto = require('crypto');
 // wires them together, and transport.js must exist before panel.js asks for it.
 const SCRIPTS = [
   'icons.js', 'markdown.js', 'prompts.js', 'snippets.js',
-  'charts.js', 'status.js', 'device.js', 'transport.js', 'boot.js', 'panel.js'
+  'charts.js', 'status.js', 'device.js', 'secure.js', 'transport.js', 'boot.js', 'panel.js'
 ];
 
 /**
@@ -55,7 +55,7 @@ ${head}</head>
     <span class="spacer"></span>
     <div class="crumbs" id="crumbs"></div>
     <div class="who" id="who" hidden></div>
-    <div class="link" id="link" hidden></div>
+    <div class="link" id="link" role="status" aria-live="polite" hidden></div>
   </header>
 
   <div class="find" id="find" hidden>

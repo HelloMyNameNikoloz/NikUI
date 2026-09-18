@@ -26,6 +26,14 @@ const ANDROID = [
   ['mipmap-xxhdpi', 144], ['mipmap-xxxhdpi', 192]
 ];
 
+// The status bar wants the same mark, white on nothing, at five sizes of its
+// own. A notification with no icon of its own gets the launcher icon, which
+// Android renders as a white blob — which is what this exists to avoid.
+const ANDROID_STATUS = [
+  ['drawable-mdpi', 24], ['drawable-hdpi', 36], ['drawable-xhdpi', 48],
+  ['drawable-xxhdpi', 72], ['drawable-xxxhdpi', 96]
+];
+
 // iOS takes one 1024 and slices the rest itself.
 const IOS = [['AppIcon-512@2x.png', 1024]];
 
@@ -48,6 +56,13 @@ function android() {
     // which is what the maskable variant was made for.
     sips(masked, path.join(into, 'ic_launcher_foreground.png'), Math.round(size * 1.5));
     written += 3;
+  }
+  const status = path.join(MEDIA, 'nikui-status-96.png');
+  for (const [dir, size] of ANDROID_STATUS) {
+    const into = path.join(res, dir);
+    fs.mkdirSync(into, { recursive: true });
+    sips(status, path.join(into, 'ic_stat_nikui.png'), size);
+    written++;
   }
   return written;
 }

@@ -23,6 +23,7 @@ const { Tailscale, Cloudflared } = require('./tunnel');
 const { Awake, shouldHold } = require('./awake');
 const { loadVapid } = require('./push');
 const { Notifier } = require('./notify');
+const { loadApns } = require('./apns');
 
 let manager;
 
@@ -551,6 +552,14 @@ function serveLocally(context, manager, awakeState) {
       return () => { manager.off('changed', on); manager.off('session-changed', on); };
     },
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); },
+    requireSealed: () => {
+      try { return vscode.workspace.getConfiguration('nikui').get('remote.requireEncryption', true); }
+      catch (_) { return true; }
+    },
+    appOnly: () => {
+      try { return vscode.workspace.getConfiguration('nikui').get('remote.appOnly', false); }
+      catch (_) { return false; }
+    },
     announce: (event) => {
       if (event.kind !== 'rekeyed') return;
       const where = {
@@ -580,12 +589,33 @@ function serveLocally(context, manager, awakeState) {
    * a turn finishing is available and off, because four agents finishing
    * overnight is a phone buzzing all night.
    */
+  // The only door in this product that goes through anybody else's machine, and
+  // the only one that needs an account: an iPhone with the app closed. Inert
+  // until somebody fills in four settings.
+  const apns = loadApns(() => {
+    try {
+      const cfg = vscode.workspace.getConfiguration('nikui');
+      return {
+        teamId: cfg.get('apns.teamId', ''),
+        keyId: cfg.get('apns.keyId', ''),
+        keyFile: cfg.get('apns.keyFile', ''),
+        bundleId: cfg.get('apns.bundleId', 'com.nikoloz.nikui'),
+        production: cfg.get('apns.production', true)
+      };
+    } catch (_) { return {}; }
+  });
+
   const notifier = new Notifier({
     devices,
     vapid,
+    apns,
     // A notification whose instance cannot be opened is a notification that
     // teaches you to ignore them.
     reachable: () => server.listening,
+    // The app, when it is open, is already holding a socket — so it is told
+    // down that rather than through a push service, which needs a tunnel, an
+    // account somewhere, and a phone that is reachable from outside.
+    toSockets: (message) => server.notifyDevices(message),
     settings: () => {
       try { return vscode.workspace.getConfiguration('nikui').get('notifyDevices', {}) || {}; }
       catch (_) { return {}; }
@@ -598,6 +628,15 @@ function serveLocally(context, manager, awakeState) {
   const view = vscode.window.createTreeView('nikui.devices', { treeDataProvider: tree });
   context.subscriptions.push(view, tree);
 
+  /** The two switches that decide what is exposed, read fresh each time. */
+  const exposure = () => {
+    const cfg = vscode.workspace.getConfiguration('nikui');
+    return {
+      sealed: cfg.get('remote.requireEncryption', true),
+      appOnly: cfg.get('remote.appOnly', false)
+    };
+  };
+
   const paint = () => {
     if (!bar) return;
     if (!server.listening) { bar.hide(); return; }
@@ -609,6 +648,10 @@ function serveLocally(context, manager, awakeState) {
       ? `NikUI is reachable on the tailnet at ${server.publicScheme}://${server.publicHost}`
       : `NikUI is serving this window on 127.0.0.1:${server.port}, and nowhere else`) +
       (paired ? ` · ${paired} paired device${paired === 1 ? '' : 's'}` : '') +
+      // Only said when it is the unusual answer. A tooltip that lists every
+      // setting at its default is a tooltip nobody reads to the end.
+      (exposure().sealed ? '' : ' · not requiring encryption') +
+      (exposure().appOnly ? ' · app only' : '') +
       '. Click for actions.';
     bar.command = 'nikui.remoteMenu';
     bar.show();
@@ -778,7 +821,15 @@ function serveLocally(context, manager, awakeState) {
     PairPanel.show(context, pairing, server, devices);
   };
 
+  const setExposure = async (key, value, said) => {
+    await vscode.workspace.getConfiguration('nikui')
+      .update('remote.' + key, value, vscode.ConfigurationTarget.Global);
+    vscode.window.setStatusBarMessage('NikUI: ' + said, 5000);
+    paint();
+  };
+
   const menu = async () => {
+    const how = exposure();
     const choice = await vscode.window.showQuickPick([
       { label: '$(link-external) Open in a browser', id: 'open' },
       { label: '$(device-mobile) Pair a device', id: 'pair' },
@@ -789,6 +840,18 @@ function serveLocally(context, manager, awakeState) {
         ? null
         : { label: '$(globe) Open a public address (read this first)', id: 'public' },
       { label: '$(clippy) Copy the link', id: 'copy' },
+      // The two switches that decide what a phone can reach, phrased as what
+      // they do rather than as the words in the settings file.
+      how.sealed
+        ? { label: '$(unlock) Allow connections that are not sealed', id: 'unseal',
+            description: 'currently: every device must encrypt end to end' }
+        : { label: '$(lock) Require every device to encrypt end to end', id: 'seal',
+            description: 'currently: a device may connect without sealing' },
+      how.appOnly
+        ? { label: '$(browser) Serve a browser page as well as the app', id: 'serve-page',
+            description: 'currently: the app only' }
+        : { label: '$(shield) Serve the app only, no browser page', id: 'app-only',
+            description: 'currently: the app and a browser page' },
       { label: '$(debug-stop) Stop the server', id: 'stop' }
     ].filter(Boolean), {
       placeHolder: server.exposed
@@ -802,6 +865,30 @@ function serveLocally(context, manager, awakeState) {
     if (choice.id === 'public') return reachPublicly();
     if (choice.id === 'unreach') return unreach();
     if (choice.id === 'stop') return stop();
+    if (choice.id === 'seal') {
+      return setExposure('requireEncryption', true, 'every device must now encrypt end to end');
+    }
+    if (choice.id === 'unseal') {
+      const yes = await vscode.window.showWarningMessage(
+        'Allow a device to connect without encrypting?',
+        {
+          modal: true,
+          detail: 'Everything between your phone and this laptop would then be protected by HTTPS ' +
+            'alone — readable by anything holding a certificate for this address. The only reason ' +
+            'to do this is a client too old to seal.'
+        },
+        'Allow it'
+      );
+      if (yes !== 'Allow it') return;
+      return setExposure('requireEncryption', false, 'a device may now connect without sealing');
+    }
+    if (choice.id === 'app-only') {
+      return setExposure('appOnly', true,
+        'only the app can reach this window now — no page is served outside this machine');
+    }
+    if (choice.id === 'serve-page') {
+      return setExposure('appOnly', false, 'a browser page is served again');
+    }
     if (choice.id === 'copy' && vscode.env.clipboard) {
       await vscode.env.clipboard.writeText(server.url || '');
       vscode.window.setStatusBarMessage('NikUI: link copied — it only works on this machine', 4000);

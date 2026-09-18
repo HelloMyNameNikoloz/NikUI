@@ -30,8 +30,12 @@ const TO_CLIENT = [
  * confused with a session message, and listed separately so a transport cannot
  * quietly grow a private dialect.
  */
-const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate'];
-const CONTROL_TO_HOST = ['@auth'];
+// `@box` is both directions and carries one of the others inside it: once the
+// handshake agrees a key, every frame on the socket is one of these with a
+// message sealed in it. It is listed here because it is part of the protocol,
+// not an implementation detail of one end.
+const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate', '@box', '@notify'];
+const CONTROL_TO_HOST = ['@auth', '@box', '@apple'];
 
 function quietSession() {
   const s = new Session({ cwd: '/tmp' });
@@ -102,11 +106,15 @@ module.exports = async function () {
     [...client.matchAll(/case '(@[a-zA-Z]+)':/g)].map((m) => m[1])
       .concat([...shim.matchAll(/message\.type === '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
       .concat([...read('media/home.js').matchAll(/type === '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
+      // The app's own shell speaks the protocol too: a frame only it acts on is
+      // still a frame, and a frame nothing acts on is still a mistake.
+      .concat([...read('app/shell/notify.js').matchAll(/type === '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
   );
   // What the shim puts on the wire, as against what it hands to its own page:
   // an offline refusal is synthesised locally and must still be a message the
   // protocol names, but it is not something the host ever sees.
-  const sentByClient = new Set([...shim.matchAll(/send\(\{\s*type: '(@[a-zA-Z]+)'/g)].map((m) => m[1]));
+  const sentByClient = new Set([...shim.matchAll(/send\(\{\s*type: '(@[a-zA-Z]+)'/g)].map((m) => m[1])
+    .concat([...read('app/shell/notify.js').matchAll(/type: '(@[a-zA-Z]+)'/g)].map((m) => m[1])));
   const synthesised = new Set([...shim.matchAll(/data: \{ type: '(@?[a-zA-Z]+)'/g)].map((m) => m[1]));
   const heardByHost = new Set([...server.matchAll(/type !== '(@[a-zA-Z]+)'/g)].map((m) => m[1]));
 
@@ -120,6 +128,11 @@ module.exports = async function () {
     [...heardByHost].filter((t) => !CONTROL_TO_HOST.includes(t)).sort(), []);
   checkEqual('what the client makes up for itself is still the protocol',
     [...synthesised].filter((t) => !CONTROL_TO_CLIENT.includes(t) && !TO_CLIENT.includes(t)).sort(), []);
+
+  check('the envelope is understood by both ends',
+    /'@box'/.test(server) && /'@box'/.test(shim));
+  check('and nothing is read out of one before it has been opened',
+    /this\.box\.open\(msg\)/.test(server));
 
   // The window's own list is not a session message: it belongs to the socket
   // that is watching the window rather than any one instance.
