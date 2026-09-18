@@ -142,4 +142,8 @@ function jsonForScript(value) {
     .replace(/\u2029/g, '\\u2029');
 }
 
-module.exports = { renderPage, randomNonce, jsonForScript, SCRIPTS };
+/** Text on its way into markup, wherever this side generates any. */
+const escapeHtml = (value) => String(value == null ? '' : value)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+module.exports = { renderPage, randomNonce, jsonForScript, escapeHtml, SCRIPTS };

@@ -355,7 +355,18 @@ class SessionHub {
     // Opening an instance starts it — but only for a client that could steer it
     // anyway. Spawning a CLI process on this machine is not something a
     // watch-only device should be able to do by looking.
-    if (!session.isRunning && this.host.autoStart !== false && this.mayControl(entry)) session.start();
+    if (!session.isRunning && this.host.autoStart !== false) {
+      if (this.mayControl(entry)) session.start();
+      else if (!session.items.length) {
+        // Watching an instance that is not running would otherwise be an empty
+        // page with no composer and nothing to explain either.
+        session._notice(
+          'This instance is not running, and this device can watch but not start it. ' +
+          'Open it on the laptop, or ask for control.',
+          'info'
+        );
+      }
+    }
 
     entry.ready = true;
     // A webview VS Code threw away and rebuilt comes back with a fresh DOM and

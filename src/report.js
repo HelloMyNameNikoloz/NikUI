@@ -188,13 +188,11 @@ function records(turns) {
   const costliest = turns.reduce((a, b) => (b.costUsd > a.costUsd ? b : a));
   const biggest = turns.reduce((a, b) => (tokensOf(b) > tokensOf(a) ? b : a));
   const peakContext = turns.reduce((a, b) => (b.contextTokens > a.contextTokens ? b : a));
-  const fastest = turns.filter((t) => t.durationMs > 0);
   return {
     longest: { n: longest.n, durationMs: longest.durationMs },
     costliest: { n: costliest.n, costUsd: costliest.costUsd },
     biggest: { n: biggest.n, tokens: tokensOf(biggest) },
     peakContext: { n: peakContext.n, tokens: peakContext.contextTokens },
-    fastest: fastest.length ? { n: fastest[0].n, durationMs: Math.min(...fastest.map((t) => t.durationMs)) } : null,
     busiestTurn: turns.reduce((a, b) => (b.tools.length > a.tools.length ? b : a)).tools.length
   };
 }

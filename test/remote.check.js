@@ -15,11 +15,11 @@
 
 const path = require('path');
 const { findChrome, launch, wait } = require('./helpers/chrome.js');
+const { skipped } = require('./helpers/skip.js');
 
 const chrome = findChrome();
 if (!chrome) {
-  console.log('No Chrome found — skipping the remote check. Set CHROME=/path/to/chrome to run it.');
-  process.exit(0);
+  skipped('No Chrome found — the remote check did not run. Set CHROME=/path/to/chrome.');
 }
 
 const { install, memoryState } = require('./helpers/vscode-stub.js');

@@ -1010,7 +1010,16 @@
   function focusHit(scroll) {
     hits.forEach((m, i) => m.classList.toggle('on', i === hitAt));
     const mark = hits[hitAt];
-    if (mark && scroll !== false) mark.scrollIntoView({ block: 'center' });
+    if (!mark) return;
+    // Tool inputs and thinking blocks are collapsed by default, and find looks
+    // inside them — so stepping onto a match there used to scroll to a closed
+    // disclosure and highlight nothing. Whatever it is in, it opens.
+    let box = mark.closest ? mark.closest('details') : null;
+    while (box) {
+      box.open = true;
+      box = box.parentElement && box.parentElement.closest ? box.parentElement.closest('details') : null;
+    }
+    if (scroll !== false) mark.scrollIntoView({ block: 'center' });
   }
 
   function paintFind() {

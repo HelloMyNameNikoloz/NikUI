@@ -41,7 +41,7 @@ function activate(context) {
 
   const history = new HistoryTree();
   const historyView = vscode.window.createTreeView('nikui.history', { treeDataProvider: history });
-  context.subscriptions.push(historyView);
+  context.subscriptions.push(historyView, history);
   // Scope and filter live in the header, not in a status-bar message that has
   // already gone by the time you wonder why the list looks short.
   const showScope = () => { historyView.description = history.summary; };
@@ -109,7 +109,7 @@ function activate(context) {
   register('nikui.newSession', async () => {
     const cwd = await pickFolder(manager);
     if (!cwd) return;
-    const session = manager.create({ cwd: cwd.path, resume: cwd.resume, title: cwd.title });
+    const session = manager.create({ cwd: cwd.path });
     SessionPanel.show(session, context, manager).focusInput();
   });
 

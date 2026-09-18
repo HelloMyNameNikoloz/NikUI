@@ -36,6 +36,10 @@ class HistoryTree {
     return this.limit;
   }
 
+  dispose() {
+    if (this._changed) this._changed.dispose();
+  }
+
   refresh() { this._onDidChangeTreeData.fire(); }
 
   toggleScope() {

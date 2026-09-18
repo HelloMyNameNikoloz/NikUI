@@ -2,7 +2,7 @@
 
 const vscode = require('vscode');
 const qr = require('./qr');
-const { randomNonce } = require('./page');
+const { randomNonce, escapeHtml } = require('./page');
 
 /**
  * The minute in which a new device may introduce itself, on screen.
@@ -146,8 +146,6 @@ ${body}
 PairPanel.current = null;
 
 const spaced = (code) => String(code || '').replace(/(.{4})(?=.)/g, '$1 ');
-const escapeHtml = (s) => String(s == null ? '' : s)
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function laptopName() {
   try { return require('os').hostname().replace(/\.local$/, ''); } catch (_) { return 'This laptop'; }
