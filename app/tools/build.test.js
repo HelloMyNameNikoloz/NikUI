@@ -92,6 +92,24 @@ fs.writeFileSync(path.join(OUT, 'leftover.txt'), 'from a previous build');
 build();
 check('a rebuild clears what the last one left', !fs.existsSync(path.join(OUT, 'leftover.txt')));
 
+// ---- being told --------------------------------------------------------------
+
+check('the app ships its notification layer', fs.existsSync(path.join(OUT, 'notify.js')));
+for (const page of ['index.html', 'settings.html', 'conversation.html']) {
+  // Whichever screen is open is the one holding the socket, so every screen
+  // has to be able to turn what arrives on it into a notification.
+  check(page + ' can raise a notification', read(page).includes('notify.js'));
+}
+check('and it listens for the frame the laptop actually sends',
+  /@notify/.test(fs.readFileSync(path.join(APP, 'shell', 'notify.js'), 'utf8')));
+check('Android is told it may show one', /POST_NOTIFICATIONS/.test(
+  fs.readFileSync(path.join(APP, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8')));
+check('and that it may keep watching behind a notification of its own',
+  /foregroundServiceType="dataSync"/.test(fs.readFileSync(
+    path.join(APP, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8')));
+check('with a status icon that is not the launcher icon squashed into a square',
+  fs.existsSync(path.join(APP, 'android', 'app', 'src', 'main', 'res', 'drawable-xxhdpi', 'ic_stat_nikui.png')));
+
 // ---- the native code Xcode would otherwise never compile ---------------------
 //
 // Android finds sources by looking in a folder; Xcode only compiles what is

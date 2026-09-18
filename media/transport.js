@@ -124,6 +124,17 @@
     // it: on a phone, the thing you want when it says offline is to try again.
     if (pill) pill.addEventListener('click', retryNow);
 
+    // Two moments when waiting out a backoff is obviously wrong: the phone has
+    // just been picked up, and the network has just come back. A page that sits
+    // there saying "reconnecting" for eight more seconds while somebody stares
+    // at it is a page that looks broken.
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) retryNow();
+      });
+    }
+    if (window.addEventListener) window.addEventListener('online', retryNow);
+
     /**
      * Anything this transport makes up for its own page.
      *

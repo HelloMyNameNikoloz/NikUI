@@ -24,6 +24,15 @@
 
         </activity>
 
+        <!-- The only honest way Android lets an app keep listening while it is
+             not on screen: a service in the foreground, with a notification
+             saying so. dataSync is what it is: keeping one socket in step with
+             a laptop. -->
+        <service
+            android:name=".watcher.WatchService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -38,4 +47,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13 asks before an app may show anything at all. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Keeping the socket open while the app is in a pocket, and nothing else. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 </manifest>

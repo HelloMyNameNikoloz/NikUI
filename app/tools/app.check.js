@@ -19,6 +19,8 @@ const REPO = path.join(APP, '..');
 const { findChrome, launch, wait } = require(path.join(REPO, 'test', 'helpers', 'chrome.js'));
 const { skipped } = require(path.join(REPO, 'test', 'helpers', 'skip.js'));
 const { SOURCE: CHIP } = require(path.join(REPO, 'test', 'helpers', 'chip.js'));
+const { SOURCE: BUZZ } = require(path.join(REPO, 'test', 'helpers', 'buzz.js'));
+const { Notifier } = require(path.join(REPO, 'src', 'notify.js'));
 
 const chrome = findChrome();
 if (!chrome) skipped('No Chrome found — the app check did not run. Set CHROME=/path/to/chrome.');
@@ -103,6 +105,8 @@ const record = (name, ok) => {
   const phone = await launch(chrome);
   try {
     await phone.asPhone(390, 844);
+    // A phone that can show a notification, from the first screen onward.
+    await phone.beforeEachPage(BUZZ);
 
     // ---- the way in --------------------------------------------------------
     await phone.navigate(appOrigin + '/index.html');
@@ -220,6 +224,110 @@ const record = (name, ok) => {
     record('a grant on the laptop shows up here',
       await phone.until('/Can send prompts/.test(document.body.textContent)', 8000));
 
+    // ---- being told ---------------------------------------------------------
+    //
+    // The laptop decides, the socket carries it, the phone shows it. Driven
+    // through the real Notifier so the decision is the same one a real window
+    // would make, not a message made up for the test.
+
+    const notifier = new Notifier({
+      devices, vapid: null,
+      settings: () => ({ needsYou: true, quota: true, failed: true, turnFinished: true }),
+      toSockets: (message) => laptop.notifyDevices(message)
+    });
+
+    record('notifications are off until somebody turns them on',
+      (await phone.evaluate('JSON.stringify(window.NikNotify.prefs().on)')) === 'false');
+    await phone.evaluate('window.__buzz.clear()');
+    await notifier.needsYou({ id: session.id, customTitle: 'app check', items: [] });
+    await wait(300);
+    record('and nothing is shown while they are',
+      (await phone.evaluate('window.__buzz.shown().length')) === 0);
+
+    await phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.row')].find(r => /Tell me things/.test(r.textContent));
+      row.click();
+    })()`);
+    record('turning them on asks the phone first, and only then',
+      await phone.until('window.NikNotify.prefs().on === true', 6000));
+    record('the switches for what to be told appear',
+      await phone.until(`[...document.querySelectorAll('.row')]
+        .some(r => /Something needs an answer/.test(r.textContent))`, 6000));
+    record('with a channel for the one that should make a sound',
+      (await phone.evaluate('window.__buzz.channels().indexOf("nikui-needs-you") >= 0')) === true);
+    record('and one for everything that should not',
+      (await phone.evaluate('window.__buzz.channels().indexOf("nikui-news") >= 0')) === true);
+
+    await phone.evaluate('window.__buzz.clear()');
+    notifier.settled({ id: session.id, status: 'idle' });
+    await notifier.needsYou({ id: session.id, customTitle: 'app check', items: [] });
+    record('now the laptop can reach this phone without a push service at all',
+      await phone.until('window.__buzz.shown().length === 1', 8000));
+    const shown = JSON.parse(await phone.evaluate('JSON.stringify(window.__buzz.shown()[0])'));
+    record('saying which instance it is', /app check/.test(shown.title || ''));
+    record('on the channel that makes a sound', shown.channelId === 'nikui-needs-you');
+    record('carrying the instance, so a tap can open it',
+      shown.extra && shown.extra.session === session.id);
+    record('and its own icon rather than a white square',
+      shown.smallIcon === 'ic_stat_nikui');
+
+    // The same news twice is one notification, not two — the laptop's tag says
+    // "this is the same thing", and the phone turns that into one id.
+    record('the same news keeps the same id',
+      (await phone.evaluate(`window.NikNotify.idFor('needs-you:x') === window.NikNotify.idFor('needs-you:x')`)) === true);
+    record('and different news does not',
+      (await phone.evaluate(`window.NikNotify.idFor('needs-you:x') !== window.NikNotify.idFor('failed:x')`)) === true);
+
+    // Every turn finishing is off by default on both ends, for the same reason:
+    // four agents finishing overnight is a phone buzzing all night. Switching
+    // it on and off again is the check that these switches do anything.
+    const flip = () => phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.row')].find(r => /A turn finished/.test(r.textContent));
+      row.click();
+    })()`);
+
+    await flip();
+    await phone.evaluate('window.__buzz.clear()');
+    await notifier.finished({ id: session.id, customTitle: 'app check' });
+    record('a kind this phone switched on is shown',
+      await phone.until('window.__buzz.shown().length === 1', 6000));
+
+    await flip();
+    await phone.evaluate('window.__buzz.clear()');
+    await notifier.finished({ id: session.id, customTitle: 'app check' });
+    await wait(400);
+    record('and one it switched off is carried down the socket but not shown',
+      (await phone.evaluate('window.__buzz.shown().length')) === 0);
+
+    await phone.evaluate('window.__buzz.clear()');
+    await phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.row')].find(r => /Send me one now/.test(r.textContent));
+      row.click();
+    })()`);
+    record('there is a way to check it works, and it does',
+      await phone.until('window.__buzz.shown().length === 1', 6000));
+
+    record('a phone that can keep watching is offered it',
+      await phone.until(`[...document.querySelectorAll('.row')]
+        .some(r => /Keep watching in the background/.test(r.textContent))`, 6000));
+    await phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.row')].find(r => /Keep watching in the background/.test(r.textContent));
+      row.click();
+    })()`);
+    record('and turning it on starts the watcher',
+      await phone.until('window.__buzz.watching() === true', 6000));
+
+    record('tapping a notification opens the instance it was about',
+      await (async () => {
+        await phone.evaluate('window.__buzz.clear()');
+        notifier.settled({ id: session.id, status: 'idle' });
+        await notifier.needsYou({ id: session.id, customTitle: 'app check', items: [] });
+        await phone.until('window.__buzz.shown().length === 1', 6000);
+        await phone.evaluate('window.__buzz.tapLast()');
+        return phone.until('location.search.indexOf("session=") >= 0', 6000);
+      })());
+
+    await phone.navigate(appOrigin + '/settings.html');
     record('forgetting asks twice', (await phone.evaluate(`(() => {
       const rows = [...document.querySelectorAll('.row')];
       const row = rows.find(r => /Forget this laptop/.test(r.textContent));

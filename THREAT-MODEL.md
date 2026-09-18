@@ -299,6 +299,22 @@ window, a line in the audit trail, the previous fingerprint kept on the record,
 and both shown in the device's tooltip. The recovery is the same as for any
 compromised device — forget it, and pair again.
 
+### Telling a phone something, examined
+
+A notification says what is happening on this machine, so where it goes matters.
+
+- Down a **socket**, it goes only to a client that has already completed the
+  handshake and is a paired device — so it is inside the sealed channel, and the
+  network carrying it sees an `@box` frame like any other. Nothing new is
+  exposed: the socket already carried the whole conversation.
+- Through a **push service**, the payload is encrypted to the subscription's own
+  key (RFC 8291) and the sender proved with a short-lived signed token (RFC
+  8292), so Apple's or Google's service knows only that a message exists.
+
+The titles and bodies name an instance and, for a permission request, the tool
+being asked about. That is the same information the socket already carries, and
+it is the minimum that makes a notification worth reading.
+
 **What a device says about where its key is kept is a claim, not a measurement.**
 Nothing on the laptop can tell a Secure Enclave from a phone that says "Secure
 Enclave"; that would take Android Key Attestation or Apple's equivalent, which
@@ -324,6 +340,7 @@ so an arbitrary string cannot reach a screen.
 | A device must seal the channel before it may say anything | `src/auth.js` `Gate.answer()`, `requireSealed` |
 | Once sealed, a plaintext frame closes the socket | `src/remote.js` `deliver()` |
 | Outside this machine, app-only serves four routes and no page | `src/remote.js` `isAppRoute()` |
+| A notification down a socket goes only to seated devices, inside the sealed channel | `src/remote.js` `notifyDevices()` |
 | Two devices can never share one key | `src/devices.js` `rekey()` |
 | Steering needs a grant, checked on the host | `src/hub.js` `STEERING` |
 | Starting an instance needs that grant too | `src/hub.js` `hello()` |

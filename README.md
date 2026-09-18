@@ -871,8 +871,17 @@ Two switches go with it, both in the status-bar menu:
 | `nikui.remote.requireEncryption` | on | A device that will not seal the channel is refused |
 | `nikui.remote.appOnly` | off | Outside this machine, only pairing, the socket, the pulse and the push key exist — no page, no client, no worker, no manifest |
 
+And notifications that need nothing outside the two machines. What the laptop
+already decided was worth telling you now also goes **down the socket the app is
+holding**, so a phone with the app open is told without a push service, an
+account anywhere, or the laptop being reachable from outside at all. The phone
+decides which kinds are worth interrupting for, and tapping one opens the
+instance it was about. Android can keep listening while the app is in a pocket,
+behind the quiet ongoing notification the system requires; an iPhone cannot, and
+the app says so rather than offering a switch that would do nothing.
+
     npm run app          # build the bundle and sync both platforms
-    npm run test:app     # 54 checks driving the real bundle in a real browser
+    npm run test:app     # 73 checks driving the real bundle in a real browser
 
 [`app/README.md`](app/README.md) is the detail.
 

@@ -305,6 +305,38 @@ module.exports = async function () {
     ignoring.__state() === 'online');
   delete identity.record.staged;
 
+  suite('coming back');
+
+  const napping = withFakeClock((scheduled) => {
+    const t = socketTransport({ session: 'nik-10', socket: '/socket?session=nik-10' });
+    sockets[sockets.length - 1].drop();
+    scheduled.length = 0;
+    return t;
+  });
+  const beforeWaking = sockets.length;
+  global.document.hidden = false;
+  // Every transport made in this file added one, so they all get told — which
+  // is what the browser does too.
+  withFakeClock(() => {
+    for (const fn of listeners.document.visibilitychange || []) fn();
+  });
+  check('a phone picked up again tries at once rather than waiting out the backoff',
+    sockets.length > beforeWaking);
+
+  const dropped = withFakeClock((scheduled) => {
+    const t = socketTransport({ session: 'nik-11', socket: '/socket?session=nik-11' });
+    sockets[sockets.length - 1].drop();
+    scheduled.length = 0;
+    return t;
+  });
+  const waiting2 = sockets.length;
+  withFakeClock(() => {
+    for (const fn of listeners.window.online || []) fn();
+  });
+  check('and so does a network that has just come back', sockets.length > waiting2);
+  check('both are still the same transport', typeof napping.retry === 'function' &&
+    typeof dropped.retry === 'function');
+
   suite('backoff');
 
   const waits = [];
