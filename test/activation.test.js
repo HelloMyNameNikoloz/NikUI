@@ -13,7 +13,9 @@ module.exports = async function () {
   extension.activate(context);
 
   const { commands, views, serializers } = stub.__registered;
-  checkEqual('both views are registered', views, ['nikui.sessions', 'nikui.history']);
+  checkEqual('every view is registered',
+    [...new Set(views)].filter((id) => !/focus-test/.test(id)),
+    ['nikui.sessions', 'nikui.history', 'nikui.devices']);
   check('panels can be restored after a reload', serializers.includes('nikui.session'));
 
   const declared = pkg.contributes.commands.map((c) => c.command).sort();

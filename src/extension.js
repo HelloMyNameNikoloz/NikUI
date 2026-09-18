@@ -14,6 +14,11 @@ const { nextTicket } = require('./ticket');
 const { labelFor } = require('./label');
 const { createHost } = require('./host');
 const { RemoteServer } = require('./remote');
+const { DeviceStore } = require('./devices');
+const { DevicesTree } = require('./devicesTree');
+const { PairingWindow } = require('./pairing');
+const { PairPanel } = require('./pairPanel');
+const { loadIdentity } = require('./identity');
 
 let manager;
 
@@ -436,21 +441,45 @@ function serveLocally(context, manager) {
     ? vscode.window.createOutputChannel('NikUI server')
     : null;
 
+  // The laptop's own key, the devices it knows, and the minute in which a new
+  // one may introduce itself. All three outlive the server being started and
+  // stopped, so they are made here rather than inside it.
+  const identity = loadIdentity(context.globalState);
+  const devices = new DeviceStore(context.globalState);
+  const pairing = new PairingWindow();
+
   const server = new RemoteServer({
     root: context.extensionUri.fsPath,
-    host: createHost(context, manager),
+    host: createHost(context, manager, { devices }),
     sessions: { list: () => manager.list, get: (id) => manager.get(id) },
+    devices,
+    identity,
+    pairing,
+    watchFleet: (fn) => {
+      const on = () => fn();
+      manager.on('changed', on);
+      manager.on('session-changed', on);
+      return () => { manager.off('changed', on); manager.off('session-changed', on); };
+    },
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
   });
+
+  const tree = new DevicesTree(devices, server);
+  const view = vscode.window.createTreeView('nikui.devices', { treeDataProvider: tree });
+  context.subscriptions.push(view, tree);
 
   const paint = () => {
     if (!bar) return;
     if (!server.listening) { bar.hide(); return; }
+    const paired = devices.list().length;
     bar.text = `$(broadcast) NikUI :${server.port}`;
-    bar.tooltip = `NikUI is serving this window on 127.0.0.1:${server.port}. Click for actions.`;
+    bar.tooltip = `NikUI is serving this window on 127.0.0.1:${server.port}` +
+      (paired ? ` · ${paired} paired device${paired === 1 ? '' : 's'}` : '') +
+      '. Click for actions.';
     bar.command = 'nikui.remoteMenu';
     bar.show();
   };
+  context.subscriptions.push({ dispose: devices.onChange(paint) });
 
   const start = async () => {
     if (server.listening) return server;
@@ -475,25 +504,97 @@ function serveLocally(context, manager) {
 
   const open = async () => {
     if (!(await start())) return;
-    const url = server.url;
     // The key rides in once and the page trades it for a cookie, so the address
     // bar — and anything that screenshots it — keeps nothing worth stealing.
-    await vscode.env.openExternal(vscode.Uri.parse(url));
+    await vscode.env.openExternal(vscode.Uri.parse(server.url));
+  };
+
+  /**
+   * A device introduces itself inside a one-minute window. The server has to be
+   * running for that, so starting it is part of the same action rather than a
+   * thing to discover from an error.
+   */
+  const pair = async () => {
+    if (!(await start())) return;
+    PairPanel.show(context, pairing, server, devices);
   };
 
   const menu = async () => {
     const choice = await vscode.window.showQuickPick([
       { label: '$(link-external) Open in a browser', id: 'open' },
+      { label: '$(device-mobile) Pair a device', id: 'pair' },
       { label: '$(clippy) Copy the link', id: 'copy' },
       { label: '$(debug-stop) Stop the server', id: 'stop' }
     ], { placeHolder: `NikUI is serving on 127.0.0.1:${server.port}` });
     if (!choice) return;
     if (choice.id === 'open') return open();
+    if (choice.id === 'pair') return pair();
     if (choice.id === 'stop') return stop();
     if (choice.id === 'copy' && vscode.env.clipboard) {
       await vscode.env.clipboard.writeText(server.url || '');
       vscode.window.setStatusBarMessage('NikUI: link copied — it only works on this machine', 4000);
     }
+  };
+
+  /**
+   * Granting control is the one irreversible-feeling thing in here, so it asks
+   * in the words that matter: a prompt from a phone is code running here.
+   */
+  const grant = async (device) => {
+    if (!device) return;
+    const yes = await vscode.window.showWarningMessage(
+      `Let ${device.name} send prompts to this window?`,
+      {
+        modal: true,
+        detail: 'A prompt from this device runs with the same permissions as one typed here — ' +
+          'which, with NikUI\'s default settings, means it can run any command on this machine. ' +
+          'You can take this back at any time.'
+      },
+      'Grant control'
+    );
+    if (yes !== 'Grant control') return;
+    devices.setControl(device.id, true);
+  };
+
+  const revoke = async (device) => {
+    if (!device) return;
+    devices.setControl(device.id, false);
+    vscode.window.setStatusBarMessage(`NikUI: ${device.name} can watch but not steer`, 4000);
+  };
+
+  const forget = async (device) => {
+    if (!device) return;
+    const yes = await vscode.window.showWarningMessage(
+      `Forget ${device.name}?`,
+      { modal: true, detail: 'Its key is deleted and any connection it is holding is closed now. ' +
+        'It would have to pair again from scratch.' },
+      'Forget it'
+    );
+    if (yes !== 'Forget it') return;
+    devices.forget(device.id);
+  };
+
+  const rename = async (device) => {
+    if (!device) return;
+    const name = await vscode.window.showInputBox({ prompt: 'Name for this device', value: device.name });
+    if (name == null) return;
+    devices.rename(device.id, name);
+  };
+
+  /** A tree row, or whichever device the palette should ask about. */
+  const pick = async (node) => {
+    if (node && node.id && node.publicKey) return node;
+    const all = devices.list();
+    if (!all.length) {
+      vscode.window.showInformationMessage('NikUI: no devices are paired yet.');
+      return null;
+    }
+    if (all.length === 1) return all[0];
+    const chosen = await vscode.window.showQuickPick(
+      all.map((device) => ({ label: device.name, description: device.control ? 'can steer' : 'watching only', device })),
+      { placeHolder: 'Which device?' }
+    );
+    return chosen ? chosen.device : null;
   };
 
   context.subscriptions.push(
@@ -503,7 +604,12 @@ function serveLocally(context, manager) {
     vscode.commands.registerCommand('nikui.remoteStop', stop),
     vscode.commands.registerCommand('nikui.remoteOpen', open),
     vscode.commands.registerCommand('nikui.remoteMenu', menu),
-    { dispose: () => { server.stop(); if (bar) bar.dispose(); if (out) out.dispose(); } }
+    vscode.commands.registerCommand('nikui.pairDevice', pair),
+    vscode.commands.registerCommand('nikui.grantControl', async (node) => grant(await pick(node))),
+    vscode.commands.registerCommand('nikui.revokeControl', async (node) => revoke(await pick(node))),
+    vscode.commands.registerCommand('nikui.forgetDevice', async (node) => forget(await pick(node))),
+    vscode.commands.registerCommand('nikui.renameDevice', async (node) => rename(await pick(node))),
+    { dispose: () => { server.dispose(); if (bar) bar.dispose(); if (out) out.dispose(); } }
   );
 
   if (vscode.workspace.getConfiguration('nikui').get('remote.autoStart', false)) start();
