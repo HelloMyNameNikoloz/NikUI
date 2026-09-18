@@ -63,11 +63,17 @@ global.document = {
 
 // A device identity, as media/device.js would provide it.
 const identity = { record: { id: 'dev-1', fingerprint: 'fp-1', publicKey: 'pk' }, signed: [] };
+identity.verdict = true;
+identity.asked = [];
 global.window.nikDevice = {
   available: () => true,
   load: () => Promise.resolve(identity.record),
   ensure: () => Promise.resolve(identity.record),
-  sign: (message) => { identity.signed.push(message); return Promise.resolve('signature-for-' + message); }
+  sign: (message) => { identity.signed.push(message); return Promise.resolve('signature-for-' + message); },
+  verifyLaptop: (record, key, message, signature) => {
+    identity.asked.push({ key, message, signature });
+    return Promise.resolve(identity.verdict);
+  }
 };
 global.window.crypto = { getRandomValues: (bytes) => { for (let i = 0; i < bytes.length; i++) bytes[i] = i + 1; return bytes; } };
 global.window.btoa = (binary) => Buffer.from(binary, 'binary').toString('base64');
@@ -211,6 +217,37 @@ module.exports = async function () {
   withFakeClock(() => pill.click());
   check('tapping the connection state tries again at once', sockets.length > waiting);
   check('and the transport offers the same as a function', typeof stuck.retry === 'function');
+
+  suite('and the laptop has to prove itself back');
+
+  const proving = withFakeClock(() => socketTransport({ session: 'nik-6', socket: '/socket?session=nik-6' }));
+  const proven = sockets[sockets.length - 1];
+  proven.accept();
+  proven.deliver({ type: '@challenge', nonce: 'their-nonce', fingerprint: 'fp-1', serverKey: 'their-spki' });
+  await settle();
+  const answered = proven.sent.find((m) => m.type === '@auth');
+  proven.deliver({ type: '@welcome', device: { control: true }, signature: 'from-the-laptop' });
+  await settle();
+  checkEqual('the welcome is checked, not taken on trust', identity.asked.length, 1);
+  checkEqual('against the key the challenge offered', identity.asked[0].key, 'their-spki');
+  checkEqual('over the nonces of this connection, in the order it signed them',
+    identity.asked[0].message, 'nikui-auth' === 'x' ? '' : 'nikui-host:' + answered.nonce + ':their-nonce');
+  checkEqual('and only then is the socket live', proving.__state(), 'online');
+
+  identity.verdict = false;
+  identity.asked.length = 0;
+  const impostor = withFakeClock(() => socketTransport({ session: 'nik-7', socket: '/socket?session=nik-7' }));
+  const pretending = sockets[sockets.length - 1];
+  pretending.accept();
+  pretending.deliver({ type: '@challenge', nonce: 'n', fingerprint: 'fp-1', serverKey: 'not-the-laptop' });
+  await settle();
+  pretending.deliver({ type: '@welcome', device: { control: true }, signature: 'forged' });
+  await settle();
+  checkEqual('a laptop that cannot sign for its key gets nothing', impostor.__state() !== 'online', true);
+  check('the client is told which way it went wrong', /not the laptop/i.test(pill.textContent));
+  checkEqual('and nothing was said on that socket',
+    pretending.sent.filter((m) => m.type !== '@auth').length, 0);
+  identity.verdict = true;
 
   suite('backoff');
 

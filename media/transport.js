@@ -39,6 +39,7 @@
     let closing = false;
     let seated = false;       // the handshake is done and this socket may talk
     let stopped = null;       // a refusal worth showing instead of retrying
+    let expecting = null;     // the nonces this device is waiting to see signed
 
     function url() {
       const at = new URL(config.socket || '/socket', window.location.href);
@@ -92,12 +93,31 @@
         return true;
       }
       if (message.type === '@welcome') {
-        seated = true;
-        tries = 0;
-        stopped = null;
-        show('on', 'Live');
-        if (wantsReady) send({ type: 'ready' });
-        return false; // the page may want to know which device it is
+        // On this machine the cookie settled it and there is nothing to check.
+        // Anywhere else, the laptop has to have signed for the key this device
+        // pinned — over the nonce this device chose — before anything is said
+        // to it. A welcome nobody can prove is a welcome from anybody.
+        if (!expecting) return seat(message);
+        const awaited = expecting;
+        expecting = null;
+        window.nikDevice.load().then(function (record) {
+          return window.nikDevice.verifyLaptop(
+            record, message.serverKey || awaited.serverKey,
+            'nikui-host:' + awaited.mine + ':' + awaited.theirs, message.signature
+          );
+        }).then(function (ok) {
+          if (ok) return seat(message);
+          stopped = 'unproven laptop';
+          show('off', 'This is not the laptop this device paired with');
+          window.dispatchEvent(new MessageEvent('message', {
+            data: { type: '@denied', reason: 'This is not the laptop this device paired with.' }
+          }));
+          if (socket) try { socket.close(1008, 'unproven'); } catch (_) { /* gone */ }
+        }).catch(function () {
+          stopped = 'unproven laptop';
+          show('off', 'Could not check the laptop');
+        });
+        return true;
       }
       if (message.type === '@navigate') {
         // Another instance, on this device only. The laptop's tabs are the
@@ -112,6 +132,17 @@
         return false;
       }
       return false;
+    }
+
+    /** Let the page talk: everything above this line is about who is listening. */
+    function seat(message) {
+      seated = true;
+      tries = 0;
+      stopped = null;
+      show('on', 'Live');
+      if (wantsReady) send({ type: 'ready' });
+      window.dispatchEvent(new MessageEvent('message', { data: message }));
+      return true;
     }
 
     function answer(challenge) {
@@ -140,6 +171,9 @@
           return;
         }
         const mine = randomNonce();
+        // Remembered so the welcome can be checked against what was asked, not
+        // against whatever the answer happens to contain.
+        expecting = { mine: mine, theirs: challenge.nonce, serverKey: challenge.serverKey };
         return window.nikDevice.sign('nikui-auth:' + challenge.nonce + ':' + mine).then(function (signature) {
           send({ type: '@auth', device: record.id, nonce: mine, signature: signature });
         });
@@ -160,6 +194,7 @@
     function reasonText(reason) {
       if (/not paired/i.test(reason)) return 'This device is not paired';
       if (/removed/i.test(reason)) return 'This device was removed';
+      if (/laptop|unproven/i.test(reason)) return 'This is not the laptop this device paired with';
       return 'Refused';
     }
 
@@ -175,6 +210,7 @@
       next.onopen = function () {
         tries = 0;
         seated = false;
+        expecting = null;
         // Not live yet: the socket is open, but nothing may be said on it until
         // the server has decided who is holding it. `ready` waits for @welcome.
         show('warn', 'Signing in…');
