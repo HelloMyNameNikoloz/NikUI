@@ -207,6 +207,30 @@ const record = (name, ok) => checks.push([name, !!ok]);
     record('the worker is registered where a push would arrive',
       (await phone.evaluate(`navigator.serviceWorker.getRegistration().then(r => r.scope)`)) === base + '/');
 
+    // ---- and the laptop has to prove itself, with the browser's own crypto ---
+    record('the device kept the laptop\'s key, not only its fingerprint',
+      !!(await phone.evaluate('window.nikDevice.load().then(r => r.serverKey || null)')));
+    record('and that key really is the one it pinned',
+      (await phone.evaluate(`window.nikDevice.load()
+        .then(r => window.nikDevice.fingerprintOf(r.serverKey).then(f => f === r.fingerprint))`)) === true);
+
+    // Pin something else and the same laptop becomes an impostor: this is the
+    // check being load-bearing rather than decorative.
+    const realFingerprint = await phone.evaluate('window.nikDevice.load().then(r => r.fingerprint)');
+    await phone.evaluate(`window.nikDevice.remember({ fingerprint: 'not-the-laptop-you-paired-with' })`);
+    await phone.navigate(`${base}/s/${session.id}`);
+    record('a laptop that does not match the pin is refused',
+      await phone.until('document.getElementById("link").className.includes("off")', 10000));
+    record('and says which way it went wrong',
+      /not the laptop/i.test(await phone.evaluate('document.getElementById("link").textContent')));
+    record('with the socket never seated', server.clients.size === 0 ||
+      [...server.clients].every((c) => !c.binding));
+
+    await phone.evaluate(`window.nikDevice.remember({ fingerprint: ${JSON.stringify(realFingerprint)} })`);
+    await phone.navigate(`${base}/s/${session.id}`);
+    record('and the real one is let back in once the pin is right again',
+      await phone.until('document.getElementById("link").textContent === "Live"', 10000));
+
     devices.setControl(paired.id, true);
     record('granting control reaches the socket it is already holding',
       await phone.until('!document.body.classList.contains("read-only")', 5000));

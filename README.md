@@ -361,6 +361,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `NikUI: Forget this device` | Deletes its key and closes its connection |
 | `NikUI: Reach this window from my phone` | Puts the tailnet in front of the server |
 | `NikUI: Stop being reachable from my phone` | Takes it back off |
+| `NikUI: Open a public address for this window` | A public tunnel, after a dialog that says what that means |
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
 
@@ -436,6 +437,27 @@ key, is refused by the phone rather than trusted by it.
   so it is not in anybody's logs, including ours.
 - Eight characters from an alphabet with no `I`, `O`, `0`, `1` or `U`: readable
   across a room and typable on a phone when the camera will not focus.
+
+#### What pairing a phone actually grants
+
+Say it plainly, because the rest of this section is easier to read once it is
+said:
+
+- **Pairing grants watching**, and watching is the whole of it: every
+  conversation in the window, live, including whatever happens to be on screen —
+  source, paths, a token somebody pasted.
+- **Granting control grants everything.** NikUI runs Claude with
+  `bypassPermissions`, so a prompt from a phone is *any command on this laptop,
+  as you, with nothing appearing on the screen first.* A phone with control is
+  your keyboard. If the phone is stolen or compromised, so is the laptop.
+- **What you keep** is the ability to end it instantly: revoking control or
+  forgetting a device closes the socket it is holding within milliseconds, and
+  `/status` shows what arrived from it and when.
+
+[`THREAT-MODEL.md`](THREAT-MODEL.md) is the long version: what a website, a
+neighbour, a photograph of the QR and a compromised phone each get, where the
+fingerprint pin helps and where it does not, and the findings from the review of
+this surface.
 
 **A paired device can watch. It cannot steer.** Sending a prompt, answering a
 permission, interrupting, touching the queue — all of it is a second grant, made
@@ -620,6 +642,22 @@ moment nothing needs it, and the helper it spawns is told to exit with the
 extension host, so a crash cannot leave a machine awake forever. The status
 sheet says whether it is held, and why.
 
+### Going public, and why it is the second choice
+
+`NikUI: Open a public address for this window` runs a Cloudflare quick tunnel:
+a `trycloudflare.com` hostname, TLS to the edge, forwarding to `127.0.0.1`.
+Nothing new listens, and an unpaired visitor still gets nothing but the empty
+shell.
+
+It asks first, in a dialog that says what changes, and offers to open the threat
+model instead of proceeding. The difference from the tailnet is not technical
+subtlety: **a tailnet is devices you authorised, and a public hostname is the
+internet.** Use Tailscale if you can. The public tunnel exists for the case where
+you cannot install anything on the phone you are holding.
+
+The address lasts until you close it or the window goes away, and closing the
+server closes it.
+
 ### The wire
 
 `src/wire.js` is the server half of RFC 6455 with no dependencies: the handshake,
@@ -701,9 +739,9 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 1059 checks, no dependencies, no network, no CLI
+    npm test             # 1089 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
-    npm run test:remote  # 54 checks driving the served client in real browsers,
+    npm run test:remote  # 60 checks driving the served client in real browsers,
                          #   including one the size of a phone and one cold-starting
                          #   with the laptop switched off
     npm run test:qr      # 22 checks reading our QR codes back with Apple's decoder
@@ -753,7 +791,7 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     src/pairPanel.js   that window on screen: a QR, a code, a countdown
     src/devicesTree.js the sidebar list of devices, and what each is allowed
     src/qr.js          a QR encoder, verified against Apple's decoder
-    src/tunnel.js      asking Tailscale to forward to us, and reading its answers
+    src/tunnel.js      Tailscale first, a public tunnel second, both to loopback
     src/push.js        Web Push: encrypted to the device, signed by this window
     src/notify.js      what is worth waking a phone for, and what is not
     src/awake.js       holding the machine awake while something needs it
@@ -780,6 +818,19 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     media/theme.js     the OS colour scheme, in the terms panel.css understands
     media/markdown.js  dependency-free Markdown renderer
     test/              offline suite plus an opt-in live check
+
+## Security
+
+[`THREAT-MODEL.md`](THREAT-MODEL.md) states what NikUI is exposed to and what it
+is not: the assets, seven kinds of attacker and what each of them gets, the
+pairing and connection exchanges examined for replay, downgrade and
+machine-in-the-middle, the boundaries that are code rather than intention, and
+the findings from the review of the remote surface — all five of which are
+fixed, including an HTML injection through a URL path and a CSP nonce that came
+from `Math.random()`.
+
+The one-line version: **a phone you have granted control is your keyboard**,
+because NikUI runs Claude with permissions bypassed.
 
 ## Not implemented yet
 
