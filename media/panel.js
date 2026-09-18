@@ -204,6 +204,26 @@
     default: 'asks before tools'
   };
 
+  /**
+   * A device that may watch but not steer. Hiding the controls is courtesy —
+   * the host refuses these messages whatever the client sends — but a composer
+   * that takes a prompt and silently drops it would be a lie.
+   */
+  function setControl(device) {
+    const allowed = !device || device.control !== false;
+    document.body.classList.toggle('read-only', !allowed);
+    const banner = $('watching');
+    if (banner) banner.hidden = allowed;
+    input.disabled = !allowed;
+  }
+
+  function flashRefusal(msg) {
+    const banner = $('watching');
+    if (!banner) return;
+    banner.hidden = false;
+    banner.textContent = (msg && msg.reason) || 'That is not allowed from this device.';
+  }
+
   function setMeta(meta) {
     $('title').textContent = meta.label;
     const bits = [];
@@ -1193,6 +1213,14 @@
         nodes.clear();
         break;
       case 'focus': input.focus(); break;
+
+      // Whether this client may steer. In the panel neither of these arrives;
+      // over a socket the welcome says what this device was granted, and
+      // @device says so again whenever that changes underneath it.
+      case '@welcome':
+      case '@device': setControl(msg.device); break;
+      case '@denied': setControl({ control: false }); break;
+      case '@refused': flashRefusal(msg); break;
       case 'statusReport': showSheet(msg.report); break;
       case 'editPrompt': {
         // Nothing typed is thrown away: a draft already in the box keeps its

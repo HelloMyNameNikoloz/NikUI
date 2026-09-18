@@ -24,6 +24,15 @@ const TO_CLIENT = [
   'statusReport', 'openStatus', 'editPrompt', 'focus'
 ];
 
+/**
+ * The transport's own layer, underneath all of that: who is holding this
+ * socket, and what they are allowed. Named with an `@` so it can never be
+ * confused with a session message, and listed separately so a transport cannot
+ * quietly grow a private dialect.
+ */
+const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused'];
+const CONTROL_TO_HOST = ['@auth'];
+
 function quietSession() {
   const s = new Session({ cwd: '/tmp' });
   s.start = function () { this.everStarted = true; };
@@ -78,6 +87,44 @@ module.exports = async function () {
   const shimMakes = new Set([...shim.matchAll(/type: '([a-zA-Z]+)'/g)].map((m) => m[1]));
   checkEqual('the browser transport invents no messages of its own',
     [...shimMakes].filter((t) => !TO_HOST.includes(t) && !TO_CLIENT.includes(t)).sort(), []);
+
+  suite('and so is the layer underneath it');
+
+  const server = read('src/remote.js');
+  const gate = read('src/auth.js');
+  const hubControl = [...hub.matchAll(/type: '(@[a-zA-Z]+)'/g)].map((m) => m[1]);
+  const sent = new Set(
+    [...server.matchAll(/type: '(@[a-zA-Z]+)'/g)].map((m) => m[1])
+      .concat([...gate.matchAll(/type: '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
+      .concat(hubControl)
+  );
+  const heardByClient = new Set(
+    [...client.matchAll(/case '(@[a-zA-Z]+)':/g)].map((m) => m[1])
+      .concat([...shim.matchAll(/message\.type === '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
+      .concat([...read('media/home.js').matchAll(/type === '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
+  );
+  // What the shim puts on the wire, as against what it hands to its own page:
+  // an offline refusal is synthesised locally and must still be a message the
+  // protocol names, but it is not something the host ever sees.
+  const sentByClient = new Set([...shim.matchAll(/send\(\{\s*type: '(@[a-zA-Z]+)'/g)].map((m) => m[1]));
+  const synthesised = new Set([...shim.matchAll(/data: \{ type: '(@?[a-zA-Z]+)'/g)].map((m) => m[1]));
+  const heardByHost = new Set([...server.matchAll(/type !== '(@[a-zA-Z]+)'/g)].map((m) => m[1]));
+
+  checkEqual('the host sends no control frame the protocol does not list',
+    [...sent].filter((t) => !CONTROL_TO_CLIENT.includes(t)).sort(), []);
+  checkEqual('and every one it sends is one a client acts on',
+    [...sent].filter((t) => !heardByClient.has(t)).sort(), []);
+  checkEqual('the client sends no control frame the protocol does not list',
+    [...sentByClient].filter((t) => !CONTROL_TO_HOST.includes(t)).sort(), []);
+  checkEqual('and the host is waiting for exactly that one',
+    [...heardByHost].filter((t) => !CONTROL_TO_HOST.includes(t)).sort(), []);
+  checkEqual('what the client makes up for itself is still the protocol',
+    [...synthesised].filter((t) => !CONTROL_TO_CLIENT.includes(t) && !TO_CLIENT.includes(t)).sort(), []);
+
+  // The window's own list is not a session message: it belongs to the socket
+  // that is watching the window rather than any one instance.
+  check('the fleet list is sent by the server', /type: 'fleet'/.test(server));
+  check('and drawn by the page that asks for it', /=== 'fleet'/.test(read('media/home.js')));
 
   suite('a transport carries all of it');
 

@@ -37,6 +37,8 @@
     let retry = null;
     let wantsReady = false;   // the client has said `ready` at least once
     let closing = false;
+    let seated = false;       // the handshake is done and this socket may talk
+    let stopped = null;       // a refusal worth showing instead of retrying
 
     function url() {
       const at = new URL(config.socket || '/socket', window.location.href);
@@ -55,7 +57,92 @@
     function deliver(data) {
       let message = null;
       try { message = JSON.parse(data); } catch (_) { return; }
+      if (message && typeof message.type === 'string' && message.type.charAt(0) === '@') {
+        if (handshake(message)) return;
+      }
       window.dispatchEvent(new MessageEvent('message', { data: message }));
+    }
+
+    /**
+     * Before this socket carries anything, it has to say who is holding it.
+     *
+     * On the laptop the key in the cookie has already settled that and the
+     * welcome arrives unprompted. Anywhere else the server sends a nonce, this
+     * device signs it with the key it cannot export, and the server signs back
+     * with the key whose fingerprint was pinned at pairing — so neither end is
+     * taking the other's word for it.
+     *
+     * @returns {boolean} whether the message was the transport's own business
+     */
+    function handshake(message) {
+      if (message.type === '@challenge') {
+        answer(message);
+        return true;
+      }
+      if (message.type === '@welcome') {
+        seated = true;
+        tries = 0;
+        stopped = null;
+        show('on', 'Live');
+        if (wantsReady) send({ type: 'ready' });
+        return false; // the page may want to know which device it is
+      }
+      if (message.type === '@denied') {
+        seated = false;
+        stopped = message.reason || 'refused';
+        show('off', reasonText(stopped));
+        return false;
+      }
+      return false;
+    }
+
+    function answer(challenge) {
+      if (!window.nikDevice || !window.nikDevice.available()) {
+        stopped = 'no device key';
+        show('off', 'This device is not paired');
+        return;
+      }
+      window.nikDevice.load().then(function (record) {
+        if (!record || !record.id) {
+          stopped = 'not paired';
+          show('off', 'This device is not paired');
+          window.dispatchEvent(new MessageEvent('message', {
+            data: { type: '@denied', reason: 'This device is not paired.', pair: true }
+          }));
+          return;
+        }
+        // Pinning, from this side: the laptop that answers has to be the one
+        // this device paired with, not merely something at the same address.
+        if (record.fingerprint && challenge.fingerprint && record.fingerprint !== challenge.fingerprint) {
+          stopped = 'wrong laptop';
+          show('off', 'This is not the laptop this device paired with');
+          window.dispatchEvent(new MessageEvent('message', {
+            data: { type: '@denied', reason: 'This is not the laptop this device paired with.' }
+          }));
+          return;
+        }
+        const mine = randomNonce();
+        return window.nikDevice.sign('nikui-auth:' + challenge.nonce + ':' + mine).then(function (signature) {
+          send({ type: '@auth', device: record.id, nonce: mine, signature: signature });
+        });
+      }).catch(function () {
+        stopped = 'could not sign';
+        show('off', 'This device could not sign in');
+      });
+    }
+
+    function randomNonce() {
+      const bytes = new Uint8Array(24);
+      (window.crypto || {}).getRandomValues(bytes);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function reasonText(reason) {
+      if (/not paired/i.test(reason)) return 'This device is not paired';
+      if (/removed/i.test(reason)) return 'This device was removed';
+      return 'Refused';
     }
 
     function connect() {
@@ -69,18 +156,21 @@
 
       next.onopen = function () {
         tries = 0;
-        show('on', 'Live');
-        // The hub answers `ready` with `init`, which repaints the whole
-        // conversation — the same path a webview takes when VS Code throws it
-        // away and brings it back. Nothing is replayed twice.
-        if (wantsReady) send({ type: 'ready' });
+        seated = false;
+        // Not live yet: the socket is open, but nothing may be said on it until
+        // the server has decided who is holding it. `ready` waits for @welcome.
+        show('warn', 'Signing in…');
       };
       next.onmessage = function (event) { deliver(event.data); };
       next.onerror = function () { /* onclose always follows */ };
       next.onclose = function () {
         if (next !== socket) return;
         socket = null;
+        seated = false;
         if (closing) return;
+        // A refusal is not a network problem. Retrying every second would only
+        // fill a log; the state stays on screen until something changes.
+        if (stopped) { show('off', reasonText(stopped)); return; }
         schedule();
       };
     }
@@ -100,7 +190,7 @@
     }
 
     function live() {
-      return !!socket && socket.readyState === 1;
+      return !!socket && socket.readyState === 1 && seated;
     }
 
     /**
@@ -123,7 +213,7 @@
 
     // A phone closes sockets when the screen locks and a laptop closes them when
     // it sleeps; both come back through one of these.
-    window.addEventListener('online', function () { tries = 0; connect(); });
+    window.addEventListener('online', function () { tries = 0; stopped = null; connect(); });
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden && !live()) { tries = 0; connect(); }
     });
@@ -136,7 +226,12 @@
 
     return {
       postMessage: function (message) {
-        if (message && message.type === 'ready') wantsReady = true;
+        if (message && message.type === 'ready') {
+          // Asked for once, sent on every socket that gets a seat. Saying it
+          // into a socket that is still signing in would only be dropped.
+          wantsReady = true;
+          if (!live()) return;
+        }
         if (!live()) return refuse(message);
         try { send(message); } catch (_) { refuse(message); }
       },
@@ -144,7 +239,7 @@
       setState: state.setState,
       // For the tests, and for anyone wondering in a console why nothing moves.
       __socket: function () { return socket; },
-      __state: function () { return live() ? 'online' : (tries ? 'reconnecting' : 'offline'); }
+      __state: function () { return live() ? 'online' : (stopped ? 'refused' : (tries ? 'reconnecting' : 'offline')); }
     };
   }
 

@@ -347,6 +347,17 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.remote.port` | `4517` | Port for the local server, on `127.0.0.1` only; `0` picks a free one |
 | `nikui.remote.autoStart` | `false` | Start that server when the window opens |
 
+### Commands for the server and devices
+
+| Command | Does |
+| --- | --- |
+| `NikUI: Start the local server` | Serves this window on `127.0.0.1` |
+| `NikUI: Open NikUI in a browser` | Starts it if needed and opens the link |
+| `NikUI: Pair a device` | A QR and a code, good for one minute and one device |
+| `NikUI: Let this device send prompts` | Grants control, with a dialog that says what that means |
+| `NikUI: Make this device watch only` | Takes it back, on the socket it is holding now |
+| `NikUI: Forget this device` | Deletes its key and closes its connection |
+
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
 
 ## One instance, many clients
@@ -367,9 +378,10 @@ can do (opening a file at a line, bringing another instance to the front) as hos
 functions. Nothing in `src/hub.js` requires `vscode`, which is what makes a second
 transport possible without a second copy of the rules.
 
-`test/protocol.test.js` holds the protocol as two lists — what a client may send,
-what the host may send — and reads both sides out of the source to compare
-against them. A message added to the webview and forgotten in the hub, or sent by
+`test/protocol.test.js` holds the protocol as lists — what a client may send,
+what the host may send, and the `@`-named control frames the transport uses to
+settle who is holding a socket — and reads every side out of the source to
+compare against them. A message added to the webview and forgotten in the hub, or sent by
 the hub and never drawn, fails there. The same suite drives a plain in-memory
 client through every message in both directions, so a new transport has a
 conformance suite waiting for it rather than a reading exercise.
@@ -377,7 +389,8 @@ conformance suite waiting for it rather than a reading exercise.
 ## The same client, in a browser
 
 `NikUI: Start the local server` serves the client over HTTP on this machine, and
-`NikUI: Open NikUI in a browser` opens it. A status bar item appears while it is
+`NikUI: Open NikUI in a browser` opens it. A paired device — see below — reaches
+the same pages without the key. A status bar item appears while it is
 listening — clicking it offers the link, the clipboard and the off switch. It is
 off until you start it (`nikui.remote.autoStart` changes that), and the port is
 `nikui.remote.port`.
@@ -398,6 +411,43 @@ comes straight back to the composer as an `editPrompt`, with the reason on
 screen. The connection state is always visible, because a dead socket on a phone
 looks exactly like an agent that is thinking.
 
+### Pairing a phone, and what pairing grants
+
+`NikUI: Pair a device` opens a window with a QR code, the same code in type you
+can read across a desk, and a one-minute countdown. The device opens the link,
+generates a key pair in the browser with the private half marked
+**non-extractable**, signs the code with it, and is remembered by its public key.
+From then on it proves itself on **every connection** by signing a fresh
+challenge — there is no token to steal, and a screenshot of the QR after the
+minute is over is worth nothing.
+
+The laptop proves itself too. The QR carries a fingerprint of this window's own
+key, the device pins it, and every challenge is answered with a signature over
+the device's nonce. A machine that answers on this address later, without the
+key, is refused by the phone rather than trusted by it.
+
+- A code lasts **60 seconds**, works **once**, and a wrong guess **closes the
+  window** rather than costing an attempt — so there is no guessing game to play.
+- The code rides in the URL **fragment**, which browsers never send to a server,
+  so it is not in anybody's logs, including ours.
+- Eight characters from an alphabet with no `I`, `O`, `0`, `1` or `U`: readable
+  across a room and typable on a phone when the camera will not focus.
+
+**A paired device can watch. It cannot steer.** Sending a prompt, answering a
+permission, interrupting, touching the queue — all of it is a second grant, made
+deliberately per device from the Devices list in the sidebar, and revocable on
+its own. The client hides those controls when it has no grant; that is courtesy.
+The **host refuses them whatever the client sends**, and writes the attempt down.
+
+Why that line matters: NikUI runs Claude with `bypassPermissions` by default, so
+**a prompt from a phone is arbitrary code execution on this laptop**. Granting
+control says exactly that, in a dialog, before it happens.
+
+Everything that arrives from a device — allowed or refused — is recorded with the
+device's name and shown in `/status` under **System**. Revoking a grant, or
+forgetting a device, takes effect on the socket it is holding right now, not on
+its next connection.
+
 ### Why it is safe to run, and where it stops
 
 NikUI runs Claude with `bypassPermissions` by default, so **anything that can
@@ -406,22 +456,25 @@ from that:
 
 - It binds to `127.0.0.1`, and there is no setting that changes that. Reaching
   the laptop from elsewhere is a tunnel's job, not a listening socket's.
-- Nothing is served without a key — not the page, not an asset, not the socket.
-  The key is 256 bits, minted fresh every time the server starts, and it is
-  traded for an `HttpOnly; SameSite=Strict` cookie on first load so it leaves the
-  address bar.
-- The `Host` header must be a loopback name, so a hostile site cannot point DNS
+- The pages are an **empty shell** — markup, stylesheet, script, no data. The
+  fleet, the conversations and the dashboard all arrive over the socket, which is
+  where the authority check lives. An unpaired device gets HTML and an
+  explanation.
+- A socket is either **this machine**, holding the key this window minted, or a
+  **paired device** proving it holds its private key. The local key is refused
+  the moment a request carries forwarding headers, so it cannot quietly become a
+  remote credential when the tunnel lands.
+- The `Host` header must be a name we serve, so a hostile site cannot point DNS
   at `127.0.0.1` and have the browser treat this as its own origin.
 - A browser sends `Origin` on a WebSocket handshake and has no same-origin policy
   to stop it opening one, so an `Origin` that is not ours is refused.
 - Only `media/` is servable, only by extension, and only after the resolved path
   is confirmed to be inside it.
 
-What this is *not* is the phone story. A key in a URL is a bearer token, and a
-bearer token is only defensible because the listener is loopback: it is a lock on
-a door inside the house. The device-key pairing that makes a phone safe to let in
-is the next piece of work (issues #5 and #6), and it replaces `src/auth.js`
-wholesale — which is why that file is a seam with one method rather than an `if`.
+What is still missing before a phone is useful from outside the house is
+reachability (#12) — and note that Web Crypto only exists in a **secure
+context**, so that tunnel has to be HTTPS. On a plain `http://192.168.x.x` the
+browser will not let a device hold a key at all.
 
 ### The wire
 
@@ -437,6 +490,16 @@ constant you wrote yourself.** The handshake GUID here was wrong, and the test
 that "verified" it hashed the same wrong constant and agreed. What caught it was
 connecting Node's own `WebSocket` — an implementation nobody here wrote — to the
 server. That check is now permanent, in `test/remote.test.js`.
+
+### The QR code
+
+`src/qr.js` is a QR encoder, byte mode, error correction level M, versions 1 to
+10, no dependencies. The same warning applies twice over — it is a specification
+written from memory — so it is not trusted on its own word: `npm run test:qr`
+renders every version and every mask to a PNG and reads them back through
+**Apple's CoreImage detector**, which is a decoder nobody here wrote. The golden
+vectors in `test/qr.test.js` were produced that way, and the Reed–Solomon
+generator was wrong until that loop said so.
 
 ## How it talks to Claude
 
@@ -494,9 +557,10 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 792 checks, no dependencies, no network, no CLI
+    npm test             # 900 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
-    npm run test:remote  # 19 checks driving the served client in a real browser
+    npm run test:remote  # 31 checks driving the served client in a real browser
+    npm run test:qr      # 22 checks reading our QR codes back with Apple's decoder
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 
 The offline suite stubs the VS Code API (`test/helpers/vscode-stub.js`) and
@@ -535,8 +599,14 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     src/panel.js       the webview client of that hub: tab title, icon, editor jobs
     src/host.js        what only the editor can do, shared by every transport
     src/page.js        the page itself, once, for whichever host serves it
-    src/remote.js      the local HTTP + WebSocket server: loopback, key, no vscode
-    src/auth.js        who may connect — the seam the device pairing replaces
+    src/remote.js      the local HTTP + WebSocket server: loopback, no vscode
+    src/auth.js        who may connect: this machine, or a device that can sign
+    src/identity.js    this laptop's own key, and the fingerprint a phone pins
+    src/devices.js     paired devices, their grants, and what they did
+    src/pairing.js     the one-minute window in which a device may introduce itself
+    src/pairPanel.js   that window on screen: a QR, a code, a countdown
+    src/devicesTree.js the sidebar list of devices, and what each is allowed
+    src/qr.js          a QR encoder, verified against Apple's decoder
     src/wire.js        RFC 6455, server side, no dependencies
     src/ticket.js      PR/issue extraction and the switch rule
     src/label.js       the one naming rule, shared by instances and history
@@ -549,6 +619,9 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     media/panel.css    all the styling
     media/panel.js     webview front end
     media/transport.js the one seam: the editor's API, or the same over a socket
+    media/device.js    this device's key: made here, never exported, signs challenges
+    media/pair.js      the pairing screen a phone lands on
+    media/home.js      the window as a list, drawn from the socket
     media/browser.css  theme and connection state for when the host is a browser
     media/theme.js     the OS colour scheme, in the terms panel.css understands
     media/markdown.js  dependency-free Markdown renderer

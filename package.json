@@ -37,6 +37,12 @@
           "id": "nikui.history",
           "name": "History",
           "visibility": "visible"
+        },
+        {
+          "id": "nikui.devices",
+          "name": "Devices",
+          "icon": "$(device-mobile)",
+          "visibility": "collapsed"
         }
       ]
     },
@@ -54,6 +60,10 @@
         "view": "nikui.history",
         "contents": "No past conversations on this machine yet.\n\nEvery instance you run is written to a transcript and shows up here.\n\n[Back to this workspace](command:nikui.historyScope)",
         "when": "nikui.historyScope == 'all'"
+      },
+      {
+        "view": "nikui.devices",
+        "contents": "No devices are paired, so only this machine can reach this window.\n\nA paired device can watch every instance. Sending prompts is a separate grant, because a prompt runs with the same permissions as one typed here.\n\n[Pair a device](command:nikui.pairDevice)"
       }
     ],
     "commands": [
@@ -197,6 +207,30 @@
       {
         "command": "nikui.remoteMenu",
         "title": "NikUI: Local server actions"
+      },
+      {
+        "command": "nikui.pairDevice",
+        "title": "NikUI: Pair a device",
+        "icon": "$(device-mobile)"
+      },
+      {
+        "command": "nikui.grantControl",
+        "title": "NikUI: Let this device send prompts",
+        "icon": "$(unlock)"
+      },
+      {
+        "command": "nikui.revokeControl",
+        "title": "NikUI: Make this device watch only",
+        "icon": "$(lock)"
+      },
+      {
+        "command": "nikui.forgetDevice",
+        "title": "NikUI: Forget this device",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "nikui.renameDevice",
+        "title": "NikUI: Rename this device"
       }
     ],
     "menus": {
@@ -240,6 +274,11 @@
           "command": "nikui.newSessionHere",
           "when": "view == nikui.sessions",
           "group": "1_new@1"
+        },
+        {
+          "command": "nikui.pairDevice",
+          "when": "view == nikui.devices",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
@@ -297,6 +336,36 @@
           "command": "nikui.deleteFolder",
           "when": "view == nikui.sessions && viewItem == nikuiFolder",
           "group": "inline@2"
+        },
+        {
+          "command": "nikui.grantControl",
+          "when": "view == nikui.devices && viewItem == nikui.device.watching",
+          "group": "inline"
+        },
+        {
+          "command": "nikui.revokeControl",
+          "when": "view == nikui.devices && viewItem == nikui.device.control",
+          "group": "inline"
+        },
+        {
+          "command": "nikui.grantControl",
+          "when": "view == nikui.devices && viewItem == nikui.device.watching",
+          "group": "1_control"
+        },
+        {
+          "command": "nikui.revokeControl",
+          "when": "view == nikui.devices && viewItem == nikui.device.control",
+          "group": "1_control"
+        },
+        {
+          "command": "nikui.renameDevice",
+          "when": "view == nikui.devices && viewItem =~ /nikui.device/",
+          "group": "2_edit"
+        },
+        {
+          "command": "nikui.forgetDevice",
+          "when": "view == nikui.devices && viewItem =~ /nikui.device/",
+          "group": "3_gone"
         }
       ],
       "commandPalette": [
@@ -351,6 +420,22 @@
         {
           "command": "nikui.remoteMenu",
           "when": "false"
+        },
+        {
+          "command": "nikui.grantControl",
+          "when": "true"
+        },
+        {
+          "command": "nikui.revokeControl",
+          "when": "true"
+        },
+        {
+          "command": "nikui.forgetDevice",
+          "when": "true"
+        },
+        {
+          "command": "nikui.renameDevice",
+          "when": "true"
         }
       ]
     },
@@ -534,6 +619,7 @@
     "test": "node test/run.js",
     "test:live": "node test/live.check.js",
     "test:webview": "node test/webview.check.js",
-    "test:remote": "node test/remote.check.js"
+    "test:remote": "node test/remote.check.js",
+    "test:qr": "node test/qr.check.js"
   }
 }

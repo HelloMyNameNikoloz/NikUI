@@ -138,3 +138,94 @@ body.home .row-cost {
   font-size: 12px;
   color: var(--vscode-descriptionForeground);
 }
+
+/* ---- a device that may watch but not steer -------------------------------
+   The host refuses these messages whatever the client sends; hiding them is
+   only so nothing on screen offers something that will not happen. */
+
+.watching {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+body.read-only .composer,
+body.read-only .hint,
+body.read-only .queue-actions,
+body.read-only .perm-actions { display: none; }
+
+/* ---- pairing ------------------------------------------------------------- */
+
+body.pairing .pair-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 420px;
+}
+
+body.pairing label {
+  font-size: 11.5px;
+  color: var(--vscode-descriptionForeground);
+  margin-top: 10px;
+}
+
+body.pairing input {
+  font: inherit;
+  font-size: 17px; /* iOS zooms into anything smaller */
+  letter-spacing: 0.08em;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+}
+
+body.pairing button {
+  font: inherit;
+  font-weight: 600;
+  margin-top: 16px;
+  padding: 13px 18px;
+  border: 0;
+  border-radius: 10px;
+  color: white;
+  background: #0a84ff;
+}
+
+body.pairing button[disabled] { opacity: 0.5; }
+
+.note {
+  max-width: 420px;
+  margin-top: 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--vscode-descriptionForeground);
+}
+
+.note.bad { color: #ff453a; }
+.note.good { color: #30d158; }
+
+.go-on {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.home-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body.home .sdot.asleep {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px #8e8e93;
+}

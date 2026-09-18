@@ -14,22 +14,31 @@ const { transcriptPath } = require('./history');
  * laptop, whether or not a panel happens to be on screen. Built once per window
  * and handed to the hub; transports add only their own chrome on top.
  */
-function createHost(context, manager) {
+function createHost(context, manager, extras) {
+  const devices = (extras && extras.devices) || null;
   return {
     config: () => readConfig(),
     home: os.homedir(),
     knownCommands: () => (manager ? manager.knownCommands() : []),
     fleet: () => (manager ? manager.list : []),
-    env: (session) => describeEnv(context, manager, session),
+    env: (session) => describeEnv(context, manager, session, devices),
     openFile: (req) => openFile(req),
-    switchTo: (id, from) => switchTo(context, manager, id, from)
+    switchTo: (id, from) => switchTo(context, manager, id, from),
+    // What arrived from a device, allowed or not. The editor's own panel has no
+    // device and so is never written down: the trail is about what came from
+    // somewhere else.
+    audit: devices ? (entry) => devices.record(entry) : undefined
   };
 }
 
 /** What the status report can only learn from the editor and the machine. */
-function describeEnv(context, manager, session) {
+function describeEnv(context, manager, session, devices) {
   const cfg = readConfig();
   return {
+    devices: devices ? devices.list().map((d) => ({
+      name: d.name, control: !!d.control, lastSeenAt: d.lastSeenAt, pairedAt: d.pairedAt
+    })) : [],
+    trail: devices ? devices.recent(20) : [],
     transcriptPath: transcriptPath(session.cwd, session.claudeSessionId),
     limits: (manager && manager.limits) || session.limits || null,
     pause: (manager && manager.pause) || null,

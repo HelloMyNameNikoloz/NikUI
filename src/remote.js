@@ -4,21 +4,26 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { renderPage, randomNonce } = require('./page');
-const { LocalKey } = require('./auth');
+const { Gate, LocalKey, localDevice } = require('./auth');
 const wire = require('./wire');
 
 /**
- * The same client, served over HTTP, on this machine only.
+ * The same client, served over HTTP, to this machine and to devices it knows.
  *
- * NikUI runs Claude with permissions bypassed, so a socket into it is remote
- * code execution on this laptop. Every decision here follows from that:
+ * NikUI runs Claude with permissions bypassed, so a socket into it is code
+ * execution on this laptop. Every decision here follows from that:
  *
  *  - it binds to 127.0.0.1 and there is no code path that binds anywhere else.
  *    Reaching the laptop from outside is the tunnel's job (#12), and a port on a
  *    café network is the whole threat model walking in;
- *  - nothing at all is served without a key, including the page itself;
- *  - the Host header must be a loopback name, so a hostile site cannot point
- *    DNS at 127.0.0.1 and have the browser treat it as its own origin;
+ *  - the pages are an empty shell — markup, stylesheet, script — and carry no
+ *    data at all. Everything worth having arrives over the socket, and the
+ *    socket is where the authority check lives;
+ *  - a socket is either this machine, holding the key this window minted, or a
+ *    paired device proving on this connection that it still holds the private
+ *    key it paired with. There is no bearer token in between;
+ *  - the Host header must be a name we serve, so a hostile site cannot point DNS
+ *    at 127.0.0.1 and have the browser treat it as its own origin;
  *  - a browser sends Origin on a WebSocket handshake and has no same-origin
  *    policy to stop it opening one, so an Origin that is not ours is refused.
  *
@@ -40,6 +45,8 @@ const MAX_SOCKETS = 32;
 // A client this far behind is not reading, and buffering for it is how a server
 // runs out of memory politely.
 const MAX_BACKLOG_BYTES = 8 * 1024 * 1024;
+// A pairing body is a name, a public key and a signature. Nothing here is large.
+const MAX_BODY_BYTES = 8 * 1024;
 
 class RemoteServer {
   /**
@@ -47,31 +54,61 @@ class RemoteServer {
    * @param {string} deps.root        the extension directory (media/ lives under it)
    * @param {object} deps.host        host deps for the hubs, as the panel supplies
    * @param {object} deps.sessions    { list(), get(id) }
+   * @param {object} [deps.devices]   the paired devices, and their trail
+   * @param {object} [deps.identity]  this laptop's own key
+   * @param {object} [deps.pairing]   the pairing window
    * @param {object} [deps.hubs]      { hubFor, closeHub } — injectable for tests
-   * @param {object} [deps.auth]      anything with check(req); the pairing gate slots in here
+   * @param {Function} [deps.watchFleet] subscribe to "the window changed"
    * @param {(line: string) => void} [deps.log]
    */
   constructor(deps) {
     this.root = deps.root;
     this.host = deps.host;
     this.sessions = deps.sessions;
+    this.devices = deps.devices || null;
+    this.identity = deps.identity || null;
+    this.pairing = deps.pairing || null;
     this.hubs = deps.hubs || require('./hub');
-    this.auth = deps.auth || new LocalKey();
+    this.gate = deps.gate || new Gate({
+      localKey: deps.localKey || new LocalKey(),
+      devices: this.devices,
+      identity: this.identity
+    });
     this.log = deps.log || (() => {});
     this.server = null;
     this.port = 0;
     this.clients = new Set();
+    this.fleetClients = new Set();
     this.seq = 0;
     this.refusals = [];
+    this.stopWatching = null;
+
+    // A grant taken away has to reach a socket that is already open, or
+    // revoking would mean "next time".
+    if (this.devices && this.devices.onChange) {
+      this.stopWatchingDevices = this.devices.onChange(() => this.reconcile());
+    }
+    if (typeof deps.watchFleet === 'function') {
+      this.stopWatching = deps.watchFleet(() => this.broadcastFleet());
+    }
   }
 
   get listening() {
     return !!this.server && this.server.listening;
   }
 
-  /** The address to open, key and all. Only ever handed to this machine. */
+  /** The address to open on this machine, key and all. */
   get url() {
-    return this.listening ? `http://127.0.0.1:${this.port}/?key=${this.auth.key}` : null;
+    return this.listening ? `http://127.0.0.1:${this.port}/?key=${this.gate.key}` : null;
+  }
+
+  /** Where a device should be told to find this server. */
+  get publicHost() {
+    return this.host_ || `127.0.0.1:${this.port}`;
+  }
+
+  set publicHost(value) {
+    this.host_ = value || null;
   }
 
   start(port) {
@@ -113,6 +150,7 @@ class RemoteServer {
     this.server = null;
     for (const client of [...this.clients]) client.close(wire.CLOSE.GOING_AWAY, 'server stopping');
     this.clients.clear();
+    this.fleetClients.clear();
     return new Promise((resolve) => {
       server.close(() => { this.log('stopped'); resolve(); });
       // A client that will not hang up should not keep the window open.
@@ -120,24 +158,23 @@ class RemoteServer {
     });
   }
 
-  // ---- guards --------------------------------------------------------------
-
-  /** The origins this server answers to: its own, under either loopback name. */
-  origins() {
-    return [
-      `http://127.0.0.1:${this.port}`,
-      `http://localhost:${this.port}`,
-      `http://[::1]:${this.port}`
-    ];
+  dispose() {
+    if (this.stopWatching) { this.stopWatching(); this.stopWatching = null; }
+    if (this.stopWatchingDevices) { this.stopWatchingDevices(); this.stopWatchingDevices = null; }
+    return this.stop();
   }
 
+  // ---- guards --------------------------------------------------------------
+
   hosts() {
-    return [`127.0.0.1:${this.port}`, `localhost:${this.port}`, `[::1]:${this.port}`];
+    const names = [`127.0.0.1:${this.port}`, `localhost:${this.port}`, `[::1]:${this.port}`];
+    if (this.host_) names.push(this.host_);
+    return names;
   }
 
   /**
-   * Everything that must be true before the key is even looked at. Returns null
-   * when the request may proceed, or the reason it may not.
+   * Everything that must be true before anything is served. Returns null when
+   * the request may proceed, or the reason it may not.
    */
   guard(req) {
     const address = (req.socket && (req.socket.remoteAddress || '')) || '';
@@ -147,17 +184,17 @@ class RemoteServer {
     const host = String((req.headers && req.headers.host) || '');
     if (!this.hosts().includes(host)) return { status: 403, reason: 'unexpected Host: ' + host };
 
-    // Absent on a curl, always present from a browser. Present and foreign means
-    // a page somewhere else is trying its luck.
+    // Absent on a curl, always present from a browser. Present and not ours
+    // means a page somewhere else is trying its luck.
     const origin = req.headers && req.headers.origin;
-    if (origin && !this.origins().includes(String(origin))) {
+    if (origin && origin !== `http://${host}` && origin !== `https://${host}`) {
       return { status: 403, reason: 'unexpected Origin: ' + origin };
     }
     return null;
   }
 
   refuse(req, why) {
-    const entry = { at: Date.now(), url: String(req.url || ''), why };
+    const entry = { at: Date.now(), url: String((req && req.url) || ''), why };
     this.refusals.push(entry);
     if (this.refusals.length > 50) this.refusals.shift();
     this.log('refused ' + entry.url + ': ' + why);
@@ -172,46 +209,42 @@ class RemoteServer {
       this.refuse(req, blocked.reason);
       return plain(res, blocked.status, 'Refused');
     }
-    const verdict = this.auth.check(req);
-    if (!verdict.ok) {
-      this.refuse(req, verdict.reason);
-      return plain(res, verdict.status || 401, 'NikUI: this needs the key from the editor.');
-    }
-    if (req.method !== 'GET' && req.method !== 'HEAD') return plain(res, 405, 'Only GET');
 
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
     const route = decodeURIComponent(url.pathname);
 
+    if (req.method === 'POST' && route === '/pair') return this.pair(req, res);
+    if (req.method !== 'GET' && req.method !== 'HEAD') return plain(res, 405, 'Only GET');
+
     // The key arrived in the address bar; put it in a cookie and take it back
     // out, so it is not sitting in the URL to be screenshotted or shared.
     if (url.searchParams.has('key')) {
+      const offered = this.gate.http(req);
       url.searchParams.delete('key');
-      res.writeHead(302, {
-        location: url.pathname + (url.search || ''),
-        'set-cookie': `nikui=${encodeURIComponent(this.auth.key)}; Path=/; HttpOnly; SameSite=Strict`,
-        'cache-control': 'no-store'
-      });
+      const headers = { location: url.pathname + (url.search || ''), 'cache-control': 'no-store' };
+      if (offered.ok) {
+        headers['set-cookie'] = `nikui=${encodeURIComponent(this.gate.key)}; Path=/; HttpOnly; SameSite=Strict`;
+      }
+      res.writeHead(302, headers);
       return res.end();
     }
 
-    if (route === '/') return this.serveIndex(req, res);
-    if (route.startsWith('/s/')) return this.serveClient(req, res, route.slice(3));
-    if (route.startsWith('/media/')) return this.serveAsset(res, route.slice('/media/'.length));
+    if (route === '/media/' || route.startsWith('/media/')) {
+      return this.serveAsset(res, route.slice('/media/'.length));
+    }
+    if (route === '/pair') return this.servePairing(req, res);
+    if (route === '/') return this.serveHome(req, res);
+    // The shell carries no data, so an unpaired device gets markup and nothing
+    // else. Which instance it is for — and whether that instance still exists —
+    // is a matter for the socket.
+    if (route.startsWith('/s/')) return this.serveClient(req, res, route);
     return plain(res, 404, 'No such page');
   }
 
-  /** Every instance in the window, as a list you can tap. */
-  serveIndex(req, res) {
+  /** Every instance in the window, drawn by the client from the socket. */
+  serveHome(req, res) {
     const nonce = randomNonce();
-    const rows = this.sessions.list().map((s) => `
-      <a class="row" href="/s/${escapeAttr(s.id)}">
-        <span class="sdot ${escapeAttr(s.status)}"></span>
-        <span class="row-name">${escapeHtml(label(s))}</span>
-        <span class="row-cwd">${escapeHtml(shortPath(s.cwd))}</span>
-        <span class="row-cost">${money(s.totalCost)}</span>
-      </a>`).join('');
-
-    const body = `<!DOCTYPE html>
+    const page = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -219,20 +252,27 @@ class RemoteServer {
 <meta http-equiv="Content-Security-Policy" content="${this.csp(req, nonce)}">
 <link rel="stylesheet" href="/media/browser.css">
 <title>NikUI</title>
+<script nonce="${nonce}" src="/media/theme.js" defer></script>
 </head>
 <body class="home">
-  <h1>NikUI</h1>
-  <p class="lede">${rows ? 'Pick an instance.' : 'No instances are open in the editor yet.'}</p>
-  <div class="rows">${rows}</div>
+  <header class="home-head">
+    <h1>NikUI</h1>
+    <div class="link" id="link" hidden></div>
+  </header>
+  <p class="lede" id="lede">Connecting&hellip;</p>
+  <div class="rows" id="rows"></div>
+  <script nonce="${nonce}">window.NIKUI_REMOTE = ${JSON.stringify({ session: null, socket: '/socket' })};</script>
+  <script nonce="${nonce}" src="/media/device.js"></script>
+  <script nonce="${nonce}" src="/media/transport.js"></script>
+  <script nonce="${nonce}" src="/media/home.js"></script>
 </body>
 </html>`;
-    return html(res, body);
+    return html(res, page);
   }
 
-  /** The conversation itself: the same page the webview gets. */
-  serveClient(req, res, id) {
-    const session = this.sessions.get(id);
-    if (!session) return plain(res, 404, 'No such instance');
+  /** The client itself: the same page the webview gets, with no data in it. */
+  serveClient(req, res, route) {
+    const id = route.startsWith('/s/') ? route.slice(3) : null;
     const nonce = randomNonce();
     const page = renderPage({
       asset: (file) => '/media/' + file,
@@ -240,15 +280,92 @@ class RemoteServer {
       csp: this.csp(req, nonce),
       head: '<link rel="stylesheet" href="/media/browser.css">\n' +
         `<script nonce="${nonce}" src="/media/theme.js" defer></script>\n`,
-      // The one thing the browser client needs that the webview does not: where
-      // its socket is. Everything else it learns over that socket.
+      // The only thing the browser client needs that the webview does not:
+      // where its socket is. Everything else it learns over that socket.
       boot: `window.NIKUI_REMOTE = ${JSON.stringify({
-        session: session.id,
-        socket: '/socket?session=' + encodeURIComponent(session.id),
-        label: label(session)
-      })};\ndocument.title = 'NikUI — ' + window.NIKUI_REMOTE.label;`
+        session: id,
+        socket: '/socket' + (id ? '?session=' + encodeURIComponent(id) : '')
+      })};`
     });
     return html(res, page);
+  }
+
+  /** The page a device lands on from the QR, or from a typed code. */
+  servePairing(req, res) {
+    const nonce = randomNonce();
+    const page = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="${this.csp(req, nonce)}">
+<link rel="stylesheet" href="/media/browser.css">
+<title>Pair with NikUI</title>
+<script nonce="${nonce}" src="/media/theme.js" defer></script>
+</head>
+<body class="home pairing">
+  <h1>Pair this device</h1>
+  <p class="lede" id="lede">Checking this device&rsquo;s key&hellip;</p>
+  <form class="pair-form" id="form" hidden>
+    <label for="code">Code from the editor</label>
+    <input id="code" name="code" inputmode="latin" autocapitalize="characters" autocomplete="off"
+           spellcheck="false" maxlength="9" placeholder="ABCD2345">
+    <label for="name">Name for this device</label>
+    <input id="name" name="name" autocomplete="off" maxlength="32" placeholder="My phone">
+    <button id="go" type="submit">Pair</button>
+  </form>
+  <p class="note" id="note"></p>
+  <script nonce="${nonce}" src="/media/device.js"></script>
+  <script nonce="${nonce}" src="/media/pair.js"></script>
+</body>
+</html>`;
+    return html(res, page);
+  }
+
+  /**
+   * A device introducing itself. This is the one route that answers without a
+   * key, so everything it accepts is bounded: a code that is open for a minute
+   * and dies on first use or first wrong guess, a body that cannot be large,
+   * and a signature that has to be over that exact code.
+   */
+  async pair(req, res) {
+    let body;
+    try { body = await readJson(req); } catch (err) {
+      this.refuse(req, 'bad pairing body: ' + err.message);
+      return json(res, 400, { error: 'that was not a pairing request' });
+    }
+    if (!this.pairing || !this.devices || !this.identity) {
+      return json(res, 503, { error: 'this window cannot pair devices' });
+    }
+
+    const claim = this.pairing.claim(body.code);
+    if (!claim.ok) {
+      this.refuse(req, 'pairing refused: ' + claim.reason);
+      return json(res, 403, { error: claim.reason });
+    }
+
+    // The signature proves two things at once: the device holds the private key
+    // for the public one it is offering, and it knew the code.
+    const signed = `nikui-pair:${String(body.code || '').trim().toUpperCase()}`;
+    const { verifyWith } = require('./identity');
+    if (!body.publicKey || !verifyWith(body.publicKey, signed, body.signature)) {
+      this.refuse(req, 'pairing signature did not verify');
+      return json(res, 403, { error: 'that signature does not match the key offered' });
+    }
+
+    const address = (req.socket && req.socket.remoteAddress) || null;
+    const device = this.devices.add({ name: body.name, publicKey: body.publicKey, address });
+    if (!device) return json(res, 400, { error: 'that is not a P-256 public key' });
+    this.devices.record({ device, action: 'paired', allowed: true });
+    this.log(`paired ${device.name} (${device.id})`);
+
+    return json(res, 200, {
+      device: device.id,
+      name: device.name,
+      control: device.control,
+      serverKey: this.identity.publicKeySpki,
+      fingerprint: this.identity.fingerprint
+    });
   }
 
   csp(req, nonce) {
@@ -260,7 +377,7 @@ class RemoteServer {
       "style-src 'self'",
       `script-src 'nonce-${nonce}'`,
       "font-src 'self'",
-      `connect-src ${socket}`,
+      `connect-src ${origin} ${socket}`,
       "base-uri 'none'",
       "form-action 'none'",
       "frame-ancestors 'none'"
@@ -306,8 +423,6 @@ class RemoteServer {
 
     const blocked = this.guard(req);
     if (blocked) return deny(blocked.status, blocked.reason);
-    const verdict = this.auth.check(req);
-    if (!verdict.ok) return deny(verdict.status || 401, verdict.reason);
 
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
     if (url.pathname !== '/socket') return deny(404, 'no such socket');
@@ -315,9 +430,6 @@ class RemoteServer {
     const key = req.headers['sec-websocket-key'];
     if (!key) return deny(400, 'no websocket key');
     if (this.clients.size >= MAX_SOCKETS) return deny(503, 'too many sockets');
-
-    const session = this.sessions.get(url.searchParams.get('session'));
-    if (!session) return deny(404, 'no such instance');
 
     socket.write(
       'HTTP/1.1 101 Switching Protocols\r\n' +
@@ -329,36 +441,114 @@ class RemoteServer {
     const client = new RemoteClient({
       id: 'socket-' + (this.seq++),
       socket,
-      session,
-      device: verdict.device,
-      hub: this.hubs.hubFor(session, this.host),
-      onGone: (c) => {
-        this.clients.delete(c);
-        // The hub outlives this socket only while somebody else is watching.
-        if (c.hub.size === 0 && this.hubs.closeHub) this.hubs.closeHub(session.id);
-      },
+      wants: url.searchParams.get('session') || null,
+      address: (req.socket && req.socket.remoteAddress) || null,
+      server: this,
       log: this.log
     });
     this.clients.add(client);
     if (head && head.length) client.framer.push(head);
-    this.log(`${client.id} attached to ${session.id}`);
+
+    // This machine's own browser already carries the key; it does not have to
+    // sign for a seat it could simply take by opening the editor.
+    const local = this.gate.http(req);
+    if (local.ok) client.welcome(localDevice(), null);
+    else client.challenge(this.gate);
+  }
+
+  /** Plug an authorised socket into whatever it asked for. */
+  seat(client) {
+    if (client.wants) {
+      const session = this.sessions.get(client.wants);
+      if (!session) return client.deny('that instance is not open any more');
+      const hub = this.hubs.hubFor(session, this.host);
+      hub.attach({ id: client.id, kind: 'socket', device: client.device, post: (m) => client.post(m) });
+      client.bind({
+        receive: (message) => hub.receive(client.id, message),
+        device: (device) => hub.setDevice(client.id, device),
+        detach: () => {
+          hub.detach(client.id);
+          // The hub outlives this socket only while somebody else is watching.
+          if (hub.size === 0 && this.hubs.closeHub) this.hubs.closeHub(session.id);
+        }
+      });
+      this.log(`${client.id} attached to ${session.id} as ${client.device.name}`);
+      return true;
+    }
+
+    this.fleetClients.add(client);
+    client.bind({
+      receive: (message) => {
+        if (message && message.type === 'ready') client.post(this.fleetMessage());
+      },
+      device: () => {},
+      detach: () => this.fleetClients.delete(client)
+    });
+    this.log(`${client.id} is watching the window as ${client.device.name}`);
+    return true;
+  }
+
+  fleetMessage() {
+    const instances = this.sessions.list().map((session) => ({
+      id: session.id,
+      label: session.customTitle || session.label,
+      status: session.status,
+      cwd: session.cwd,
+      cost: session.totalCost || 0,
+      queued: (session.queue || []).length,
+      paused: !!session.isPaused,
+      asleep: !!session.isAsleep
+    }));
+    return { type: 'fleet', instances, at: Date.now() };
+  }
+
+  broadcastFleet() {
+    if (!this.fleetClients.size) return;
+    const message = this.fleetMessage();
+    for (const client of this.fleetClients) client.post(message);
+  }
+
+  /**
+   * A device's grant changed, or it was forgotten. Neither is allowed to mean
+   * "from the next connection": a revoked device loses the socket it is holding.
+   */
+  reconcile() {
+    if (!this.devices) return;
+    for (const client of [...this.clients]) {
+      const seat = client.device;
+      if (!seat || seat.kind !== 'device') continue;
+      const fresh = this.devices.get(seat.id);
+      if (!fresh) {
+        this.log(`${client.id} closed: ${seat.name} was removed`);
+        client.close(wire.CLOSE.POLICY, 'this device was removed');
+        continue;
+      }
+      if (!!fresh.control !== !!seat.control || fresh.name !== seat.name) {
+        client.device = { id: fresh.id, name: fresh.name, kind: 'device', control: !!fresh.control };
+        client.tellDevice();
+      }
+    }
   }
 }
 
 /**
- * One socket, as a client of a hub. Everything above the frames is the protocol
- * the webview already speaks, unchanged — which is the point of the exercise.
+ * One socket: the frames, the handshake, and then whatever it was let in for.
+ *
+ * Nothing above the frames is invented here — once the handshake is done this
+ * carries the protocol the webview already speaks, unchanged.
  */
 class RemoteClient {
   constructor(opts) {
     this.id = opts.id;
     this.socket = opts.socket;
-    this.session = opts.session;
-    this.hub = opts.hub;
-    this.device = opts.device;
-    this.onGone = opts.onGone || (() => {});
+    this.server = opts.server;
+    this.wants = opts.wants;
+    this.address = opts.address;
     this.log = opts.log || (() => {});
     this.open = true;
+    this.device = null;
+    this.binding = null;
+    this.pending = null;
     this.awaitingPong = 0;
 
     this.socket.setNoDelay(true);
@@ -383,13 +573,40 @@ class RemoteClient {
       this.write(wire.encodePing());
     }, PING_MS);
     if (this.beat.unref) this.beat.unref();
+  }
 
-    this.hub.attach({
-      id: this.id,
-      kind: 'socket',
-      device: this.device,
-      post: (message) => this.post(message)
-    });
+  /** Ask the device to prove itself, and give up if it does not. */
+  challenge(gate) {
+    this.gate = gate;
+    this.pending = gate.challenge();
+    this.post(gate.challengeMessage(this.pending));
+    this.deadline = setTimeout(() => {
+      if (!this.device) this.deny('no answer to the challenge');
+    }, 10000);
+    if (this.deadline.unref) this.deadline.unref();
+  }
+
+  welcome(device, welcomeMessage) {
+    if (this.deadline) { clearTimeout(this.deadline); this.deadline = null; }
+    this.device = device;
+    this.pending = null;
+    this.post(welcomeMessage || { type: '@welcome', device });
+    this.server.seat(this);
+  }
+
+  deny(reason) {
+    this.log(`${this.id} denied: ${reason}`);
+    this.post({ type: '@denied', reason });
+    this.close(wire.CLOSE.POLICY, reason);
+  }
+
+  tellDevice() {
+    this.post({ type: '@device', device: this.device });
+    if (this.binding && this.binding.device) this.binding.device(this.device);
+  }
+
+  bind(binding) {
+    this.binding = binding;
   }
 
   post(message) {
@@ -407,8 +624,20 @@ class RemoteClient {
       this.log(`${this.id} sent something that is not JSON`);
       return;
     }
-    // Straight into the hub, on exactly the terms the webview gets.
-    Promise.resolve(this.hub.receive(this.id, msg)).catch((err) => {
+    if (!msg || typeof msg.type !== 'string') return;
+
+    // Until the handshake is done, the only message that means anything is the
+    // answer to it. Everything else is dropped rather than queued.
+    if (!this.device) {
+      if (msg.type !== '@auth') return;
+      const verdict = this.gate.answer(this.pending, msg, { address: this.address });
+      if (!verdict.ok) return this.deny(verdict.reason);
+      return this.welcome(verdict.device, verdict.welcome);
+    }
+
+    if (msg.type.charCodeAt(0) === 64) return; // '@' frames are the transport's, not the session's
+    if (!this.binding) return;
+    Promise.resolve(this.binding.receive(msg)).catch((err) => {
       this.log(`${this.id} message failed: ${err && err.message}`);
     });
   }
@@ -441,17 +670,49 @@ class RemoteClient {
     if (this.finished) return;
     this.finished = true;
     if (this.beat) clearInterval(this.beat);
+    if (this.deadline) clearTimeout(this.deadline);
     this.beat = null;
-    this.hub.detach(this.id);
-    this.onGone(this);
+    this.deadline = null;
+    if (this.binding && this.binding.detach) this.binding.detach();
+    this.binding = null;
+    if (this.server) this.server.clients.delete(this);
   }
 }
 
 // ---- small helpers ---------------------------------------------------------
 
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const parts = [];
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error('too large'));
+        req.destroy();
+        return;
+      }
+      parts.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        const parsed = JSON.parse(Buffer.concat(parts).toString('utf8') || '{}');
+        if (!parsed || typeof parsed !== 'object') return reject(new Error('not an object'));
+        resolve(parsed);
+      } catch (err) { reject(err); }
+    });
+    req.on('error', reject);
+  });
+}
+
 function plain(res, status, text) {
   res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
   res.end(text);
+}
+
+function json(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(body));
 }
 
 function html(res, body) {
@@ -463,12 +724,5 @@ function html(res, body) {
   });
   res.end(body);
 }
-
-const label = (s) => s.customTitle || s.label || s.id;
-const shortPath = (p) => String(p || '').split('/').slice(-2).join('/');
-const money = (n) => '$' + (Number(n) || 0).toFixed(2);
-const escapeHtml = (s) => String(s == null ? '' : s)
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const escapeAttr = (s) => escapeHtml(s).replace(/"/g, '&quot;');
 
 module.exports = { RemoteServer, RemoteClient, MAX_SOCKETS, PING_MS };

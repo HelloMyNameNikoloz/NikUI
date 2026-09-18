@@ -57,7 +57,24 @@ global.document = {
   addEventListener: documentEvents.addEventListener
 };
 
+// A device identity, as media/device.js would provide it.
+const identity = { record: { id: 'dev-1', fingerprint: 'fp-1', publicKey: 'pk' }, signed: [] };
+global.window.nikDevice = {
+  available: () => true,
+  load: () => Promise.resolve(identity.record),
+  ensure: () => Promise.resolve(identity.record),
+  sign: (message) => { identity.signed.push(message); return Promise.resolve('signature-for-' + message); }
+};
+global.window.crypto = { getRandomValues: (bytes) => { for (let i = 0; i < bytes.length; i++) bytes[i] = i + 1; return bytes; } };
+global.window.btoa = (binary) => Buffer.from(binary, 'binary').toString('base64');
+
 const { socketTransport } = require('../media/transport.js');
+
+/** What the server sends a socket it has already recognised. */
+const welcome = (socket, control) => socket.deliver({
+  type: '@welcome', device: { id: 'local', name: 'This machine', kind: 'local', control: control !== false }
+});
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** setTimeout, seen and controlled. */
 function withFakeClock(fn) {
@@ -86,10 +103,14 @@ module.exports = async function () {
 
   transport.postMessage({ type: 'ready' });
   checkEqual('a message sent before it is open is not lost down a hole', first.sent.length, 0);
-  check('the client is told, rather than left wondering', /Offline/.test(pill.textContent));
+  check('and the client is told where it stands', /Connecting|Signing|Offline/.test(pill.textContent));
 
   first.accept();
-  checkEqual('the moment it opens, the client says hello again', first.sent, [{ type: 'ready' }]);
+  checkEqual('an open socket says nothing until it has a seat', first.sent, []);
+  checkEqual('and says so', pill.textContent, 'Signing in…');
+
+  welcome(first);
+  checkEqual('the moment it is let in, the client says hello again', first.sent, [{ type: 'ready' }]);
   checkEqual('and the state is visible', [pill.className, pill.textContent], ['link on', 'Live']);
 
   transport.postMessage({ type: 'send', text: 'hello', sent: 'hello', snippets: [] });
@@ -136,6 +157,7 @@ module.exports = async function () {
   const second = sockets[sockets.length - 1];
   check('coming back online reconnects at once, not after the backoff', second !== first);
   second.accept();
+  welcome(second);
   checkEqual('and the client asks for the whole picture again', second.sent, [{ type: 'ready' }]);
   checkEqual('which is the same path a discarded webview takes', pill.textContent, 'Live');
 
@@ -145,6 +167,33 @@ module.exports = async function () {
     documentEvents.fire('visibilitychange');
   });
   check('a phone waking up reconnects too', sockets.length > 2);
+
+  suite('proving which device this is');
+
+  const signing = withFakeClock(() => socketTransport({ session: 'nik-3', socket: '/socket?session=nik-3' }));
+  const asked = sockets[sockets.length - 1];
+  asked.accept();
+  asked.deliver({ type: '@challenge', nonce: 'server-nonce', fingerprint: 'fp-1', serverKey: 'spki' });
+  await settle();
+  const answer = asked.sent.find((m) => m.type === '@auth');
+  check('a challenge is answered with a signature', !!answer);
+  checkEqual('by the device that paired', answer && answer.device, 'dev-1');
+  check('over the server nonce and one of its own',
+    /^nikui-auth:server-nonce:/.test(identity.signed[identity.signed.length - 1]));
+  check('and the nonce is not reused', answer && answer.nonce && answer.nonce.length >= 16);
+  checkEqual('nothing else is sent until the server answers',
+    asked.sent.filter((m) => m.type !== '@auth').length, 0);
+  check('and the transport still answers', typeof signing.postMessage === 'function');
+
+  const laptopSwapped = withFakeClock(() => socketTransport({ session: 'nik-4', socket: '/socket?session=nik-4' }));
+  const suspicious = sockets[sockets.length - 1];
+  suspicious.accept();
+  suspicious.deliver({ type: '@challenge', nonce: 'n', fingerprint: 'a-different-laptop', serverKey: 'spki' });
+  await settle();
+  check('a laptop that is not the one this device paired with is refused',
+    !suspicious.sent.some((m) => m.type === '@auth'));
+  check('and the client is told why', /not the laptop/i.test(pill.textContent));
+  check('rather than signing anyway', laptopSwapped.__state() !== 'online');
 
   suite('backoff');
 

@@ -1,0 +1,122 @@
+/* The pairing window: one thing to point a camera at, one thing to read out. */
+
+:root {
+  color-scheme: light dark;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 36px 28px calc(36px + env(safe-area-inset-bottom));
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  -webkit-font-smoothing: antialiased;
+}
+
+.pair {
+  max-width: 430px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.lede {
+  margin: 0 0 24px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* White behind the code whatever the theme: a dark QR on a dark background is
+   a QR that will not scan. */
+.qr-frame {
+  display: inline-block;
+  padding: 14px;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+}
+
+.qr {
+  display: block;
+  width: 244px;
+  height: 244px;
+  shape-rendering: crispEdges;
+}
+
+.qr-bg { fill: #ffffff; }
+.qr-fg { fill: #000000; }
+
+.code {
+  margin: 22px 0 2px;
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+.countdown {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown.low { color: #ff9f0a; }
+.countdown.gone { color: #ff453a; }
+
+.where {
+  margin: 18px 0 0;
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--vscode-descriptionForeground);
+  word-break: break-all;
+}
+
+.terms {
+  margin: 26px auto 0;
+  padding: 0;
+  max-width: 380px;
+  list-style: none;
+  text-align: left;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.terms li {
+  position: relative;
+  padding-left: 16px;
+  margin-bottom: 7px;
+}
+
+.terms li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.done .note,
+.done .key {
+  max-width: 380px;
+  margin: 12px auto 0;
+  font-size: 12.5px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.done .key {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  opacity: 0.7;
+}

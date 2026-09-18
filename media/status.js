@@ -641,7 +641,48 @@
       ['Thinking blocks', e.showThinking === false ? 'hidden' : 'shown']
     ]), { wide: true });
 
-    return session + cfg + disk + host;
+    return session + cfg + disk + host + remote(r);
+  }
+
+  /**
+   * Who can reach this window from somewhere else, and what they have done.
+   *
+   * A device pairs read-only; steering is granted separately. The trail keeps
+   * refused attempts as well as allowed ones, because a refused attempt is the
+   * line you would most want to find afterwards.
+   */
+  function remote(r) {
+    const e = r.env || {};
+    const devices = e.devices || [];
+    const trail = e.trail || [];
+    if (!devices.length && !trail.length) return '';
+
+    const who = card('Paired devices', devices.length
+      ? facts(devices.map((d) => [
+        d.name,
+        (d.control ? 'can steer' : 'watching only') +
+          (d.lastSeenAt ? ' · last seen ' + fmt.when(d.lastSeenAt) : '')
+      ]))
+      : '<p class="muted">No devices are paired. Only this machine can reach this window.</p>',
+      { wide: true });
+
+    const rows = trail.slice(0, 12).map((entry) =>
+      '<tr class="' + (entry.allowed ? '' : 'refused') + '">' +
+      '<td>' + esc(fmt.when(entry.at)) + '</td>' +
+      '<td>' + esc(entry.device) + '</td>' +
+      '<td>' + esc(entry.action) + '</td>' +
+      '<td>' + esc(entry.instance || '—') + '</td>' +
+      '<td>' + (entry.allowed ? 'allowed' : 'refused') + '</td>' +
+      '</tr>').join('');
+
+    const log = card('What arrived from a device', trail.length
+      ? '<div class="grid-scroll"><table class="grid"><thead><tr>' +
+        '<th>When</th><th>Device</th><th>What</th><th>Instance</th><th>Outcome</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+      : '<p class="muted">Nothing has arrived from a device yet.</p>',
+      { wide: true });
+
+    return who + log;
   }
 
   const SECTIONS = [
