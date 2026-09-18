@@ -344,7 +344,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.notifyOnAttention` | `true` | Tell you when an instance you cannot see is blocked or failed to start |
 | `nikui.interruptOnSingleEscape` | `false` | Interrupt on the first Escape, the way the CLI does |
 | `nikui.statusEmoji` | see below | Emoji per status in tab titles |
-| `nikui.remote.port` | `4517` | Port for the local server, on `127.0.0.1` only; `0` picks a free one |
+| `nikui.remote.port` | `4517` | Port for the local server, on `127.0.0.1` only; `0` picks a free one. A second window takes the next free port rather than refusing |
 | `nikui.remote.autoStart` | `false` | Start that server when the window opens |
 | `nikui.keepAwake` | `false` | Hold this machine awake while an instance needs it |
 | `nikui.notifyDevices` | needs-you, quota, failed | Which things are worth sending to a paired phone |
@@ -739,9 +739,9 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 1089 checks, no dependencies, no network, no CLI
+    npm test             # 1131 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
-    npm run test:remote  # 60 checks driving the served client in real browsers,
+    npm run test:remote  # 69 checks driving the served client in real browsers,
                          #   including one the size of a phone and one cold-starting
                          #   with the laptop switched off
     npm run test:qr      # 22 checks reading our QR codes back with Apple's decoder
@@ -763,6 +763,10 @@ asserts no rendered mark carries an inline `style` attribute — the webview's C
 drops those silently, so the charts would come out wrong with nothing in the
 console to say why — and the protocol test fails if a message exists on one side
 of the wire and not the other.
+
+A check that cannot run says so loudly rather than printing a pass — and
+`NIKUI_REQUIRE_CHECKS=1` turns a skip into a failure, for anywhere that has no
+excuse for missing a browser.
 
 `npm run test:webview` and `npm run test:remote` are the two checks that need a
 browser. The first serves the real panel HTML with the real `media/*.js`, posts
