@@ -652,11 +652,13 @@ ${this.appHead(nonce)}</head>
     this.clients.add(client);
     if (head && head.length) client.framer.push(head);
 
-    // This machine's own browser already carries the key; it does not have to
-    // sign for a seat it could simply take by opening the editor.
-    const local = this.gate.http(req, { loopbackHost: this.isLoopbackHost(req) });
-    if (local.ok) client.welcome(localDevice(), null);
-    else client.challenge(this.gate);
+    // Everyone is challenged, including this machine's own browser holding the
+    // key. It does not have to sign — a seat it could take by opening the editor
+    // is not worth proving — but the challenge goes out anyway, so that a client
+    // which *can* prove things is never seated without being asked to. A welcome
+    // that arrives unprompted is then always somebody skipping the question.
+    client.allowLocal = this.gate.http(req, { loopbackHost: this.isLoopbackHost(req) }).ok;
+    client.challenge(this.gate);
   }
 
   /** Plug an authorised socket into whatever it asked for. */
@@ -797,9 +799,9 @@ class RemoteClient {
     this.server.seat(this);
   }
 
-  deny(reason) {
+  deny(reason, extra) {
     this.log(`${this.id} denied: ${reason}`);
-    this.post({ type: '@denied', reason });
+    this.post(Object.assign({ type: '@denied', reason }, extra || null));
     this.close(wire.CLOSE.POLICY, reason);
   }
 
@@ -833,7 +835,18 @@ class RemoteClient {
     // answer to it. Everything else is dropped rather than queued.
     if (!this.device) {
       if (msg.type !== '@auth') return;
+      // A client with nothing to prove says so, and is seated only if the key it
+      // arrived with was good. One that offers a device must be that device.
+      if (!msg.device) {
+        // Nothing to prove and no key either: the one refusal that has an
+        // obvious next step, so it is offered rather than left to be guessed.
+        if (!this.allowLocal) return this.deny('this device is not paired', { pair: true });
+        return this.welcome(localDevice(), this.gate.localWelcome(this.pending, msg));
+      }
       const verdict = this.gate.answer(this.pending, msg, { address: this.address });
+      if (!verdict.ok && this.allowLocal) {
+        return this.welcome(localDevice(), this.gate.localWelcome(this.pending, msg));
+      }
       if (!verdict.ok) return this.deny(verdict.reason);
       return this.welcome(verdict.device, verdict.welcome);
     }

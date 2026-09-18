@@ -80,6 +80,24 @@ class Gate {
     return this.localKey.check(req, context);
   }
 
+
+  /**
+   * The welcome for a client that had nothing to prove — this machine's own
+   * browser, holding the key. It is signed like any other, because a client
+   * should never have to decide whether an unsigned welcome is allowed: the
+   * answer is always no.
+   */
+  localWelcome(state, message) {
+    const theirs = (message && String(message.nonce || '')) || '';
+    return {
+      type: '@welcome',
+      device: localDevice(),
+      signature: this.identity && theirs && state
+        ? this.identity.sign(`nikui-host:${theirs}:${state.nonce}`)
+        : null
+    };
+  }
+
   /** The opening move: a nonce this server will expect signed. */
   challenge() {
     return {

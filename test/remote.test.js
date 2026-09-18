@@ -56,6 +56,19 @@ function request(options) {
   });
 }
 
+/**
+ * The handshake, from a client's side. Everyone is challenged now — a client
+ * with nothing to prove says exactly that, and is seated on the key it arrived
+ * with, which is what stops an unprompted welcome from meaning anything.
+ */
+async function signIn(client, device) {
+  const challenge = await client.waitFor('@challenge');
+  client.send(device
+    ? await device.answer(challenge, device.id)
+    : { type: '@auth', device: null, nonce: 'a-nonce-from-a-client-with-nothing-to-prove' });
+  return { challenge, welcome: await client.waitFor('@welcome') };
+}
+
 module.exports = async function () {
   const first = quietSession('alpha');
   const second = quietSession('beta');
@@ -193,8 +206,11 @@ module.exports = async function () {
   suite('a socket from this machine needs no ceremony');
 
   const mine = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`, { headers: cookie });
-  const welcome = await mine.waitFor('@welcome');
-  checkEqual('the key in the cookie is enough', welcome.device.kind, 'local');
+  const { welcome, challenge: asked } = await signIn(mine);
+  check('even this machine is asked to say who it is', !!asked.nonce);
+  checkEqual('the key in the cookie is the answer', welcome.device.kind, 'local');
+  check('and the laptop signs its own welcome anyway, so nothing is ever unproven',
+    typeof welcome.signature === 'string' && welcome.signature.length > 40);
   check('and it may steer', welcome.device.control === true);
   mine.send({ type: 'ready' });
   const init = await mine.waitFor('init');
@@ -222,6 +238,13 @@ module.exports = async function () {
   check('a device nobody paired is refused', /not paired/.test(unknown.reason));
   await stranger.waitClosed();
   check('and the socket goes with it', !!stranger.closed);
+
+  const unproven = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`);
+  await unproven.waitFor('@challenge');
+  unproven.send({ type: '@auth', device: null, nonce: 'no-key-either' });
+  const refusedOutright = await unproven.waitFor('@denied');
+  check('a client with no key and nothing to prove is refused', /not paired/.test(refusedOutright.reason));
+  await unproven.waitClosed();
 
   suite('pairing a device');
 
@@ -327,9 +350,7 @@ module.exports = async function () {
   suite('a paired device can watch');
 
   const watcher = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`);
-  const ask = await watcher.waitFor('@challenge');
-  watcher.send(await phone.answer(ask, phone.id));
-  const seated = await watcher.waitFor('@welcome');
+  const { welcome: seated } = await signIn(watcher, phone);
   checkEqual('the right signature gets a seat', seated.device.name, 'Test phone');
   checkEqual('read-only, because that is what pairing grants', seated.device.control, false);
   watcher.send({ type: 'ready' });
@@ -381,7 +402,7 @@ module.exports = async function () {
   suite('the window as a list');
 
   const fleet = await ws.connect(`ws://127.0.0.1:${port}/socket`, { headers: cookie });
-  await fleet.waitFor('@welcome');
+  await signIn(fleet);
   fleet.send({ type: 'ready' });
   const listed = await fleet.waitFor('fleet');
   checkEqual('every instance is listed', listed.instances.length, 2);
@@ -394,7 +415,7 @@ module.exports = async function () {
   suite('a socket that misbehaves is not fatal');
 
   const rude = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${second.id}`, { headers: cookie });
-  await rude.waitFor('@welcome');
+  await signIn(rude);
   rude.writeRaw(wire.encodeText('unmasked, which a client may never send'));
   const shut = await rude.waitClosed();
   checkEqual('a frame that breaks the rules closes that socket', shut.code, wire.CLOSE.PROTOCOL);

@@ -40,6 +40,7 @@
     let seated = false;       // the handshake is done and this socket may talk
     let stopped = null;       // a refusal worth showing instead of retrying
     let expecting = null;     // the nonces this device is waiting to see signed
+    let paired = false;       // this device has an identity, so it must verify
 
     function url() {
       const at = new URL(config.socket || '/socket', window.location.href);
@@ -93,11 +94,15 @@
         return true;
       }
       if (message.type === '@welcome') {
-        // On this machine the cookie settled it and there is nothing to check.
-        // Anywhere else, the laptop has to have signed for the key this device
-        // pinned — over the nonce this device chose — before anything is said
-        // to it. A welcome nobody can prove is a welcome from anybody.
-        if (!expecting) return seat(message);
+        // A welcome that nobody was asked for is somebody skipping the question.
+        // The only client allowed to accept one is a browser with no identity to
+        // prove — which cannot be lied to about a laptop it never pinned.
+        if (!expecting) {
+          if (!paired) return seat(message);
+          stopped = 'unproven laptop';
+          show('off', 'This is not the laptop this device paired with');
+          return true;
+        }
         const awaited = expecting;
         expecting = null;
         window.nikDevice.load().then(function (record) {
@@ -147,19 +152,22 @@
 
     function answer(challenge) {
       if (!window.nikDevice || !window.nikDevice.available()) {
-        stopped = 'no device key';
-        show('off', 'This device is not paired');
+        // No Web Crypto here at all, so no identity is possible: the only way
+        // in is the key this page arrived with, and the server decides.
+        paired = false;
+        send({ type: '@auth', device: null, nonce: randomNonce() });
         return;
       }
       window.nikDevice.load().then(function (record) {
         if (!record || !record.id) {
-          stopped = 'not paired';
-          show('off', 'This device is not paired');
-          window.dispatchEvent(new MessageEvent('message', {
-            data: { type: '@denied', reason: 'This device is not paired.', pair: true }
-          }));
+          // Nothing to prove: say so, and let the server decide whether the key
+          // this page arrived with is enough.
+          // A nonce even so, so the laptop signs this welcome like any other.
+          paired = false;
+          send({ type: '@auth', device: null, nonce: randomNonce() });
           return;
         }
+        paired = true;
         // Pinning, from this side: the laptop that answers has to be the one
         // this device paired with, not merely something at the same address.
         if (record.fingerprint && challenge.fingerprint && record.fingerprint !== challenge.fingerprint) {
