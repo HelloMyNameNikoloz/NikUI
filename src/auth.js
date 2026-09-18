@@ -5,15 +5,25 @@ const crypto = require('crypto');
 /**
  * Who is allowed to talk to the local server.
  *
- * Today there is one answer: whoever holds the key this window minted, which is
- * only a defensible answer because the listener is bound to loopback and the key
- * never leaves this machine. It is a lock on a door inside the house.
+ * Two kinds of caller, and they are told apart on purpose:
  *
- * It is written as a seam rather than an `if` because the real answer — a paired
- * device proving possession of a private key it cannot export — replaces this
- * object wholesale and nothing else should have to change. Anything with
- * `check(req)` can be the gate.
+ *  - **this machine**, holding the key the window minted. That is only a
+ *    defensible credential because the listener is bound to loopback — it is a
+ *    lock on a door inside the house — so it is refused the moment a request
+ *    looks like it came through something else.
+ *  - **a paired device**, which proves on every connection that it still holds
+ *    the private key it paired with. No long-lived token exists to leak, and a
+ *    stolen URL is worth nothing on a device that cannot sign.
+ *
+ * The server also proves itself in the same exchange, signing the device's
+ * nonce with the key whose fingerprint the device pinned when it paired. That
+ * is what stops something else on the network answering to this address later.
  */
+
+// A device has ten seconds to answer the challenge; a browser takes a few
+// milliseconds, and anything slower is not waiting on arithmetic.
+const CHALLENGE_MS = 10000;
+
 class LocalKey {
   constructor(key) {
     // 256 bits, new every time the server starts, so a key that leaks into a
@@ -26,12 +36,106 @@ class LocalKey {
    * @returns {{ok: true, device: object} | {ok: false, status: number, reason: string}}
    */
   check(req) {
+    // A request that has been through a proxy is not this machine talking to
+    // itself, whatever the socket says. When the tunnel lands, everything it
+    // forwards arrives from 127.0.0.1 — this is the line that keeps the local
+    // key from quietly becoming a remote one.
+    if (forwarded(req)) return { ok: false, status: 403, reason: 'the local key is not for forwarded requests' };
     const offered = presentedKey(req);
     if (!offered) return { ok: false, status: 401, reason: 'no key' };
     if (!sameSecret(offered, this.key)) return { ok: false, status: 403, reason: 'wrong key' };
+    return { ok: true, device: localDevice() };
+  }
+}
+
+const localDevice = () => ({
+  id: 'local',
+  name: 'This machine',
+  kind: 'local',
+  control: true
+});
+
+/**
+ * The gate a socket has to get through: the local key, or a device signature.
+ */
+class Gate {
+  constructor(deps) {
+    this.localKey = deps.localKey || new LocalKey();
+    this.devices = deps.devices || null;
+    this.identity = deps.identity || null;
+    this.now = deps.now || (() => Date.now());
+  }
+
+  get key() {
+    return this.localKey.key;
+  }
+
+  /** For an HTTP request that carries real data rather than the empty shell. */
+  http(req) {
+    return this.localKey.check(req);
+  }
+
+  /** The opening move: a nonce this server will expect signed. */
+  challenge() {
+    return {
+      nonce: crypto.randomBytes(32).toString('base64url'),
+      at: this.now()
+    };
+  }
+
+  challengeMessage(state) {
+    return {
+      type: '@challenge',
+      nonce: state.nonce,
+      // Sent every time so a device can check it is still talking to the laptop
+      // it paired with, rather than to whatever now answers on this address.
+      serverKey: this.identity ? this.identity.publicKeySpki : null,
+      fingerprint: this.identity ? this.identity.fingerprint : null
+    };
+  }
+
+  /**
+   * The device's answer. It signs the server's nonce together with one of its
+   * own, and the server signs the pair back — so neither side can be replayed
+   * at the other.
+   *
+   * @returns {{ok: true, device: object, welcome: object} | {ok: false, reason: string}}
+   */
+  answer(state, message, context) {
+    const ctx = context || {};
+    if (!state || !state.nonce) return { ok: false, reason: 'nothing was challenged' };
+    if (this.now() - state.at > CHALLENGE_MS) return { ok: false, reason: 'took too long to answer' };
+    if (!message || typeof message !== 'object') return { ok: false, reason: 'no answer' };
+
+    const id = String(message.device || '');
+    const theirNonce = String(message.nonce || '');
+    if (!id || !theirNonce || theirNonce.length < 16) return { ok: false, reason: 'incomplete answer' };
+    if (!this.devices) return { ok: false, reason: 'no devices are paired' };
+
+    const device = this.devices.get(id);
+    if (!device) return { ok: false, reason: 'this device is not paired' };
+
+    const signed = `nikui-auth:${state.nonce}:${theirNonce}`;
+    if (!this.devices.verify(id, signed, message.signature)) {
+      return { ok: false, reason: 'that signature is not this device' };
+    }
+
+    this.devices.touch(id, ctx.address || null);
+    const seat = {
+      id: device.id,
+      name: device.name,
+      kind: 'device',
+      control: !!device.control
+    };
     return {
       ok: true,
-      device: { id: 'local', name: 'This machine', control: true, pairedAt: null }
+      device: seat,
+      welcome: {
+        type: '@welcome',
+        device: seat,
+        // The server's half of the proof, over the device's nonce.
+        signature: this.identity ? this.identity.sign(`nikui-host:${theirNonce}:${state.nonce}`) : null
+      }
     };
   }
 }
@@ -61,6 +165,13 @@ function cookie(req, name) {
   return null;
 }
 
+/** Whether anything in the request says it has been through a proxy. */
+function forwarded(req) {
+  const headers = (req && req.headers) || {};
+  return !!(headers['x-forwarded-for'] || headers['x-forwarded-host'] ||
+    headers['x-forwarded-proto'] || headers.forwarded || headers['x-real-ip']);
+}
+
 /**
  * Constant time, and constant length: comparing digests rather than the secrets
  * means a wrong guess leaks neither which byte was wrong nor how long the key is.
@@ -71,4 +182,4 @@ function sameSecret(a, b) {
   return crypto.timingSafeEqual(one, two);
 }
 
-module.exports = { LocalKey, sameSecret, presentedKey, cookie };
+module.exports = { LocalKey, Gate, localDevice, sameSecret, presentedKey, cookie, forwarded, CHALLENGE_MS };
