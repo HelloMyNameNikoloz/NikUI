@@ -3,7 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { renderPage, randomNonce } = require('./page');
+const { renderPage, randomNonce, jsonForScript } = require('./page');
 const { Gate, LocalKey, localDevice } = require('./auth');
 const wire = require('./wire');
 
@@ -82,6 +82,7 @@ class RemoteServer {
     this.fleetClients = new Set();
     this.seq = 0;
     this.refusals = [];
+    this.attempts = new Map();
     this.stopWatching = null;
     this.stateWatchers = new Set();
 
@@ -143,7 +144,7 @@ class RemoteServer {
     if (this.listening) return Promise.resolve(this);
     const server = http.createServer((req, res) => {
       this.handle(req, res).catch((err) => {
-        this.log('request failed: ' + (err && err.message));
+        this.log('request failed: ' + ((err && err.stack) || err));
         if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' });
         res.end('NikUI: something went wrong');
       });
@@ -237,6 +238,32 @@ class RemoteServer {
     return null;
   }
 
+  /**
+   * Pairing and subscribing are deliberate, occasional acts. Neither the code
+   * nor the signature can be guessed at, so this is not what stops an attack —
+   * it is what stops a mistake or a loop from being answered ten thousand times.
+   */
+  allowAttempt(req, kind) {
+    const now = Date.now();
+    const address = (req.socket && req.socket.remoteAddress) || 'unknown';
+    const key = kind + ':' + address;
+    const seen = this.attempts.get(key) || [];
+    const recent = seen.filter((at) => now - at < ATTEMPT_WINDOW_MS);
+    if (recent.length >= ATTEMPTS_ALLOWED) {
+      this.attempts.set(key, recent);
+      return false;
+    }
+    recent.push(now);
+    this.attempts.set(key, recent);
+    if (this.attempts.size > 64) {
+      // Nothing here is worth remembering once it has gone quiet.
+      for (const [at, times] of this.attempts) {
+        if (!times.some((time) => now - time < ATTEMPT_WINDOW_MS)) this.attempts.delete(at);
+      }
+    }
+    return true;
+  }
+
   refuse(req, why) {
     const entry = { at: Date.now(), url: String((req && req.url) || ''), why };
     this.refusals.push(entry);
@@ -294,7 +321,14 @@ class RemoteServer {
     // The shell carries no data, so an unpaired device gets markup and nothing
     // else. Which instance it is for — and whether that instance still exists —
     // is a matter for the socket.
-    if (route.startsWith('/s/')) return this.serveClient(req, res, route);
+    if (route.startsWith('/s/')) {
+      const id = route.slice(3);
+      // An id is a name this window made, and nothing else is one. Refusing the
+      // rest here means no part of a URL somebody else chose is ever put into a
+      // page — the check below this is the belt, and this is the braces.
+      if (!SESSION_ID.test(id)) return plain(res, 404, 'No such instance');
+      return this.serveClient(req, res, id);
+    }
     return plain(res, 404, 'No such page');
   }
 
@@ -317,18 +351,17 @@ ${this.appHead(nonce)}</head>
   </header>
   <p class="lede" id="lede">Connecting&hellip;</p>
   <div class="rows" id="rows"></div>
-  <script nonce="${nonce}">window.NIKUI_REMOTE = ${JSON.stringify({ session: null, socket: '/socket' })};</script>
+  <script nonce="${nonce}">window.NIKUI_REMOTE = ${jsonForScript({ session: null, socket: '/socket' })};</script>
   <script nonce="${nonce}" src="/media/device.js"></script>
   <script nonce="${nonce}" src="/media/transport.js"></script>
   <script nonce="${nonce}" src="/media/home.js"></script>
 </body>
 </html>`;
-    return html(res, page);
+    return html(res, page, this.csp(req, nonce));
   }
 
   /** The client itself: the same page the webview gets, with no data in it. */
-  serveClient(req, res, route) {
-    const id = route.startsWith('/s/') ? route.slice(3) : null;
+  serveClient(req, res, id) {
     const nonce = randomNonce();
     const page = renderPage({
       asset: (file) => '/media/' + file,
@@ -343,7 +376,7 @@ ${this.appHead(nonce)}</head>
         socket: '/socket' + (id ? '?session=' + encodeURIComponent(id) : '')
       })};`
     });
-    return html(res, page);
+    return html(res, page, this.csp(req, nonce));
   }
 
   serveWorker(res) {
@@ -378,6 +411,10 @@ ${this.appHead(nonce)}</head>
    * without anything else having to remember to.
    */
   async subscribe(req, res) {
+    if (!this.allowAttempt(req, 'subscribe')) {
+      this.refuse(req, 'too many subscription attempts');
+      return json(res, 429, { error: 'too many attempts — wait a minute' });
+    }
     let body;
     try { body = await readJson(req); } catch (err) {
       this.refuse(req, 'bad subscription body: ' + err.message);
@@ -386,11 +423,20 @@ ${this.appHead(nonce)}</head>
     if (!this.devices) return json(res, 503, { error: 'this window has no devices' });
 
     const endpoint = String(body.endpoint || '');
-    if (!/^https:\/\/[^\s]+$/.test(endpoint)) return json(res, 400, { error: 'that is not an endpoint' });
+    if (!isPushEndpoint(endpoint)) {
+      this.refuse(req, 'push endpoint is not a push service: ' + endpoint.slice(0, 120));
+      return json(res, 400, { error: 'that is not a push service' });
+    }
     if (!body.keys || !body.keys.p256dh || !body.keys.auth) return json(res, 400, { error: 'no keys' });
 
-    // Signed, so a subscription cannot be filed against somebody else's device.
-    if (!this.devices.verify(String(body.device || ''), 'nikui-push:' + endpoint, body.signature)) {
+    // Signed over the endpoint and a time, so a subscription cannot be filed
+    // against somebody else's device and a captured body is not good forever.
+    const at = Number(body.at || 0);
+    if (!at || Math.abs(Date.now() - at) > SUBSCRIBE_WINDOW_MS) {
+      this.refuse(req, 'push subscription is from another time');
+      return json(res, 403, { error: 'that subscription is too old to accept' });
+    }
+    if (!this.devices.verify(String(body.device || ''), `nikui-push:${at}:${endpoint}`, body.signature)) {
       this.refuse(req, 'push subscription was not signed by that device');
       return json(res, 403, { error: 'that signature is not this device' });
     }
@@ -434,7 +480,7 @@ ${this.appHead(nonce)}</head>
   <script nonce="${nonce}" src="/media/pair.js"></script>
 </body>
 </html>`;
-    return html(res, page);
+    return html(res, page, this.csp(req, nonce));
   }
 
   /**
@@ -444,6 +490,10 @@ ${this.appHead(nonce)}</head>
    * and a signature that has to be over that exact code.
    */
   async pair(req, res) {
+    if (!this.allowAttempt(req, 'pair')) {
+      this.refuse(req, 'too many pairing attempts');
+      return json(res, 429, { error: 'too many attempts — wait a minute' });
+    }
     let body;
     try { body = await readJson(req); } catch (err) {
       this.refuse(req, 'bad pairing body: ' + err.message);
@@ -523,9 +573,12 @@ ${this.appHead(nonce)}</head>
   }
 
   /**
-   * A file from media/, and nothing else. The path is resolved and then checked
-   * to be inside that directory, so `..` and symlinks both end up outside it and
-   * are refused rather than reasoned about.
+   * A file from media/, and nothing else.
+   *
+   * Two checks, because one is not enough. `path.resolve` is lexical: it settles
+   * `..` but knows nothing about symlinks, so the resolved path is then resolved
+   * again on the disk and checked a second time. Only then is the extension
+   * consulted, and only a handful of them are servable at all.
    */
   serveAsset(res, name) {
     const dir = path.join(this.root, 'media');
@@ -535,6 +588,14 @@ ${this.appHead(nonce)}</head>
     const type = ASSET_TYPES[path.extname(file).toLowerCase()];
     if (!type) return plain(res, 403, 'Not a servable type');
 
+    fs.realpath(file, (err, real) => {
+      if (err) return plain(res, 404, 'No such file');
+      if (real !== dir && !real.startsWith(dir + path.sep)) return plain(res, 403, 'Outside media');
+      this.readAsset(res, real, type);
+    });
+  }
+
+  readAsset(res, file, type) {
     fs.readFile(file, (err, body) => {
       if (err) return plain(res, 404, 'No such file');
       res.writeHead(200, {
@@ -857,14 +918,48 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function html(res, body) {
-  res.writeHead(200, {
+function html(res, body, csp) {
+  res.writeHead(200, Object.assign({
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer'
-  });
+  }, csp ? { 'content-security-policy': csp } : null));
   res.end(body);
 }
 
-module.exports = { RemoteServer, RemoteClient, MAX_SOCKETS, PING_MS };
+/** The shape of an id this window makes: see nextId() in session.js. */
+const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+// A subscription is only accepted for a minute after the device signed for it.
+const SUBSCRIBE_WINDOW_MS = 60000;
+
+// How often one address may try to pair or subscribe before being told to wait.
+const ATTEMPT_WINDOW_MS = 60000;
+const ATTEMPTS_ALLOWED = 12;
+
+/**
+ * The push services a browser can actually hand back.
+ *
+ * Without this, a paired device — including one that may only watch — could
+ * name any host it liked and have this laptop POST to it on every notification,
+ * which is a hole in the shape of a proxy into whatever the laptop can reach.
+ */
+const PUSH_SERVICES = [
+  'push.apple.com',
+  'fcm.googleapis.com',
+  'android.googleapis.com',
+  'push.services.mozilla.com',
+  'notify.windows.com',
+  'push.windows.com'
+];
+
+function isPushEndpoint(endpoint) {
+  let url;
+  try { url = new URL(endpoint); } catch (_) { return false; }
+  if (url.protocol !== 'https:') return false;
+  const host = url.hostname.toLowerCase();
+  return PUSH_SERVICES.some((service) => host === service || host.endsWith('.' + service));
+}
+
+module.exports = { RemoteServer, RemoteClient, isPushEndpoint, MAX_SOCKETS, PING_MS, PUSH_SERVICES };

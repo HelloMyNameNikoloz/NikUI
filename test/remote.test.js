@@ -123,6 +123,34 @@ module.exports = async function () {
   check('which is not readable by script', /HttpOnly/.test(String(handed.headers['set-cookie'])));
   check('and is not sent to other sites', /SameSite=Strict/.test(String(handed.headers['set-cookie'])));
 
+  suite('and nowhere but loopback, whatever else this machine has');
+
+  // The issue this answers is "confirm the server cannot be reached other than
+  // through loopback, on a machine with several interfaces" — so it asks the
+  // machine what interfaces it has and tries every one of them.
+  const os = require('os');
+  const interfaces = [];
+  for (const [name, addresses] of Object.entries(os.networkInterfaces())) {
+    for (const address of addresses || []) {
+      if (address.internal || address.family !== 'IPv4') continue;
+      interfaces.push({ name, address: address.address });
+    }
+  }
+  const reachable = [];
+  for (const where of interfaces) {
+    const open = await new Promise((resolve) => {
+      const socket = require('net').connect({ host: where.address, port, timeout: 800 });
+      socket.on('connect', () => { socket.destroy(); resolve(true); });
+      socket.on('error', () => resolve(false));
+      socket.on('timeout', () => { socket.destroy(); resolve(false); });
+    });
+    if (open) reachable.push(where.name + ' (' + where.address + ')');
+  }
+  checkEqual('no other address on this machine answers', reachable, []);
+  check('and there was at least one to try, or this proves nothing',
+    interfaces.length > 0 || process.env.CI === 'true');
+  checkEqual('the socket says the same', server.server.address().address, '127.0.0.1');
+
   suite('and it is an app you can install');
 
   const manifest = await get(port, '/manifest.webmanifest');
@@ -235,34 +263,66 @@ module.exports = async function () {
 
   suite('and can ask to be told when it is not looking');
 
-  const endpoint = 'https://push.example.com/send/' + phone.id;
+  const endpoint = 'https://web.push.apple.com/send/' + phone.id;
+  const now = Date.now();
   const unsigned = await request({
     port, method: 'POST', path: '/push/subscribe',
-    body: { device: phone.id, endpoint, keys: { p256dh: 'x', auth: 'y' }, signature: 'nope' }
+    body: { device: phone.id, endpoint, at: now, keys: { p256dh: 'x', auth: 'y' }, signature: 'nope' }
   });
   checkEqual('a subscription nobody signed for is refused', unsigned.status, 403);
 
   const notMine = await request({
     port, method: 'POST', path: '/push/subscribe',
     body: {
-      device: phone.id, endpoint, keys: { p256dh: 'x', auth: 'y' },
-      signature: await phone.sign('nikui-push:https://push.example.com/send/somebody-else')
+      device: phone.id, endpoint, at: now, keys: { p256dh: 'x', auth: 'y' },
+      signature: await phone.sign(`nikui-push:${now}:https://web.push.apple.com/send/somebody-else`)
     }
   });
   checkEqual('and so is one signed for a different endpoint', notMine.status, 403);
+
+  const elsewhere = 'https://internal.example.corp/steal';
+  const offSite = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: {
+      device: phone.id, endpoint: elsewhere, at: now, keys: { p256dh: 'x', auth: 'y' },
+      signature: await phone.sign(`nikui-push:${now}:${elsewhere}`)
+    }
+  });
+  checkEqual('an endpoint that is not a push service is refused, however well signed',
+    offSite.status, 400);
+
+  const stale = Date.now() - 600000;
+  const captured = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: {
+      device: phone.id, endpoint, at: stale, keys: { p256dh: 'x', auth: 'y' },
+      signature: await phone.sign(`nikui-push:${stale}:${endpoint}`)
+    }
+  });
+  checkEqual('and a body captured earlier is too old to use', captured.status, 403);
 
   const subscribed = await request({
     port, method: 'POST', path: '/push/subscribe',
     body: {
       device: phone.id, endpoint,
+      at: Date.now(),
       keys: { p256dh: 'BPa6q2n8dFhO8Yd5lHjLgL0kq8i8nqFQlHZ8p6y5v3hYpXsS1bF7oB2aQ0Zq1nGp8wJ2r6xS9cB7nT4uV5wX6yZ', auth: 'c29tZS1hdXRoLXNlY3JldA' },
-      signature: await phone.sign('nikui-push:' + endpoint)
+      signature: await phone.sign(`nikui-push:${Date.now()}:${endpoint}`)
     }
   });
   checkEqual('one the device signed for is kept', subscribed.status, 200);
   checkEqual('against that device, and no second list to forget',
     devices.get(phone.id).push.endpoint, endpoint);
   checkEqual('so it is one of the subscribers', devices.subscribers().length, 1);
+
+  suite('and pairing is not something to sit and hammer at');
+
+  let lastAttempt = null;
+  for (let i = 0; i < 14; i++) {
+    lastAttempt = await request({ port, method: 'POST', path: '/pair', body: { code: 'NOPENOPE' } });
+  }
+  checkEqual('an address that keeps trying is told to wait', lastAttempt.status, 429);
+  check('and it is written down', server.refusals.some((r) => /too many/.test(r.why)));
 
   suite('a paired device can watch');
 

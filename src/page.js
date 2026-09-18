@@ -1,5 +1,7 @@
 'use strict';
 
+const crypto = require('crypto');
+
 /**
  * The page, once, for every host that serves it.
  *
@@ -111,12 +113,33 @@ ${scripts}
 </html>`;
 }
 
-/** A nonce for the scripts, so no page ever needs 'unsafe-inline'. */
+/**
+ * A nonce for the scripts, so no page ever needs 'unsafe-inline'.
+ *
+ * From the cryptographic generator, never Math.random(). This value is the only
+ * thing that decides whether a script on one of these pages runs, and V8's
+ * Math.random is a 128-bit xorshift whose state is recoverable from a handful of
+ * outputs — and these pages are served to anyone who asks for one, precisely
+ * because they carry no data. Predictable here means "injected markup executes".
+ */
 function randomNonce() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let out = '';
-  for (let i = 0; i < 32; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
+  return crypto.randomBytes(18).toString('base64url');
 }
 
-module.exports = { renderPage, randomNonce, SCRIPTS };
+/**
+ * JSON on its way into a <script> element.
+ *
+ * `JSON.stringify` escapes quotes and backslashes and nothing else, so a value
+ * containing `</script>` closes the element and everything after it is markup.
+ * Escaping the angle brackets — and the two line separators that are newlines
+ * to a JavaScript parser but not to JSON — is what makes the value data again.
+ */
+function jsonForScript(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+module.exports = { renderPage, randomNonce, jsonForScript, SCRIPTS };
