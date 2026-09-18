@@ -77,6 +77,18 @@ async function launch(binary) {
       });
       await call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     },
+    /** What the browser should claim about the reader's preferences. */
+    prefers: async (features) => {
+      await call('Emulation.setEmulatedMedia', {
+        features: Object.entries(features || {}).map(([name, value]) => ({ name, value }))
+      });
+    },
+    /** A different shape of screen, for the layouts that are not a phone. */
+    asScreen: async (width, height) => {
+      await call('Emulation.setDeviceMetricsOverride', {
+        width, height, deviceScaleFactor: 2, mobile: false
+      });
+    },
     navigate: async (url) => {
       await call('Page.navigate', { url });
       // Polling beats waiting on a load event: it is the same answer, and it

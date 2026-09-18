@@ -130,6 +130,39 @@ module.exports = async function () {
   for (let i = 0; i < 200; i++) codes.add(new PairingWindow().start({}).code);
   checkEqual('every code is a new one', codes.size, 200);
 
+  suite('the invitation, in the two forms a camera can hand on');
+
+  // Pairing is meant to be pointing a phone at a laptop. A phone's own camera
+  // reads a square and offers to open what is in it — so what is in it decides
+  // whether that lands in the app or in a browser, and the laptop offers both.
+  const inviting = new PairingWindow();
+  inviting.start({
+    host: 'laptop.tail1234.ts.net', scheme: 'https',
+    fingerprint: 'a-fingerprint', laptop: 'My laptop'
+  });
+  const invitation = inviting.state();
+
+  check('a browser is given an ordinary address',
+    invitation.link.indexOf('https://laptop.tail1234.ts.net/pair#') === 0);
+  check('and the app a scheme of its own',
+    invitation.appLink.indexOf('nikui://pair#') === 0);
+
+  const secret = (link) => new URLSearchParams(link.slice(link.indexOf('#') + 1));
+  checkEqual('both carry the same code', secret(invitation.appLink).get('c'), invitation.code);
+  checkEqual('and the same key to pin', secret(invitation.appLink).get('f'), 'a-fingerprint');
+  checkEqual('and name the laptop, so the phone can ask about it by name',
+    secret(invitation.appLink).get('n'), 'My laptop');
+  checkEqual('the app is told where to go, since its link has no address of its own',
+    secret(invitation.appLink).get('h'), 'laptop.tail1234.ts.net');
+  checkEqual('and how to get there', secret(invitation.appLink).get('s'), 'https');
+
+  check('neither puts the code anywhere a server would see it',
+    invitation.link.split('#')[0].indexOf(invitation.code) < 0 &&
+    invitation.appLink.split('#')[0].indexOf(invitation.code) < 0);
+
+  const closedUp = new PairingWindow();
+  checkEqual('with no window open there is nothing to hand out', closedUp.appLink(), null);
+
   suite('the whole exchange, as the phone does it');
 
   // Node's WebCrypto on one side, the host's verify on the other: two

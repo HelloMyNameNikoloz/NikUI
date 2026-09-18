@@ -160,7 +160,7 @@ function homePage() {
     body: `  <header class="bar">
     <span class="bar-title">Instances</span>
     <div class="bar-right">
-      <div class="link" id="link" hidden></div>
+      <div class="link" id="link" role="status" aria-live="polite" hidden></div>
       <button class="bar-button" id="to-settings" aria-label="Settings"></button>
     </div>
   </header>
@@ -177,12 +177,28 @@ function connectPage() {
     file: 'connect.html',
     title: 'Connect',
     cls: 'connect',
-    body: `  <main class="screen welcome">
+    body: `  <main class="screen welcome" id="screen">
     <div class="mark" id="mark"></div>
     <h1 id="headline">Connect to your laptop</h1>
-    <p class="lede" id="lede">Open <strong>NikUI: Pair a device</strong> in VS Code. It shows a code and an address.</p>
+    <p class="lede" id="lede">Two steps, and the second one is pointing this phone at a screen.</p>
 
-    <form class="pane" id="form" autocomplete="off">
+    <!-- What somebody sees first: what to do, in order, with nothing to fill in.
+         Scanning the code opens this app with everything already in it, so the
+         fields below are the fallback rather than the way. -->
+    <ol class="steps" id="steps">
+      <li><span>1</span><p>On your laptop, run <strong>NikUI: Pair a device</strong>.</p></li>
+      <li><span>2</span><p>Point this phone's camera at the square it shows.</p></li>
+    </ol>
+
+    <!-- Arrived by scanning: everything is known, so there is one thing to do. -->
+    <div class="pane invited" id="invited" hidden>
+      <p class="invited-from" id="invited-from">your laptop</p>
+      <p class="invited-where" id="invited-where"></p>
+      <button class="primary" id="accept" type="button">Pair</button>
+      <button class="quiet" id="decline" type="button">Not now</button>
+    </div>
+
+    <form class="pane" id="form" autocomplete="off" hidden>
       <label class="field">
         <span class="field-label">Address</span>
         <input id="host" type="text" inputmode="url" autocapitalize="none" autocorrect="off"
@@ -201,7 +217,8 @@ function connectPage() {
       <button class="quiet" id="paste" type="button">Paste a pairing link instead</button>
     </form>
 
-    <p class="note" id="note"></p>
+    <button class="quiet" id="type-instead" type="button">Type the code instead</button>
+    <p class="note" id="note" role="status" aria-live="polite"></p>
     <ul class="terms">
       <li id="held">This device makes a key that never leaves it.</li>
       <li>Pairing lets it <strong>watch</strong>. Sending prompts is a separate permission you grant on the laptop.</li>

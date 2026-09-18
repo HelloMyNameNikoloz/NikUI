@@ -24,7 +24,9 @@
     sealed: null,           // whether this connection is sealed end to end
     showing: null,          // a fingerprint opened up to be read out loud
     notify: null,           // what this phone has been told it may show
-    watching: null          // whether it can keep listening in a pocket
+    watching: null,         // whether it can keep listening in a pocket
+    laptopVersion: null,    // what the laptop is running, as it said on connecting
+    explaining: false       // the one paragraph that says what any of this is
   };
 
   const el = (tag, className, text) => {
@@ -77,6 +79,15 @@
   };
 
   const shortKey = (key) => (key ? String(key).slice(0, 8) + '…' : 'none');
+
+  /** A small physical confirmation that a tap did something. */
+  function buzz(style) {
+    const plugins = app.native();
+    const haptics = plugins && plugins.Haptics;
+    if (!haptics || !haptics.impact) return;
+    const call = haptics.impact({ style: (style || 'light').toUpperCase() });
+    if (call && call.catch) call.catch(function () {});
+  }
 
   /**
    * A fingerprint in chunks a person can read aloud and compare without
@@ -294,15 +305,44 @@
     }
 
     const about = group('About');
+    row(about, {
+      label: 'What is this?',
+      tap: () => { state.explaining = !state.explaining; draw(); },
+      value: state.explaining ? null : 'Read',
+      chevron: !state.explaining
+    });
     row(about, { label: 'App', value: state.version.app, mono: true });
-    row(about, { label: 'Client', value: state.version.client, mono: true,
-      hint: 'The same files the editor’s panel runs' });
+
+    // The app carries its own copy of the client. When the laptop is running a
+    // different one, everything still works until suddenly it does not, and the
+    // symptom is never "the versions differ" — so it is said here, plainly,
+    // rather than left to be worked out.
+    const drifted = state.laptopVersion && state.laptopVersion !== state.version.client;
+    row(about, {
+      label: 'Client', value: state.version.client, mono: true,
+      tone: drifted ? 'warn' : '',
+      hint: drifted
+        ? 'Your laptop is running ' + state.laptopVersion + '. Update the app to match.'
+        : state.laptopVersion
+          ? 'The same version your laptop is running'
+          : 'The same files the editor’s panel runs'
+    });
     row(about, {
       label: 'Copy diagnostics',
       hint: 'Everything on this screen, as text',
       tap: copyDiagnostics,
       chevron: true
     });
+
+    if (state.explaining) {
+      const words = el('p', 'group-note explain');
+      words.textContent = 'NikUI runs Claude Code on your laptop. This app is the same screen the ' +
+        'editor shows, on your phone: you can watch what every instance is doing from anywhere, ' +
+        'and — if you grant it on the laptop — answer and send prompts. Nothing runs on this ' +
+        'phone. It holds a key that proves it is yours, and everything it says is sealed between ' +
+        'the two.';
+      about.parentNode.appendChild(words);
+    }
 
     const danger = group('Undo',
       'Forgetting deletes this device’s key. The laptop keeps its record until you remove it there too.');
@@ -340,6 +380,7 @@
       const message = event.data;
       if (!message || typeof message.type !== 'string') return;
       if (message.type === '@welcome' || message.type === '@device') {
+        if (message.version) state.laptopVersion = message.version;
         state.connection = 'live';
         state.control = message.device ? message.device.control !== false : null;
         state.sealed = !!(transport && transport.sealed && transport.sealed());
@@ -459,13 +500,15 @@
         return;
       }
       api.setPref('on', true);
+      buzz('medium');
       draw();
     });
   }
 
   function copyDiagnostics() {
     const lines = [
-      'NikUI app ' + state.version.app + ' · client ' + state.version.client,
+      'NikUI app ' + state.version.app + ' · client ' + state.version.client +
+        (state.laptopVersion ? ' · laptop ' + state.laptopVersion : ''),
       'laptop: ' + state.where.scheme + '://' + state.where.host,
       'connection: ' + state.connection + (state.health != null ? ' (' + state.health + ' ms)' : ''),
       'sealed: ' + (state.sealed === null ? 'unknown' : state.sealed ? 'end to end' : 'no'),
@@ -512,6 +555,7 @@
     node.dataset.armed = '1';
     node.querySelector('b').textContent = 'Tap again to forget';
     node.classList.add('danger');
+    buzz('heavy');
     setTimeout(() => {
       if (!node.isConnected) return;
       node.dataset.armed = '';

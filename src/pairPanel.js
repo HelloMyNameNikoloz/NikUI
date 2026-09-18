@@ -88,18 +88,32 @@ ${body}
 </html>`;
   }
 
-  codeBody(state) {
-    const code = qr.encode(state.link);
-    const svg = qr.toSvg(code);
-    return `  <main class="pair">
-    <h1>Pair a device</h1>
-    <p class="lede">Point the camera at this, or type the code. It lasts one minute and works once.</p>
-    <div class="qr-frame">
-      <svg class="qr" viewBox="0 0 ${svg.span} ${svg.span}" role="img" aria-label="Pairing code">
+  /** One QR, drawn from whatever it is asked to carry. */
+  qrFor(link, name, hidden) {
+    const svg = qr.toSvg(qr.encode(link));
+    return `      <svg class="qr" id="qr-${name}" viewBox="0 0 ${svg.span} ${svg.span}"
+           role="img" aria-label="Pairing code"${hidden ? ' hidden' : ''}>
         <rect class="qr-bg" width="${svg.span}" height="${svg.span}"></rect>
         <path class="qr-fg" d="${svg.path}"></path>
-      </svg>
+      </svg>`;
+  }
+
+  codeBody(state) {
+    // Two invitations to the same pairing: one a phone's camera hands to the
+    // app, one it hands to a browser. Both are drawn now and one is shown,
+    // because swapping them is a tap rather than a round trip.
+    return `  <main class="pair">
+    <h1>Pair a device</h1>
+    <p class="lede">Point your phone's camera at this. It lasts one minute and works once.</p>
+    <div class="choose" role="tablist" aria-label="What is scanning this">
+      <button class="chosen" id="for-app" role="tab" aria-selected="true">The app</button>
+      <button id="for-browser" role="tab" aria-selected="false">A browser</button>
     </div>
+    <div class="qr-frame">
+${this.qrFor(state.appLink || state.link, 'app', false)}
+${this.qrFor(state.link, 'browser', true)}
+    </div>
+    <p class="how" id="how">Opens NikUI on the phone, already filled in.</p>
     <div class="code" aria-label="Pairing code">${escapeHtml(spaced(state.code))}</div>
     <div class="countdown" id="left" data-until="${state.expiresAt}">&nbsp;</div>
     <p class="where">${escapeHtml(state.link.replace(/#.*$/, ''))}</p>
