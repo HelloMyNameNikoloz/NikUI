@@ -147,15 +147,24 @@ module.exports = async function () {
   check('and a reconnect is queued rather than hammered', clock.length === 1 && clock[0].ms >= 400);
 
   transport.postMessage({ type: 'send', text: 'typed while offline', sent: 'typed while offline', snippets: [] });
+  // Not during the send: the client clears its composer on the line after
+  // postMessage returns, so handing the words back inside that call would mean
+  // handing them straight into the clearing.
+  checkEqual('nothing is handed back while the client is still sending', delivered.length, before);
+  await settle();
   checkEqual('a prompt sent with no socket is refused, not swallowed', delivered.length, before + 1);
-  checkEqual('and the words come straight back to the composer',
+  checkEqual('and the words come back to the composer once it has finished',
     delivered[delivered.length - 1], { type: 'editPrompt', text: 'typed while offline' });
   check('with the reason on screen', /not sent/.test(pill.textContent));
+  await settle();
+  check('and the reason is not overwritten by the connection check behind it',
+    /not sent/.test(pill.textContent));
 
   transport.postMessage({
     type: 'send', text: 'with a photo', sent: 'with a photo', snippets: [],
     attachments: [{ name: 'a.png' }]
   });
+  await settle();
   check('and it says when an image could not be kept', /images dropped/.test(pill.textContent));
 
   suite('and when it comes back');
@@ -266,6 +275,10 @@ module.exports = async function () {
   check('but never longer than a quarter of a minute', waits.every((ms) => ms < 15000));
   check('and the transport still answers', typeof fresh.postMessage === 'function');
 
+  // Anything this transport handed to its own page arrives on a later turn of
+  // the loop, so let those land before taking the page away from underneath it.
+  await settle();
+  await settle();
   delete global.window;
   delete global.document;
   delete global.WebSocket;

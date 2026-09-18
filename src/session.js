@@ -120,7 +120,20 @@ class Session extends EventEmitter {
     this._seq = 0;
     this.replayed = false;
     this.disposed = false;
-    this.queue = [];
+    // A queue can come back from a reload: the prompts in it are typed work,
+    // and the pause they may be waiting on outlives the window too.
+    this.queue = Array.isArray(opts.queue)
+      ? opts.queue.map((q) => ({
+        id: q.id || ('q' + (this._seq++)),
+        text: String(q.text || ''),
+        sent: q.sent || null,
+        snippets: Array.isArray(q.snippets) ? q.snippets : [],
+        // Images are not saved — see SessionManager.persist — so a restored
+        // prompt says it lost them rather than pretending it never had any.
+        attachments: [],
+        lostImages: Number(q.images) || 0
+      }))
+      : [];
     this._drainTimer = null;
     this.contextTokens = 0;
     this.contextWindow = 0;
@@ -221,6 +234,10 @@ class Session extends EventEmitter {
 
   stop() {
     this._setStatus(STATUS.STOPPED);
+    // As pause() and dispose() do: a drain timer outliving the process it was
+    // waiting for is a timer that re-arms itself once a second forever.
+    this._clearDrain();
+    this._abandonRunningTools();
     const proc = this.proc;
     this.proc = null;
     if (!proc) return;
@@ -424,7 +441,12 @@ class Session extends EventEmitter {
   isReadyForQueue() {
     if (this.isPaused) return false;
     if (!this.isRunning || this.isBusy) return false;
-    return !this.items.some((i) => i.kind === 'tool' && i.status !== 'done');
+    // Only a tool that is genuinely still running counts. It used to be "any
+    // tool not marked done", which included tools abandoned by a process that
+    // died mid-turn and tools replayed from a transcript that ends in one —
+    // neither of which will ever finish, so the queue never drained again and
+    // every prompt put in it was silently kept forever.
+    return !this.items.some((i) => i.kind === 'tool' && i.status === 'running');
   }
 
   get queueDelayMs() {
@@ -595,6 +617,8 @@ class Session extends EventEmitter {
       if (!this.autoLabel) this.autoLabel = shortLabel(text);
     }
 
+    // Nothing replayed from a file is in flight, whatever the file ended on.
+    this._abandonRunningTools();
     if (window.length) { this._notice('Restored from the saved transcript.', 'info'); this.emit('meta'); }
     return window.length > 0;
   }
@@ -940,7 +964,24 @@ class Session extends EventEmitter {
       this.lastError = null;
       this._setStatus(STATUS.DONE);
     }
+    this._abandonRunningTools();
     if (this.queue.length) { this._clearDrain(); this._scheduleDrain(); }
+  }
+
+  /**
+   * The turn is over, so nothing is running — whatever the tool items say.
+   *
+   * A tool whose result never arrived is not still working: the CLI has
+   * finished. Leaving it marked `running` spins a spinner forever, keeps the
+   * item out of the trim window, and holds the queue shut.
+   */
+  _abandonRunningTools() {
+    for (const item of this.items) {
+      if (item.kind === 'tool' && item.status === 'running') {
+        item.status = 'stopped';
+        this._touch(item);
+      }
+    }
   }
 
   // Fires when the CLI asks to use a tool under a prompting permission mode.
@@ -983,7 +1024,10 @@ class Session extends EventEmitter {
     if (!this.maxItems || this.items.length <= this.maxItems) return;
     while (this.items.length > this.maxItems) {
       const head = this.items[0];
-      const busy = (head.kind === 'tool' && head.status !== 'done') ||
+      // Live, not merely unfinished: a tool abandoned by a turn that ended is
+      // never going to change again, and one of those at the head used to hold
+      // the whole window open — the cap stopped applying at all.
+      const busy = (head.kind === 'tool' && head.status === 'running') ||
         (head.kind === 'permission' && !head.resolved);
       if (busy) break; // and nothing behind it can go either
       this.items.shift();

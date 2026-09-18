@@ -108,7 +108,10 @@ async function launch(binary) {
 
 async function evaluate(call, expression) {
   const out = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-  if (out.exceptionDetails) throw new Error(String(out.exceptionDetails.text) + ' in: ' + expression);
+  if (out.exceptionDetails) {
+    const thrown = out.exceptionDetails.exception || {};
+    throw new Error((thrown.description || thrown.value || out.exceptionDetails.text) + '\n  in: ' + expression);
+  }
   return out.result ? out.result.value : undefined;
 }
 

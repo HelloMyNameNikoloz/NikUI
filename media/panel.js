@@ -307,13 +307,18 @@
       }
 
       case 'tool': {
-        const running = item.status !== 'done';
+        // Running means running. Anything else is finished, one way or another:
+        // a result, an error, or a turn that ended without either.
+        const running = item.status === 'running';
+        const abandoned = item.status === 'stopped';
         el.className = 'tool' + (item.isError ? ' err' : '');
         const details = el.querySelector('details');
         const open = details ? details.open : false;
         const mark = running ? '<span class="spinner"></span>'
           : (item.isError ? '<span class="cross">' + icon('alert', 13) + '</span>'
-                          : '<span class="tick">' + icon('check', 13) + '</span>');
+            : abandoned ? '<span class="cross" title="This tool never reported back — the turn ended first.">' +
+                icon('alert', 13) + '</span>'
+              : '<span class="tick">' + icon('check', 13) + '</span>');
         let body = '<div class="label">Input</div><pre>' + esc(pretty(item.input)) + '</pre>';
         if (item.result !== undefined && item.result !== '') {
           body += '<div class="label">' + (item.isError ? 'Error' : 'Result') + '</div><pre>' + esc(item.result) + '</pre>';
@@ -515,6 +520,8 @@
         return '<div class="queue-row"><span class="n">' + (i + 1) + '</span>' +
           '<span class="t">' + esc(q.text || '(image only)') + '</span>' +
           (q.images ? '<span class="imgs">' + icon('image', 11) + q.images + '</span>' : '') +
+          (q.lostImages ? '<span class="imgs" title="Images are not saved across a reload — the words came back, the pictures did not.">' +
+            icon('image', 11) + q.lostImages + ' lost</span>' : '') +
           (i > 0 ? '<button class="drop" data-promote="' + esc(q.id) + '" title="Send this one next">' + icon('chevron', 11) + '</button>' : '') +
           '<button class="drop" data-edit="' + esc(q.id) + '" title="Take it back to the composer">' + icon('paperclip', 11) + '</button>' +
           '<button class="drop" data-unqueue="' + esc(q.id) + '" title="Remove">' + icon('x', 11) + '</button></div>';

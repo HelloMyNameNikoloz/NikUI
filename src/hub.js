@@ -383,7 +383,14 @@ class SessionHub {
   }
 
   queueSummary() {
-    return this.session.queue.map((q) => ({ id: q.id, text: q.text, images: q.attachments.length }));
+    return this.session.queue.map((q) => ({
+      id: q.id,
+      text: q.text,
+      images: q.attachments.length,
+      // A prompt that came back from a reload kept its words and lost its
+      // pictures. Saying so beats a chip that claims an image is still there.
+      lostImages: q.lostImages || 0
+    }));
   }
 
   queueMessage() {

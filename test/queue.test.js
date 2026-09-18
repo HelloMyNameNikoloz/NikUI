@@ -3,7 +3,7 @@ const { install } = require('./helpers/vscode-stub.js');
 install();
 const { Session } = require('../src/session.js');
 
-module.exports = function () {
+module.exports = async function () {
   suite('queued prompts');
 
   const s = new Session({ cwd: '/tmp' });
@@ -42,4 +42,56 @@ module.exports = function () {
   check('clearing cancels the countdown', s.drainAt === null);
 
   s.dispose();
+
+  suite('a tool nobody finished does not hold the queue shut');
+
+  // The case this was written for: a conversation read back from disk that ends
+  // in a tool call, or a process killed mid-tool. The item stays in the
+  // transcript forever, and it used to mean nothing queued ever went out again.
+  const stale = new Session({ cwd: '/tmp' });
+  stale.start = function () { this.everStarted = true; };
+  const went = [];
+  stale.send = function (text) { went.push(text); };
+  Object.defineProperty(stale, 'isRunning', { get: () => true });
+  stale._upsert({ id: 'u1', kind: 'user', text: 'do it', images: [] });
+  stale._upsert({ id: 't1', kind: 'tool', name: 'Bash', input: {}, status: 'running' });
+
+  checkEqual('while the tool is running, the queue waits', stale.isReadyForQueue(), false);
+  stale._handleResult({ type: 'result', subtype: 'success', total_cost_usd: 0, usage: {} });
+  checkEqual('a turn that ends leaves nothing running',
+    stale.items.find((i) => i.kind === 'tool').status, 'stopped');
+  checkEqual('so the queue can move again', stale.isReadyForQueue(), true);
+
+  stale.enqueue('this one has to go out');
+  await new Promise((r) => setTimeout(r, stale.queueDelayMs + 300));
+  checkEqual('and it does', went, ['this one has to go out']);
+  checkEqual('leaving nothing behind', stale.queue.length, 0);
+  stale.dispose();
+
+  const stopped = new Session({ cwd: '/tmp' });
+  stopped._write = function () {};
+  stopped._upsert({ id: 't2', kind: 'tool', name: 'Bash', input: {}, status: 'running' });
+  stopped.stop();
+  checkEqual('stopping an instance ends its tools too',
+    stopped.items.find((i) => i.kind === 'tool').status, 'stopped');
+  stopped.dispose();
+
+  suite('the window still applies with an abandoned tool in it');
+
+  const capped = new Session({ cwd: '/tmp', maxItems: 10 });
+  capped._write = function () {};
+  capped._upsert({ id: 'head', kind: 'tool', name: 'Bash', input: {}, status: 'running' });
+  capped._handleResult({ type: 'result', subtype: 'success', total_cost_usd: 0, usage: {} });
+  for (let i = 0; i < 200; i++) capped._upsert({ id: 'x' + i, kind: 'text', text: 'line ' + i });
+  checkEqual('the cap is the cap', capped.items.length, 10);
+  check('and what went is counted', capped.droppedItems > 180);
+  capped.dispose();
+
+  const live = new Session({ cwd: '/tmp', maxItems: 10 });
+  live._write = function () {};
+  live._upsert({ id: 'head', kind: 'tool', name: 'Bash', input: {}, status: 'running' });
+  for (let i = 0; i < 40; i++) live._upsert({ id: 'y' + i, kind: 'text', text: 'line ' + i });
+  check('a tool that really is running is still not dropped from under it',
+    live.items[0].id === 'head');
+  live.dispose();
 };

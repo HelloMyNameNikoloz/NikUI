@@ -251,6 +251,10 @@ const record = (name, ok) => checks.push([name, !!ok]);
     record('a list seen once is remembered',
       !!(await cold.evaluate('window.localStorage.getItem("nikui:fleet")')));
     await cold.until('!!navigator.serviceWorker.controller', 10000);
+    // Visit the conversation too, so the worker has both pages to hand back.
+    await cold.navigate(`${base}/s/${session.id}`);
+    await cold.until('document.getElementById("link").textContent === "Live"', 10000);
+    await cold.navigate(`${base}/`);
 
     // The laptop goes away entirely — the tunnel down, the lid shut, whatever.
     await server.stop();
@@ -265,6 +269,22 @@ const record = (name, ok) => checks.push([name, !!ok]);
       await cold.until('!!document.getElementById("retry")', 8000));
     record('and nothing tappable pretending to be live',
       (await cold.evaluate(`getComputedStyle(document.querySelector('.row')).pointerEvents`)) === 'none');
+
+    // The seam neither suite could reach: type into a conversation with the
+    // laptop switched off, and the words must still be there afterwards.
+    await cold.navigate(`${base}/s/${session.id}`);
+    record('a conversation opened before still opens from the cache',
+      await cold.until('!!document.getElementById("input")', 8000));
+    await cold.evaluate(`(() => {
+      const input = document.getElementById('input');
+      input.value = 'typed while the laptop was gone';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    })()`);
+    await wait(400);
+    record('a prompt typed with nothing to send it to is not swallowed',
+      (await cold.evaluate('document.getElementById("input").value')) === 'typed while the laptop was gone');
+    record('and the client says why rather than looking sent',
+      /not sent/i.test(await cold.evaluate('document.getElementById("link").textContent')));
   } finally {
     cold.close();
   }

@@ -40,6 +40,8 @@
     let seated = false;       // the handshake is done and this socket may talk
     let stopped = null;       // a refusal worth showing instead of retrying
     let expecting = null;     // the nonces this device is waiting to see signed
+    let said = 0;             // how many times the pill has been written to
+    let holdUntil = 0;        // a message that has to be read before it is replaced
     let paired = false;       // this device has an identity, so it must verify
 
     function url() {
@@ -48,7 +50,18 @@
       return at.toString();
     }
 
-    function show(kind, text) {
+    /**
+     * The state of the connection, in a word.
+     *
+     * `hold` keeps a message up for a moment against the background chatter of
+     * reconnecting. "Your prompt was not sent" is the one line here that is
+     * about something the reader did, and a retry notice a tenth of a second
+     * later would take it away before it had been read.
+     */
+    function show(kind, text, hold) {
+      if (holdUntil > Date.now() && kind !== 'on' && !hold) return;
+      holdUntil = hold ? Date.now() + hold : 0;
+      said++;
       if (!pill) return;
       pill.className = 'link ' + kind;
       pill.textContent = text;
@@ -66,6 +79,22 @@
     // The state of the connection is also the button for doing something about
     // it: on a phone, the thing you want when it says offline is to try again.
     if (pill) pill.addEventListener('click', retryNow);
+
+    /**
+     * Anything this transport makes up for its own page.
+     *
+     * Always on a later turn of the loop, never inside the call that caused it.
+     * A real message from the host arrives asynchronously, and a synthetic one
+     * that does not is a reentrant call: `postMessage` refusing a prompt used to
+     * hand the text back *during* the client's send, which then cleared the
+     * composer on the line after — so the refusal erased exactly what it was
+     * trying to save.
+     */
+    function tell(message) {
+      setTimeout(function () {
+        window.dispatchEvent(new MessageEvent('message', { data: message }));
+      }, 0);
+    }
 
     /** Inbound frames arrive exactly as the webview's do: a message event. */
     function deliver(data) {
@@ -114,9 +143,7 @@
           if (ok) return seat(message);
           stopped = 'unproven laptop';
           show('off', 'This is not the laptop this device paired with');
-          window.dispatchEvent(new MessageEvent('message', {
-            data: { type: '@denied', reason: 'This is not the laptop this device paired with.' }
-          }));
+          tell({ type: '@denied', reason: 'This is not the laptop this device paired with.' });
           if (socket) try { socket.close(1008, 'unproven'); } catch (_) { /* gone */ }
         }).catch(function () {
           stopped = 'unproven laptop';
@@ -173,9 +200,7 @@
         if (record.fingerprint && challenge.fingerprint && record.fingerprint !== challenge.fingerprint) {
           stopped = 'wrong laptop';
           show('off', 'This is not the laptop this device paired with');
-          window.dispatchEvent(new MessageEvent('message', {
-            data: { type: '@denied', reason: 'This is not the laptop this device paired with.' }
-          }));
+          tell({ type: '@denied', reason: 'This is not the laptop this device paired with.' });
           return;
         }
         const mine = randomNonce();
@@ -247,10 +272,15 @@
      */
     function diagnose() {
       if (typeof fetch !== 'function') return;
+      // Whatever the pill says when the answer comes back, it is more recent
+      // than this question — and "your prompt was not sent" is the one message
+      // that must not be quietly replaced by a weather report.
+      const asked = said;
+      const stale = () => live() || said !== asked;
       fetch('/health', { cache: 'no-store' }).then(function (response) {
-        if (!live()) show('warn', response.ok ? 'The laptop is there — reconnecting' : 'Reconnecting…');
+        if (!stale()) show('warn', response.ok ? 'The laptop is there — reconnecting' : 'Reconnecting…');
       }).catch(function () {
-        if (!live()) show('off', 'Cannot reach the laptop');
+        if (!stale()) show('off', 'Cannot reach the laptop');
       });
     }
 
@@ -282,10 +312,9 @@
     function refuse(message) {
       if (message && message.type === 'send') {
         const images = (message.attachments || []).length;
-        show('off', images ? 'Offline — not sent, images dropped' : 'Offline — not sent');
-        window.dispatchEvent(new MessageEvent('message', {
-          data: { type: 'editPrompt', text: message.text || '' }
-        }));
+        show('off', images ? 'Offline — not sent, images dropped' : 'Offline — not sent', 8000);
+        // After the client has finished sending, not during it.
+        tell({ type: 'editPrompt', text: message.text || '' });
       } else {
         show('off', 'Offline');
       }

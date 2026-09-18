@@ -21,8 +21,27 @@ const KEEP = 20;
 // Turns kept per instance across a reload. Enough to redraw the charts without
 // making the workspace store carry the whole conversation.
 const KEEP_TURNS = 60;
+// Enough that nobody loses a night's queue, few enough that workspace storage
+// stays a list of prompts rather than a copy of the conversation.
+const KEEP_QUEUED = 50;
+const QUEUED_TEXT_MAX = 8000;
 
 /** Only what /status draws, so a remembered turn stays small. */
+/**
+ * A queued prompt, small enough to store. The images go: they are base64 in
+ * memory and would turn a list of prompts into megabytes of state — so the
+ * count comes back instead, and the panel says so.
+ */
+function slimQueued(q) {
+  return {
+    id: q.id,
+    text: String(q.text || '').slice(0, QUEUED_TEXT_MAX),
+    sent: q.sent ? String(q.sent).slice(0, QUEUED_TEXT_MAX) : null,
+    snippets: (q.snippets || []).slice(0, 8),
+    images: (q.attachments || []).length || q.lostImages || 0
+  };
+}
+
 function slimTurn(t) {
   return {
     n: t.n, at: t.at, durationMs: t.durationMs, costUsd: t.costUsd,
@@ -161,7 +180,7 @@ class SessionManager extends EventEmitter {
   }
 
   create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage, turnLog, startedAt,
-    turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt }) {
+    turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt, queue }) {
     const cfg = this.config;
     const session = new Session({
       id,
@@ -182,6 +201,8 @@ class SessionManager extends EventEmitter {
       limits: this.limits,
       // What the status sheet needs to keep telling the truth after a reload.
       turnLog,
+      // And what the reader typed and has not had answered yet.
+      queue,
       startedAt,
       turns,
       errors,
@@ -372,7 +393,11 @@ class SessionManager extends EventEmitter {
         startedAt: s.startedAt, turns: s.turns, errors: s.errors, interrupts: s.interrupts,
         status: s.status, finishedAt: s.finishedAt,
         compactions: s.compactions, lastCompactedAt: s.lastCompactedAt,
-        turnLog: (s.turnLog || []).slice(-KEEP_TURNS).map(slimTurn)
+        turnLog: (s.turnLog || []).slice(-KEEP_TURNS).map(slimTurn),
+        // Prompts waiting in a queue are typed work — and a quota pause, which
+        // is the whole reason a queue gets long, is itself remembered across a
+        // reload. Losing one while keeping the other would be the worst pair.
+        queue: (s.queue || []).slice(0, KEEP_QUEUED).map(slimQueued)
       }));
     this.context.workspaceState.update(STORAGE_KEY, data.slice(-KEEP));
   }
@@ -408,6 +433,7 @@ class SessionManager extends EventEmitter {
         finishedAt: entry.finishedAt,
         compactions: entry.compactions,
         lastCompactedAt: entry.lastCompactedAt,
+        queue: entry.queue,
         autoStart: false
       });
     }
