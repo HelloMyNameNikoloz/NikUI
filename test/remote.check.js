@@ -65,7 +65,8 @@ const record = (name, ok) => checks.push([name, !!ok]);
     devices, identity, pairing, localKey: auth
   });
   await server.start(0);
-  const base = `http://127.0.0.1:${server.port}`;
+  const port = server.port;
+  const base = `http://127.0.0.1:${port}`;
 
   // ---- this laptop ----------------------------------------------------------
   const laptop = await launch(chrome);
@@ -191,6 +192,21 @@ const record = (name, ok) => checks.push([name, !!ok]);
     record('and written down against the device that tried it',
       devices.recent(5).some((e) => e.action === 'send' && e.allowed === false && e.device === 'Check phone'));
 
+    // ---- installable, and able to reach out ---------------------------------
+    record('the service worker takes charge of the page',
+      await phone.until('!!navigator.serviceWorker.controller', 10000));
+    record('the manifest is one the browser accepted',
+      (await phone.evaluate(`fetch('/manifest.webmanifest').then(r => r.json()).then(m => m.display)`)) === 'standalone');
+
+    // What cannot be checked here: a notification actually appearing. Headless
+    // Chrome on this machine refuses notification permission whatever the
+    // DevTools protocol is told, so there is no way to observe one. The payload
+    // that would carry it — the encryption, the token, the rules about what is
+    // worth sending — is covered in test/push.test.js; the worker's handler is
+    // twenty lines and is the part a real phone proves.
+    record('the worker is registered where a push would arrive',
+      (await phone.evaluate(`navigator.serviceWorker.getRegistration().then(r => r.scope)`)) === base + '/');
+
     devices.setControl(paired.id, true);
     record('granting control reaches the socket it is already holding',
       await phone.until('!document.body.classList.contains("read-only")', 5000));
@@ -202,6 +218,35 @@ const record = (name, ok) => checks.push([name, !!ok]);
   } finally {
     phone.close();
   }
+
+  // ---- opening it with the laptop gone --------------------------------------
+  const cold = await launch(chrome);
+  try {
+    await cold.navigate(`${base}/?key=${auth.key}`);
+    await cold.until('document.querySelectorAll(".row").length === 1', 8000);
+    record('a list seen once is remembered',
+      !!(await cold.evaluate('window.localStorage.getItem("nikui:fleet")')));
+    await cold.until('!!navigator.serviceWorker.controller', 10000);
+
+    // The laptop goes away entirely — the tunnel down, the lid shut, whatever.
+    await server.stop();
+    await cold.navigate(`${base}/`);
+    record('the shell still opens from the cache',
+      (await cold.evaluate('!!document.getElementById("rows")')) === true);
+    record('and says it is not current rather than pretending',
+      await cold.until('document.body.classList.contains("stale")', 8000));
+    record('naming when it last saw the window',
+      /last seen|looked like/i.test(await cold.evaluate('document.getElementById("lede").textContent')));
+    record('with a way to try again',
+      await cold.until('!!document.getElementById("retry")', 8000));
+    record('and nothing tappable pretending to be live',
+      (await cold.evaluate(`getComputedStyle(document.querySelector('.row')).pointerEvents`)) === 'none');
+  } finally {
+    cold.close();
+  }
+
+  // Back on the same port, so the address the browsers know still means this.
+  await server.start(port);
 
   // ---- and on a screen the size of a phone ----------------------------------
   const small = await launch(chrome);

@@ -23,7 +23,11 @@ class FakeSocket {
   drop() { this.readyState = 3; if (this.onclose) this.onclose(); }
 }
 
-const pill = { className: '', textContent: '', hidden: true };
+const pill = {
+  className: '', textContent: '', hidden: true, clicks: [],
+  addEventListener: (name, fn) => { pill.clicks.push({ name, fn }); },
+  click: () => pill.clicks.forEach((c) => c.fn())
+};
 const stored = {};
 const delivered = [];
 
@@ -194,6 +198,19 @@ module.exports = async function () {
     !suspicious.sent.some((m) => m.type === '@auth'));
   check('and the client is told why', /not the laptop/i.test(pill.textContent));
   check('rather than signing anyway', laptopSwapped.__state() !== 'online');
+
+  suite('trying again on purpose');
+
+  const stuck = withFakeClock((scheduled) => {
+    const t = socketTransport({ session: 'nik-5', socket: '/socket?session=nik-5' });
+    sockets[sockets.length - 1].drop();
+    scheduled.length = 0;
+    return t;
+  });
+  const waiting = sockets.length;
+  withFakeClock(() => pill.click());
+  check('tapping the connection state tries again at once', sockets.length > waiting);
+  check('and the transport offers the same as a function', typeof stuck.retry === 'function');
 
   suite('backoff');
 

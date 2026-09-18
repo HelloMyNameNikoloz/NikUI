@@ -356,3 +356,18 @@ body.home .sdot.asleep {
   body { overflow-x: hidden; }
   .msg-text pre { max-width: 100%; }
 }
+
+/* ---- a list that is not current ------------------------------------------
+   Kept so the app opens with something in it, and dimmed and dated so it is
+   never mistaken for what is happening now. */
+
+body.stale .rows { opacity: 0.5; }
+/* Not tappable while it is a memory: a row that opens nothing is worse than a
+   row that says it is waiting. */
+body.stale .row { pointer-events: none; }
+
+button.go-on {
+  font: inherit;
+  border: 0;
+  cursor: pointer;
+}

@@ -9,6 +9,7 @@ const { LocalKey } = require('../src/auth.js');
 const { DeviceStore } = require('../src/devices.js');
 const { PairingWindow } = require('../src/pairing.js');
 const { loadIdentity } = require('../src/identity.js');
+const { loadVapid } = require('../src/push.js');
 const { closeHub } = require('../src/hub.js');
 const ws = require('./helpers/ws.js');
 const { makeDevice } = require('./helpers/device.js');
@@ -71,12 +72,13 @@ module.exports = async function () {
   const devices = new DeviceStore(memento);
   const identity = loadIdentity(memoryState());
   const pairing = new PairingWindow();
+  const vapid = loadVapid(memoryState());
   const auth = new LocalKey('test-key-not-a-secret');
   host.audit = (entry) => devices.record(entry);
 
   let fleetChanged = null;
   const server = new RemoteServer({
-    root: ROOT, host, sessions, devices, identity, pairing, localKey: auth,
+    root: ROOT, host, sessions, devices, identity, pairing, vapid, localKey: auth,
     watchFleet: (fn) => { fleetChanged = fn; return () => { fleetChanged = null; }; }
   });
 
@@ -120,6 +122,45 @@ module.exports = async function () {
   checkEqual('the key in the address bar is traded for a cookie', handed.status, 302);
   check('which is not readable by script', /HttpOnly/.test(String(handed.headers['set-cookie'])));
   check('and is not sent to other sites', /SameSite=Strict/.test(String(handed.headers['set-cookie'])));
+
+  suite('and it is an app you can install');
+
+  const manifest = await get(port, '/manifest.webmanifest');
+  checkEqual('the manifest is served', manifest.status, 200);
+  checkEqual('as a manifest', manifest.headers['content-type'], 'application/manifest+json; charset=utf-8');
+  checkEqual('standing alone rather than in a browser frame', manifest.json.display, 'standalone');
+  checkEqual('with somewhere to start', manifest.json.start_url, '/');
+  check('and icons big enough for a home screen',
+    manifest.json.icons.some((icon) => icon.sizes === '512x512'));
+  check('including one the platform may crop to its own shape',
+    manifest.json.icons.some((icon) => icon.purpose === 'maskable'));
+  checkEqual('the icons are really there',
+    (await get(port, '/media/icons/nikui-512.png')).status, 200);
+  checkEqual('and the one iOS asks for by name',
+    (await get(port, '/media/icons/apple-touch-icon-180.png')).status, 200);
+
+  const worker = await get(port, '/sw.js');
+  checkEqual('the worker is served from the root', worker.status, 200);
+  checkEqual('so it can look after every page, not just /media',
+    worker.headers['service-worker-allowed'], '/');
+  check('it caches the shell', /media\/panel\.js/.test(worker.body));
+  check('and says plainly that it caches no conversation', /never caches is a conversation/.test(worker.body));
+
+  const shell = await get(port, '/');
+  check('the page points at the manifest', /rel="manifest"/.test(shell.body));
+  check('carries a colour for the bar at the top', /name="theme-color"/.test(shell.body));
+  check('an icon for iOS', /apple-touch-icon/.test(shell.body));
+  check('and asks to be full screen there', /apple-mobile-web-app-capable/.test(shell.body));
+
+  suite('being told about things');
+
+  const key = await get(port, '/push/key');
+  checkEqual('the sending key is public, because it has to be', key.status, 200);
+  checkEqual('and it is the raw point a browser wants', key.json.key, vapid.applicationServerKey);
+
+  const health = await get(port, '/health');
+  checkEqual('the laptop can be asked whether it is there at all', health.status, 200);
+  checkEqual('and answers nothing else', JSON.stringify(health.json), '{"ok":true}');
 
   suite('a socket from this machine needs no ceremony');
 
@@ -192,6 +233,37 @@ module.exports = async function () {
   await new Promise((r) => setTimeout(r, 40));
   checkEqual('a code nobody used expires', expiring.isOpen, false);
 
+  suite('and can ask to be told when it is not looking');
+
+  const endpoint = 'https://push.example.com/send/' + phone.id;
+  const unsigned = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: { device: phone.id, endpoint, keys: { p256dh: 'x', auth: 'y' }, signature: 'nope' }
+  });
+  checkEqual('a subscription nobody signed for is refused', unsigned.status, 403);
+
+  const notMine = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: {
+      device: phone.id, endpoint, keys: { p256dh: 'x', auth: 'y' },
+      signature: await phone.sign('nikui-push:https://push.example.com/send/somebody-else')
+    }
+  });
+  checkEqual('and so is one signed for a different endpoint', notMine.status, 403);
+
+  const subscribed = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: {
+      device: phone.id, endpoint,
+      keys: { p256dh: 'BPa6q2n8dFhO8Yd5lHjLgL0kq8i8nqFQlHZ8p6y5v3hYpXsS1bF7oB2aQ0Zq1nGp8wJ2r6xS9cB7nT4uV5wX6yZ', auth: 'c29tZS1hdXRoLXNlY3JldA' },
+      signature: await phone.sign('nikui-push:' + endpoint)
+    }
+  });
+  checkEqual('one the device signed for is kept', subscribed.status, 200);
+  checkEqual('against that device, and no second list to forget',
+    devices.get(phone.id).push.endpoint, endpoint);
+  checkEqual('so it is one of the subscribers', devices.subscribers().length, 1);
+
   suite('a paired device can watch');
 
   const watcher = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`);
@@ -236,6 +308,7 @@ module.exports = async function () {
   suite('revoking takes the socket with it');
 
   devices.forget(phone.id);
+  checkEqual('forgetting a device forgets where to reach it too', devices.subscribers().length, 0);
   const dropped = await watcher.waitClosed();
   check('the live socket is closed', !!dropped);
   const afterwards = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`);

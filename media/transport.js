@@ -53,6 +53,18 @@
       pill.hidden = false;
     }
 
+    /** Try again now, rather than when the backoff says so. */
+    function retryNow() {
+      if (live()) return;
+      tries = 0;
+      stopped = null;
+      connect();
+    }
+
+    // The state of the connection is also the button for doing something about
+    // it: on a phone, the thing you want when it says offline is to try again.
+    if (pill) pill.addEventListener('click', retryNow);
+
     /** Inbound frames arrive exactly as the webview's do: a message event. */
     function deliver(data) {
       let message = null;
@@ -261,6 +273,9 @@
       },
       getState: state.getState,
       setState: state.setState,
+      // Shown as a state, offered as an action: anything on the page that wants
+      // a retry button can call this rather than reloading.
+      retry: retryNow,
       // For the tests, and for anyone wondering in a console why nothing moves.
       __socket: function () { return socket; },
       __state: function () { return live() ? 'online' : (stopped ? 'refused' : (tries ? 'reconnecting' : 'offline')); }
