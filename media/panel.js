@@ -217,6 +217,21 @@
     input.disabled = !allowed;
   }
 
+  /** A quiet note that somebody else is looking at the same instance. */
+  function setPresence(clients) {
+    const who = $('who');
+    if (!who) return;
+    const others = (clients || []).filter((c) => c.id !== window.__clientId);
+    if (!others.length) { who.hidden = true; who.textContent = ''; return; }
+    who.hidden = false;
+    who.textContent = others
+      .map((c) => c.name + (c.control ? '' : ' (watching)'))
+      .join(', ');
+    who.title = others.length === 1
+      ? others[0].name + ' is looking at this instance too.'
+      : others.length + ' others are looking at this instance.';
+  }
+
   function flashRefusal(msg) {
     const banner = $('watching');
     if (!banner) return;
@@ -1163,6 +1178,7 @@
     switch (msg.type) {
       case 'init':
         sessionId = msg.sessionId;
+        window.__clientId = msg.client || null;
         remember();
         showThinking = msg.showThinking;
         singleEscape = !!msg.singleEscape;
@@ -1221,6 +1237,10 @@
       case '@device': setControl(msg.device); break;
       case '@denied': setControl({ control: false }); break;
       case '@refused': flashRefusal(msg); break;
+
+      // Who else is watching this instance. Only ever other people's presence:
+      // what they are typing is theirs and is never sent anywhere.
+      case 'presence': setPresence(msg.clients); break;
       case 'statusReport': showSheet(msg.report); break;
       case 'editPrompt': {
         // Nothing typed is thrown away: a draft already in the box keeps its

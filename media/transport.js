@@ -87,6 +87,12 @@
         if (wantsReady) send({ type: 'ready' });
         return false; // the page may want to know which device it is
       }
+      if (message.type === '@navigate') {
+        // Another instance, on this device only. The laptop's tabs are the
+        // laptop's business.
+        if (message.session) window.location.assign('/s/' + encodeURIComponent(message.session));
+        return true;
+      }
       if (message.type === '@denied') {
         seated = false;
         stopped = message.reason || 'refused';
@@ -175,8 +181,26 @@
       };
     }
 
+    /**
+     * Why it is not connected, told apart rather than guessed at.
+     *
+     * "The tunnel is down" and "the laptop is awake but would not have me" look
+     * identical from a dead socket, and on a phone that difference is the whole
+     * question. The page itself came from the same origin, so asking it one
+     * cheap question settles it.
+     */
+    function diagnose() {
+      if (typeof fetch !== 'function') return;
+      fetch('/health', { cache: 'no-store' }).then(function (response) {
+        if (!live()) show('warn', response.ok ? 'The laptop is there — reconnecting' : 'Reconnecting…');
+      }).catch(function () {
+        if (!live()) show('off', 'Cannot reach the laptop');
+      });
+    }
+
     function schedule() {
       show('off', tries ? 'Offline — retrying' : 'Offline');
+      diagnose();
       const wait = BACKOFF[Math.min(tries, BACKOFF.length - 1)];
       tries++;
       if (retry) clearTimeout(retry);

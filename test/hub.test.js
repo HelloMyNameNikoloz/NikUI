@@ -125,6 +125,70 @@ module.exports = async function () {
   checkEqual('disposing lets every client go', hub.size, 0);
   session.dispose();
 
+  suite('two live views of one instance');
+
+  const shared2 = quietSession();
+  const switched = [];
+  const both = new SessionHub(shared2, host(shared2, { switchTo: (id) => switched.push(id) }));
+
+  const desk = viewer('desk');
+  const handset = viewer('handset');
+  both.attach(desk);
+  both.attach({ id: handset.id, post: handset.post, device: { id: 'd1', name: 'A phone', kind: 'device', control: true } });
+  await both.receive('desk', { type: 'ready' });
+  await both.receive('handset', { type: 'ready' });
+
+  const seen = desk.last('presence');
+  checkEqual('each client is told who else is attached', seen.clients.length, 2);
+  checkEqual('the editor is named as itself',
+    seen.clients.find((c) => c.kind === 'editor').name, 'This editor');
+  checkEqual('and the device by its own name',
+    seen.clients.find((c) => c.kind === 'device').name, 'A phone');
+  check('with its own row identifiable', desk.last('init').client === 'desk');
+
+  await both.receive('handset', { type: 'send', text: 'from the phone', sent: 'from the phone', snippets: [] });
+  await both.receive('desk', { type: 'send', text: 'from the editor', sent: 'from the editor', snippets: [] });
+  // Items are flushed on a tick rather than per keystroke, so the assertion
+  // waits for the same flush a client would.
+  await new Promise((r) => setTimeout(r, 80));
+  const onPhone = JSON.stringify(handset.ofType('items').concat(handset.ofType('queue')));
+  const onEditor = JSON.stringify(desk.ofType('items').concat(desk.ofType('queue')));
+  check('a prompt sent from either appears on both',
+    onPhone.indexOf('from the phone') > 0 && onEditor.indexOf('from the phone') > 0 &&
+    onPhone.indexOf('from the editor') > 0 && onEditor.indexOf('from the editor') > 0);
+
+  // A draft is not in the protocol at all, in either direction: the only way to
+  // clobber one would be to send it somewhere, and nothing does.
+  const everything = JSON.stringify(desk.got.concat(handset.got));
+  check('and nothing anywhere carries a draft', everything.indexOf('draft') < 0);
+
+  shared2._upsert({ id: 'p9', kind: 'permission', requestId: 'r9', name: 'Bash', input: {}, resolved: null });
+  await both.receive('handset', { type: 'permission', requestId: 'r9', allow: true });
+  checkEqual('a permission answered on one is answered for the instance',
+    shared2.items.find((i) => i.id === 'p9').resolved, 'allow');
+  check('and both are shown the answer',
+    JSON.stringify(desk.ofType('items')).indexOf('"resolved":"allow"') > 0 &&
+    JSON.stringify(handset.ofType('items')).indexOf('"resolved":"allow"') > 0);
+
+  await both.receive('handset', { type: 'switch', id: 'another-one' });
+  checkEqual('a device choosing another instance moves only itself',
+    handset.last('@navigate').session, 'another-one');
+  checkEqual('and does not rearrange the editor', switched, []);
+  await both.receive('desk', { type: 'switch', id: 'another-one' });
+  checkEqual('while the editor still opens a tab', switched, ['another-one']);
+
+  both.detach('desk');
+  const afterwards = handset.last('presence');
+  checkEqual('when one leaves, the other is told', afterwards.clients.length, 1);
+  checkEqual('and it is the one still there', afterwards.clients[0].kind, 'device');
+  await both.receive('handset', { type: 'send', text: 'still working', sent: 'still working', snippets: [] });
+  check('a closed panel leaves the handset working',
+    shared2.items.some((i) => i.text === 'still working') ||
+    shared2.queue.some((q) => q.text === 'still working'));
+
+  both.dispose();
+  shared2.dispose();
+
   suite('one hub per session, however many transports ask');
 
   const shared = quietSession();
