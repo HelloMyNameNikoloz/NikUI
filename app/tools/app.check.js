@@ -18,6 +18,7 @@ const APP = path.join(__dirname, '..');
 const REPO = path.join(APP, '..');
 const { findChrome, launch, wait } = require(path.join(REPO, 'test', 'helpers', 'chrome.js'));
 const { skipped } = require(path.join(REPO, 'test', 'helpers', 'skip.js'));
+const { SOURCE: CHIP } = require(path.join(REPO, 'test', 'helpers', 'chip.js'));
 
 const chrome = findChrome();
 if (!chrome) skipped('No Chrome found — the app check did not run. Set CHROME=/path/to/chrome.');
@@ -207,6 +208,70 @@ const record = (name, ok) => {
     // ---- it looks like one thing -------------------------------------------
     record('the app is dark whatever the phone is',
       (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');
+
+    // ---- the key moves into the chip, without pairing again ------------------
+    //
+    // This device paired with a browser key, because that is all it had. From
+    // here on it has a Secure Enclave — the case of a phone that was paired
+    // before this existed, and the one that cannot be staged on a desk.
+
+    record('before: the laptop knows this key is only in a browser',
+      devices.get(paired.id).protection === 'software');
+    const wasKey = devices.get(paired.id).fingerprint;
+
+    await phone.beforeEachPage(CHIP);
+    await phone.navigate(appOrigin + '/settings.html');
+    record('with a chip, the app knows its key could be better',
+      await phone.until(`[...document.querySelectorAll('.row')]
+        .some(r => /Move it into the chip/.test(r.textContent))`, 8000));
+    record('and says where the key is now',
+      /In this app/.test(await phone.evaluate('document.body.textContent')));
+    // The rows this phase added are held to what every other row is held to.
+    record('the rows it added are thumb-sized too',
+      (await phone.evaluate(`[...document.querySelectorAll('.row')]
+        .every(r => Math.round(r.getBoundingClientRect().height) >= 44)`)) === true);
+    record('and say what they do in words, not in cryptography',
+      !/SPKI|P-256|ECDSA|r‖s|DER|base64/i.test(await phone.evaluate('document.body.textContent')));
+
+    await phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.row')].find(r => /Move it into the chip/.test(r.textContent));
+      row.click();
+    })()`);
+
+    let movedTo = null;
+    for (let i = 0; i < 160 && !movedTo; i++) {
+      const now = devices.get(paired.id);
+      if (now && now.fingerprint !== wasKey) movedTo = now;
+      if (!movedTo) await wait(50);
+    }
+    if (!movedTo) {
+      console.log('  settings said: ' + JSON.stringify(
+        await phone.evaluate('document.querySelector(".bar-title").textContent')));
+      console.log('  refusals: ' + JSON.stringify(laptop.refusals.slice(-3)));
+    }
+    record('tapping it moves the key', !!movedTo);
+    record('the laptop took the new one, having been shown the old one authorised it',
+      !!movedTo && movedTo.fingerprint !== wasKey);
+    record('it is the same device, not a new one', devices.list().length === 1);
+    record('with the name it already had', !!movedTo && movedTo.name === 'Check phone');
+    record('and the permission it was already granted', !!movedTo && movedTo.control === true);
+    record('the laptop records where the key now is',
+      !!movedTo && movedTo.protection === 'secure-enclave');
+    record('and what it used to be, so a surprise move can be found',
+      !!movedTo && movedTo.previousFingerprint === wasKey);
+    record('the move is in the trail',
+      devices.recent(5).some((line) => /replaced its key/.test(line.action)));
+    record('the app says so too',
+      await phone.until('/Secure Enclave/.test(document.body.textContent)', 8000));
+
+    // The point of all of it: the device still connects, now signing with a key
+    // whose signatures arrive in a shape the laptop had to be taught to read.
+    await phone.navigate(appOrigin + '/index.html');
+    record('and it still connects, signing with the key in the chip',
+      await phone.until('document.getElementById("link").textContent === "Live"', 12000));
+    record('which the laptop verified as the new key, not the old one',
+      devices.get(paired.id).fingerprint === movedTo.fingerprint);
+
     record('and nothing threw on any screen',
       (await phone.evaluate('window.__errors ? window.__errors.length : 0')) === 0);
   } finally {

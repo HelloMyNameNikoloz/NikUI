@@ -59,6 +59,7 @@ class RemoteServer {
    * @param {object} [deps.pairing]   the pairing window
    * @param {object} [deps.hubs]      { hubFor, closeHub } — injectable for tests
    * @param {Function} [deps.watchFleet] subscribe to "the window changed"
+   * @param {Function} [deps.announce] tell a person something happened
    * @param {(line: string) => void} [deps.log]
    */
   constructor(deps) {
@@ -76,6 +77,7 @@ class RemoteServer {
       identity: this.identity
     });
     this.log = deps.log || (() => {});
+    this.announcer = deps.announce || null;
     this.server = null;
     this.port = 0;
     this.clients = new Set();
@@ -105,6 +107,17 @@ class RemoteServer {
   onState(fn) {
     this.stateWatchers.add(fn);
     return () => this.stateWatchers.delete(fn);
+  }
+
+  /**
+   * Something a person should be told, rather than a line in a log nobody is
+   * reading. Rare by design — a notification you learn to dismiss is worse than
+   * none — so this is for the handful of things that change what a device is
+   * allowed to be.
+   */
+  announce(event) {
+    if (!this.announcer) return;
+    try { this.announcer(event); } catch (_) { /* a listener's problem, not the server's */ }
   }
 
   announceState() {
@@ -599,7 +612,10 @@ ${this.appHead(nonce)}</head>
     }
 
     const address = (req.socket && req.socket.remoteAddress) || null;
-    const device = this.devices.add({ name: body.name, publicKey: body.publicKey, address });
+    const device = this.devices.add({
+      name: body.name, publicKey: body.publicKey, address,
+      protection: body.protection, biometric: body.biometric
+    });
     if (!device) return json(res, 400, { error: 'that is not a P-256 public key' });
     this.devices.record({ device, action: 'paired', allowed: true });
     this.log(`paired ${device.name} (${device.id})`);
@@ -928,6 +944,18 @@ class RemoteClient {
         return this.welcome(localDevice(), this.gate.localWelcome(this.pending, msg));
       }
       if (!verdict.ok) return this.deny(verdict.reason);
+      if (verdict.rekeyed) {
+        // A device replacing its own key is exactly what a stolen key would do
+        // to make the theft permanent, so it is never silent: the trail has it,
+        // the log has it, and the window says so out loud.
+        this.log(`${verdict.rekeyed.name} replaced its key — now held in ${verdict.rekeyed.protection}`);
+        this.server.announce({
+          kind: 'rekeyed',
+          device: verdict.rekeyed.name,
+          protection: verdict.rekeyed.protection,
+          biometric: !!verdict.rekeyed.biometric
+        });
+      }
       return this.welcome(verdict.device, verdict.welcome);
     }
 

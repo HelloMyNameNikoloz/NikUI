@@ -42,7 +42,8 @@ function describeEnv(context, manager, session, devices, awake) {
   return {
     awake: awake ? awake.state() : null,
     devices: devices ? devices.list().map((d) => ({
-      name: d.name, control: !!d.control, lastSeenAt: d.lastSeenAt, pairedAt: d.pairedAt
+      name: d.name, control: !!d.control, lastSeenAt: d.lastSeenAt, pairedAt: d.pairedAt,
+      protection: d.protection || 'software', biometric: !!d.biometric
     })) : [],
     trail: devices ? devices.recent(20) : [],
     transcriptPath: transcriptPath(session.cwd, session.claudeSessionId),

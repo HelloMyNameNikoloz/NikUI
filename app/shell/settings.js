@@ -18,7 +18,9 @@
     control: null,          // null unknown, true may steer, false watching
     laptopName: null,
     version: { client: '…', app: '…' },
-    health: null            // round trip in ms, when it answered
+    health: null,           // round trip in ms, when it answered
+    key: null,              // where the key is held, and what this device could do better
+    moving: null            // a word for what the move is doing, while it does it
   };
 
   const el = (tag, className, text) => {
@@ -71,6 +73,14 @@
   };
 
   const shortKey = (key) => (key ? String(key).slice(0, 8) + '…' : 'none');
+
+  /** Where a key is kept, said the way a person would say it. */
+  const HELD = {
+    'secure-enclave': 'Secure Enclave',
+    'strongbox': 'Security chip',
+    'keystore': 'Android Keystore',
+    'software': 'In this app'
+  };
 
   // ---- what the screen says ------------------------------------------------
 
@@ -126,6 +136,42 @@
 
     row(identity, { label: 'Paired', value: state.device && state.device.id ? 'Yes' : 'No',
       tone: state.device && state.device.id ? 'good' : 'bad' });
+
+    const held = (state.device && state.device.protection) || 'software';
+    const hardware = held !== 'software';
+    row(identity, {
+      label: 'Key kept in',
+      hint: hardware
+        ? 'A chip. Nothing can copy it out — not this app, not a backup.'
+        : 'This app, where it cannot be read out but a copy of the phone is a copy of it.',
+      value: HELD[held] || held,
+      tone: hardware ? 'good' : ''
+    });
+
+    // Offered only when it is actually better, and only when it would work.
+    if (state.key && state.key.possible) {
+      row(identity, {
+        label: state.moving || 'Move it into the chip',
+        hint: state.moving ? null : 'Takes a moment. Nothing else changes — same laptop, same permission.',
+        tone: state.moving ? '' : 'good',
+        tap: state.moving ? null : moveKey,
+        chevron: !state.moving
+      });
+    }
+
+    if (hardware && state.key && state.key.biometrics) {
+      row(identity, {
+        label: 'Ask for Face ID or a fingerprint',
+        hint: state.device && state.device.biometric
+          ? 'Asked once, then not again for five minutes.'
+          : 'Off. Unlocking the phone is enough.',
+        value: state.device && state.device.biometric ? 'On' : 'Off',
+        tone: state.device && state.device.biometric ? 'good' : '',
+        tap: toggleBiometric,
+        chevron: true
+      });
+    }
+
     row(identity, { label: 'Its key', value: shortKey(state.device && state.device.publicKey), mono: true });
     row(identity, { label: 'Laptop key pinned', value: shortKey(state.where.fingerprint), mono: true });
     row(identity, { label: 'Paired', value: ago(state.where.pairedAt) });
@@ -199,6 +245,93 @@
     });
   }
 
+  /**
+   * Move this device's key into the chip, without pairing again.
+   *
+   * The new key is made here, then offered on the next handshake — signed by
+   * the key it replaces, which is what gives the laptop a reason to accept it.
+   * So the move is: make it, reconnect, wait to be told it was taken. The
+   * reconnect happens now rather than whenever the network next drops, because
+   * a face check that arrives while somebody is holding the phone and looking
+   * at the button they pressed is a face check that makes sense.
+   */
+  function moveKey() {
+    if (state.moving) return;
+    state.moving = 'Making a new key…';
+    draw();
+
+    const wanted = !!(state.device && state.device.biometric);
+    window.nikDevice.stageUpgrade({ biometric: wanted }).then(function () {
+      state.moving = 'Telling your laptop…';
+      draw();
+      if (transport && transport.reconnect) transport.reconnect();
+      else listen();
+      // If the laptop never answers, saying so beats a row that spins forever.
+      state.giveUp = setTimeout(function () {
+        if (!state.moving) return;
+        state.moving = null;
+        window.nikDevice.discardUpgrade().catch(function () {});
+        refreshKey();
+        flash('Your laptop did not answer. Nothing changed.');
+      }, 20000);
+    }).catch(function (err) {
+      state.moving = null;
+      draw();
+      flash(cancelled(err) ? 'Cancelled. Nothing changed.' : 'This phone would not make the key.');
+    });
+  }
+
+  /** A person saying no is not an error to report as one. */
+  const cancelled = (err) => /cancel/i.test(String((err && (err.message || err.code)) || ''));
+
+  /**
+   * Turning the face check on or off means making the key again — the rule is
+   * baked into the key by the chip and cannot be changed afterwards. Which is
+   * exactly the move that already exists, so it is the same path.
+   */
+  function toggleBiometric() {
+    if (state.moving) return;
+    const wanting = !(state.device && state.device.biometric);
+    state.moving = wanting ? 'Turning it on…' : 'Turning it off…';
+    draw();
+    window.nikDevice.stageUpgrade({ biometric: wanting }).then(function () {
+      if (transport && transport.reconnect) transport.reconnect();
+      else listen();
+      state.giveUp = setTimeout(function () {
+        if (!state.moving) return;
+        state.moving = null;
+        window.nikDevice.discardUpgrade().catch(function () {});
+        refreshKey();
+        flash('Your laptop did not answer. Nothing changed.');
+      }, 20000);
+    }).catch(function (err) {
+      state.moving = null;
+      draw();
+      flash(cancelled(err) ? 'Cancelled. Nothing changed.' : 'This phone would not make the key.');
+    });
+  }
+
+  /** What the identity says about itself, after anything that could change it. */
+  function refreshKey() {
+    if (!window.nikDevice || !window.nikDevice.available()) return Promise.resolve();
+    return Promise.all([window.nikDevice.load(), window.nikDevice.protection()])
+      .then(function (both) {
+        state.device = both[0];
+        state.key = both[1];
+        draw();
+      }).catch(function () {});
+  }
+
+  // The transport is what carries the move, so it is the transport that says
+  // whether it landed.
+  window.addEventListener('nikui-key-moved', function (event) {
+    if (state.giveUp) { clearTimeout(state.giveUp); state.giveUp = null; }
+    state.moving = null;
+    refreshKey().then(function () {
+      flash(event.detail && event.detail.taken ? 'Done. The key is in the chip.' : 'Your laptop did not take it.');
+    });
+  });
+
   function copyDiagnostics() {
     const lines = [
       'NikUI app ' + state.version.app + ' · client ' + state.version.client,
@@ -206,6 +339,8 @@
       'connection: ' + state.connection + (state.health != null ? ' (' + state.health + ' ms)' : ''),
       'permission: ' + (state.control === null ? 'unknown' : state.control ? 'can steer' : 'watching only'),
       'device id: ' + ((state.device && state.device.id) || 'not paired'),
+      'key kept in: ' + ((state.device && state.device.protection) || 'software') +
+        (state.device && state.device.biometric ? ' (behind a biometric check)' : ''),
       'laptop key pinned: ' + (state.where.fingerprint || 'none'),
       'paired: ' + (state.where.pairedAt ? new Date(state.where.pairedAt).toISOString() : 'never')
     ].join('\n');
@@ -262,9 +397,7 @@
     state.laptopName = state.where.name;
     draw();
     app.version().then((v) => { state.version = v; draw(); });
-    if (window.nikDevice && window.nikDevice.available()) {
-      window.nikDevice.load().then((record) => { state.device = record; draw(); }).catch(() => {});
-    }
+    refreshKey();
     probe();
   }
 })();

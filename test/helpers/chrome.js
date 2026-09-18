@@ -89,6 +89,18 @@ async function launch(binary) {
       throw new Error('the page never finished loading: ' + url);
     },
     evaluate: (expression) => evaluate(call, expression),
+    /**
+     * Run something in every page this browser loads, before its own scripts.
+     *
+     * The only way to stand in for something the page expects to already be
+     * there — a native plugin, say — rather than patching it in afterwards and
+     * testing a path the real app never takes.
+     */
+    beforeEachPage: async (source) => {
+      // The Page domain has to be listening before it will keep a script.
+      await call('Page.enable');
+      await call('Page.addScriptToEvaluateOnNewDocument', { source });
+    },
     /** Poll until an expression is true, or give up and say what it was. */
     until: async (expression, ms) => {
       const deadline = Date.now() + (ms || 5000);

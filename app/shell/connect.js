@@ -67,6 +67,14 @@
     return true;
   }
 
+  /** Where this device is about to keep its key, in words rather than a term. */
+  const WHERE = {
+    'secure-enclave': 'This iPhone will keep its key in the Secure Enclave, where nothing can copy it.',
+    'strongbox': 'This phone will keep its key in its security chip, where nothing can copy it.',
+    'keystore': 'This phone will keep its key in the Android Keystore, where nothing can copy it.',
+    'software': 'This device will keep its key here, and never send it anywhere.'
+  };
+
   /** A name the owner will recognise in a list, without being asked to think. */
   function guessName() {
     const agent = String(navigator.userAgent || '');
@@ -84,7 +92,13 @@
     const response = await fetch(where + '/pair', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code, name, publicKey: record.publicKey, signature })
+      body: JSON.stringify({
+        code, name, publicKey: record.publicKey, signature,
+        // So the laptop's device list can say where this key is being kept.
+        // It is a claim, and the laptop treats it as one.
+        protection: record.protection || 'software',
+        biometric: !!record.biometric
+      })
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || 'the laptop refused');
@@ -164,7 +178,9 @@
     }
     // Made up front, so the button does one thing and does it immediately.
     try {
-      await window.nikDevice.ensure();
+      const record = await window.nikDevice.ensure();
+      const held = $('held');
+      if (held) held.textContent = WHERE[record.protection] || WHERE.software;
     } catch (err) {
       say('This device could not make a key: ' + ((err && err.message) || err), 'bad');
       go.disabled = true;

@@ -5,7 +5,7 @@ the moment there are two they drift, and everything in this repository is
 arranged to stop that.
 
 ```
-npm run app            # build the bundle and sync both platforms
+npm run app            # build the bundle, sync both platforms, list native sources
 npm run app:android    # build, sync, and run on a connected phone
 npm run test:app       # drive the real bundle in a real browser
 cd app && npm test     # check the bundle is still a copy, not a fork
@@ -18,10 +18,13 @@ cd app && npm test     # check the bundle is still a copy, not a fork
                                 connect.js, settings.js
     app/tools/build.js          builds www/ from media/ — never edited by hand
     app/tools/icons.js          launcher icons from the same mark as everything else
+    app/tools/xcode.js          puts native sources into project.pbxproj
     app/tools/build.test.js     proves www/ is a copy of media/, file by file
     app/tools/app.check.js      the app, driven in a browser against a real laptop
     app/www/                    generated, git-ignored
     app/android, app/ios        the native projects, committed
+    …/ios/App/App/SecureKey/    the Secure Enclave half of the key plugin
+    …/android/…/securekey/      the Android Keystore half
 
 ## The one rule
 
@@ -77,10 +80,50 @@ grouped inset lists, hairline separators, 44pt targets, one clear action per
 screen. The chevron and the gear are drawn in CSS, so the app carries no icon
 font and no sprite sheet.
 
+## The key
+
+On a phone the key is made **inside the chip** — the Secure Enclave on iOS, the
+Keystore on Android, its StrongBox where the phone has one. The private half has
+no software representation at all: this app can ask for a signature and cannot
+ask for the key, and neither can a backup, a filesystem copy or a rooted shell.
+Anywhere else — the editor's webview, a browser — it is a non-extractable
+WebCrypto key, which is as good as that platform offers.
+
+The laptop's side of the protocol did not change for any of this. It verifies a
+P-256 signature and does not care where the key lives.
+
+**The two conversions.** Both platforms hand back shapes the laptop does not
+read, and both fail silently when they are wrong — a bad public key is refused
+as "not a usable key", a bad signature as a forgery, and neither says which.
+
+| | what the platform gives | what the laptop reads |
+|---|---|---|
+| public key, iOS | the bare 65-byte point | SPKI: a fixed 26-byte header, then the point |
+| public key, Android | SPKI already | — |
+| signature, both | DER, 70–72 bytes | r‖s, exactly 64 |
+
+So the conversion happens **once, in JavaScript**, in `media/device.js`, where
+`test/hardware.test.js` runs it through the laptop's real verifier. Native code
+that only a device can run is native code that can only be wrong on a device.
+
+**Biometrics** are off by default: the key is in the chip either way, and a face
+check on every reconnect would fire whenever the phone changed network. Turned
+on, it is asked once and not again for five minutes — the chip enforces the
+window, on iOS through a reused `LAContext` and on Android through the key's own
+authentication validity.
+
+**Moving a key that already exists.** A phone paired before it had a chip does
+not have to pair again — which would mean being at the laptop, which is the one
+place you are not when any of this matters. Settings offers *Move it into the
+chip*: a new key is made, and the next handshake carries both it and a signature
+over it from the key being replaced. The laptop takes it only if the old key
+authorised exactly that new key and the new key proved somebody holds it, and
+says so loudly — a notification, the trail, and the previous fingerprint kept on
+the record. That last part is deliberate: a stolen key is how somebody would
+make a theft permanent, and the defence is not to forbid the move but to make
+sure it is never quiet.
+
 ## What is not here yet
 
-Phases 2 to 6 of the app plan: the key in the Secure Enclave and Android
-Keystore with a biometric gate, TLS pinning, an app-only mode that stops the
-laptop serving HTML at all, native push, and the store logistics. The protocol
-does not change for any of them — the laptop already verifies a P-256 signature
-and does not care where the key lives.
+Phases 3 to 6 of the app plan: TLS pinning, an app-only mode that stops the
+laptop serving HTML at all, native push, and the store logistics.

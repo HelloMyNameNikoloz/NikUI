@@ -550,7 +550,21 @@ function serveLocally(context, manager, awakeState) {
       manager.on('session-changed', on);
       return () => { manager.off('changed', on); manager.off('session-changed', on); };
     },
-    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
+    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); },
+    announce: (event) => {
+      if (event.kind !== 'rekeyed') return;
+      const where = {
+        'secure-enclave': 'the Secure Enclave', 'strongbox': 'a StrongBox chip',
+        'keystore': 'the Android Keystore', 'software': 'the browser', 'unknown': 'somewhere it did not name'
+      }[event.protection] || event.protection;
+      vscode.window.showInformationMessage(
+        `NikUI: ${event.device} moved its key into ${where}` +
+        (event.biometric ? ', behind a fingerprint or face check.' : '.'),
+        'Show devices'
+      ).then((choice) => {
+        if (choice) vscode.commands.executeCommand('nikui.devices.focus');
+      });
+    }
   });
 
   // The mesh in front of the server, when there is one. Nothing binds anywhere

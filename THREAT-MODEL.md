@@ -24,7 +24,7 @@ Last reviewed: 2026-09-18, against the surface at `src/remote.js`, `src/auth.js`
 | --- | --- |
 | **Prompt submission to an instance** | Arbitrary code execution as you, on this machine. The crown jewel; everything else is a way to reach it. |
 | **The conversation** | Source code, file paths, credentials that happened to be on screen, what you are building and when. |
-| **The device's private key** | Being that phone, from now on. |
+| **The device's private key** | Being that phone, from now on. In the app it is generated inside the Secure Enclave or the Android Keystore and has no software representation at all; in a browser it is a non-extractable WebCrypto key, which a copy of the profile does copy. |
 | **The laptop's identity key** | Being this laptop to a paired phone. |
 | **The local key** | A seat with control, from this machine. |
 | **The fleet list** | Which projects exist, what they cost, what is running. Less severe, still yours. |
@@ -218,6 +218,50 @@ laptop                                        phone
 - Nothing is delivered to the session until both directions have checked out.
   Anything sent before that is dropped, not queued.
 
+### Replacing a device's own key, examined
+
+A phone that gains secure hardware after it paired may hand the laptop a new key
+in the same exchange. The `@auth` carries `rekey`, and what is signed changes to
+say so:
+
+```
+  |  @auth { device, nonce, signature, rekey: { publicKey, signature } }
+  |<--------------------------------------------|
+     both signatures cover "nikui-rekey:<theirs>:<mine>:<fingerprint of the new key>"
+     the outer one by the key being replaced   — the authorisation
+     the inner one by the key replacing it     — proof somebody holds it
+```
+
+- **Replay**: both signatures cover the laptop's per-socket nonce, so a captured
+  move is worth nothing on the next connection.
+- **Redirection**: the fingerprint of the new key is inside what the old key
+  signed, so swapping the offered key in flight invalidates the authorisation.
+- **Downgrade by stripping**: a `rekey` removed in flight leaves a signature over
+  `nikui-rekey:…` being checked as `nikui-auth:…`, which fails. The reverse —
+  attaching a `rekey` to a plain answer — fails for the same reason.
+- **Lockout**: the new key must sign too, so a device cannot be rekeyed to a key
+  nobody holds.
+- **Collision**: a key already belonging to another device is refused, so two
+  records can never share one identity.
+
+All seven are tests in `test/hardware.test.js`.
+
+**What this does not defend against, stated plainly.** Someone holding a stolen
+*device* key can use this to make the theft permanent and lock the owner out —
+they authorise a key only they hold. That is not a new capability (they already
+had everything the stolen key grants) and forbidding the move would not remove
+it, so the design choice is that a move is never quiet: a notification in the
+window, a line in the audit trail, the previous fingerprint kept on the record,
+and both shown in the device's tooltip. The recovery is the same as for any
+compromised device — forget it, and pair again.
+
+**What a device says about where its key is kept is a claim, not a measurement.**
+Nothing on the laptop can tell a Secure Enclave from a phone that says "Secure
+Enclave"; that would take Android Key Attestation or Apple's equivalent, which
+is not implemented. So the word is shown as what the device reported and nothing
+is decided by it — `cleanProtection()` in `src/devices.js` allowlists it purely
+so an arbitrary string cannot reach a screen.
+
 ---
 
 ## Boundaries that are code, not intention
@@ -232,6 +276,8 @@ laptop                                        phone
 | Anything interpolated into a script element is escaped for that context | `src/page.js` `jsonForScript()` |
 | The script nonce is from the cryptographic generator | `src/page.js` `randomNonce()` |
 | The local key is refused when forwarded or when the Host is not loopback | `src/auth.js` `LocalKey.check()` |
+| A replacement device key must be authorised by the key it replaces, and prove itself | `src/auth.js` `Gate.answer()` |
+| Two devices can never share one key | `src/devices.js` `rekey()` |
 | Steering needs a grant, checked on the host | `src/hub.js` `STEERING` |
 | Starting an instance needs that grant too | `src/hub.js` `hello()` |
 | Push endpoints must be a known push service | `src/remote.js` `isPushEndpoint()` |

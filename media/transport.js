@@ -94,6 +94,26 @@
       connect();
     }
 
+    /**
+     * Start the connection over, including one that is working.
+     *
+     * Only one thing needs this: the handshake is where a device presents a
+     * replacement key, so moving a key into the chip means doing the handshake
+     * again. Doing it while somebody is looking at the button they pressed is
+     * the whole point — the alternative is a face check arriving at a random
+     * moment hours later.
+     */
+    function reconnect() {
+      tries = 0;
+      stopped = null;
+      const open = socket;
+      socket = null;
+      seated = false;
+      expecting = null;
+      if (open) { try { open.close(1000, 'reconnecting'); } catch (_) { /* already gone */ } }
+      connect();
+    }
+
     // The state of the connection is also the button for doing something about
     // it: on a phone, the thing you want when it says offline is to try again.
     if (pill) pill.addEventListener('click', retryNow);
@@ -158,7 +178,10 @@
             'nikui-host:' + awaited.mine + ':' + awaited.theirs, message.signature
           );
         }).then(function (ok) {
-          if (ok) return seat(message);
+          if (ok) {
+            settleUpgrade(message);
+            return seat(message);
+          }
           stopped = 'unproven laptop';
           show('off', 'This is not the laptop this device paired with');
           tell({ type: '@denied', reason: 'This is not the laptop this device paired with.' });
@@ -225,13 +248,38 @@
         // Remembered so the welcome can be checked against what was asked, not
         // against whatever the answer happens to contain.
         expecting = { mine: mine, theirs: challenge.nonce, serverKey: challenge.serverKey };
-        return window.nikDevice.sign('nikui-auth:' + challenge.nonce + ':' + mine).then(function (signature) {
-          send({ type: '@auth', device: record.id, nonce: mine, signature: signature });
-        });
+        // Which may also be a request to start using a better key — see
+        // media/device.js. The transport does not need to know which; it sends
+        // what the identity says to send.
+        return window.nikDevice.authMessage(record, challenge.nonce, mine).then(send);
       }).catch(function () {
         stopped = 'could not sign';
         show('off', 'This device could not sign in');
       });
+    }
+
+    /**
+     * A key that was waiting to replace the current one, now that the laptop
+     * has answered.
+     *
+     * The old key stops being this device's identity at exactly one moment: the
+     * laptop saying it has taken the new one, in a welcome this device has
+     * already proved came from the laptop it paired with. A welcome without
+     * that means the request did not land — an older laptop, a refusal — and
+     * the replacement is thrown away rather than tried forever.
+     */
+    function settleUpgrade(message) {
+      const identity = window.nikDevice;
+      if (!identity || !identity.load) return;
+      identity.load().then(function (record) {
+        if (!record || !record.staged) return null;
+        return message.rekeyed ? identity.commitUpgrade() : identity.discardUpgrade();
+      }).then(function (settled) {
+        if (settled === null || settled === undefined) return;
+        window.dispatchEvent(new CustomEvent('nikui-key-moved', {
+          detail: { taken: !!message.rekeyed, protection: message.rekeyed && message.rekeyed.protection }
+        }));
+      }).catch(function () { /* the next connection asks again */ });
     }
 
     function randomNonce() {
@@ -367,6 +415,7 @@
       // Shown as a state, offered as an action: anything on the page that wants
       // a retry button can call this rather than reloading.
       retry: retryNow,
+      reconnect: reconnect,
       // For the tests, and for anyone wondering in a console why nothing moves.
       __socket: function () { return socket; },
       __state: function () { return live() ? 'online' : (stopped ? 'refused' : (tries ? 'reconnecting' : 'offline')); }

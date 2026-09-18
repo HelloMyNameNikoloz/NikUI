@@ -145,7 +145,7 @@
       },
       {
         "command": "nikui.historyScope",
-        "title": "NikUI: History — This Workspace or Everywhere",
+        "title": "NikUI: History \u2014 This Workspace or Everywhere",
         "icon": "$(globe)"
       },
       {
@@ -536,9 +536,9 @@
             "type": "string"
           },
           "default": {
-            "table": "Give me the whole plan for what we are working on right now as a table: one row per step, with 🟢 for done and verified, 🟡 for in progress, and 🔴 for not started. Cover only the current task and the phase of it we are in — not the project's wider scope, and not earlier phases that are already finished. Carry on from the plan we are already working to rather than starting a new one; if there is no plan yet, make one first. Include the steps still outstanding, not only the finished ones, and end with one line on what is left."
+            "table": "Give me the whole plan for what we are working on right now as a table: one row per step, with \ud83d\udfe2 for done and verified, \ud83d\udfe1 for in progress, and \ud83d\udd34 for not started. Cover only the current task and the phase of it we are in \u2014 not the project's wider scope, and not earlier phases that are already finished. Carry on from the plan we are already working to rather than starting a new one; if there is no plan yet, make one first. Include the steps still outstanding, not only the finished ones, and end with one line on what is left."
           },
-          "markdownDescription": "Words you can type to add a standing instruction to the prompt you just wrote. `/table fix the rollback` and `fix the rollback /table` both send your text with the instruction appended; the word itself never reaches the CLI. Yours are merged over the built-in ones — set a value to an empty string to switch that one off."
+          "markdownDescription": "Words you can type to add a standing instruction to the prompt you just wrote. `/table fix the rollback` and `fix the rollback /table` both send your text with the instruction appended; the word itself never reaches the CLI. Yours are merged over the built-in ones \u2014 set a value to an empty string to switch that one off."
         },
         "nikui.pauseWhenQuotaRuns": {
           "type": "boolean",
@@ -564,7 +564,7 @@
           "type": "number",
           "default": 400,
           "minimum": 0,
-          "description": "How many messages, tool calls and results an instance keeps in memory. Older ones are dropped from the panel — the full record stays in the transcript on disk. 0 keeps everything, at the cost of memory on very long conversations."
+          "description": "How many messages, tool calls and results an instance keeps in memory. Older ones are dropped from the panel \u2014 the full record stays in the transcript on disk. 0 keeps everything, at the cost of memory on very long conversations."
         },
         "nikui.keepHiddenPanelsWarm": {
           "type": "boolean",
@@ -579,12 +579,12 @@
         "nikui.statusEmoji": {
           "type": "object",
           "default": {
-            "idle": "⚪",
-            "working": "🟠",
-            "waiting": "🔴",
-            "done": "🟢",
-            "error": "🔴",
-            "stopped": "⚫"
+            "idle": "\u26aa",
+            "working": "\ud83d\udfe0",
+            "waiting": "\ud83d\udd34",
+            "done": "\ud83d\udfe2",
+            "error": "\ud83d\udd34",
+            "stopped": "\u26ab"
           },
           "description": "Emoji used per status in panel titles."
         },
@@ -631,7 +631,7 @@
         "nikui.keepAwake": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Keep this machine from going to sleep while an instance is working — or, while the local server is listening, while one is merely running. Off by default: a laptop that sleeps takes every instance with it, but keeping yours awake is not a decision to make for you. The display is never kept on, and the assertion is released the moment nothing needs it."
+          "markdownDescription": "Keep this machine from going to sleep while an instance is working \u2014 or, while the local server is listening, while one is merely running. Off by default: a laptop that sleeps takes every instance with it, but keeping yours awake is not a decision to make for you. The display is never kept on, and the assertion is released the moment nothing needs it."
         },
         "nikui.notifyDevices": {
           "type": "object",
@@ -648,7 +648,7 @@
             },
             "quota": {
               "type": "boolean",
-              "description": "The usage limit ran out and everything paused — and again when it resets."
+              "description": "The usage limit ran out and everything paused \u2014 and again when it resets."
             },
             "failed": {
               "type": "boolean",
@@ -672,7 +672,8 @@
     "test:remote": "node test/remote.check.js",
     "test:qr": "node test/qr.check.js",
     "test:app": "node app/tools/app.check.js",
-    "app": "cd app && npm run build && npx cap sync",
-    "app:android": "cd app && npm run build && npx cap sync android && npx cap run android"
+    "app": "cd app && npm run sync",
+    "app:android": "cd app && npm run sync && npx cap run android",
+    "test:hardware": "node test/run.js hardware"
   }
 }

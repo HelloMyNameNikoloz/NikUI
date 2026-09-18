@@ -14,7 +14,8 @@ const fs = require('fs');
 const path = require('path');
 const { build, OUT } = require('./build.js');
 
-const REPO = path.join(__dirname, '..', '..');
+const APP = path.join(__dirname, '..');
+const REPO = path.join(APP, '..');
 const MEDIA = path.join(REPO, 'media');
 
 const results = [];
@@ -90,6 +91,36 @@ check('and which app', !!version.app);
 fs.writeFileSync(path.join(OUT, 'leftover.txt'), 'from a previous build');
 build();
 check('a rebuild clears what the last one left', !fs.existsSync(path.join(OUT, 'leftover.txt')));
+
+// ---- the native code Xcode would otherwise never compile ---------------------
+//
+// Android finds sources by looking in a folder; Xcode only compiles what is
+// listed in project.pbxproj. A plugin that is present, correct and unlisted is
+// a plugin that silently does not exist on the phone, and the only symptom is
+// the app deciding the device has no secure hardware.
+
+const { sync } = require('./xcode.js');
+sync();
+const pbxproj = path.join(APP, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj');
+if (fs.existsSync(pbxproj)) {
+  const project = fs.readFileSync(pbxproj, 'utf8');
+  const natives = fs.readdirSync(path.join(APP, 'ios', 'App', 'App', 'SecureKey'))
+    .filter((f) => f.endsWith('.swift'));
+  check('there is native code for the key in the chip', natives.length > 0);
+  for (const file of natives) {
+    check('Xcode is told to compile ' + file, project.includes(file + ' in Sources'));
+  }
+  const listed = sync();
+  equal('and listing it twice changes nothing', listed.added, 0);
+}
+
+const androidPlugin = path.join(APP, 'android', 'app', 'src', 'main', 'java',
+  'com', 'nikoloz', 'nikui', 'securekey', 'SecureKeyPlugin.java');
+check('Android has its half too', fs.existsSync(androidPlugin));
+check('and registers it before the bridge starts',
+  /registerPlugin\(SecureKeyPlugin\.class\);[\s\S]*super\.onCreate/.test(
+    fs.readFileSync(path.join(APP, 'android', 'app', 'src', 'main', 'java',
+      'com', 'nikoloz', 'nikui', 'MainActivity.java'), 'utf8')));
 
 let failed = 0;
 for (const r of results) {

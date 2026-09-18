@@ -202,7 +202,7 @@ function connectPage() {
 
     <p class="note" id="note"></p>
     <ul class="terms">
-      <li>This device makes a key that never leaves it.</li>
+      <li id="held">This device makes a key that never leaves it.</li>
       <li>Pairing lets it <strong>watch</strong>. Sending prompts is a separate permission you grant on the laptop.</li>
     </ul>
   </main>`,

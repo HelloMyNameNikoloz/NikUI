@@ -5,10 +5,11 @@
   "description": "The NikUI phone app: a native shell around the same client the editor runs.",
   "scripts": {
     "build": "node tools/build.js",
-    "sync": "node tools/build.js && npx cap sync",
+    "sync": "node tools/build.js && npx cap sync && node tools/xcode.js",
     "android": "npm run sync && npx cap open android",
     "ios": "npm run sync && npx cap open ios",
-    "test": "node tools/build.test.js"
+    "test": "node tools/build.test.js",
+    "xcode": "node tools/xcode.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",

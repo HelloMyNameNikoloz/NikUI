@@ -47,13 +47,34 @@ class DevicesTree {
       `- ${device.control ? 'Can send prompts, answer permissions and interrupt.' : 'Can watch. Cannot send anything.'}\n` +
       `- Paired ${when(device.pairedAt)}\n` +
       `- Last seen ${when(device.lastSeenAt)}\n` +
-      `- Key ${device.fingerprint || 'unknown'}\n\n` +
+      `- Key ${device.fingerprint || 'unknown'}, ${held(device)}\n` +
+      (device.rekeyedAt
+        ? `- Replaced its key ${when(device.rekeyedAt)} (was ${device.previousFingerprint || 'unknown'})\n`
+        : '') +
+      '\n' +
       (device.control
         ? 'A prompt from this device runs with the same permissions as one typed here.'
         : 'Grant control from the right-click menu if it should be able to steer.')
     );
     return item;
   }
+}
+
+/**
+ * Where the device says its key is kept — said as a claim, because it is one.
+ * Nothing here can tell a Secure Enclave from a phone that says "Secure
+ * Enclave"; that would take platform attestation, and a word that looked like a
+ * guarantee without one would be worse than no word at all.
+ */
+function held(device) {
+  const said = {
+    'secure-enclave': 'which it says is in a Secure Enclave',
+    'strongbox': 'which it says is in a StrongBox chip',
+    'keystore': 'which it says is in the Android Keystore',
+    'software': 'held in its browser',
+    'unknown': 'held somewhere it did not name'
+  }[device.protection || 'software'];
+  return said + (device.biometric ? ', behind a biometric check' : '');
 }
 
 function since(at) {
