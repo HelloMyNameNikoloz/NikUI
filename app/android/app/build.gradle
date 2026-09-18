@@ -35,6 +35,10 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    // The prompt shown when the key in the Keystore is behind a face or a
+    // fingerprint. AndroidX rather than the deprecated FingerprintManager, so
+    // a PIN works on a phone with no biometrics at all.
+    implementation "androidx.biometric:biometric:$androidxBiometricVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

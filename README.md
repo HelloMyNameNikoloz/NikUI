@@ -838,12 +838,27 @@ edited instead of an original.
 What the app adds is the part a browser never needed — a way to connect to a
 laptop in the first place, and a settings screen that answers "is it connected,
 what is this device allowed, and how do I undo it" without anybody having to
-ask. What it will add is a key in the Secure Enclave rather than IndexedDB,
-gated on a fingerprint, and TLS pinning that closes the relay the threat model
-still names as open.
+ask.
+
+And a key that is not in a browser. On a phone the device key is generated
+**inside the Secure Enclave or the Android Keystore**, where this app can ask
+for a signature and cannot ask for the key — not by export, not through a
+backup, not from a rooted shell. A face or fingerprint check is optional and
+off by default, because the key is in the chip either way; turned on it is
+asked once and not again for five minutes. A phone that paired before it had a
+chip can move its key there without pairing again: the key being replaced signs
+for the one replacing it, and the laptop says so out loud when it does.
+
+The laptop's protocol did not change for any of it. What did change is that two
+encodings now have to be exactly right — Apple hands back a bare EC point,
+both platforms sign to DER — so both conversions happen once, in JavaScript, and
+`test/hardware.test.js` runs them through the laptop's real verifier.
+
+Still to come: TLS pinning, which closes the relay the threat model names as
+open.
 
     npm run app          # build the bundle and sync both platforms
-    npm run test:app     # 32 checks driving the real bundle in a real browser
+    npm run test:app     # 46 checks driving the real bundle in a real browser
 
 [`app/README.md`](app/README.md) is the detail.
 

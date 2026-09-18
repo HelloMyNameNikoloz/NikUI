@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { readPublicKey, verifyWith } = require('./identity');
 
 /**
  * Who is allowed to talk to the local server.
@@ -138,28 +139,64 @@ class Gate {
     const device = this.devices.get(id);
     if (!device) return { ok: false, reason: 'this device is not paired' };
 
-    const signed = `nikui-auth:${state.nonce}:${theirNonce}`;
+    // A device may use this exchange to replace its own key — because it has
+    // moved the key into secure hardware, which it can only do by making a new
+    // one. What it signs says so: a different sentence, naming the new key. So
+    // a rekey cannot be stripped back to a plain answer, and a plain answer
+    // cannot be dressed up as a rekey; either way the signature is over the
+    // wrong words.
+    let replacement = null;
+    if (message.rekey !== undefined && message.rekey !== null) {
+      if (typeof message.rekey !== 'object') return { ok: false, reason: 'that is not a key' };
+      replacement = readPublicKey(String(message.rekey.publicKey || ''));
+      if (!replacement) return { ok: false, reason: 'that is not a key this laptop can use' };
+    }
+
+    const signed = replacement
+      ? `nikui-rekey:${state.nonce}:${theirNonce}:${replacement.fingerprint}`
+      : `nikui-auth:${state.nonce}:${theirNonce}`;
+
+    // The key being replaced authorises the replacement. Anything else would be
+    // a way to take over a device record by asking.
     if (!this.devices.verify(id, signed, message.signature)) {
       return { ok: false, reason: 'that signature is not this device' };
     }
+    // And the new key proves somebody actually holds it, over the same words —
+    // so a device cannot be locked out by rekeying it to a key nobody has.
+    if (replacement && !verifyWith(replacement.spki, signed, message.rekey.signature)) {
+      return { ok: false, reason: 'the new key did not prove itself' };
+    }
 
+    let rekeyed = null;
+    if (replacement) {
+      rekeyed = this.devices.rekey(id, {
+        publicKey: replacement.spki,
+        protection: message.rekey.protection,
+        biometric: message.rekey.biometric
+      });
+      if (!rekeyed) return { ok: false, reason: 'that key belongs to another device' };
+    }
+
+    const current = rekeyed || device;
     this.devices.touch(id, ctx.address || null);
     const seat = {
-      id: device.id,
-      name: device.name,
+      id: current.id,
+      name: current.name,
       kind: 'device',
-      control: !!device.control
+      control: !!current.control
     };
-    return {
-      ok: true,
+    const welcome = {
+      type: '@welcome',
       device: seat,
-      welcome: {
-        type: '@welcome',
-        device: seat,
-        // The server's half of the proof, over the device's nonce.
-        signature: this.identity ? this.identity.sign(`nikui-host:${theirNonce}:${state.nonce}`) : null
-      }
+      // The server's half of the proof, over the device's nonce.
+      signature: this.identity ? this.identity.sign(`nikui-host:${theirNonce}:${state.nonce}`) : null
     };
+    // Said explicitly, so the device knows the moment it is safe to stop being
+    // able to sign with the key it just replaced.
+    if (rekeyed) {
+      welcome.rekeyed = { fingerprint: rekeyed.fingerprint, protection: rekeyed.protection };
+    }
+    return { ok: true, device: seat, welcome, rekeyed };
   }
 }
 

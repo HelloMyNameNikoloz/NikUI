@@ -672,6 +672,18 @@
    * refused attempts as well as allowed ones, because a refused attempt is the
    * line you would most want to find afterwards.
    */
+  /** What the device says about where its key is. A claim, not a measurement. */
+  function heldIn(d) {
+    const said = {
+      'secure-enclave': 'key in a Secure Enclave',
+      'strongbox': 'key in a StrongBox chip',
+      'keystore': 'key in the Android Keystore',
+      'software': 'key in its browser',
+      'unknown': 'key held somewhere unnamed'
+    }[d.protection || 'software'];
+    return said + (d.biometric ? ', biometric' : '');
+  }
+
   function remote(r) {
     const e = r.env || {};
     const devices = e.devices || [];
@@ -682,6 +694,7 @@
       ? facts(devices.map((d) => [
         d.name,
         (d.control ? 'can steer' : 'watching only') +
+          ' · ' + heldIn(d) +
           (d.lastSeenAt ? ' · last seen ' + fmt.when(d.lastSeenAt) : '')
       ]))
       : '<p class="muted">No devices are paired. Only this machine can reach this window.</p>',

@@ -65,11 +65,23 @@ global.document = {
 const identity = { record: { id: 'dev-1', fingerprint: 'fp-1', publicKey: 'pk' }, signed: [] };
 identity.verdict = true;
 identity.asked = [];
+identity.settled = [];
 global.window.nikDevice = {
   available: () => true,
   load: () => Promise.resolve(identity.record),
   ensure: () => Promise.resolve(identity.record),
   sign: (message) => { identity.signed.push(message); return Promise.resolve('signature-for-' + message); },
+  authMessage: (record, theirs, mine) => {
+    const words = identity.record && identity.record.staged
+      ? 'nikui-rekey:' + theirs + ':' + mine + ':new-key'
+      : 'nikui-auth:' + theirs + ':' + mine;
+    identity.signed.push(words);
+    const message = { type: '@auth', device: record.id, nonce: mine, signature: 'signature-for-' + words };
+    if (identity.record && identity.record.staged) message.rekey = { publicKey: 'new-spki', signature: 'proof' };
+    return Promise.resolve(message);
+  },
+  commitUpgrade: () => { identity.settled.push('committed'); return Promise.resolve({}); },
+  discardUpgrade: () => { identity.settled.push('discarded'); return Promise.resolve({}); },
   verifyLaptop: (record, key, message, signature) => {
     identity.asked.push({ key, message, signature });
     return Promise.resolve(identity.verdict);
@@ -257,6 +269,41 @@ module.exports = async function () {
   checkEqual('and nothing was said on that socket',
     pretending.sent.filter((m) => m.type !== '@auth').length, 0);
   identity.verdict = true;
+
+  suite('moving this device’s key into the chip');
+
+  identity.record.staged = { publicKey: 'new-spki' };
+  identity.settled.length = 0;
+  const moving = withFakeClock(() => socketTransport({ session: 'nik-8', socket: '/socket?session=nik-8' }));
+  const movingSocket = sockets[sockets.length - 1];
+  movingSocket.accept();
+  movingSocket.deliver({ type: '@challenge', nonce: 'n8', fingerprint: 'fp-1', serverKey: 'their-spki' });
+  await settle();
+  const carrying = movingSocket.sent.find((m) => m.type === '@auth');
+  check('the answer carries the replacement key', !!(carrying && carrying.rekey));
+  check('signed over words that name it, not a plain answer',
+    identity.signed.some((m) => m.indexOf('nikui-rekey:n8:') === 0));
+
+  movingSocket.deliver({
+    type: '@welcome', device: { control: true }, signature: 'from-the-laptop',
+    rekeyed: { fingerprint: 'new-fp', protection: 'secure-enclave' }
+  });
+  await settle();
+  checkEqual('a laptop that took it makes the move final', identity.settled, ['committed']);
+  checkEqual('and the socket is live', moving.__state(), 'online');
+
+  identity.settled.length = 0;
+  const ignoring = withFakeClock(() => socketTransport({ session: 'nik-9', socket: '/socket?session=nik-9' }));
+  const ignoringSocket = sockets[sockets.length - 1];
+  ignoringSocket.accept();
+  ignoringSocket.deliver({ type: '@challenge', nonce: 'n9', fingerprint: 'fp-1', serverKey: 'their-spki' });
+  await settle();
+  ignoringSocket.deliver({ type: '@welcome', device: { control: true }, signature: 'from-the-laptop' });
+  await settle();
+  checkEqual('a laptop that did not take it leaves nothing half-moved', identity.settled, ['discarded']);
+  check('and the device is still connected with the key it already had',
+    ignoring.__state() === 'online');
+  delete identity.record.staged;
 
   suite('backoff');
 
