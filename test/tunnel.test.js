@@ -8,6 +8,8 @@ function fake(answers, options) {
   const tailscale = new Tailscale(Object.assign({
     places: ['/fake/tailscale'],
     exists: (file) => file === '/fake/tailscale',
+    // No tailnet here, so nothing is knocked on.
+    probe: () => Promise.resolve(true),
     run: (argv) => {
       calls.push(argv.slice(1).join(' '));
       const key = Object.keys(answers).find((prefix) => argv.slice(1).join(' ').startsWith(prefix));
@@ -102,6 +104,23 @@ module.exports = async function () {
   checkEqual('with its own first line, not ours', failed.reason, 'serve: HTTPS is not enabled on your tailnet');
 
   suite('taking it down again');
+
+  // Warming is part of exposing: the first request to a new name mints its
+  // certificate, and paying for that inside the command is the difference
+  // between a phone seeing a page and a phone seeing "cannot reach the laptop".
+  const knocks = [];
+  const warming = fake({ 'status --json': running(), 'serve': { code: 0, stdout: '', stderr: '' } },
+    { probe: (url) => { knocks.push(url); return Promise.resolve(knocks.length > 1); } });
+  await warming.tailscale.expose(4517);
+  check('the door is knocked on before anyone is told it is open', knocks.length >= 1);
+  checkEqual('at the address a client would use', knocks[0],
+    'https://laptop.tail1234.ts.net/health');
+  check('and more than once, since the first may be too early', knocks.length >= 2);
+
+  const cold = fake({ 'status --json': running(), 'serve': { code: 0, stdout: '', stderr: '' } },
+    { probe: () => Promise.resolve(false) });
+  const anyway = await cold.tailscale.expose(4517);
+  checkEqual('a name that never answers is still exposed, not called a failure', anyway.ok, true);
 
   const stopping = fake({ 'serve --https=443 off': { code: 0, stdout: '', stderr: '' } });
   checkEqual('it stops', (await stopping.tailscale.hide()).ok, true);

@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const https = require('https');
 const { execFile, spawn } = require('child_process');
 
 /**
@@ -42,6 +43,9 @@ class Tailscale {
     this.places = d.places || PLACES;
     this.exists = d.exists || ((file) => { try { return fs.existsSync(file); } catch (_) { return false; } });
     this.runner = d.run || runCommand;
+    // Injected so the tests never touch the network: warming is a real request
+    // to a real name, which is exactly what a test must not do.
+    this.probe = d.probe || knock;
     this.binary = d.binary || null;
   }
 
@@ -132,7 +136,31 @@ class Tailscale {
     if (out.code !== 0) {
       return { ok: false, reason: firstLine(out.stderr) || firstLine(out.stdout) || 'tailscale serve refused' };
     }
-    return { ok: true, host: state.name, url: `https://${state.name}/` };
+    const url = `https://${state.name}/`;
+    // The very first request to a name mints its certificate, and that takes
+    // long enough to look like a failure — measured at over fifteen seconds
+    // cold against twenty-one milliseconds warm. Paying for it here means the
+    // phone's first visit is a page rather than "cannot reach the laptop".
+    await this.warm(url);
+    return { ok: true, host: state.name, url };
+  }
+
+  /**
+   * Knock on the door until somebody answers, or give up quietly.
+   *
+   * Nothing depends on the result: a tunnel that is up but not yet certified is
+   * still up, and the client retries on its own. This only moves the waiting to
+   * where somebody has already been told to wait.
+   */
+  async warm(url, options) {
+    const o = options || {};
+    const attempts = o.attempts || 3;
+    const each = o.timeoutMs || 8000;
+    const probe = o.probe || this.probe;
+    for (let i = 0; i < attempts; i++) {
+      if (await probe(url + 'health', each)) return true;
+    }
+    return false;
   }
 
   /** Take it down again. */
@@ -155,6 +183,17 @@ class Tailscale {
       return JSON.stringify(parsed).indexOf(`127.0.0.1:${port}`) >= 0;
     } catch (_) { return false; }
   }
+}
+
+function knock(url, timeoutMs) {
+  return new Promise((resolve) => {
+    const req = https.get(url, { timeout: timeoutMs }, (res) => {
+      res.resume();
+      resolve(res.statusCode > 0);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
 }
 
 function runCommand(argv) {

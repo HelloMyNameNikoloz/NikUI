@@ -538,10 +538,14 @@ The phone tells the three states apart rather than showing one dead socket:
 *Live*, *reconnecting* (the laptop answered `/health` but the socket is not up),
 and *cannot reach the laptop* (nothing answered at all).
 
-**Not verified against a live tailnet.** This machine has no Tailscale on it, so
-`src/tunnel.js` is covered by tests with an injected command runner — the
-argument it builds, the status it parses, every refusal it reports — but the
-round trip over a real mesh is yours to confirm.
+**Verified against a live tailnet** on 2026-09-18: `tailscale serve` forwarding
+to a real server, the app and the pairing page fetched over
+`https://<laptop>.<tailnet>.ts.net`, the local key refused out there, the QR
+carrying the tailnet name, and the forward torn back down leaving nothing
+behind. The one thing that surprised: the **first** request to a new name mints
+its certificate and can take longer than a client will wait — measured at over
+fifteen seconds cold against twenty-one milliseconds warm — so `expose()` knocks
+on the door itself before reporting success.
 
 ### Two views of one instance
 
@@ -739,7 +743,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 1131 checks, no dependencies, no network, no CLI
+    npm test             # 1135 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
     npm run test:remote  # 69 checks driving the served client in real browsers,
                          #   including one the size of a phone and one cold-starting
