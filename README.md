@@ -357,6 +357,8 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `NikUI: Let this device send prompts` | Grants control, with a dialog that says what that means |
 | `NikUI: Make this device watch only` | Takes it back, on the socket it is holding now |
 | `NikUI: Forget this device` | Deletes its key and closes its connection |
+| `NikUI: Reach this window from my phone` | Puts the tailnet in front of the server |
+| `NikUI: Stop being reachable from my phone` | Takes it back off |
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
 
@@ -471,10 +473,85 @@ from that:
 - Only `media/` is servable, only by extension, and only after the resolved path
   is confirmed to be inside it.
 
-What is still missing before a phone is useful from outside the house is
-reachability (#12) — and note that Web Crypto only exists in a **secure
-context**, so that tunnel has to be HTTPS. On a plain `http://192.168.x.x` the
-browser will not let a device hold a key at all.
+Reaching the laptop from elsewhere is the next section: the tailnet goes in
+front, and the local key stops working through it.
+
+### Reaching the laptop from a phone that is elsewhere
+
+`NikUI: Reach this window from my phone` asks **Tailscale** to put itself in
+front of the local server. Nothing new listens: `tailscale serve` takes the
+connection on the mesh and forwards it to `127.0.0.1`, so the thing exposed is
+theirs — already encrypted, already device-authenticated, and wearing a real
+certificate — and ours stays exactly where it was.
+
+The certificate is not a nicety. **Web Crypto only exists in a secure context**,
+so over a plain `http://192.168.x.x` a phone cannot hold a device key at all and
+pairing is impossible. That is why the mesh comes first and a tunnel second,
+rather than opening a port on the LAN.
+
+Setup, once:
+
+1. Install Tailscale on the laptop and on the phone, and sign both into the same
+   tailnet.
+2. In the Tailscale admin console, enable **HTTPS Certificates** for the tailnet
+   (Settings → Features). Without it, `tailscale serve` has no certificate to
+   use and NikUI will say so rather than half-working.
+3. Run `NikUI: Reach this window from my phone`. It reports the address —
+   `https://<laptop>.<tailnet>.ts.net` — and offers to pair a device.
+4. Pair the phone from that address. The QR now carries the tailnet name, so the
+   phone can scan it from anywhere it can reach the mesh.
+
+`NikUI: Stop being reachable from my phone` undoes it, and so does stopping the
+server. Only the forwarding this window set up is removed — a `tailscale serve`
+you configured for something else is left alone.
+
+While the tailnet is in front of the server, **the local key stops working over
+it**: it is refused for any request that arrives forwarded or addressed to
+anything but a loopback name. The only way in from the tailnet is a paired
+device, which is the point.
+
+The phone tells the three states apart rather than showing one dead socket:
+*Live*, *reconnecting* (the laptop answered `/health` but the socket is not up),
+and *cannot reach the laptop* (nothing answered at all).
+
+**Not verified against a live tailnet.** This machine has no Tailscale on it, so
+`src/tunnel.js` is covered by tests with an injected command runner — the
+argument it builds, the status it parses, every refusal it reports — but the
+round trip over a real mesh is yours to confirm.
+
+### Two views of one instance
+
+With a phone attached there are two live views of the same conversation, and
+they must not fight:
+
+- **Shared** is broadcast: items, status, stats, queue, cost. A prompt sent from
+  the phone appears in the laptop panel immediately, through the same `items`
+  message, and the other way round.
+- **Per client** never leaves the client: the draft you are halfway through,
+  where you have scrolled, whether your status sheet is open. A draft is not in
+  the protocol in either direction, which is the only way to be sure one cannot
+  clobber another.
+- **Presence** is a name, not an activity. The header says who else is attached
+  and whether they can steer.
+- Choosing another instance from a phone moves **the phone**. It does not reach
+  across and rearrange the tabs on the laptop.
+
+### On a phone-sized screen
+
+One layer on top of the same client, in `media/browser.css` — which the editor
+never loads, so the desktop panel cannot be affected by any of it.
+
+- The fleet is the home screen; a conversation has a way back to it.
+- The composer sits above the keyboard, because `media/mobile.js` tracks the
+  **visual viewport** rather than the window — the thing phone web apps most
+  often get wrong.
+- Tap targets are 44 points: send, stop, the queue's controls, Allow and Deny,
+  the dashboard's sections.
+- The dashboard is full screen and its six sections are **swipeable**, pressing
+  the same arrow keys the keyboard would rather than growing a second way
+  through.
+- The composer's text is 16px, below which iOS zooms the whole page on focus.
+- Nothing scrolls sideways except the deliberately wide fleet table.
 
 ### The wire
 
@@ -557,9 +634,10 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 900 checks, no dependencies, no network, no CLI
+    npm test             # 951 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
-    npm run test:remote  # 31 checks driving the served client in a real browser
+    npm run test:remote  # 45 checks driving the served client in real browsers,
+                         #   including one the size of a phone
     npm run test:qr      # 22 checks reading our QR codes back with Apple's decoder
     npm run test:live    # 15 checks against the real claude binary (costs tokens)
 
@@ -607,6 +685,7 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     src/pairPanel.js   that window on screen: a QR, a code, a countdown
     src/devicesTree.js the sidebar list of devices, and what each is allowed
     src/qr.js          a QR encoder, verified against Apple's decoder
+    src/tunnel.js      asking Tailscale to forward to us, and reading its answers
     src/wire.js        RFC 6455, server side, no dependencies
     src/ticket.js      PR/issue extraction and the switch rule
     src/label.js       the one naming rule, shared by instances and history
@@ -622,6 +701,7 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     media/device.js    this device's key: made here, never exported, signs challenges
     media/pair.js      the pairing screen a phone lands on
     media/home.js      the window as a list, drawn from the socket
+    media/mobile.js    the keyboard, the viewport and the swipe: a phone's share
     media/browser.css  theme and connection state for when the host is a browser
     media/theme.js     the OS colour scheme, in the terms panel.css understands
     media/markdown.js  dependency-free Markdown renderer
