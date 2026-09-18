@@ -27,7 +27,15 @@ const BARS = [
 /** Anti-aliasing by drawing big and averaging down. */
 const SUPER = 4;
 
-function draw(size, { padding, rounded, opaque }) {
+/**
+ * @param {number} size
+ * @param {{padding: number, rounded: boolean, opaque: boolean, mono?: boolean}} how
+ *   `mono` is the status-bar form: Android throws away every colour in a
+ *   notification icon and keeps only the alpha, so the three bars are drawn
+ *   white on nothing. Drawn here rather than hand-traced, so it stays the same
+ *   mark as everything else when the mark changes.
+ */
+function draw(size, { padding, rounded, opaque, mono }) {
   const big = size * SUPER;
   const pixels = new Uint8Array(big * big * 4);
 
@@ -35,15 +43,17 @@ function draw(size, { padding, rounded, opaque }) {
   const span = big - inset * 2;
   const radius = rounded ? span * 0.22 : 0;
 
-  // The field.
-  for (let y = 0; y < big; y++) {
-    for (let x = 0; x < big; x++) {
-      const inside = opaque || insideRoundedRect(x, y, inset, inset, span, span, radius);
-      const at = (y * big + x) * 4;
-      pixels[at] = FIELD[0];
-      pixels[at + 1] = FIELD[1];
-      pixels[at + 2] = FIELD[2];
-      pixels[at + 3] = inside ? 255 : 0;
+  // The field, unless there is not one: a status icon is the mark alone.
+  if (!mono) {
+    for (let y = 0; y < big; y++) {
+      for (let x = 0; x < big; x++) {
+        const inside = opaque || insideRoundedRect(x, y, inset, inset, span, span, radius);
+        const at = (y * big + x) * 4;
+        pixels[at] = FIELD[0];
+        pixels[at + 1] = FIELD[1];
+        pixels[at + 2] = FIELD[2];
+        pixels[at + 3] = inside ? 255 : 0;
+      }
     }
   }
 
@@ -60,9 +70,9 @@ function draw(size, { padding, rounded, opaque }) {
       for (let x = Math.floor(left); x < Math.ceil(left + width); x++) {
         if (!insideRoundedRect(x, y, left, top, width, barHeight, barHeight / 2)) continue;
         const at = (y * big + x) * 4;
-        pixels[at] = bar.colour[0];
-        pixels[at + 1] = bar.colour[1];
-        pixels[at + 2] = bar.colour[2];
+        pixels[at] = mono ? 255 : bar.colour[0];
+        pixels[at + 1] = mono ? 255 : bar.colour[1];
+        pixels[at + 2] = mono ? 255 : bar.colour[2];
         pixels[at + 3] = 255;
       }
     }
@@ -144,7 +154,10 @@ const icons = [
   // that matters sits inside the middle 80%.
   { file: 'nikui-maskable-512.png', size: 512, padding: 0.1, rounded: false, opaque: true },
   // iOS does not round what it is given unless it is opaque and square.
-  { file: 'apple-touch-icon-180.png', size: 180, padding: 0, rounded: false, opaque: true }
+  { file: 'apple-touch-icon-180.png', size: 180, padding: 0, rounded: false, opaque: true },
+  // The status bar: white on nothing, with room around it, because Android
+  // draws this small and crops nothing.
+  { file: 'nikui-status-96.png', size: 96, padding: 0.12, rounded: false, opaque: false, mono: true }
 ];
 
 fs.mkdirSync(OUT, { recursive: true });

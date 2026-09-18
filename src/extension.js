@@ -594,6 +594,10 @@ function serveLocally(context, manager, awakeState) {
     // A notification whose instance cannot be opened is a notification that
     // teaches you to ignore them.
     reachable: () => server.listening,
+    // The app, when it is open, is already holding a socket — so it is told
+    // down that rather than through a push service, which needs a tunnel, an
+    // account somewhere, and a phone that is reachable from outside.
+    toSockets: (message) => server.notifyDevices(message),
     settings: () => {
       try { return vscode.workspace.getConfiguration('nikui').get('notifyDevices', {}) || {}; }
       catch (_) { return {}; }

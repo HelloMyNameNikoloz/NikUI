@@ -34,7 +34,7 @@ const CLIENT_FILES = SCRIPTS.concat([
   'panel.css', 'browser.css', 'mobile.js', 'home.js', 'device.js'
 ]);
 
-const SHELL_FILES = ['app.css', 'app.js', 'connect.js', 'settings.js'];
+const SHELL_FILES = ['app.css', 'app.js', 'notify.js', 'connect.js', 'settings.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -141,6 +141,7 @@ function conversationPage() {
     head: '<link rel="stylesheet" href="media/browser.css">\n' +
       '<link rel="stylesheet" href="app.css">\n' +
       '<script src="app.js"></script>\n' +
+      '<script src="notify.js"></script>\n' +
       '<script src="media/mobile.js" defer></script>\n',
     boot: 'document.body.classList.add(\'app\', \'app-conversation\');'
   })
@@ -167,7 +168,7 @@ function homePage() {
     <p class="lede" id="lede">Connecting&hellip;</p>
     <div class="rows" id="rows"></div>
   </main>`,
-    scripts: ['app.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'media/home.js']
+    scripts: ['app.js', 'notify.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'media/home.js']
   });
 }
 
@@ -221,7 +222,7 @@ function settingsPage() {
     <div class="bar-right"></div>
   </header>
   <main class="screen" id="screen"></main>`,
-    scripts: ['app.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'settings.js']
+    scripts: ['app.js', 'notify.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'settings.js']
   });
 }
 

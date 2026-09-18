@@ -22,7 +22,9 @@
     key: null,              // where the key is held, and what this device could do better
     moving: null,           // a word for what the move is doing, while it does it
     sealed: null,           // whether this connection is sealed end to end
-    showing: null           // a fingerprint opened up to be read out loud
+    showing: null,          // a fingerprint opened up to be read out loud
+    notify: null,           // what this phone has been told it may show
+    watching: null          // whether it can keep listening in a pocket
   };
 
   const el = (tag, className, text) => {
@@ -215,6 +217,70 @@
     row(identity, { label: 'Laptop key pinned', value: shortKey(state.where.fingerprint), mono: true });
     row(identity, { label: 'Paired', value: ago(state.where.pairedAt) });
 
+    // ---- being told -------------------------------------------------------
+    //
+    // One switch to turn it on, which is also the moment the phone is asked for
+    // permission — never at launch, because a permission dialog before anybody
+    // has asked for anything is a dialog that gets refused.
+
+    const wanted = window.NikNotify ? window.NikNotify.prefs() : { on: false };
+    const allowed = state.notify;
+
+    const telling = group('Notifications', allowed === 'denied'
+      ? 'This phone is set to show nothing from NikUI. Open its Settings to change that.'
+      : 'Your laptop decides what is worth telling you. This decides which of those reach you here.');
+
+    row(telling, {
+      label: 'Tell me things',
+      hint: allowed === 'denied' ? 'Blocked by this phone' : null,
+      value: wanted.on && allowed === 'granted' ? 'On' : 'Off',
+      tone: wanted.on && allowed === 'granted' ? 'good' : allowed === 'denied' ? 'bad' : '',
+      tap: toggleNotifications,
+      chevron: true
+    });
+
+    if (wanted.on && allowed === 'granted') {
+      for (const [key, , label, hint] of (window.NikNotify.KINDS || [])) {
+        row(telling, {
+          label, hint,
+          value: wanted[key] ? 'On' : 'Off',
+          tone: wanted[key] ? 'good' : '',
+          tap: () => { window.NikNotify.setPref(key, !wanted[key]); draw(); }
+        });
+      }
+      row(telling, {
+        label: 'Send me one now',
+        hint: 'To see what it looks like, and that it arrives',
+        tap: () => window.NikNotify.test().then((ok) => flash(ok ? 'Sent.' : 'This phone would not show it.')),
+        chevron: true
+      });
+    }
+
+    // Keeping the socket open while the app is not on screen. Android allows
+    // it behind a quiet ongoing notification; iOS does not allow it at all,
+    // and says so rather than offering a switch that would do nothing.
+    const away = state.watching || { supported: false, running: false };
+    if (wanted.on && allowed === 'granted') {
+      if (away.supported) {
+        row(telling, {
+          label: 'Keep watching in the background',
+          hint: away.running
+            ? 'A quiet notification says so, because this phone requires one'
+            : 'Off — you are only told while NikUI is open',
+          value: away.running ? 'On' : 'Off',
+          tone: away.running ? 'good' : '',
+          tap: () => window.NikNotify.watch(!away.running).then((now) => { state.watching = now; draw(); }),
+          chevron: true
+        });
+      } else {
+        row(telling, {
+          label: 'While NikUI is closed',
+          hint: 'iPhone stops apps listening in the background. There is no setting for it.',
+          value: 'Not possible'
+        });
+      }
+    }
+
     const look = group('Text size');
     const sizes = [['small', 'Small'], ['medium', 'Default'], ['large', 'Large']];
     const current = app.prefs().textSize;
@@ -372,12 +438,40 @@
     });
   });
 
+  /**
+   * On means two things at once — this phone allowing it, and this app wanting
+   * it — so the switch does both, in that order, and says which one said no.
+   */
+  function toggleNotifications() {
+    const api = window.NikNotify;
+    if (!api) return;
+    const now = api.prefs();
+    if (now.on) {
+      api.setPref('on', false);
+      // Nothing to listen for means nothing to stay awake for.
+      return api.watch(false).then((watching) => { state.watching = watching; draw(); });
+    }
+    return api.ask().then((verdict) => {
+      state.notify = verdict;
+      if (verdict !== 'granted') {
+        draw();
+        flash(verdict === 'unavailable' ? 'Not available here.' : 'This phone said no.');
+        return;
+      }
+      api.setPref('on', true);
+      draw();
+    });
+  }
+
   function copyDiagnostics() {
     const lines = [
       'NikUI app ' + state.version.app + ' · client ' + state.version.client,
       'laptop: ' + state.where.scheme + '://' + state.where.host,
       'connection: ' + state.connection + (state.health != null ? ' (' + state.health + ' ms)' : ''),
       'sealed: ' + (state.sealed === null ? 'unknown' : state.sealed ? 'end to end' : 'no'),
+      'notifications: ' + String(state.notify) +
+        (window.NikNotify ? ' · ' + JSON.stringify(window.NikNotify.prefs()) : ''),
+      'background: ' + JSON.stringify(state.watching),
       'permission: ' + (state.control === null ? 'unknown' : state.control ? 'can steer' : 'watching only'),
       'device id: ' + ((state.device && state.device.id) || 'not paired'),
       'key kept in: ' + ((state.device && state.device.protection) || 'software') +
@@ -440,5 +534,9 @@
     app.version().then((v) => { state.version = v; draw(); });
     refreshKey();
     probe();
+    if (window.NikNotify) {
+      window.NikNotify.permission().then((verdict) => { state.notify = verdict; draw(); });
+      window.NikNotify.background().then((watching) => { state.watching = watching; draw(); });
+    }
   }
 })();

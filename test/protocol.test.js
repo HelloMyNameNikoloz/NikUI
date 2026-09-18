@@ -34,7 +34,7 @@ const TO_CLIENT = [
 // handshake agrees a key, every frame on the socket is one of these with a
 // message sealed in it. It is listed here because it is part of the protocol,
 // not an implementation detail of one end.
-const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate', '@box'];
+const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate', '@box', '@notify'];
 const CONTROL_TO_HOST = ['@auth', '@box'];
 
 function quietSession() {
@@ -106,6 +106,9 @@ module.exports = async function () {
     [...client.matchAll(/case '(@[a-zA-Z]+)':/g)].map((m) => m[1])
       .concat([...shim.matchAll(/message\.type === '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
       .concat([...read('media/home.js').matchAll(/type === '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
+      // The app's own shell speaks the protocol too: a frame only it acts on is
+      // still a frame, and a frame nothing acts on is still a mistake.
+      .concat([...read('app/shell/notify.js').matchAll(/type !== '(@[a-zA-Z]+)'/g)].map((m) => m[1]))
   );
   // What the shim puts on the wire, as against what it hands to its own page:
   // an offline refusal is synthesised locally and must still be a message the

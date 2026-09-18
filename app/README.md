@@ -15,7 +15,7 @@ cd app && npm test     # check the bundle is still a copy, not a fork
 
     app/capacitor.config.json   appId, the dark field colour, the schemes
     app/shell/                  the app's own screens: app.css, app.js,
-                                connect.js, settings.js
+                                connect.js, settings.js, notify.js
     app/tools/build.js          builds www/ from media/ — never edited by hand
     app/tools/icons.js          launcher icons from the same mark as everything else
     app/tools/xcode.js          puts native sources into project.pbxproj
@@ -25,6 +25,7 @@ cd app && npm test     # check the bundle is still a copy, not a fork
     app/android, app/ios        the native projects, committed
     …/ios/App/App/SecureKey/    the Secure Enclave half of the key plugin
     …/android/…/securekey/      the Android Keystore half
+    …/android/…/watcher/        the foreground service that keeps watching
 
 ## The one rule
 
@@ -145,6 +146,41 @@ default — a device that will not seal is refused) and `nikui.remote.appOnly`
 the socket, the pulse and the push key; the app carries its own client and needs
 no page).
 
+## Being told
+
+The laptop already decides what is worth telling somebody about — an instance
+waiting for an answer, the quota running out, an instance failing, and
+optionally every turn finishing. That decision is made once, in
+`src/notify.js`, and now leaves by two doors instead of one:
+
+- **down the socket the app is already holding**, as an `@notify` frame. No push
+  service, no account anywhere, no tunnel — the device is *here*, so it is told
+  here. This is the path the app uses.
+- **through a push service**, as before, for a phone with the page installed
+  from a browser.
+
+The phone then decides which of those are worth interrupting for, with its own
+switches, and raises a real system notification. Tapping it opens the instance
+it was about. Two channels — one that makes a sound because something cannot go
+on without you, one that does not — so the phone's own settings can separate
+them.
+
+**Keeping the socket open when the app is not on screen** is where the two
+platforms differ, and the app says which one it is on rather than pretending:
+
+- **Android** can, behind the quiet ongoing notification the system requires
+  (`WatchService`, `foregroundServiceType="dataSync"`, importance `MIN`, no
+  sound, no badge). It is off until asked for.
+- **iOS** cannot. The system suspends an app the moment it leaves the screen,
+  and there is no entitlement that changes that for this purpose. Settings says
+  so in one line instead of offering a switch that would do nothing. The
+  groundwork for APNs is what phase 6 is for; it needs a developer account.
+
+The status-bar icon is drawn by `tools/icons.js` in the same three bars as
+everything else, white on nothing, because Android keeps only the alpha of a
+notification icon and a launcher icon handed to it renders as a white square.
+
 ## What is not here yet
 
-Phases 4 to 6 of the app plan: native push, polish, and the store logistics.
+Phases 5 and 6 of the app plan: polish, and the store logistics — including
+APNs, which is the only way an iPhone is told while NikUI is closed.

@@ -129,6 +129,25 @@ class RemoteServer {
     try { this.announcer(event); } catch (_) { /* a listener's problem, not the server's */ }
   }
 
+  /**
+   * Something a person should see, to every device that is already here.
+   *
+   * Not a session message: it belongs to the device rather than to any one
+   * instance, so it goes to every socket a device is holding, whether that
+   * socket is watching the window or one conversation in it.
+   *
+   * @returns {number} how many were told
+   */
+  notifyDevices(message) {
+    let told = 0;
+    for (const client of this.clients) {
+      if (!client.device || client.device.kind !== 'device') continue;
+      client.post(Object.assign({ type: '@notify' }, message));
+      told++;
+    }
+    return told;
+  }
+
   announceState() {
     for (const fn of this.stateWatchers) {
       try { fn(this.listening); } catch (_) { /* a watcher's problem */ }
