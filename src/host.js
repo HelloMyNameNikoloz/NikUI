@@ -16,12 +16,13 @@ const { transcriptPath } = require('./history');
  */
 function createHost(context, manager, extras) {
   const devices = (extras && extras.devices) || null;
+  const awake = (extras && extras.awake) || null;
   return {
     config: () => readConfig(),
     home: os.homedir(),
     knownCommands: () => (manager ? manager.knownCommands() : []),
     fleet: () => (manager ? manager.list : []),
-    env: (session) => describeEnv(context, manager, session, devices),
+    env: (session) => describeEnv(context, manager, session, devices, awake),
     openFile: (req) => openFile(req),
     switchTo: (id, from) => switchTo(context, manager, id, from),
     // What arrived from a device, allowed or not. The editor's own panel has no
@@ -32,9 +33,10 @@ function createHost(context, manager, extras) {
 }
 
 /** What the status report can only learn from the editor and the machine. */
-function describeEnv(context, manager, session, devices) {
+function describeEnv(context, manager, session, devices, awake) {
   const cfg = readConfig();
   return {
+    awake: awake ? awake.state() : null,
     devices: devices ? devices.list().map((d) => ({
       name: d.name, control: !!d.control, lastSeenAt: d.lastSeenAt, pairedAt: d.pairedAt
     })) : [],

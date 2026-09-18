@@ -20,6 +20,9 @@ const { PairingWindow } = require('./pairing');
 const { PairPanel } = require('./pairPanel');
 const { loadIdentity } = require('./identity');
 const { Tailscale } = require('./tunnel');
+const { Awake, shouldHold } = require('./awake');
+const { loadVapid } = require('./push');
+const { Notifier } = require('./notify');
 
 let manager;
 
@@ -421,9 +424,53 @@ function activate(context) {
     }
   }));
 
-  serveLocally(context, manager);
+  // The sheet should be able to say whether the machine is being held awake,
+  // and the thing holding it needs to know whether the server is listening, so
+  // each is handed a way to ask the other rather than a reference to it.
+  let awake = null;
+  const server = serveLocally(context, manager, { state: () => (awake ? awake.state() : null) });
+  awake = keepAwake(context, manager, server);
 
   context.subscriptions.push({ dispose: () => { closeAllHubs(); manager.disposeAll(); } });
+}
+
+/**
+ * Keep the machine awake while there is something worth staying awake for.
+ *
+ * Off unless asked, because keeping somebody's laptop awake is not a decision
+ * to make for them; released the moment nothing needs it, because a machine
+ * that never sleeps through a forgotten flag is its own bug.
+ */
+function keepAwake(context, manager, server) {
+  const awake = new Awake();
+
+  const reconsider = () => {
+    let enabled = false;
+    try { enabled = vscode.workspace.getConfiguration('nikui').get('keepAwake', false); } catch (_) { enabled = false; }
+    const verdict = shouldHold({
+      enabled,
+      sessions: manager.list,
+      serving: !!(server && server.listening)
+    });
+    if (verdict.hold) awake.hold(verdict.reason);
+    else awake.release();
+  };
+
+  manager.on('changed', reconsider);
+  manager.on('session-changed', reconsider);
+  manager.on('paused', reconsider);
+  manager.on('resumed', reconsider);
+  if (server && server.onState) context.subscriptions.push({ dispose: server.onState(reconsider) });
+  if (vscode.workspace.onDidChangeConfiguration) {
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event || !event.affectsConfiguration || event.affectsConfiguration('nikui.keepAwake')) reconsider();
+    }));
+  }
+  // Quitting the editor lets go of it, rather than leaving the machine awake
+  // on the strength of a process that is no longer there.
+  context.subscriptions.push({ dispose: () => awake.dispose() });
+  reconsider();
+  return awake;
 }
 
 /**
@@ -434,7 +481,7 @@ function activate(context) {
  * here. The status bar item is not decoration — it is the answer to "is it
  * listening right now", which should never need looking up.
  */
-function serveLocally(context, manager) {
+function serveLocally(context, manager, awakeState) {
   const bar = vscode.window.createStatusBarItem
     ? vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
     : null;
@@ -448,14 +495,19 @@ function serveLocally(context, manager) {
   const identity = loadIdentity(context.globalState);
   const devices = new DeviceStore(context.globalState);
   const pairing = new PairingWindow();
+  // The identity this window sends notifications under. Separate from the one
+  // devices pair against: one proves who the laptop is to a phone, the other
+  // proves who the sender is to a push service.
+  const vapid = loadVapid(context.globalState);
 
   const server = new RemoteServer({
     root: context.extensionUri.fsPath,
-    host: createHost(context, manager, { devices }),
+    host: createHost(context, manager, { devices, awake: awakeState || null }),
     sessions: { list: () => manager.list, get: (id) => manager.get(id) },
     devices,
     identity,
     pairing,
+    vapid,
     watchFleet: (fn) => {
       const on = () => fn();
       manager.on('changed', on);
@@ -469,6 +521,22 @@ function serveLocally(context, manager) {
   // but loopback either way: this asks Tailscale's own proxy to forward to us.
   const tailscale = new Tailscale();
   let weExposed = false;
+
+  /**
+   * Being told, rather than checking. Three things are worth a phone buzzing;
+   * a turn finishing is available and off, because four agents finishing
+   * overnight is a phone buzzing all night.
+   */
+  const notifier = new Notifier({
+    devices,
+    vapid,
+    settings: () => {
+      try { return vscode.workspace.getConfiguration('nikui').get('notifyDevices', {}) || {}; }
+      catch (_) { return {}; }
+    },
+    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  push: ' + line); }
+  });
+  context.subscriptions.push({ dispose: notifier.watch(manager) });
 
   const tree = new DevicesTree(devices, server);
   const view = vscode.window.createTreeView('nikui.devices', { treeDataProvider: tree });

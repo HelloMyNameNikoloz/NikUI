@@ -68,6 +68,7 @@ class RemoteServer {
     this.devices = deps.devices || null;
     this.identity = deps.identity || null;
     this.pairing = deps.pairing || null;
+    this.vapid = deps.vapid || null;
     this.hubs = deps.hubs || require('./hub');
     this.gate = deps.gate || new Gate({
       localKey: deps.localKey || new LocalKey(),
@@ -82,6 +83,7 @@ class RemoteServer {
     this.seq = 0;
     this.refusals = [];
     this.stopWatching = null;
+    this.stateWatchers = new Set();
 
     // A grant taken away has to reach a socket that is already open, or
     // revoking would mean "next time".
@@ -95,6 +97,18 @@ class RemoteServer {
 
   get listening() {
     return !!this.server && this.server.listening;
+  }
+
+  /** Told whenever the server starts or stops, for anything that follows it. */
+  onState(fn) {
+    this.stateWatchers.add(fn);
+    return () => this.stateWatchers.delete(fn);
+  }
+
+  announceState() {
+    for (const fn of this.stateWatchers) {
+      try { fn(this.listening); } catch (_) { /* a watcher's problem */ }
+    }
   }
 
   /** The address to open on this machine, key and all. */
@@ -148,6 +162,7 @@ class RemoteServer {
         this.server = server;
         this.port = server.address().port;
         this.log(`listening on 127.0.0.1:${this.port}`);
+        this.announceState();
         resolve(this);
       };
       server.once('error', failed);
@@ -165,6 +180,7 @@ class RemoteServer {
     for (const client of [...this.clients]) client.close(wire.CLOSE.GOING_AWAY, 'server stopping');
     this.clients.clear();
     this.fleetClients.clear();
+    this.announceState();
     return new Promise((resolve) => {
       server.close(() => { this.log('stopped'); resolve(); });
       // A client that will not hang up should not keep the window open.
@@ -242,6 +258,7 @@ class RemoteServer {
     const route = decodeURIComponent(url.pathname);
 
     if (req.method === 'POST' && route === '/pair') return this.pair(req, res);
+    if (req.method === 'POST' && route === '/push/subscribe') return this.subscribe(req, res);
     if (req.method !== 'GET' && req.method !== 'HEAD') return plain(res, 405, 'Only GET');
 
     // The key arrived in the address bar; put it in a cookie and take it back
@@ -264,6 +281,14 @@ class RemoteServer {
     // Enough for a phone to tell "the laptop is not reachable" from "the laptop
     // is there and would not have me". No data, so it costs nothing to answer.
     if (route === '/health') return json(res, 200, { ok: true });
+    // The public half of this window's sending identity. Public by definition:
+    // it is what the browser hands the push service to say who may send.
+    if (route === '/push/key') {
+      return json(res, 200, { key: this.vapid ? this.vapid.applicationServerKey : null });
+    }
+    // The worker has to come from the root or it cannot look after the pages.
+    if (route === '/sw.js') return this.serveWorker(res);
+    if (route === '/manifest.webmanifest') return this.serveManifest(res);
     if (route === '/pair') return this.servePairing(req, res);
     if (route === '/') return this.serveHome(req, res);
     // The shell carries no data, so an unpaired device gets markup and nothing
@@ -284,9 +309,7 @@ class RemoteServer {
 <meta http-equiv="Content-Security-Policy" content="${this.csp(req, nonce)}">
 <link rel="stylesheet" href="/media/browser.css">
 <title>NikUI</title>
-<script nonce="${nonce}" src="/media/theme.js" defer></script>
-<script nonce="${nonce}" src="/media/mobile.js" defer></script>
-</head>
+${this.appHead(nonce)}</head>
 <body class="home">
   <header class="home-head">
     <h1>NikUI</h1>
@@ -312,8 +335,7 @@ class RemoteServer {
       nonce,
       csp: this.csp(req, nonce),
       head: '<link rel="stylesheet" href="/media/browser.css">\n' +
-        `<script nonce="${nonce}" src="/media/theme.js" defer></script>\n` +
-        `<script nonce="${nonce}" src="/media/mobile.js" defer></script>\n`,
+        this.appHead(nonce),
       // The only thing the browser client needs that the webview does not:
       // where its socket is. Everything else it learns over that socket.
       boot: `window.NIKUI_REMOTE = ${JSON.stringify({
@@ -322,6 +344,64 @@ class RemoteServer {
       })};`
     });
     return html(res, page);
+  }
+
+  serveWorker(res) {
+    return this.sendFile(res, 'sw.js', 'text/javascript; charset=utf-8', {
+      // Served from /sw.js, so its scope is the whole site rather than /media.
+      'service-worker-allowed': '/'
+    });
+  }
+
+  serveManifest(res) {
+    return this.sendFile(res, 'manifest.webmanifest', 'application/manifest+json; charset=utf-8');
+  }
+
+  sendFile(res, name, type, extra) {
+    fs.readFile(path.join(this.root, 'media', name), (err, body) => {
+      if (err) return plain(res, 404, 'No such file');
+      res.writeHead(200, Object.assign({
+        'content-type': type,
+        'content-length': body.length,
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff'
+      }, extra || {}));
+      res.end(body);
+    });
+  }
+
+  /**
+   * A device asking to be told about things while it is not looking.
+   *
+   * The subscription belongs to the device that signed for it, and is kept on
+   * that device's record — so forgetting a device forgets where to reach it,
+   * without anything else having to remember to.
+   */
+  async subscribe(req, res) {
+    let body;
+    try { body = await readJson(req); } catch (err) {
+      this.refuse(req, 'bad subscription body: ' + err.message);
+      return json(res, 400, { error: 'that was not a subscription' });
+    }
+    if (!this.devices) return json(res, 503, { error: 'this window has no devices' });
+
+    const endpoint = String(body.endpoint || '');
+    if (!/^https:\/\/[^\s]+$/.test(endpoint)) return json(res, 400, { error: 'that is not an endpoint' });
+    if (!body.keys || !body.keys.p256dh || !body.keys.auth) return json(res, 400, { error: 'no keys' });
+
+    // Signed, so a subscription cannot be filed against somebody else's device.
+    if (!this.devices.verify(String(body.device || ''), 'nikui-push:' + endpoint, body.signature)) {
+      this.refuse(req, 'push subscription was not signed by that device');
+      return json(res, 403, { error: 'that signature is not this device' });
+    }
+
+    const device = this.devices.subscribe(body.device, {
+      endpoint,
+      keys: { p256dh: String(body.keys.p256dh), auth: String(body.keys.auth) }
+    });
+    if (!device) return json(res, 404, { error: 'no such device' });
+    this.log(`${device.name} will be told about things`);
+    return json(res, 200, { ok: true });
   }
 
   /** The page a device lands on from the QR, or from a typed code. */
@@ -335,6 +415,7 @@ class RemoteServer {
 <meta http-equiv="Content-Security-Policy" content="${this.csp(req, nonce)}">
 <link rel="stylesheet" href="/media/browser.css">
 <title>Pair with NikUI</title>
+<meta name="theme-color" content="#17171a">
 <script nonce="${nonce}" src="/media/theme.js" defer></script>
 </head>
 <body class="home pairing">
@@ -402,6 +483,23 @@ class RemoteServer {
     });
   }
 
+  /**
+   * What makes it an app on a home screen rather than a page in a browser: a
+   * manifest, an icon, a colour for the bar at the top, and a worker that keeps
+   * the shell so a cold start is not a white rectangle.
+   */
+  appHead(nonce) {
+    return '<link rel="manifest" href="/manifest.webmanifest">\n' +
+      '<meta name="theme-color" content="#17171a">\n' +
+      '<meta name="apple-mobile-web-app-capable" content="yes">\n' +
+      '<meta name="apple-mobile-web-app-title" content="NikUI">\n' +
+      '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n' +
+      '<link rel="apple-touch-icon" href="/media/icons/apple-touch-icon-180.png">\n' +
+      `<script nonce="${nonce}" src="/media/theme.js" defer></script>\n` +
+      `<script nonce="${nonce}" src="/media/mobile.js" defer></script>\n` +
+      `<script nonce="${nonce}" src="/media/pwa.js" defer></script>\n`;
+  }
+
   csp(req, nonce) {
     const origin = `${this.schemeOf(req)}://${req.headers.host}`;
     const socket = origin.replace(/^http/, 'ws');
@@ -411,6 +509,12 @@ class RemoteServer {
       "style-src 'self'",
       `script-src 'nonce-${nonce}'`,
       "font-src 'self'",
+      // A service worker and a manifest are both fetched under their own
+      // directives, and both fall back to default-src — which is 'none'. Without
+      // these two lines the app is not installable and the shell is not cached,
+      // and the only sign of it is a line in a console nobody is watching.
+      "worker-src 'self'",
+      "manifest-src 'self'",
       `connect-src ${origin} ${socket}`,
       "base-uri 'none'",
       "form-action 'none'",

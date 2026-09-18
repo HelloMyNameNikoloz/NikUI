@@ -620,6 +620,40 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "Start the local server when the window opens. Off by default: NikUI runs Claude with permissions bypassed, so a socket into it is code execution on this machine, and it should never be listening without you having said so."
+        },
+        "nikui.keepAwake": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Keep this machine from going to sleep while an instance is working — or, while the local server is listening, while one is merely running. Off by default: a laptop that sleeps takes every instance with it, but keeping yours awake is not a decision to make for you. The display is never kept on, and the assertion is released the moment nothing needs it."
+        },
+        "nikui.notifyDevices": {
+          "type": "object",
+          "default": {
+            "needsYou": true,
+            "quota": true,
+            "failed": true,
+            "turnFinished": false
+          },
+          "properties": {
+            "needsYou": {
+              "type": "boolean",
+              "description": "An instance is waiting for a permission answer and cannot go on."
+            },
+            "quota": {
+              "type": "boolean",
+              "description": "The usage limit ran out and everything paused — and again when it resets."
+            },
+            "failed": {
+              "type": "boolean",
+              "description": "An instance failed."
+            },
+            "turnFinished": {
+              "type": "boolean",
+              "description": "Any turn finished. Off by default: four agents finishing overnight is a phone buzzing all night."
+            }
+          },
+          "additionalProperties": false,
+          "markdownDescription": "Which things are worth sending to a paired phone. A notification you learn to ignore is worse than no notification, so this is deliberately short."
         }
       }
     }
