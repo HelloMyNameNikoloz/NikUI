@@ -30,8 +30,12 @@ const TO_CLIENT = [
  * confused with a session message, and listed separately so a transport cannot
  * quietly grow a private dialect.
  */
-const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate'];
-const CONTROL_TO_HOST = ['@auth'];
+// `@box` is both directions and carries one of the others inside it: once the
+// handshake agrees a key, every frame on the socket is one of these with a
+// message sealed in it. It is listed here because it is part of the protocol,
+// not an implementation detail of one end.
+const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate', '@box'];
+const CONTROL_TO_HOST = ['@auth', '@box'];
 
 function quietSession() {
   const s = new Session({ cwd: '/tmp' });
@@ -120,6 +124,11 @@ module.exports = async function () {
     [...heardByHost].filter((t) => !CONTROL_TO_HOST.includes(t)).sort(), []);
   checkEqual('what the client makes up for itself is still the protocol',
     [...synthesised].filter((t) => !CONTROL_TO_CLIENT.includes(t) && !TO_CLIENT.includes(t)).sort(), []);
+
+  check('the envelope is understood by both ends',
+    /'@box'/.test(server) && /'@box'/.test(shim));
+  check('and nothing is read out of one before it has been opened',
+    /this\.box\.open\(msg\)/.test(server));
 
   // The window's own list is not a session message: it belongs to the socket
   // that is watching the window rather than any one instance.

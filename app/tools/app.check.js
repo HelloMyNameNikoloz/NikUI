@@ -160,6 +160,14 @@ const record = (name, ok) => {
     record('nothing scrolls sideways',
       (await phone.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')) === true);
 
+    // The connection that just filled that list: sealed, from the server's own
+    // point of view rather than the app's claim about it.
+    const sockets = [...laptop.clients].filter((c) => c.device && c.device.kind === 'device');
+    record('the app’s connection is sealed end to end',
+      sockets.length > 0 && sockets.every((c) => !!c.box && c.sealed === true));
+    record('and what crosses it is an envelope, not a message',
+      sockets.length > 0 && JSON.stringify(sockets[0].box.seal('{"type":"fleet"}')).indexOf('fleet') < 0);
+
     // ---- the conversation, the same client as the editor's ------------------
     await phone.evaluate('document.querySelector(".rows .row").click()');
     record('tapping an instance opens the conversation',
@@ -189,6 +197,20 @@ const record = (name, ok) => {
       new RegExp(`127.0.0.1:${laptop.port}`).test(await phone.evaluate('document.body.textContent')));
     record('and that the key is pinned',
       /pinned/i.test(await phone.evaluate('document.body.textContent')));
+    record('settings says the connection is sealed',
+      await phone.until('/End-to-end encrypted/.test(document.body.textContent)', 10000));
+    record('and offers a way to check it really is your laptop',
+      /really your laptop/i.test(await phone.evaluate('document.body.textContent')));
+    record('which opens the fingerprint up to be read out loud',
+      (await phone.evaluate(`(() => {
+        const row = [...document.querySelectorAll('.row')].find(r => /really your laptop/i.test(r.textContent));
+        row.click();
+        const proof = document.querySelector('.proof');
+        return !!proof && proof.textContent.trim().split(/\\s+/).length >= 3;
+      })()`)) === true);
+    record('in type big enough to compare without squinting',
+      (await phone.evaluate('parseFloat(getComputedStyle(document.querySelector(".proof")).fontSize)')) >= 17);
+
     record('every row is thumb-sized',
       (await phone.evaluate(`[...document.querySelectorAll('.row')]
         .every(r => Math.round(r.getBoundingClientRect().height) >= 44)`)) === true);

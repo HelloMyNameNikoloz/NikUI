@@ -527,3 +527,21 @@ body.app { user-select: none; -webkit-user-select: none; }
 body.app input,
 body.app .row-value.mono,
 body.app .stream { user-select: text; -webkit-user-select: text; }
+
+/* A fingerprint, opened up to be read out loud against the one on the laptop.
+   Big, spaced, and centred, because the whole job of this text is to be
+   compared character by character by somebody holding a phone in one hand. */
+.proof {
+  margin: 8px 0 0;
+  padding: 16px 14px;
+  background: var(--app-raised);
+  border-radius: var(--app-radius);
+  font-family: var(--app-mono);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.8;
+  letter-spacing: 0.1em;
+  word-spacing: 0.6em;
+  text-align: center;
+  color: var(--vscode-foreground);
+}

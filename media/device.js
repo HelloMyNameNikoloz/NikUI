@@ -384,8 +384,9 @@
    * or quietly stripped back to a plain answer — a stripped one is a signature
    * over the wrong sentence.
    */
-  function authMessage(record, theirNonce, myNonce) {
-    const plain = 'nikui-auth:' + theirNonce + ':' + myNonce;
+  function authMessage(record, theirNonce, myNonce, suffix) {
+    const tail = suffix || '';
+    const plain = 'nikui-auth:' + theirNonce + ':' + myNonce + tail;
     const staged = record && record.staged;
     if (!staged) {
       return sign(plain).then(function (signature) {
@@ -393,7 +394,7 @@
       });
     }
     return fingerprintOf(staged.publicKey).then(function (fingerprint) {
-      const claim = 'nikui-rekey:' + theirNonce + ':' + myNonce + ':' + fingerprint;
+      const claim = 'nikui-rekey:' + theirNonce + ':' + myNonce + ':' + fingerprint + tail;
       return Promise.all([
         backendFor(record).sign(record, claim, 'Move this phone’s key into secure hardware'),
         hardware.sign(staged, claim, 'Confirm this phone’s new key')

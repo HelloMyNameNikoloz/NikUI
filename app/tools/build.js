@@ -167,7 +167,7 @@ function homePage() {
     <p class="lede" id="lede">Connecting&hellip;</p>
     <div class="rows" id="rows"></div>
   </main>`,
-    scripts: ['app.js', 'media/device.js', 'media/transport.js', 'media/home.js']
+    scripts: ['app.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'media/home.js']
   });
 }
 
@@ -221,7 +221,7 @@ function settingsPage() {
     <div class="bar-right"></div>
   </header>
   <main class="screen" id="screen"></main>`,
-    scripts: ['app.js', 'media/device.js', 'media/transport.js', 'settings.js']
+    scripts: ['app.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'settings.js']
   });
 }
 

@@ -123,7 +123,28 @@ the record. That last part is deliberate: a stolen key is how somebody would
 make a theft permanent, and the defence is not to forbid the move but to make
 sure it is never quiet.
 
+## The connection
+
+Sealed, end to end, on top of TLS. At the handshake both ends make a throwaway
+ECDH key, name both of them inside the signatures they were already exchanging,
+and from the welcome onwards every frame is AES-256-GCM with a key per direction
+and a counter that cannot repeat. The throwaway keys go with the socket, so a
+recording of today is not readable by somebody who steals a long-term key
+tomorrow.
+
+This is not a replacement for TLS — it is what survives TLS being wrong: a
+compromised certificate authority, a relay that terminates TLS, a configuration
+profile installed on the phone. Without it, any of those reads everything.
+
+Settings says so in one word, and offers the laptop's fingerprint in four
+readable groups so it can be compared with the one on the laptop's own screen.
+
+The laptop has two switches for it: `nikui.remote.requireEncryption` (on by
+default — a device that will not seal is refused) and `nikui.remote.appOnly`
+(off by default — with it on, nothing outside the laptop is served but pairing,
+the socket, the pulse and the push key; the app carries its own client and needs
+no page).
+
 ## What is not here yet
 
-Phases 3 to 6 of the app plan: TLS pinning, an app-only mode that stops the
-laptop serving HTML at all, native push, and the store logistics.
+Phases 4 to 6 of the app plan: native push, polish, and the store logistics.
