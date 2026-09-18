@@ -701,7 +701,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 1058 checks, no dependencies, no network, no CLI
+    npm test             # 1059 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
     npm run test:remote  # 54 checks driving the served client in real browsers,
                          #   including one the size of a phone and one cold-starting
