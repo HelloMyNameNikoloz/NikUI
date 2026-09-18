@@ -12,6 +12,15 @@
   // phone back up feels instant.
   const BACKOFF = [400, 800, 1600, 3200, 6400, 12000];
 
+  /**
+   * Where a conversation lives, for whoever is hosting this client: a path on
+   * the laptop when it served the page, a page in the bundle when an app did.
+   */
+  function conversationUrl(id) {
+    const remote = window.NIKUI_REMOTE || {};
+    return (remote.conversation || '/s/') + encodeURIComponent(id);
+  }
+
   /** What VS Code keeps for a hidden webview, kept in localStorage instead. */
   function browserState(key) {
     return {
@@ -45,9 +54,18 @@
     let paired = false;       // this device has an identity, so it must verify
 
     function url() {
+      // An app carries the client in a bundle, so there is no page address to
+      // infer the laptop from: it is told one, absolutely, and that address
+      // keeps its own scheme. A served page still works out where it came from.
+      if (/^wss?:\/\//i.test(config.socket || '')) return config.socket;
       const at = new URL(config.socket || '/socket', window.location.href);
       at.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       return at.toString();
+    }
+
+    /** Somewhere on the laptop, from wherever this client happens to be. */
+    function at(route) {
+      return config.origin ? config.origin.replace(/\/$/, '') + route : route;
     }
 
     /**
@@ -154,7 +172,7 @@
       if (message.type === '@navigate') {
         // Another instance, on this device only. The laptop's tabs are the
         // laptop's business.
-        if (message.session) window.location.assign('/s/' + encodeURIComponent(message.session));
+        if (message.session) window.location.assign(conversationUrl(message.session));
         return true;
       }
       if (message.type === '@denied') {
@@ -277,7 +295,7 @@
       // that must not be quietly replaced by a weather report.
       const asked = said;
       const stale = () => live() || said !== asked;
-      fetch('/health', { cache: 'no-store' }).then(function (response) {
+      fetch(at('/health'), { cache: 'no-store' }).then(function (response) {
         if (!stale()) show('warn', response.ok ? 'The laptop is there — reconnecting' : 'Reconnecting…');
       }).catch(function () {
         if (!stale()) show('off', 'Cannot reach the laptop');
@@ -366,6 +384,6 @@
 
   // Exported so the offline suite can drive it with a fake socket.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { socketTransport, BACKOFF };
+    module.exports = { socketTransport, conversationUrl, BACKOFF };
   }
 })();

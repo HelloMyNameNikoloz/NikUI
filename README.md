@@ -743,7 +743,7 @@ running totals and tab restoration all come back without spawning anything.
 
 ## Tests
 
-    npm test             # 1135 checks, no dependencies, no network, no CLI
+    npm test             # 1144 checks, no dependencies, no network, no CLI
     npm run test:webview # 68 checks driving the real webview in a browser
     npm run test:remote  # 69 checks driving the served client in real browsers,
                          #   including one the size of a phone and one cold-starting
@@ -826,6 +826,26 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     media/theme.js     the OS colour scheme, in the terms panel.css understands
     media/markdown.js  dependency-free Markdown renderer
     test/              offline suite plus an opt-in live check
+
+## The app
+
+The same client again, in a native shell — `app/`, built with Capacitor for
+iOS and Android. Not a second client: `app/tools/build.js` copies every file
+from `media/` and generates the conversation screen with the very same
+`renderPage()` the panel uses, and `cd app && npm test` fails the day a copy is
+edited instead of an original.
+
+What the app adds is the part a browser never needed — a way to connect to a
+laptop in the first place, and a settings screen that answers "is it connected,
+what is this device allowed, and how do I undo it" without anybody having to
+ask. What it will add is a key in the Secure Enclave rather than IndexedDB,
+gated on a fingerprint, and TLS pinning that closes the relay the threat model
+still names as open.
+
+    npm run app          # build the bundle and sync both platforms
+    npm run test:app     # 32 checks driving the real bundle in a real browser
+
+[`app/README.md`](app/README.md) is the detail.
 
 ## Security
 

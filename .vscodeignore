@@ -3,3 +3,4 @@
 **/*.map
 test/**
 tools/**
+app/**

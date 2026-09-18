@@ -1,0 +1,27 @@
+{
+  "appId": "com.nikoloz.nikui",
+  "appName": "NikUI",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#17171a",
+    "allowMixedContent": false,
+    "captureInput": true
+  },
+  "ios": {
+    "backgroundColor": "#17171a",
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https",
+    "cleartext": false
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#17171a",
+      "overlaysWebView": true
+    }
+  }
+}

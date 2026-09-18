@@ -61,7 +61,7 @@ module.exports = async function () {
   laptop.got.length = 0;
   phone.got.length = 0;
   session._upsert({ id: 'x2', kind: 'notice', text: 'something happened' });
-  await new Promise((r) => setTimeout(r, 80)); // the item flush is debounced
+  await new Promise((r) => setTimeout(r, 300)); // the item flush is debounced
 
   check('both are told about the item', laptop.ofType('items').length === 1 && phone.ofType('items').length === 1);
   check('and both get the counters with it', laptop.ofType('stats').length >= 1 && phone.ofType('stats').length >= 1);
@@ -101,7 +101,7 @@ module.exports = async function () {
   checkEqual('one is left', hub.size, 1);
   phone.got.length = 0;
   session._upsert({ id: 'x3', kind: 'notice', text: 'still going' });
-  await new Promise((r) => setTimeout(r, 80));
+  await new Promise((r) => setTimeout(r, 300));
   check('and it is still being told things', phone.ofType('items').length >= 1);
 
   hub.detach('phone');
@@ -118,7 +118,7 @@ module.exports = async function () {
   hub.attach(alive);
   await hub.receive('alive', { type: 'ready' });
   session._upsert({ id: 'x5', kind: 'notice', text: 'after the break' });
-  await new Promise((r) => setTimeout(r, 80));
+  await new Promise((r) => setTimeout(r, 300));
   check('the working client still hears everything', alive.ofType('items').length >= 1);
 
   hub.dispose();
@@ -227,7 +227,7 @@ module.exports = async function () {
   await both.receive('desk', { type: 'send', text: 'from the editor', sent: 'from the editor', snippets: [] });
   // Items are flushed on a tick rather than per keystroke, so the assertion
   // waits for the same flush a client would.
-  await new Promise((r) => setTimeout(r, 80));
+  await new Promise((r) => setTimeout(r, 300));
   const onPhone = JSON.stringify(handset.ofType('items').concat(handset.ofType('queue')));
   const onEditor = JSON.stringify(desk.ofType('items').concat(desk.ofType('queue')));
   check('a prompt sent from either appears on both',

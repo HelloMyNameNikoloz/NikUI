@@ -1,0 +1,529 @@
+/* NikUI, as an app.
+
+   One layer on top of the client the editor runs, for the things a browser
+   never had to do: a navigation bar, a way in, and a settings screen.
+
+   The vocabulary is the one the product already speaks — the near-black field,
+   the four status colours, SF Pro, the 8pt rhythm — arranged the way iOS
+   arranges things: grouped inset lists, hairline separators, one clear action
+   per screen, and nothing on screen that is not doing a job. Dark only, because
+   this is a thing you look at in bed at 2am when an agent needs an answer. */
+
+:root {
+  color-scheme: dark;
+
+  /* The field, in three depths. Almost-black rather than black: pure black
+     shows every gradient banding step on an OLED panel, and looks cheap. */
+  --app-bg: #0f0f11;
+  --app-raised: #1a1a1d;
+  --app-raised-2: #232327;
+  --app-hairline: rgba(255, 255, 255, 0.08);
+  --app-hairline-strong: rgba(255, 255, 255, 0.14);
+
+  --app-text: #f5f5f7;
+  --app-dim: #9b9ba1;
+  --app-faint: #6e6e76;
+
+  --app-accent: #0a84ff;
+  --app-green: #30d158;
+  --app-orange: #ff9f0a;
+  --app-red: #ff453a;
+  --app-grey: #8e8e93;
+
+  --app-radius: 14px;
+  --app-radius-lg: 18px;
+  --app-row: 52px;
+
+  /* The bar has to clear the notch, and the composer has to clear the home
+     indicator. Everything else is measured from these two. */
+  --app-top: env(safe-area-inset-top, 0px);
+  --app-bottom: env(safe-area-inset-bottom, 0px);
+
+  --app-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    system-ui, "Segoe UI", Roboto, sans-serif;
+  --app-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+}
+
+/* The client's palette, pinned dark. browser.css switches these on the OS
+   setting, which is right for a page in a browser and wrong for an app whose
+   own chrome is dark — a light conversation inside a dark shell is neither. */
+html.app {
+  --vscode-editor-background: #0f0f11;
+  --vscode-foreground: #f5f5f7;
+  --vscode-descriptionForeground: #9b9ba1;
+  --vscode-input-background: #1a1a1d;
+  --vscode-input-foreground: #f5f5f7;
+  --vscode-contrastBorder: transparent;
+}
+
+html.app, body.app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--app-bg);
+  color: var(--app-text);
+  font-family: var(--app-font);
+  font-size: 16px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+body.app {
+  display: flex;
+  flex-direction: column;
+  /* Set by media/mobile.js from the visual viewport, so the keyboard never
+     pushes the composer off the bottom of the world. */
+  height: var(--app-height, 100dvh);
+  overflow: hidden;
+}
+
+/* ---- the bar -------------------------------------------------------------
+   A title, and at most one control on each side. Anything more is a screen
+   that has not decided what it is for. */
+
+.bar {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  padding-top: calc(6px + var(--app-top));
+  background: linear-gradient(to bottom, rgba(15, 15, 17, 0.92), rgba(15, 15, 17, 0.72));
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--app-hairline);
+  z-index: 10;
+}
+
+.bar-title {
+  grid-column: 2;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-right {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.bar-button {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--app-accent);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.bar-button:active { background: rgba(255, 255, 255, 0.07); transform: scale(0.94); }
+
+/* Drawn rather than fetched: a chevron and a gear, in CSS, so the app carries
+   no icon font and no sprite sheet. */
+.bar-button.back::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  margin-left: 4px;
+  border-left: 2.5px solid currentColor;
+  border-bottom: 2.5px solid currentColor;
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+#to-settings::before,
+#to-settings::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+}
+#to-settings::before {
+  width: 17px; height: 17px;
+  border: 2.2px solid currentColor;
+}
+#to-settings::after {
+  width: 5px; height: 5px;
+  background: currentColor;
+}
+#to-settings { position: relative; }
+
+/* ---- screens -------------------------------------------------------------- */
+
+.screen {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px calc(24px + var(--app-bottom));
+}
+
+.lede {
+  margin: 4px 2px 16px;
+  color: var(--app-dim);
+  font-size: 14px;
+}
+
+/* ---- grouped lists, the iOS way -------------------------------------------
+   Inset, rounded as a group, hairlines between rows but never at the ends. */
+
+.group {
+  margin: 0 0 26px;
+}
+
+.group-title {
+  margin: 0 0 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-faint);
+}
+
+.group-note {
+  margin: 8px 14px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--app-faint);
+}
+
+.list {
+  background: var(--app-raised);
+  border-radius: var(--app-radius);
+  overflow: hidden;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--app-row);
+  padding: 11px 15px;
+  position: relative;
+  color: inherit;
+  text-decoration: none;
+  font-size: 16px;
+}
+
+.row + .row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 15px;
+  right: 0;
+  height: 0.5px;
+  background: var(--app-hairline);
+}
+
+.row.tappable { cursor: pointer; }
+.row.tappable:active { background: var(--app-raised-2); }
+
+.row-label { min-width: 0; }
+.row-label b { display: block; font-weight: 400; }
+.row-label small {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--app-dim);
+}
+
+.row-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-dim);
+  font-size: 15px;
+  text-align: right;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-value.mono { font-family: var(--app-mono); font-size: 13px; letter-spacing: -0.02em; }
+.row.good .row-value { color: var(--app-green); }
+.row.warn .row-value { color: var(--app-orange); }
+.row.bad .row-value { color: var(--app-red); }
+.row.danger .row-label b { color: var(--app-red); }
+
+.chevron::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--app-faint);
+  border-top: 2px solid var(--app-faint);
+  border-radius: 1px;
+  transform: rotate(45deg);
+  flex: 0 0 auto;
+}
+
+/* A dot that means what the dots in the editor mean. */
+.state-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--app-grey);
+  flex: 0 0 auto;
+}
+.state-dot.live { background: var(--app-green); box-shadow: 0 0 0 4px rgba(48, 209, 88, 0.16); }
+.state-dot.busy { background: var(--app-orange); }
+.state-dot.gone { background: var(--app-red); }
+
+/* ---- controls ------------------------------------------------------------- */
+
+.primary {
+  display: block;
+  width: 100%;
+  min-height: 50px;
+  margin-top: 22px;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: var(--app-radius);
+  background: var(--app-accent);
+  color: #fff;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.primary:active { transform: scale(0.985); opacity: 0.9; }
+.primary[disabled] { opacity: 0.45; }
+
+.quiet {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  padding: 11px;
+  border: 0;
+  border-radius: var(--app-radius);
+  background: transparent;
+  color: var(--app-accent);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.quiet:active { background: rgba(255, 255, 255, 0.05); }
+
+.field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.field-label {
+  display: block;
+  margin: 0 0 6px 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--app-faint);
+}
+
+.field input {
+  width: 100%;
+  min-height: 50px;
+  padding: 13px 15px;
+  border: 0.5px solid var(--app-hairline-strong);
+  border-radius: var(--app-radius);
+  background: var(--app-raised);
+  color: var(--app-text);
+  font: inherit;
+  /* 16px or more, or iOS zooms the page the moment it is focused. */
+  font-size: 17px;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--app-accent);
+  background: var(--app-raised-2);
+}
+
+.field input::placeholder { color: var(--app-faint); }
+
+#code { font-family: var(--app-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+
+/* ---- the way in ----------------------------------------------------------- */
+
+.welcome { text-align: left; }
+
+.welcome .mark {
+  width: 64px;
+  height: 64px;
+  margin: 22px 0 22px;
+  border-radius: 16px;
+  background: var(--app-raised);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+/* The product's own mark: three instances, three states. */
+.welcome .mark::before,
+.welcome .mark::after,
+.welcome .mark > i {
+  content: "";
+  position: absolute;
+  left: 13px;
+  height: 7px;
+  border-radius: 999px;
+}
+.welcome .mark::before { top: 17px; width: 26px; background: var(--app-green); }
+.welcome .mark > i { top: 29px; width: 36px; background: var(--app-orange); display: block; }
+.welcome .mark::after { top: 41px; width: 19px; background: var(--app-grey); }
+
+.welcome h1 {
+  margin: 0 0 8px;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+}
+
+.pane { margin-top: 26px; }
+
+.note {
+  margin: 16px 2px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--app-dim);
+  min-height: 1.2em;
+}
+
+.note.bad { color: var(--app-red); }
+.note.good { color: var(--app-green); }
+.note.working { color: var(--app-dim); }
+
+.terms {
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--app-faint);
+}
+
+.terms li { position: relative; padding-left: 16px; margin-bottom: 8px; }
+.terms li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+/* ---- the instance list ----------------------------------------------------
+   The home screen's rows, in the app's own clothes: the client's browser layer
+   styles the same markup for a browser, and this takes precedence here. */
+
+body.app.home .rows {
+  display: block;
+  background: var(--app-raised);
+  border-radius: var(--app-radius);
+  overflow: hidden;
+  max-width: none;
+}
+
+body.app.home .rows .row {
+  grid-template-columns: 10px 1fr auto;
+  grid-template-areas: "dot name cost" "dot cwd cost";
+  column-gap: 12px;
+  min-height: 64px;
+  background: transparent;
+  border-radius: 0;
+}
+
+body.app.home .row-name { grid-area: name; font-weight: 500; font-size: 16px; }
+body.app.home .row-cwd {
+  grid-area: cwd;
+  font-size: 13px;
+  color: var(--app-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.app.home .row-cost {
+  grid-area: cost;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  color: var(--app-dim);
+}
+body.app.home .sdot { grid-area: dot; }
+
+body.app.home #retry { margin-top: 18px; }
+
+/* A tap on an instance should feel like the row is going somewhere. */
+body.app.home .rows .row:active { background: var(--app-raised-2); }
+
+/* ---- the connection pill, in the bar -------------------------------------- */
+
+body.app .link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* ---- the conversation, inside the app -------------------------------------
+   The client draws itself; this only gives it the app's edges. */
+
+body.app-conversation header {
+  padding-top: calc(8px + var(--app-top));
+}
+
+body.app-conversation footer {
+  padding-bottom: calc(6px + var(--app-bottom));
+}
+
+/* ---- motion ---------------------------------------------------------------
+   Enough to say "this moved", never enough to wait for. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .screen > * { animation: rise 320ms cubic-bezier(0.22, 0.9, 0.28, 1) both; }
+  .screen > *:nth-child(2) { animation-delay: 24ms; }
+  .screen > *:nth-child(3) { animation-delay: 48ms; }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Nothing is selectable except the things worth copying. */
+body.app { user-select: none; -webkit-user-select: none; }
+body.app input,
+body.app .row-value.mono,
+body.app .stream { user-select: text; -webkit-user-select: text; }

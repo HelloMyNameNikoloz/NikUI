@@ -55,7 +55,9 @@
     for (const instance of instances) {
       const row = document.createElement('a');
       row.className = 'row';
-      row.href = '/s/' + encodeURIComponent(instance.id);
+      // A path on the laptop when it served this page; a page in the bundle
+      // when an app did. The list does not need to know which.
+      row.href = ((window.NIKUI_REMOTE || {}).conversation || '/s/') + encodeURIComponent(instance.id);
 
       const dot = document.createElement('span');
       dot.className = 'sdot ' + String(instance.status || 'idle').replace(/[^a-z]/g, '') +
@@ -129,7 +131,7 @@
     if (!message.pair) return;
     const link = document.createElement('a');
     link.className = 'go-on';
-    link.href = '/pair';
+    link.href = (window.NIKUI_REMOTE || {}).app ? 'connect.html' : '/pair';
     link.textContent = 'Pair this device';
     rows.appendChild(link);
   }

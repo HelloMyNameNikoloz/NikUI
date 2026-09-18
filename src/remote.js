@@ -4,7 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { renderPage, randomNonce, jsonForScript } = require('./page');
-const { Gate, LocalKey, localDevice } = require('./auth');
+const { Gate, LocalKey, localDevice, forwarded } = require('./auth');
 const wire = require('./wire');
 
 /**
@@ -238,6 +238,40 @@ class RemoteServer {
   }
 
   /**
+   * The origins that are an app rather than a web page.
+   *
+   * A WebView serves the bundle from a fixed origin of its own, so everything
+   * the app asks of a laptop is cross-origin — which the Origin check was
+   * written to refuse, because a web page asking on somebody's behalf is the
+   * attack it exists to stop. These three are not web pages: nothing can be
+   * published at them, and a phone has no localhost for a site to sit on.
+   */
+  appOrigins() {
+    return ['https://localhost', 'capacitor://localhost', 'ionic://localhost'];
+  }
+
+  /**
+   * Whether an Origin may talk to this server, and whether it is an app.
+   *
+   * A loopback origin is allowed only while the request itself is loopback —
+   * that is somebody developing against their own machine, and it is refused
+   * the moment anything is forwarding, so a tunnel never widens this.
+   */
+  allowedOrigin(req, host) {
+    const origin = String((req.headers && req.headers.origin) || '');
+    if (!origin) return { ok: true, origin: null, app: false };
+    if (origin === `http://${host}` || origin === `https://${host}`) {
+      return { ok: true, origin, app: false };
+    }
+    if (this.appOrigins().includes(origin)) return { ok: true, origin, app: true };
+    const loopbackOrigin = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin);
+    if (loopbackOrigin && this.isLoopbackHost(req) && !forwarded(req)) {
+      return { ok: true, origin, app: true };
+    }
+    return { ok: false, origin, app: false };
+  }
+
+  /**
    * Everything that must be true before anything is served. Returns null when
    * the request may proceed, or the reason it may not.
    */
@@ -249,13 +283,31 @@ class RemoteServer {
     const host = String((req.headers && req.headers.host) || '');
     if (!this.hosts().includes(host)) return { status: 403, reason: 'unexpected Host: ' + host };
 
-    // Absent on a curl, always present from a browser. Present and not ours
-    // means a page somewhere else is trying its luck.
-    const origin = req.headers && req.headers.origin;
-    if (origin && origin !== `http://${host}` && origin !== `https://${host}`) {
-      return { status: 403, reason: 'unexpected Origin: ' + origin };
-    }
+    // Absent on a curl, always present from a browser. Present and neither
+    // ours nor an app's means a page somewhere else is trying its luck.
+    const allowed = this.allowedOrigin(req, host);
+    if (!allowed.ok) return { status: 403, reason: 'unexpected Origin: ' + allowed.origin };
     return null;
+  }
+
+  /**
+   * What an app is allowed to read of an answer.
+   *
+   * Named exactly, never `*`, and without credentials: the app proves itself
+   * with a signature, not with a cookie, so there is nothing here worth
+   * carrying one for.
+   */
+  corsHeaders(req) {
+    const host = String((req.headers && req.headers.host) || '');
+    const allowed = this.allowedOrigin(req, host);
+    if (!allowed.ok || !allowed.app) return null;
+    return {
+      'access-control-allow-origin': allowed.origin,
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-headers': 'content-type',
+      'access-control-max-age': '600',
+      vary: 'Origin'
+    };
   }
 
   /**
@@ -303,6 +355,14 @@ class RemoteServer {
 
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
     const route = decodeURIComponent(url.pathname);
+    const cors = this.corsHeaders(req);
+
+    // An app's POST carries JSON, which a browser asks permission for first.
+    if (req.method === 'OPTIONS') {
+      res.writeHead(cors ? 204 : 405, Object.assign({ 'content-length': 0 }, cors || null));
+      return res.end();
+    }
+    if (cors) for (const [name, value] of Object.entries(cors)) res.setHeader(name, value);
 
     if (req.method === 'POST' && route === '/pair') return this.pair(req, res);
     if (req.method === 'POST' && route === '/push/subscribe') return this.subscribe(req, res);

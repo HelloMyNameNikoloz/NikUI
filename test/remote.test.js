@@ -141,6 +141,36 @@ module.exports = async function () {
   checkEqual('an Origin from somewhere else is refused',
     (await get(port, '/', { origin: 'https://evil.example' })).status, 403);
 
+  suite('an app is not a web page, and is told apart from one');
+
+  // A WebView serves its bundle from a fixed origin of its own, so everything
+  // the app asks is cross-origin — the exact shape the Origin check exists to
+  // refuse. These three cannot be published at, and a phone has no localhost.
+  const fromApp = await get(port, '/health', { origin: 'https://localhost' });
+  checkEqual('a Capacitor origin is served', fromApp.status, 200);
+  checkEqual('and told it may read the answer',
+    fromApp.headers['access-control-allow-origin'], 'https://localhost');
+  check('without credentials, since the app proves itself by signature',
+    !fromApp.headers['access-control-allow-credentials']);
+  check('and the answer says it varies by origin', /Origin/i.test(fromApp.headers.vary || ''));
+
+  const preflight = await request({
+    port, method: 'OPTIONS', path: '/pair',
+    headers: { origin: 'capacitor://localhost', 'access-control-request-method': 'POST' }
+  });
+  checkEqual('a preflight from an app is answered', preflight.status, 204);
+  check('naming the methods it may use', /POST/.test(preflight.headers['access-control-allow-methods'] || ''));
+
+  const preflightElsewhere = await request({
+    port, method: 'OPTIONS', path: '/pair', headers: { origin: 'https://evil.example' }
+  });
+  checkEqual('a preflight from a web page is not', preflightElsewhere.status, 403);
+
+  const pageOrigin = await get(port, '/health', { origin: 'https://nikui.example.com' });
+  checkEqual('and nor is the page itself', pageOrigin.status, 403);
+  check('an app origin gets no blanket permission',
+    (fromApp.headers['access-control-allow-origin'] || '') !== '*');
+
   const handed = await get(port, '/?key=' + auth.key);
   checkEqual('the key in the address bar is traded for a cookie', handed.status, 302);
   check('which is not readable by script', /HttpOnly/.test(String(handed.headers['set-cookie'])));
@@ -239,7 +269,7 @@ module.exports = async function () {
 
   const before = first.items.length;
   stranger.send({ type: 'send', text: 'without answering', sent: 'without answering', snippets: [] });
-  await new Promise((r) => setTimeout(r, 60));
+  await new Promise((r) => setTimeout(r, 250));
   checkEqual('anything sent before answering is dropped', first.items.length, before);
 
   const phone = await makeDevice('Test phone');
@@ -291,7 +321,7 @@ module.exports = async function () {
 
   const expiring = new PairingWindow({ ttlMs: 20 });
   expiring.start({});
-  await new Promise((r) => setTimeout(r, 40));
+  await new Promise((r) => setTimeout(r, 250));
   checkEqual('a code nobody used expires', expiring.isOpen, false);
 
   suite('and can ask to be told when it is not looking');

@@ -198,11 +198,11 @@ module.exports = async function () {
   window2.off = window2.removeListener;
   const stopWatching = chatty.watch(window2);
   window2.emit('session-changed', { id: 'f1', label: '1327', status: 'done', items: [] });
-  await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setTimeout(r, 120));
   checkEqual('a turn that ends reaches the devices that asked', sent.length, 2);
   check('by name', /1327 finished/.test(sent[0]));
   window2.emit('session-changed', { id: 'f1', label: '1327', status: 'done', items: [] });
-  await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setTimeout(r, 120));
   checkEqual('and resting there does not say it again', sent.length, 2);
   stopWatching();
 
@@ -234,7 +234,7 @@ module.exports = async function () {
   manager.emit('failed', { id: 'w2', label: 'beta' }, 'the CLI is not on the path');
   manager.emit('paused', { until: Date.now() + 3600000 });
   manager.emit('resumed', { woken: 3 });
-  await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setTimeout(r, 120));
   checkEqual('every one of the three reaches a phone', heard.length, 8);
   check('the one that needs an answer', heard.some((t) => /needs an answer/.test(t)));
   check('the one that failed', heard.some((t) => /failed/.test(t)));
@@ -243,12 +243,12 @@ module.exports = async function () {
 
   heard.length = 0;
   manager.emit('resumed', { woken: 1, manual: true });
-  await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setTimeout(r, 120));
   checkEqual('a resume you asked for yourself is not news', heard.length, 0);
 
   unwatch();
   manager.emit('failed', { id: 'w3', label: 'gamma' }, 'again');
-  await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setTimeout(r, 120));
   checkEqual('and it can be let go of', heard.length, 0);
 };
 

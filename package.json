@@ -670,6 +670,9 @@
     "test:live": "node test/live.check.js",
     "test:webview": "node test/webview.check.js",
     "test:remote": "node test/remote.check.js",
-    "test:qr": "node test/qr.check.js"
+    "test:qr": "node test/qr.check.js",
+    "test:app": "node app/tools/app.check.js",
+    "app": "cd app && npm run build && npx cap sync",
+    "app:android": "cd app && npm run build && npx cap sync android && npx cap run android"
   }
 }
