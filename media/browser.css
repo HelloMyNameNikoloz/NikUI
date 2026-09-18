@@ -229,3 +229,130 @@ body.home .sdot.asleep {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px #8e8e93;
 }
+
+/* ---- one hand, one thumb -------------------------------------------------
+
+   The same client, with a layer on top for a small screen. It lives here
+   rather than in panel.css so the editor cannot be affected by it at all:
+   nothing in the panel loads this file. */
+
+@media (max-width: 700px) {
+  /* The keyboard does not resize the window, it resizes the viewport — so the
+     height that matters is the one media/mobile.js measures. */
+  html, body {
+    height: var(--app-height, 100dvh);
+    overflow: hidden;
+  }
+
+  body { font-size: 15px; }
+
+  header {
+    gap: 8px;
+    padding: 8px 12px calc(8px);
+    padding-top: calc(8px + env(safe-area-inset-top));
+  }
+
+  /* Numbers that belong on a wide screen. The dashboard has all of them. */
+  header .stats,
+  header .ctx,
+  header .crumbs { display: none; }
+
+  .back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    margin-left: -6px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    text-decoration: none;
+    color: var(--vscode-foreground);
+  }
+
+  .back::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    margin-left: 3px;
+    border-left: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+  }
+
+  .back:active { background: color-mix(in srgb, currentColor 12%, transparent); }
+
+  #transcript { padding: 0 12px; }
+
+  /* Shortcuts nobody can press on a phone. */
+  footer .hint { display: none; }
+
+  footer {
+    padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  }
+
+  .composer {
+    gap: 6px;
+    align-items: flex-end;
+  }
+
+  /* #input, not .composer textarea: the panel styles it by id, and anything
+     under 16px makes iOS zoom the whole page the moment it is focused. */
+  #input {
+    font-size: 16px;
+    padding: 11px 12px;
+    max-height: 38vh;
+  }
+
+  /* Forty-four points, the size of a thumb, everywhere something is tapped. */
+  .composer button,
+  .perm .actions button,
+  .sheet .nav-item,
+  .find button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* The queue's own controls are icon-sized on a mouse and thumb-sized here. */
+  .queue-row {
+    padding: 6px 4px;
+    gap: 8px;
+  }
+
+  .queue-row .drop,
+  .queue-head .link {
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  /* The sheet is the whole screen, and its rail becomes a strip you swipe. */
+  .sheet {
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .sheet-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 4px;
+    padding: 6px 10px;
+    scrollbar-width: none;
+  }
+
+  .sheet-nav::-webkit-scrollbar { display: none; }
+  .sheet .nav-item { flex: 0 0 auto; }
+
+  .sheet-body { padding: 12px; }
+
+  /* Two columns of numbers on a phone is one column of numbers. */
+  .tiles { grid-template-columns: 1fr; }
+
+  /* Nothing scrolls sideways except the fleet table, which says so itself. */
+  body { overflow-x: hidden; }
+  .msg-text pre { max-width: 100%; }
+}
