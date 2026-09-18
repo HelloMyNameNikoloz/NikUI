@@ -246,8 +246,12 @@ function fleetMember(s, activeId, now) {
     contextPct: s.contextWindow ? (s.contextTokens || 0) / s.contextWindow : 0,
     workedMs,
     avgTurnMs: turns.length ? workedMs / turns.length : 0,
-    avgCost: turns.length ? (s.totalCost || 0) / turns.length : 0,
-    burnPerHour: workedMs > 0 ? (s.totalCost || 0) / (workedMs / 3600000) : 0,
+    // A reload keeps the last sixty turns and the whole cost, so dividing one
+    // by the other read "$0.67 a turn × 200 turns" next to a total of $40.
+    // Both sides of these come from the same turns now.
+    avgCost: turns.length ? loggedCost(turns) / turns.length : 0,
+    burnPerHour: workedMs > 0 ? loggedCost(turns) / (workedMs / 3600000) : 0,
+    turnsLogged: turns.length,
     toolCalls: read.counts.tool,
     toolErrors: read.toolErrors,
     errors: s.errors || 0,
@@ -291,6 +295,11 @@ const projectOf = (cwd) => {
  * The whole report. `session` is the live instance, `fleet` every other
  * instance open in the window, and `env` whatever only the host can answer.
  */
+/** What the turns in hand actually cost, as against the session's running total. */
+function loggedCost(turns) {
+  return turns.reduce((sum, t) => sum + (t.costUsd || 0), 0);
+}
+
 function buildReport({ session, fleet = [], env = {}, now = Date.now() } = {}) {
   const turns = session.turnLog || [];
   const items = session.items || [];
@@ -372,10 +381,13 @@ function buildReport({ session, fleet = [], env = {}, now = Date.now() } = {}) {
       idleMs: Math.max(0, wallMs - workedMs),
       focusPct: wallMs ? Math.min(1, workedMs / wallMs) : 0,
       avgTurnMs: turns.length ? workedMs / turns.length : 0,
-      avgCost: turns.length ? (session.totalCost || 0) / turns.length : 0,
+      // Over the turns still in hand, with the cost of those same turns: a
+      // reload keeps sixty of them and the running total of all of them.
+      avgCost: turns.length ? loggedCost(turns) / turns.length : 0,
+      turnsLogged: turns.length,
       outputPerSecond,
       // Cost per hour of actual work, not of sitting idle.
-      burnPerHour: workedMs > 0 ? (session.totalCost || 0) / (workedMs / 3600000) : 0,
+      burnPerHour: workedMs > 0 ? loggedCost(turns) / (workedMs / 3600000) : 0,
       messages: read.counts,
       toolCalls: read.counts.tool,
       toolErrors: read.toolErrors,

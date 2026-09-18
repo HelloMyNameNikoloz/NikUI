@@ -24,6 +24,10 @@ const STEERING = new Set([
 // not drive redraws for a client that has none.
 const STATUS_REFRESH_MS = 1500;
 
+// The fastest the running totals are worth sending. Fast enough that a counter
+// looks live, slow enough that a phone is not paying for it.
+const STATS_MIN_MS = 400;
+
 /**
  * One instance, however many people are watching it.
  *
@@ -42,6 +46,8 @@ class SessionHub {
     this.host = host || {};
     this.clients = new Map();
     this.listeners = [];
+    this.statsSentAt = 0;
+    this.statsTimer = null;
     this.watchers = new Set();
 
     const on = (event, fn) => {
@@ -173,8 +179,29 @@ class SessionHub {
     return safePost(entry.client, message);
   }
 
+  /**
+   * Numbers nobody reads twenty times a second.
+   *
+   * Items flush every fifty milliseconds while a turn streams, and stats used
+   * to go out with each one — doubling the messages on the wire for figures
+   * that change meaningfully once or twice a second. Throttled here, with the
+   * trailing edge kept so the last word is always the true one.
+   */
   broadcastStats() {
-    this.broadcast({ type: 'stats', stats: this.session.stats() });
+    const now = Date.now();
+    const since = now - (this.statsSentAt || 0);
+    if (since >= STATS_MIN_MS) {
+      this.statsSentAt = now;
+      this.broadcast({ type: 'stats', stats: this.session.stats() });
+      return;
+    }
+    if (this.statsTimer) return;
+    this.statsTimer = setTimeout(() => {
+      this.statsTimer = null;
+      this.statsSentAt = Date.now();
+      this.broadcast({ type: 'stats', stats: this.session.stats() });
+    }, STATS_MIN_MS - since);
+    if (this.statsTimer.unref) this.statsTimer.unref();
   }
 
   /**
@@ -414,7 +441,14 @@ class SessionHub {
       slashCommands: this.commandList(),
       commandArgs: commandArgs(),
       ownCommands: this.ownCommands(cfg),
-      snippets: cfg.promptSnippets || {}
+      snippets: cfg.promptSnippets || {},
+      // The settings the page draws itself with. They were only ever sent in
+      // `init`, so changing the font or hiding thinking blocks did nothing
+      // until the tab was closed and opened again.
+      showThinking: cfg.showThinking,
+      singleEscape: !!cfg.interruptOnSingleEscape,
+      font: cfg.fontFamily || '',
+      fontSize: cfg.fontSize || 13
     };
   }
 
@@ -499,6 +533,8 @@ class SessionHub {
   dispose() {
     if (this.ticker) clearInterval(this.ticker);
     this.ticker = null;
+    if (this.statsTimer) clearTimeout(this.statsTimer);
+    this.statsTimer = null;
     for (const undo of this.listeners) { try { undo(); } catch (_) { /* already gone */ } }
     this.listeners = [];
     this.watchers.clear();
@@ -548,4 +584,11 @@ function closeAllHubs() {
   for (const id of [...hubs.keys()]) closeHub(id);
 }
 
-module.exports = { SessionHub, hubFor, closeHub, closeAllHubs, OWN_COMMANDS, STEERING, STATUS_REFRESH_MS };
+/** Every hub in this window — for anything that changed for all of them. */
+function eachHub(fn) {
+  for (const hub of hubs.values()) {
+    try { fn(hub); } catch (_) { /* one hub's problem */ }
+  }
+}
+
+module.exports = { SessionHub, hubFor, closeHub, closeAllHubs, eachHub, OWN_COMMANDS, STEERING, STATUS_REFRESH_MS, STATS_MIN_MS };

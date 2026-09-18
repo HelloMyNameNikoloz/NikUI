@@ -152,10 +152,16 @@ body.home .row-cost {
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
 
+/* The selectors are the markup panel.js writes, checked against it: .perm
+   .actions for Allow/Deny, .queue-head .link for Clear, .queue-row .drop for
+   the per-row controls. Two of these used to be class names that existed
+   nowhere, so a watch-only device was offered every button and the host
+   refused each one after the tap. */
 body.read-only .composer,
 body.read-only .hint,
-body.read-only .queue-actions,
-body.read-only .perm-actions { display: none; }
+body.read-only .perm .actions,
+body.read-only .queue-head .link,
+body.read-only .queue-row .drop { display: none; }
 
 /* ---- pairing ------------------------------------------------------------- */
 

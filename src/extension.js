@@ -7,7 +7,7 @@ const { SessionManager, readConfig } = require('./manager');
 const { SessionTree } = require('./tree');
 const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
-const { closeHub, closeAllHubs } = require('./hub');
+const { closeHub, closeAllHubs, eachHub } = require('./hub');
 const { HistoryTree } = require('./historyTree');
 const { projectsRoot } = require('./history');
 const { nextTicket } = require('./ticket');
@@ -48,7 +48,21 @@ function activate(context) {
   showScope();
   // Transcripts are written continuously; re-read whenever the panel is shown.
   context.subscriptions.push(historyView.onDidChangeVisibility((e) => { if (e.visible) history.refresh(); }));
-  manager.on('changed', () => history.refresh());
+  // A sweep of every transcript on the machine is not a thing to do on every
+  // status change of every instance. The list only changes when a conversation
+  // is created or removed, and a moment's delay is invisible either way.
+  let historySoon = null;
+  const refreshHistory = () => {
+    if (historySoon) return;
+    historySoon = setTimeout(() => { historySoon = null; history.refresh(); }, 1500);
+  };
+  context.subscriptions.push({ dispose: () => { if (historySoon) clearTimeout(historySoon); } });
+  manager.on('removed', refreshHistory);
+  manager.on('session-changed', (session) => {
+    // A conversation gets its id the first time the CLI answers; that is when
+    // it becomes something History could show.
+    if (session && session.claudeSessionId) refreshHistory();
+  });
 
   // Keep the sidebar badge honest about how many instances are busy.
   // Whatever removes an instance, its panel goes with it; an orphaned panel
@@ -431,6 +445,17 @@ function activate(context) {
   const server = serveLocally(context, manager, { state: () => (awake ? awake.state() : null) });
   awake = keepAwake(context, manager, server);
 
+  // Settings that change how a conversation is drawn reach the pages that are
+  // already open. They used to be sent once, in the first message a client got,
+  // so changing the font did nothing until the tab was closed and reopened.
+  if (vscode.workspace.onDidChangeConfiguration) {
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event && event.affectsConfiguration && !event.affectsConfiguration('nikui')) return;
+      eachHub((hub) => hub.broadcast(hub.metaMessage()));
+      tree.refresh();
+    }));
+  }
+
   context.subscriptions.push({ dispose: () => { closeAllHubs(); manager.disposeAll(); } });
 }
 
@@ -442,7 +467,16 @@ function activate(context) {
  * that never sleeps through a forgotten flag is its own bug.
  */
 function keepAwake(context, manager, server) {
-  const awake = new Awake();
+  // A keep-awake that cannot hold anything says so once, rather than looking
+  // like a machine that simply had nothing to hold.
+  const awake = new Awake({
+    log: (line) => {
+      if (!/could not|nothing to hold/.test(line) || awake.complained) return;
+      awake.complained = true;
+      vscode.window.showWarningMessage('NikUI: ' + line +
+        '. The machine may still sleep and take its instances with it.');
+    }
+  });
 
   const reconsider = () => {
     let enabled = false;
@@ -535,6 +569,9 @@ function serveLocally(context, manager, awakeState) {
   const notifier = new Notifier({
     devices,
     vapid,
+    // A notification whose instance cannot be opened is a notification that
+    // teaches you to ignore them.
+    reachable: () => server.listening,
     settings: () => {
       try { return vscode.workspace.getConfiguration('nikui').get('notifyDevices', {}) || {}; }
       catch (_) { return {}; }
@@ -586,10 +623,26 @@ function serveLocally(context, manager, awakeState) {
     return server;
   };
 
+  /** Whatever this window put in front of the server, taken back down. */
+  const closeTunnels = async () => {
+    const problems = [];
+    if (cloudflared.running) {
+      const out = await cloudflared.hide();
+      if (!out.ok) problems.push(out.reason);
+    }
+    if (weExposed) {
+      const out = await tailscale.hide();
+      if (!out.ok) problems.push(out.reason);
+    }
+    weExposed = false;
+    server.publicHost = null;
+    return problems;
+  };
+
   const stop = async () => {
-    // Taking the server down leaves the tailnet pointing at nothing, so the
-    // forwarding goes with it — but only the forwarding this window set up.
-    if (weExposed) { await tailscale.hide(); weExposed = false; server.publicHost = null; }
+    // The server going away leaves anything in front of it pointing at
+    // nothing, so both go — but only what this window set up.
+    await closeTunnels();
     await server.stop();
     paint();
   };
@@ -683,23 +736,14 @@ function serveLocally(context, manager, awakeState) {
   };
 
   const unreach = async () => {
-    if (cloudflared.running) {
-      await cloudflared.hide();
-      weExposed = false;
-      server.publicHost = null;
-      paint();
-      vscode.window.setStatusBarMessage('NikUI: the public address is closed', 4000);
+    const wasOpen = cloudflared.running || weExposed;
+    if (!wasOpen) {
+      vscode.window.setStatusBarMessage('NikUI: nothing outside this machine could reach this window', 4000);
       return;
     }
-    if (!weExposed) {
-      vscode.window.setStatusBarMessage('NikUI: this window was not reachable from the tailnet', 4000);
-      return;
-    }
-    const out = await tailscale.hide();
-    weExposed = false;
-    server.publicHost = null;
+    const problems = await closeTunnels();
     paint();
-    if (!out.ok) vscode.window.showWarningMessage('NikUI: Tailscale would not stop forwarding: ' + out.reason);
+    if (problems.length) vscode.window.showWarningMessage('NikUI: ' + problems.join('; '));
     else vscode.window.setStatusBarMessage('NikUI: only this machine can reach this window again', 4000);
   };
 
@@ -827,8 +871,7 @@ function serveLocally(context, manager, awakeState) {
     vscode.commands.registerCommand('nikui.forgetDevice', async (node) => forget(await pick(node))),
     vscode.commands.registerCommand('nikui.renameDevice', async (node) => rename(await pick(node))),
     { dispose: () => {
-      if (weExposed) tailscale.hide();
-      cloudflared.hide();
+      closeTunnels();
       server.dispose();
       if (bar) bar.dispose();
       if (out) out.dispose();

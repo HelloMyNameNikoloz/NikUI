@@ -33,6 +33,9 @@ class Notifier {
     this.now = deps.now || (() => Date.now());
     this.log = deps.log || (() => {});
     this.subject = deps.subject || 'mailto:nikui@localhost';
+    // Whether a device could act on what it is told. Default yes, so nothing
+    // that does not supply one goes quiet by accident.
+    this.reachable = deps.reachable || (() => true);
     // What each instance was last announced for, so the same state is not sent
     // twice as it flickers.
     this.told = new Map();
@@ -54,6 +57,10 @@ class Notifier {
    */
   async announce(kind, message) {
     if (!this.wants(kind)) return { sent: 0, failed: 0, skipped: true };
+    if (!this.reachable()) {
+      this.log(`"${message.title}" not sent: nothing can reach this window`);
+      return { sent: 0, failed: 0, skipped: true };
+    }
     const subscribers = this.devices.subscribers();
     if (!subscribers.length) return { sent: 0, failed: 0, skipped: true };
 
@@ -158,8 +165,16 @@ class Notifier {
 
     on('session-changed', (session) => {
       if (!session) return;
-      if (session.status === 'waiting') this.needsYou(session);
-      else this.settled(session);
+      if (session.status === 'waiting') return void this.needsYou(session);
+      // A turn that has just ended, once. `done` is a resting state and the
+      // event fires again for anything else that changes while it rests, so
+      // the note of having said it is what stops a second telling.
+      const finishing = session.status === 'done' && this.told.get(session.id) !== 'done';
+      this.settled(session);
+      if (finishing) {
+        this.told.set(session.id, 'done');
+        this.finished(session);
+      }
     });
     on('failed', (session, message) => this.failed(session, message));
     on('paused', (pause) => this.paused(pause));

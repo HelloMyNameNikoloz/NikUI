@@ -646,6 +646,17 @@
     return session + cfg + disk + host + remote(r);
   }
 
+  /**
+   * Per-turn figures are measured over the turns still in memory. After a
+   * reload that is the last sixty of them, and saying so is the difference
+   * between a number and a wrong number.
+   */
+  function overTurns(r) {
+    const logged = (r.totals || {}).turnsLogged || 0;
+    const all = (r.totals || {}).turns || 0;
+    return logged && all > logged ? ' · over the last ' + logged : '';
+  }
+
   function awakeLine(awake) {
     if (!awake) return 'as the system decides';
     if (!awake.supported) return 'as the system decides';

@@ -18,6 +18,7 @@
   const lede = $('lede');
   const transport = window.nikTransport();
   const REMEMBERED = 'nikui:fleet';
+  const openedAt = Date.now();
 
   const money = (value) => '$' + (Number(value) || 0).toFixed(2);
   const shortPath = (value) => String(value || '').split('/').slice(-2).join('/');
@@ -148,12 +149,25 @@
     lede.textContent = 'Last seen ' + ago(saved.at) + '. Reconnecting…';
   }
 
-  // And if it never connects, say so rather than leaving that sentence up.
-  setTimeout(function () {
-    if (!document.body.classList.contains('stale')) return;
-    if (transport.__state && transport.__state() === 'online') return;
+  /**
+   * A list is only current while the socket is. Nothing pushes "the connection
+   * died" — there is no connection to push it — so the page asks, and the
+   * moment the answer stops being "online" the list says what it is.
+   */
+  let wasLive = false;
+  let saidOffline = false;
+  setInterval(function () {
+    const live = transport.__state && transport.__state() === 'online';
+    if (live) { wasLive = true; saidOffline = false; return; }
+    // Keyed on having said it, not on the dimming: the page starts dimmed while
+    // it reconnects, and reading that back would mean never saying anything.
+    if (saidOffline) return;
+    // A first connection gets a few seconds before it is called a failure; a
+    // list that was live and is not any more needs no grace at all.
+    if (!wasLive && Date.now() - openedAt < 6000) return;
+    saidOffline = true;
     stale('Cannot reach the laptop.');
-  }, 6000);
+  }, 2000);
 
   transport.postMessage({ type: 'ready' });
 })();

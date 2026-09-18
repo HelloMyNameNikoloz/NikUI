@@ -176,6 +176,16 @@ const record = (name, ok) => checks.push([name, !!ok]);
       /what was already here/.test(await phone.evaluate('document.getElementById("stream").textContent')));
     record('but the composer is not offered to it',
       (await phone.evaluate('document.body.classList.contains("read-only")')) === true);
+    record('nor is anything else it cannot do',
+      (await phone.evaluate(`(() => {
+        const hidden = (el) => !el || getComputedStyle(el).display === 'none';
+        return hidden(document.querySelector('.composer')) && hidden(document.querySelector('.hint'));
+      })()`)) === true);
+    record('and the standing explanation survives a refused tap',
+      (await phone.evaluate(`(() => {
+        const banner = document.getElementById('watching');
+        return !banner.hidden && /Watching only/.test(banner.textContent);
+      })()`)) === true);
 
     const held = session.items.length + session.queue.length;
     await phone.evaluate(`(() => {
@@ -290,6 +300,26 @@ const record = (name, ok) => checks.push([name, !!ok]);
   }
 
   // Back on the same port, so the address the browsers know still means this.
+  await server.start(port);
+
+  // ---- a list that stops being current says so ------------------------------
+  const watching = await launch(chrome);
+  try {
+    await watching.navigate(`${base}/?key=${auth.key}`);
+    await watching.until('document.querySelectorAll(".row").length === 1', 8000);
+    record('a live list is not dimmed',
+      (await watching.evaluate('document.body.classList.contains("stale")')) === false);
+
+    for (const client of [...server.clients]) client.close(1001, 'gone');
+    await server.stop();
+    record('and when the socket dies under it, it stops looking live',
+      await watching.until('document.body.classList.contains("stale")', 12000));
+    record('naming when it last was',
+      /last seen|looked like/i.test(await watching.evaluate('document.getElementById("lede").textContent')));
+    record('with a way to ask again', await watching.until('!!document.getElementById("retry")', 6000));
+  } finally {
+    watching.close();
+  }
   await server.start(port);
 
   // ---- and on a screen the size of a phone ----------------------------------

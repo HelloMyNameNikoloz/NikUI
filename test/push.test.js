@@ -173,6 +173,39 @@ module.exports = async function () {
   await quiet.paused({ until: Date.now() + 3600000 });
   checkEqual('nothing is sent for what is turned off', sent.length, 0);
 
+  suite('nothing is sent that could not be acted on');
+
+  sent.length = 0;
+  const unreachable = new Notifier({
+    devices, vapid,
+    settings: () => ({ needsYou: true, quota: true, failed: true }),
+    reachable: () => false,
+    send: (target, message) => { sent.push({ message }); return Promise.resolve({ ok: true }); }
+  });
+  await unreachable.needsYou({ id: 's5', label: 'x', items: [] });
+  await unreachable.paused({ until: Date.now() + 1000 });
+  checkEqual('with nothing able to reach this window, nothing is sent', sent.length, 0);
+
+  suite('a turn finishing is a thing that can be asked for');
+
+  sent.length = 0;
+  const chatty = new Notifier({
+    devices, vapid,
+    settings: () => ({ turnFinished: true }),
+    send: (target, message) => { sent.push(message.title); return Promise.resolve({ ok: true }); }
+  });
+  const window2 = new EventEmitter();
+  window2.off = window2.removeListener;
+  const stopWatching = chatty.watch(window2);
+  window2.emit('session-changed', { id: 'f1', label: '1327', status: 'done', items: [] });
+  await new Promise((r) => setTimeout(r, 20));
+  checkEqual('a turn that ends reaches the devices that asked', sent.length, 2);
+  check('by name', /1327 finished/.test(sent[0]));
+  window2.emit('session-changed', { id: 'f1', label: '1327', status: 'done', items: [] });
+  await new Promise((r) => setTimeout(r, 20));
+  checkEqual('and resting there does not say it again', sent.length, 2);
+  stopWatching();
+
   suite('a device that is gone stops being written to');
 
   const dying = fakeDevices([{ id: 'd3', name: 'Uninstalled', push: subscription('https://push.example.com/send/ghi') }]);

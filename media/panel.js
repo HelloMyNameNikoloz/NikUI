@@ -189,7 +189,10 @@
   }
 
   setInterval(function () { if (statsBase.running) paintStats(); }, 1000);
-  setInterval(paintQueue, 1000);
+  // Only while there is a countdown to advance. Rebuilding the queue's markup
+  // every second destroyed the buttons under the reader's focus and their
+  // half-finished clicks, to redraw text that had not changed.
+  setInterval(function () { if (drainAt) paintQueue(); }, 1000);
 
   function setStats(s) {
     statsBase = Object.assign({}, s, { at: Date.now() });
@@ -213,7 +216,11 @@
     const allowed = !device || device.control !== false;
     document.body.classList.toggle('read-only', !allowed);
     const banner = $('watching');
-    if (banner) banner.hidden = allowed;
+    if (banner) {
+      banner.hidden = allowed;
+      if (refusalTimer) { clearTimeout(refusalTimer); refusalTimer = null; }
+      banner.textContent = WATCHING;
+    }
     input.disabled = !allowed;
   }
 
@@ -232,11 +239,21 @@
       : others.length + ' others are looking at this instance.';
   }
 
+  const WATCHING = 'Watching only — this device has not been granted control.';
+  let refusalTimer = null;
+
   function flashRefusal(msg) {
     const banner = $('watching');
     if (!banner) return;
     banner.hidden = false;
     banner.textContent = (msg && msg.reason) || 'That is not allowed from this device.';
+    // And then back to the standing explanation. Overwriting it permanently
+    // meant one refused tap cost the page its only account of why.
+    if (refusalTimer) clearTimeout(refusalTimer);
+    refusalTimer = setTimeout(function () {
+      refusalTimer = null;
+      banner.textContent = WATCHING;
+    }, 6000);
   }
 
   function setMeta(meta) {
@@ -1223,6 +1240,16 @@
         paintQueue();
         break;
       case 'meta':
+        // Settings can change while this page is open, so they arrive here as
+        // well as in `init` — and are applied the same way.
+        if (typeof msg.showThinking === 'boolean') showThinking = msg.showThinking;
+        if (typeof msg.singleEscape === 'boolean') { singleEscape = msg.singleEscape; disarmEscape(); }
+        if (msg.font !== undefined) {
+          document.documentElement.style.setProperty('--nik-font', msg.font || '');
+        }
+        if (msg.fontSize) {
+          document.documentElement.style.setProperty('--nik-font-size', msg.fontSize + 'px');
+        }
         setMeta(msg.meta);
         if (msg.slashCommands) commands = msg.slashCommands;
         if (msg.commandArgs) commandArgs = msg.commandArgs;
@@ -1234,6 +1261,10 @@
       case 'reset':
         stream.innerHTML = '<div class="empty">Context cleared.</div>';
         nodes.clear();
+        // Everything that described the conversation goes with it: a cleared
+        // context has no dropped messages and no search results.
+        dropped = 0;
+        closeFind();
         break;
       case 'focus': input.focus(); break;
 
