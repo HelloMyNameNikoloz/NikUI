@@ -19,6 +19,7 @@ const { DevicesTree } = require('./devicesTree');
 const { PairingWindow } = require('./pairing');
 const { PairPanel } = require('./pairPanel');
 const { loadIdentity } = require('./identity');
+const { Tailscale } = require('./tunnel');
 
 let manager;
 
@@ -464,6 +465,11 @@ function serveLocally(context, manager) {
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
   });
 
+  // The mesh in front of the server, when there is one. Nothing binds anywhere
+  // but loopback either way: this asks Tailscale's own proxy to forward to us.
+  const tailscale = new Tailscale();
+  let weExposed = false;
+
   const tree = new DevicesTree(devices, server);
   const view = vscode.window.createTreeView('nikui.devices', { treeDataProvider: tree });
   context.subscriptions.push(view, tree);
@@ -472,8 +478,12 @@ function serveLocally(context, manager) {
     if (!bar) return;
     if (!server.listening) { bar.hide(); return; }
     const paired = devices.list().length;
-    bar.text = `$(broadcast) NikUI :${server.port}`;
-    bar.tooltip = `NikUI is serving this window on 127.0.0.1:${server.port}` +
+    // Reachable from elsewhere is a different state from listening, and the
+    // status bar is where you should be able to tell them apart at a glance.
+    bar.text = server.exposed ? `$(radio-tower) NikUI · ${server.publicHost}` : `$(broadcast) NikUI :${server.port}`;
+    bar.tooltip = (server.exposed
+      ? `NikUI is reachable on the tailnet at ${server.publicScheme}://${server.publicHost}`
+      : `NikUI is serving this window on 127.0.0.1:${server.port}, and nowhere else`) +
       (paired ? ` · ${paired} paired device${paired === 1 ? '' : 's'}` : '') +
       '. Click for actions.';
     bar.command = 'nikui.remoteMenu';
@@ -498,8 +508,66 @@ function serveLocally(context, manager) {
   };
 
   const stop = async () => {
+    // Taking the server down leaves the tailnet pointing at nothing, so the
+    // forwarding goes with it — but only the forwarding this window set up.
+    if (weExposed) { await tailscale.hide(); weExposed = false; server.publicHost = null; }
     await server.stop();
     paint();
+  };
+
+  /**
+   * Put the tailnet in front of the server, so a phone that is somewhere else
+   * can reach it. Nothing new listens here: Tailscale's proxy takes the
+   * connection on the mesh and forwards it to 127.0.0.1, with a certificate,
+   * which is also the only way a device can hold a key at all.
+   */
+  const reach = async () => {
+    if (!(await start())) return;
+    const state = await tailscale.status();
+    if (!state.installed) {
+      const go = await vscode.window.showWarningMessage(
+        'NikUI: Tailscale is not installed.',
+        { modal: true, detail: 'Tailscale puts this laptop and your phone on the same private network, ' +
+          'with encryption and device identity of its own — so nothing of NikUI\'s is ever exposed to the ' +
+          'internet. Install it on both, sign in, and run this again.' },
+        'Open tailscale.com'
+      );
+      if (go) await vscode.env.openExternal(vscode.Uri.parse('https://tailscale.com/download'));
+      return;
+    }
+    if (!state.running || !state.https) {
+      vscode.window.showWarningMessage('NikUI cannot use Tailscale yet: ' + (state.reason || 'unknown reason'));
+      return;
+    }
+
+    const out = await tailscale.expose(server.port);
+    if (!out.ok) {
+      vscode.window.showWarningMessage('NikUI could not ask Tailscale to forward to it: ' + out.reason);
+      return;
+    }
+    weExposed = true;
+    server.publicHost = out.host;
+    paint();
+
+    const next = await vscode.window.showInformationMessage(
+      `NikUI is reachable at ${out.url} from anything on your tailnet.`,
+      'Pair a device', 'Copy the address'
+    );
+    if (next === 'Pair a device') return pair();
+    if (next === 'Copy the address' && vscode.env.clipboard) await vscode.env.clipboard.writeText(out.url);
+  };
+
+  const unreach = async () => {
+    if (!weExposed) {
+      vscode.window.setStatusBarMessage('NikUI: this window was not reachable from the tailnet', 4000);
+      return;
+    }
+    const out = await tailscale.hide();
+    weExposed = false;
+    server.publicHost = null;
+    paint();
+    if (!out.ok) vscode.window.showWarningMessage('NikUI: Tailscale would not stop forwarding: ' + out.reason);
+    else vscode.window.setStatusBarMessage('NikUI: only this machine can reach this window again', 4000);
   };
 
   const open = async () => {
@@ -523,12 +591,21 @@ function serveLocally(context, manager) {
     const choice = await vscode.window.showQuickPick([
       { label: '$(link-external) Open in a browser', id: 'open' },
       { label: '$(device-mobile) Pair a device', id: 'pair' },
+      server.exposed
+        ? { label: '$(circle-slash) Stop being reachable from my phone', id: 'unreach' }
+        : { label: '$(radio-tower) Reach this window from my phone', id: 'reach' },
       { label: '$(clippy) Copy the link', id: 'copy' },
       { label: '$(debug-stop) Stop the server', id: 'stop' }
-    ], { placeHolder: `NikUI is serving on 127.0.0.1:${server.port}` });
+    ], {
+      placeHolder: server.exposed
+        ? `NikUI is reachable at ${server.publicScheme}://${server.publicHost}`
+        : `NikUI is serving on 127.0.0.1:${server.port}`
+    });
     if (!choice) return;
     if (choice.id === 'open') return open();
     if (choice.id === 'pair') return pair();
+    if (choice.id === 'reach') return reach();
+    if (choice.id === 'unreach') return unreach();
     if (choice.id === 'stop') return stop();
     if (choice.id === 'copy' && vscode.env.clipboard) {
       await vscode.env.clipboard.writeText(server.url || '');
@@ -605,11 +682,18 @@ function serveLocally(context, manager) {
     vscode.commands.registerCommand('nikui.remoteOpen', open),
     vscode.commands.registerCommand('nikui.remoteMenu', menu),
     vscode.commands.registerCommand('nikui.pairDevice', pair),
+    vscode.commands.registerCommand('nikui.reachFromPhone', reach),
+    vscode.commands.registerCommand('nikui.stopReaching', unreach),
     vscode.commands.registerCommand('nikui.grantControl', async (node) => grant(await pick(node))),
     vscode.commands.registerCommand('nikui.revokeControl', async (node) => revoke(await pick(node))),
     vscode.commands.registerCommand('nikui.forgetDevice', async (node) => forget(await pick(node))),
     vscode.commands.registerCommand('nikui.renameDevice', async (node) => rename(await pick(node))),
-    { dispose: () => { server.dispose(); if (bar) bar.dispose(); if (out) out.dispose(); } }
+    { dispose: () => {
+      if (weExposed) tailscale.hide();
+      server.dispose();
+      if (bar) bar.dispose();
+      if (out) out.dispose();
+    } }
   );
 
   if (vscode.workspace.getConfiguration('nikui').get('remote.autoStart', false)) start();

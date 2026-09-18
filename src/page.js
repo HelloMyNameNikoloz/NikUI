@@ -43,6 +43,7 @@ function renderPage(opts) {
 ${head}</head>
 <body>
   <header>
+    <a class="back" id="back" href="/" aria-label="All instances" title="All instances"></a>
     <div class="title-group">
       <span id="dot" class="dot idle"></span>
       <span class="title" id="title">Claude</span>
@@ -51,6 +52,7 @@ ${head}</head>
     <div class="ctx" id="ctx" hidden><div class="ctx-bar"><i></i></div><span class="ctx-label"></span></div>
     <span class="spacer"></span>
     <div class="crumbs" id="crumbs"></div>
+    <div class="who" id="who" hidden></div>
     <div class="link" id="link" hidden></div>
   </header>
 

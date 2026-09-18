@@ -21,7 +21,7 @@ const TO_HOST = [
 
 const TO_CLIENT = [
   'init', 'items', 'status', 'stats', 'meta', 'queue', 'reset',
-  'statusReport', 'openStatus', 'editPrompt', 'focus'
+  'statusReport', 'openStatus', 'editPrompt', 'focus', 'presence'
 ];
 
 /**
@@ -30,7 +30,7 @@ const TO_CLIENT = [
  * confused with a session message, and listed separately so a transport cannot
  * quietly grow a private dialect.
  */
-const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused'];
+const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate'];
 const CONTROL_TO_HOST = ['@auth'];
 
 function quietSession() {

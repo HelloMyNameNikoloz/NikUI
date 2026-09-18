@@ -93,6 +93,7 @@ class SessionHub {
       // Who this is, when anybody knows: a socket always carries a device, the
       // editor's own webview carries none and is trusted like the editor.
       device: client.device || null,
+      since: Date.now(),
       ready: false,
       statusOpen: false,
       statusTimer: null,
@@ -110,6 +111,7 @@ class SessionHub {
     if (!entry) return false;
     entry.device = device || null;
     safePost(entry.client, { type: '@device', device: entry.device });
+    this.broadcastPresence();
     return true;
   }
 
@@ -123,7 +125,35 @@ class SessionHub {
     if (!entry) return false;
     if (entry.statusTimer) clearTimeout(entry.statusTimer);
     this.clients.delete(clientId);
+    this.broadcastPresence();
     return true;
+  }
+
+  /**
+   * Who else is looking at this instance.
+   *
+   * Only what is shared is broadcast: who is attached, and whether they can
+   * steer. What a client is doing with its own view — the draft it is halfway
+   * through, where it has scrolled, whether its status sheet is open — stays
+   * where it is. Syncing a draft would mean two people typing over each other.
+   */
+  presence() {
+    const clients = [];
+    for (const entry of this.clients.values()) {
+      if (!entry.ready) continue;
+      clients.push({
+        id: entry.client.id,
+        name: entry.device ? entry.device.name : 'This editor',
+        kind: entry.device ? entry.device.kind : 'editor',
+        control: this.mayControl(entry),
+        since: entry.since
+      });
+    }
+    return { type: 'presence', clients };
+  }
+
+  broadcastPresence() {
+    this.broadcast(this.presence());
   }
 
   get size() {
@@ -252,7 +282,11 @@ class SessionHub {
         break;
 
       case 'switch':
-        if (typeof this.host.switchTo === 'function') this.host.switchTo(msg.id, session);
+        // Where a client goes next is that client's business. A phone choosing
+        // another instance moves the phone; it does not reach across and
+        // rearrange the tabs on the laptop.
+        if (entry.device) this.send(clientId, { type: '@navigate', session: msg.id });
+        else if (typeof this.host.switchTo === 'function') this.host.switchTo(msg.id, session);
         break;
 
       default:
@@ -290,7 +324,9 @@ class SessionHub {
     if (!session.isRunning && this.host.autoStart !== false) session.start();
 
     entry.ready = true;
-    safePost(entry.client, this.initMessage());
+    safePost(entry.client, this.initMessage(entry.client.id));
+    // Everyone learns who else turned up, including whoever just did.
+    this.broadcastPresence();
     if (entry.pendingStatus) {
       entry.pendingStatus = false;
       this.openStatus(entry.client.id);
@@ -363,12 +399,15 @@ class SessionHub {
     };
   }
 
-  initMessage() {
+  initMessage(clientId) {
     const session = this.session;
     const cfg = this.config();
     return {
       type: 'init',
       sessionId: session.id,
+      // So a client can tell its own row in the presence list from everybody
+      // else's, without having to guess at names.
+      client: clientId || null,
       items: session.items,
       // Older items were dropped from memory on purpose; the panel says so
       // instead of pretending the conversation began where it does.

@@ -70,6 +70,13 @@ async function launch(binary) {
   return {
     port,
     call,
+    /** Pretend to be a phone: viewport, pixel ratio and touch, as Chrome sees it. */
+    asPhone: async (width, height) => {
+      await call('Emulation.setDeviceMetricsOverride', {
+        width: width || 390, height: height || 844, deviceScaleFactor: 3, mobile: true
+      });
+      await call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    },
     navigate: async (url) => {
       await call('Page.navigate', { url });
       // Polling beats waiting on a load event: it is the same answer, and it

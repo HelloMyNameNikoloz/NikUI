@@ -38,6 +38,23 @@
   --measure: 780px;
 }
 
+.back { display: none; }
+
+/* ---- presence ------------------------------------------------------------
+   Somebody else is looking at this instance. Only ever who, never what they
+   are typing: a draft belongs to the client it is being typed on. */
+
+.who {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--vscode-descriptionForeground);
+}
+
+
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
 

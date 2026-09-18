@@ -52,6 +52,10 @@ class PairingWindow {
       startedAt: this.now(),
       expiresAt: this.now() + this.ttl,
       host: o.host || null,
+      // http on this machine, https once the tailnet is in front of it. A phone
+      // cannot hold a device key over anything else: Web Crypto is only there
+      // in a secure context.
+      scheme: o.scheme === 'https' ? 'https' : 'http',
       fingerprint: o.fingerprint || null,
       laptop: o.laptop || 'This laptop'
     };
@@ -87,6 +91,7 @@ class PairingWindow {
       msLeft: Math.max(0, this.open.expiresAt - this.now()),
       link: this.link(),
       host: this.open.host,
+      scheme: this.open.scheme,
       fingerprint: this.open.fingerprint,
       laptop: this.open.laptop
     };
@@ -106,7 +111,7 @@ class PairingWindow {
       at.fingerprint ? 'f=' + encodeURIComponent(at.fingerprint) : null,
       at.laptop ? 'n=' + encodeURIComponent(at.laptop) : null
     ].filter(Boolean).join('&');
-    return `http://${at.host || '127.0.0.1'}/pair#${params}`;
+    return `${at.scheme}://${at.host || '127.0.0.1'}/pair#${params}`;
   }
 
   /**

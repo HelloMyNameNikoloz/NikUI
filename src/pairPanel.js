@@ -52,6 +52,7 @@ class PairPanel {
     this.before = this.devices.list().length;
     this.pairing.start({
       host: this.server.publicHost,
+      scheme: this.server.publicScheme,
       fingerprint: this.server.identity ? this.server.identity.fingerprint : null,
       laptop: laptopName()
     });
@@ -105,7 +106,9 @@ ${body}
     <ul class="terms">
       <li>The device makes a key that never leaves it, and proves it on every connection.</li>
       <li>It can <strong>watch</strong> as soon as it pairs. Sending prompts is a separate grant.</li>
-      <li>Nothing outside this machine can reach this window yet — that comes with the tunnel.</li>
+      <li>${state.scheme === 'https'
+        ? 'This window is reachable from the tailnet, so a phone elsewhere can pair with it.'
+        : 'Only this machine can reach this window. Run <strong>NikUI: Reach this window from my phone</strong> first if the device is not here.'}</li>
     </ul>
   </main>`;
   }

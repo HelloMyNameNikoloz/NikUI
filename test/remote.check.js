@@ -201,6 +201,72 @@ const record = (name, ok) => checks.push([name, !!ok]);
     record('with nothing left on the laptop', devices.list().length === 0);
   } finally {
     phone.close();
+  }
+
+  // ---- and on a screen the size of a phone ----------------------------------
+  const small = await launch(chrome);
+  try {
+    await small.asPhone(390, 844);
+    await small.navigate(`${base}/?key=${auth.key}`);
+    await small.until('document.querySelectorAll(".row").length === 1', 8000);
+    record('the fleet is the home screen, and it fits',
+      (await small.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')) === true);
+    record('with rows big enough for a thumb',
+      (await small.evaluate('Math.round(document.querySelector(".row").getBoundingClientRect().height)')) >= 44);
+
+    await small.evaluate('document.querySelector(".row").click()');
+    record('tapping one opens that conversation',
+      await small.until('!!document.getElementById("transcript")', 6000));
+    await small.until('document.getElementById("link").textContent === "Live"', 8000);
+
+    record('nothing scrolls sideways',
+      (await small.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')) === true);
+    record('there is a way back to the fleet',
+      (await small.evaluate('getComputedStyle(document.getElementById("back")).display')) !== 'none');
+    record('the shortcut list, which no phone can use, is gone',
+      (await small.evaluate('getComputedStyle(document.querySelector(".hint")).display')) === 'none');
+    record('the composer is on screen, above the fold',
+      (await small.evaluate(`(() => {
+        const box = document.querySelector('.composer').getBoundingClientRect();
+        return box.bottom <= window.innerHeight + 1 && box.top > 0;
+      })()`)) === true);
+    record('its text is big enough that iOS will not zoom the page',
+      (await small.evaluate('parseFloat(getComputedStyle(document.getElementById("input")).fontSize)')) >= 16);
+    record('send and stop are thumb-sized',
+      (await small.evaluate(`(() => {
+        const send = document.getElementById('send').getBoundingClientRect();
+        return Math.round(send.height) >= 44 && Math.round(send.width) >= 44;
+      })()`)) === true);
+    record('the page tracks the visual viewport, not the window',
+      !!(await small.evaluate('document.documentElement.style.getPropertyValue("--app-height")')));
+
+    await small.evaluate(`(() => {
+      const input = document.getElementById('input');
+      input.value = '/status';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    })()`);
+    record('the dashboard opens full screen',
+      await small.until('!document.getElementById("status").hidden && ' +
+        'document.getElementById("status").getBoundingClientRect().width >= window.innerWidth - 1', 6000));
+    record('its sections are a strip you can reach with one thumb',
+      (await small.evaluate(`(() => {
+        const nav = document.querySelector('.sheet-nav');
+        const item = document.querySelector('.sheet .nav-item').getBoundingClientRect();
+        return getComputedStyle(nav).flexDirection === 'row' && Math.round(item.height) >= 44;
+      })()`)) === true);
+
+    const before = await small.evaluate('document.querySelector("#status .nav-item.on").dataset.section');
+    await small.evaluate(`(() => {
+      const sheet = document.getElementById('status');
+      const at = (x) => [new Touch({ identifier: 1, target: sheet, clientX: x, clientY: 400 })];
+      sheet.dispatchEvent(new TouchEvent('touchstart', { touches: at(300), bubbles: true }));
+      sheet.dispatchEvent(new TouchEvent('touchend', { changedTouches: at(120), bubbles: true }));
+    })()`);
+    const after = await small.evaluate('document.querySelector("#status .nav-item.on").dataset.section');
+    record('and swiping moves between them', before !== after);
+    record('one section at a time, in order', after === 'overview');
+  } finally {
+    small.close();
     await server.dispose();
     closeAllHubs();
     session.dispose();

@@ -111,6 +111,20 @@ class RemoteServer {
     this.host_ = value || null;
   }
 
+  /**
+   * https once something with a certificate is in front of this, which is the
+   * only way a phone can hold a device key: Web Crypto does not exist outside a
+   * secure context, and loopback is the only insecure origin browsers trust.
+   */
+  get publicScheme() {
+    return this.host_ ? 'https' : 'http';
+  }
+
+  /** Whether anything outside this machine can currently reach the server. */
+  get exposed() {
+    return !!this.host_;
+  }
+
   start(port) {
     if (this.listening) return Promise.resolve(this);
     const server = http.createServer((req, res) => {
@@ -167,9 +181,23 @@ class RemoteServer {
   // ---- guards --------------------------------------------------------------
 
   hosts() {
-    const names = [`127.0.0.1:${this.port}`, `localhost:${this.port}`, `[::1]:${this.port}`];
+    const names = this.loopbackHosts();
     if (this.host_) names.push(this.host_);
     return names;
+  }
+
+  loopbackHosts() {
+    return [`127.0.0.1:${this.port}`, `localhost:${this.port}`, `[::1]:${this.port}`];
+  }
+
+  /**
+   * Which scheme the client sees. The tailnet's proxy terminates TLS and says
+   * so; everything else here is plain http on this machine.
+   */
+  schemeOf(req) {
+    const forwarded = String((req.headers && req.headers['x-forwarded-proto']) || '').split(',')[0].trim();
+    if (forwarded === 'https' || forwarded === 'http') return forwarded;
+    return this.host_ && req.headers && req.headers.host === this.host_ ? 'https' : 'http';
   }
 
   /**
@@ -219,11 +247,12 @@ class RemoteServer {
     // The key arrived in the address bar; put it in a cookie and take it back
     // out, so it is not sitting in the URL to be screenshotted or shared.
     if (url.searchParams.has('key')) {
-      const offered = this.gate.http(req);
+      const offered = this.gate.http(req, { loopbackHost: this.isLoopbackHost(req) });
       url.searchParams.delete('key');
       const headers = { location: url.pathname + (url.search || ''), 'cache-control': 'no-store' };
       if (offered.ok) {
-        headers['set-cookie'] = `nikui=${encodeURIComponent(this.gate.key)}; Path=/; HttpOnly; SameSite=Strict`;
+        headers['set-cookie'] = `nikui=${encodeURIComponent(this.gate.key)}; Path=/; HttpOnly; SameSite=Strict` +
+          (this.schemeOf(req) === 'https' ? '; Secure' : '');
       }
       res.writeHead(302, headers);
       return res.end();
@@ -232,6 +261,9 @@ class RemoteServer {
     if (route === '/media/' || route.startsWith('/media/')) {
       return this.serveAsset(res, route.slice('/media/'.length));
     }
+    // Enough for a phone to tell "the laptop is not reachable" from "the laptop
+    // is there and would not have me". No data, so it costs nothing to answer.
+    if (route === '/health') return json(res, 200, { ok: true });
     if (route === '/pair') return this.servePairing(req, res);
     if (route === '/') return this.serveHome(req, res);
     // The shell carries no data, so an unpaired device gets markup and nothing
@@ -253,6 +285,7 @@ class RemoteServer {
 <link rel="stylesheet" href="/media/browser.css">
 <title>NikUI</title>
 <script nonce="${nonce}" src="/media/theme.js" defer></script>
+<script nonce="${nonce}" src="/media/mobile.js" defer></script>
 </head>
 <body class="home">
   <header class="home-head">
@@ -279,7 +312,8 @@ class RemoteServer {
       nonce,
       csp: this.csp(req, nonce),
       head: '<link rel="stylesheet" href="/media/browser.css">\n' +
-        `<script nonce="${nonce}" src="/media/theme.js" defer></script>\n`,
+        `<script nonce="${nonce}" src="/media/theme.js" defer></script>\n` +
+        `<script nonce="${nonce}" src="/media/mobile.js" defer></script>\n`,
       // The only thing the browser client needs that the webview does not:
       // where its socket is. Everything else it learns over that socket.
       boot: `window.NIKUI_REMOTE = ${JSON.stringify({
@@ -369,7 +403,7 @@ class RemoteServer {
   }
 
   csp(req, nonce) {
-    const origin = `http://${req.headers.host}`;
+    const origin = `${this.schemeOf(req)}://${req.headers.host}`;
     const socket = origin.replace(/^http/, 'ws');
     return [
       "default-src 'none'",
@@ -414,6 +448,10 @@ class RemoteServer {
 
   // ---- WebSocket -----------------------------------------------------------
 
+  isLoopbackHost(req) {
+    return this.loopbackHosts().includes(String((req.headers && req.headers.host) || ''));
+  }
+
   upgrade(req, socket, head) {
     const deny = (status, reason) => {
       this.refuse(req, reason);
@@ -451,7 +489,7 @@ class RemoteServer {
 
     // This machine's own browser already carries the key; it does not have to
     // sign for a seat it could simply take by opening the editor.
-    const local = this.gate.http(req);
+    const local = this.gate.http(req, { loopbackHost: this.isLoopbackHost(req) });
     if (local.ok) client.welcome(localDevice(), null);
     else client.challenge(this.gate);
   }
