@@ -35,12 +35,17 @@ class LocalKey {
   /**
    * @returns {{ok: true, device: object} | {ok: false, status: number, reason: string}}
    */
-  check(req) {
+  check(req, context) {
     // A request that has been through a proxy is not this machine talking to
-    // itself, whatever the socket says. When the tunnel lands, everything it
-    // forwards arrives from 127.0.0.1 — this is the line that keeps the local
-    // key from quietly becoming a remote one.
+    // itself, whatever the socket says. Everything the tunnel forwards arrives
+    // from 127.0.0.1 — these are the two lines that keep the local key from
+    // quietly becoming a remote one.
     if (forwarded(req)) return { ok: false, status: 403, reason: 'the local key is not for forwarded requests' };
+    // And the belt to that brace: a request addressed to the tailnet name is
+    // not this machine talking to itself either, whatever headers it carries.
+    if (context && context.loopbackHost === false) {
+      return { ok: false, status: 403, reason: 'the local key is only for a loopback address' };
+    }
     const offered = presentedKey(req);
     if (!offered) return { ok: false, status: 401, reason: 'no key' };
     if (!sameSecret(offered, this.key)) return { ok: false, status: 403, reason: 'wrong key' };
@@ -71,8 +76,8 @@ class Gate {
   }
 
   /** For an HTTP request that carries real data rather than the empty shell. */
-  http(req) {
-    return this.localKey.check(req);
+  http(req, context) {
+    return this.localKey.check(req, context);
   }
 
   /** The opening move: a nonce this server will expect signed. */

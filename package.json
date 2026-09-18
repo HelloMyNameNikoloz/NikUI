@@ -231,6 +231,15 @@
       {
         "command": "nikui.renameDevice",
         "title": "NikUI: Rename this device"
+      },
+      {
+        "command": "nikui.reachFromPhone",
+        "title": "NikUI: Reach this window from my phone",
+        "icon": "$(radio-tower)"
+      },
+      {
+        "command": "nikui.stopReaching",
+        "title": "NikUI: Stop being reachable from my phone"
       }
     ],
     "menus": {
