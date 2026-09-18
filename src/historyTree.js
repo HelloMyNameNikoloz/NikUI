@@ -36,6 +36,10 @@ class HistoryTree {
     return this.limit;
   }
 
+  dispose() {
+    if (this._changed) this._changed.dispose();
+  }
+
   refresh() { this._onDidChangeTreeData.fire(); }
 
   toggleScope() {
@@ -54,7 +58,11 @@ class HistoryTree {
 
   getTreeItem(entry) {
     if (entry.__more) {
-      const item = new vscode.TreeItem(`Show ${entry.more} more`, vscode.TreeItemCollapsibleState.None);
+      // How many more is no longer known — the sweep stops as soon as it has a
+      // page, which is the point of it — so the row says what it does instead.
+      const item = new vscode.TreeItem(
+        entry.more ? `Show ${entry.more} more` : 'Show more', vscode.TreeItemCollapsibleState.None
+      );
       item.id = 'history:more';
       item.iconPath = new vscode.ThemeIcon('ellipsis');
       item.contextValue = 'historyMore';
@@ -96,21 +104,27 @@ class HistoryTree {
   }
 
   async _children() {
-    // Read a wide slice once, then narrow it here: scope, then the filter, then
-    // however much of it the reader has asked to see.
+    // The scope and the filter go down into the sweep rather than being applied
+    // to whatever it happened to return: asking for twenty and being handed the
+    // newest two hundred to sift is how this view came up empty on a machine
+    // with a lot of history in other projects.
     const folders = vscode.workspace.workspaceFolders || [];
-    const sweep = Math.max(200, this.limit * 3);
-    let entries = await listSessions({ limit: sweep });
+    const roots = this.scope === 'workspace' && folders.length
+      ? folders.map((f) => f.uri.fsPath)
+      : null;
 
-    if (this.scope === 'workspace' && folders.length) {
-      const roots = folders.map((f) => f.uri.fsPath);
-      entries = entries.filter((e) => e.cwd && roots.some((r) => e.cwd === r || e.cwd.startsWith(r + '/')));
-    }
-    if (this.filter) entries = entries.filter((e) => matches(e, this.filter));
+    const keep = (entry) => {
+      if (roots && !(entry.cwd && roots.some((r) => entry.cwd === r || entry.cwd.startsWith(r + path.sep)))) {
+        return false;
+      }
+      return !this.filter || matches(entry, this.filter);
+    };
 
+    // One more than asked for, so "show more" appears only when there is more.
+    const entries = await listSessions({ limit: this.limit + 1, keep });
     const page = entries.slice(0, this.limit);
     if (entries.length > page.length) {
-      page.push({ __more: true, more: entries.length - page.length, sessionId: 'more' });
+      page.push({ __more: true, more: null, sessionId: 'more' });
     }
     return page;
   }

@@ -2,7 +2,7 @@
 const { install } = require('./helpers/vscode-stub.js');
 install();
 const { Session } = require('../src/session.js');
-const { SessionHub, hubFor, closeHub, closeAllHubs, STATUS_REFRESH_MS } = require('../src/hub.js');
+const { SessionHub, hubFor, closeHub, closeAllHubs, STATUS_REFRESH_MS, STATS_MIN_MS } = require('../src/hub.js');
 
 /** A client is anything with an id and a post: a webview, a socket, this. */
 function viewer(id) {
@@ -124,6 +124,83 @@ module.exports = async function () {
   hub.dispose();
   checkEqual('disposing lets every client go', hub.size, 0);
   session.dispose();
+
+  suite('watching is not starting');
+
+  // Not quietSession(): this one has to look stopped, which is the whole case.
+  const sleeping = new Session({ cwd: '/tmp' });
+  let started = 0;
+  sleeping.start = function () { started++; this.everStarted = true; };
+  sleeping._write = function () {};
+  const guarded = new SessionHub(sleeping, host(sleeping));
+
+  const onlooker = viewer('onlooker');
+  guarded.attach({ id: onlooker.id, post: onlooker.post, device: { id: 'd0', name: 'A phone', kind: 'device', control: false } });
+  await guarded.receive('onlooker', { type: 'ready' });
+  checkEqual('a device that may only watch does not spawn a process', started, 0);
+  check('but it still sees the conversation', !!onlooker.last('init'));
+
+  const steerer = viewer('steerer');
+  guarded.attach({ id: steerer.id, post: steerer.post, device: { id: 'd1', name: 'A trusted phone', kind: 'device', control: true } });
+  await guarded.receive('steerer', { type: 'ready' });
+  checkEqual('a device that may steer does', started, 1);
+
+  guarded.dispose();
+  sleeping.dispose();
+
+  suite('settings reach a page that is already open');
+
+  const settings = { showThinking: true, fontSize: 13, promptSnippets: {} };
+  const live2 = quietSession();
+  const hubWithSettings = new SessionHub(live2, host(live2, { config: () => settings }));
+  const reader = viewer('reader');
+  hubWithSettings.attach(reader);
+  await hubWithSettings.receive('reader', { type: 'ready' });
+  checkEqual('the first message carries them', reader.last('init').fontSize, 13);
+
+  settings.fontSize = 18;
+  settings.showThinking = false;
+  hubWithSettings.broadcast(hubWithSettings.metaMessage());
+  checkEqual('and so does a later one, so nothing waits for a reload',
+    [reader.last('meta').fontSize, reader.last('meta').showThinking], [18, false]);
+  hubWithSettings.dispose();
+  live2.dispose();
+
+  suite('the running totals are a summary, not a stream');
+
+  const streaming = quietSession();
+  const throttled = new SessionHub(streaming, host(streaming));
+  const counting = viewer('counting');
+  throttled.attach(counting);
+  await throttled.receive('counting', { type: 'ready' });
+  for (let i = 0; i < 12; i++) throttled.broadcastStats();
+  checkEqual('a burst of changes is one message, not twelve',
+    counting.ofType('stats').length, 1);
+  await new Promise((r) => setTimeout(r, STATS_MIN_MS + 80));
+  check('and the last word still goes out', counting.ofType('stats').length >= 2);
+  throttled.dispose();
+  streaming.dispose();
+
+  suite('a client that has just loaded has no sheet open');
+
+  const returning = quietSession();
+  const backAgain = new SessionHub(returning, host(returning));
+  const tab = viewer('tab');
+  backAgain.attach(tab);
+  await backAgain.receive('tab', { type: 'ready' });
+  await backAgain.receive('tab', { type: 'statusOpen', open: true });
+  checkEqual('the host knows the sheet is open', backAgain.clients.get('tab').statusOpen, true);
+
+  // VS Code throws a hidden webview away and rebuilds it; the same client id
+  // says hello again with a fresh, empty DOM.
+  await backAgain.receive('tab', { type: 'ready' });
+  checkEqual('coming back, the host believes the fresh page, not the old one',
+    backAgain.clients.get('tab').statusOpen, false);
+  backAgain.refreshStatus();
+  checkEqual('so nothing opens the dashboard by itself',
+    backAgain.clients.get('tab').statusTimer, null);
+  backAgain.dispose();
+  returning.dispose();
 
   suite('two live views of one instance');
 

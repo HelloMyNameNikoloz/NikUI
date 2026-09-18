@@ -39,6 +39,10 @@
     let closing = false;
     let seated = false;       // the handshake is done and this socket may talk
     let stopped = null;       // a refusal worth showing instead of retrying
+    let expecting = null;     // the nonces this device is waiting to see signed
+    let said = 0;             // how many times the pill has been written to
+    let holdUntil = 0;        // a message that has to be read before it is replaced
+    let paired = false;       // this device has an identity, so it must verify
 
     function url() {
       const at = new URL(config.socket || '/socket', window.location.href);
@@ -46,11 +50,50 @@
       return at.toString();
     }
 
-    function show(kind, text) {
+    /**
+     * The state of the connection, in a word.
+     *
+     * `hold` keeps a message up for a moment against the background chatter of
+     * reconnecting. "Your prompt was not sent" is the one line here that is
+     * about something the reader did, and a retry notice a tenth of a second
+     * later would take it away before it had been read.
+     */
+    function show(kind, text, hold) {
+      if (holdUntil > Date.now() && kind !== 'on' && !hold) return;
+      holdUntil = hold ? Date.now() + hold : 0;
+      said++;
       if (!pill) return;
       pill.className = 'link ' + kind;
       pill.textContent = text;
       pill.hidden = false;
+    }
+
+    /** Try again now, rather than when the backoff says so. */
+    function retryNow() {
+      if (live()) return;
+      tries = 0;
+      stopped = null;
+      connect();
+    }
+
+    // The state of the connection is also the button for doing something about
+    // it: on a phone, the thing you want when it says offline is to try again.
+    if (pill) pill.addEventListener('click', retryNow);
+
+    /**
+     * Anything this transport makes up for its own page.
+     *
+     * Always on a later turn of the loop, never inside the call that caused it.
+     * A real message from the host arrives asynchronously, and a synthetic one
+     * that does not is a reentrant call: `postMessage` refusing a prompt used to
+     * hand the text back *during* the client's send, which then cleared the
+     * composer on the line after — so the refusal erased exactly what it was
+     * trying to save.
+     */
+    function tell(message) {
+      setTimeout(function () {
+        window.dispatchEvent(new MessageEvent('message', { data: message }));
+      }, 0);
     }
 
     /** Inbound frames arrive exactly as the webview's do: a message event. */
@@ -80,12 +123,33 @@
         return true;
       }
       if (message.type === '@welcome') {
-        seated = true;
-        tries = 0;
-        stopped = null;
-        show('on', 'Live');
-        if (wantsReady) send({ type: 'ready' });
-        return false; // the page may want to know which device it is
+        // A welcome that nobody was asked for is somebody skipping the question.
+        // The only client allowed to accept one is a browser with no identity to
+        // prove — which cannot be lied to about a laptop it never pinned.
+        if (!expecting) {
+          if (!paired) return seat(message);
+          stopped = 'unproven laptop';
+          show('off', 'This is not the laptop this device paired with');
+          return true;
+        }
+        const awaited = expecting;
+        expecting = null;
+        window.nikDevice.load().then(function (record) {
+          return window.nikDevice.verifyLaptop(
+            record, message.serverKey || awaited.serverKey,
+            'nikui-host:' + awaited.mine + ':' + awaited.theirs, message.signature
+          );
+        }).then(function (ok) {
+          if (ok) return seat(message);
+          stopped = 'unproven laptop';
+          show('off', 'This is not the laptop this device paired with');
+          tell({ type: '@denied', reason: 'This is not the laptop this device paired with.' });
+          if (socket) try { socket.close(1008, 'unproven'); } catch (_) { /* gone */ }
+        }).catch(function () {
+          stopped = 'unproven laptop';
+          show('off', 'Could not check the laptop');
+        });
+        return true;
       }
       if (message.type === '@navigate') {
         // Another instance, on this device only. The laptop's tabs are the
@@ -102,32 +166,47 @@
       return false;
     }
 
+    /** Let the page talk: everything above this line is about who is listening. */
+    function seat(message) {
+      seated = true;
+      tries = 0;
+      stopped = null;
+      show('on', 'Live');
+      if (wantsReady) send({ type: 'ready' });
+      window.dispatchEvent(new MessageEvent('message', { data: message }));
+      return true;
+    }
+
     function answer(challenge) {
       if (!window.nikDevice || !window.nikDevice.available()) {
-        stopped = 'no device key';
-        show('off', 'This device is not paired');
+        // No Web Crypto here at all, so no identity is possible: the only way
+        // in is the key this page arrived with, and the server decides.
+        paired = false;
+        send({ type: '@auth', device: null, nonce: randomNonce() });
         return;
       }
       window.nikDevice.load().then(function (record) {
         if (!record || !record.id) {
-          stopped = 'not paired';
-          show('off', 'This device is not paired');
-          window.dispatchEvent(new MessageEvent('message', {
-            data: { type: '@denied', reason: 'This device is not paired.', pair: true }
-          }));
+          // Nothing to prove: say so, and let the server decide whether the key
+          // this page arrived with is enough.
+          // A nonce even so, so the laptop signs this welcome like any other.
+          paired = false;
+          send({ type: '@auth', device: null, nonce: randomNonce() });
           return;
         }
+        paired = true;
         // Pinning, from this side: the laptop that answers has to be the one
         // this device paired with, not merely something at the same address.
         if (record.fingerprint && challenge.fingerprint && record.fingerprint !== challenge.fingerprint) {
           stopped = 'wrong laptop';
           show('off', 'This is not the laptop this device paired with');
-          window.dispatchEvent(new MessageEvent('message', {
-            data: { type: '@denied', reason: 'This is not the laptop this device paired with.' }
-          }));
+          tell({ type: '@denied', reason: 'This is not the laptop this device paired with.' });
           return;
         }
         const mine = randomNonce();
+        // Remembered so the welcome can be checked against what was asked, not
+        // against whatever the answer happens to contain.
+        expecting = { mine: mine, theirs: challenge.nonce, serverKey: challenge.serverKey };
         return window.nikDevice.sign('nikui-auth:' + challenge.nonce + ':' + mine).then(function (signature) {
           send({ type: '@auth', device: record.id, nonce: mine, signature: signature });
         });
@@ -148,6 +227,7 @@
     function reasonText(reason) {
       if (/not paired/i.test(reason)) return 'This device is not paired';
       if (/removed/i.test(reason)) return 'This device was removed';
+      if (/laptop|unproven/i.test(reason)) return 'This is not the laptop this device paired with';
       return 'Refused';
     }
 
@@ -163,6 +243,7 @@
       next.onopen = function () {
         tries = 0;
         seated = false;
+        expecting = null;
         // Not live yet: the socket is open, but nothing may be said on it until
         // the server has decided who is holding it. `ready` waits for @welcome.
         show('warn', 'Signing in…');
@@ -191,10 +272,15 @@
      */
     function diagnose() {
       if (typeof fetch !== 'function') return;
+      // Whatever the pill says when the answer comes back, it is more recent
+      // than this question — and "your prompt was not sent" is the one message
+      // that must not be quietly replaced by a weather report.
+      const asked = said;
+      const stale = () => live() || said !== asked;
       fetch('/health', { cache: 'no-store' }).then(function (response) {
-        if (!live()) show('warn', response.ok ? 'The laptop is there — reconnecting' : 'Reconnecting…');
+        if (!stale()) show('warn', response.ok ? 'The laptop is there — reconnecting' : 'Reconnecting…');
       }).catch(function () {
-        if (!live()) show('off', 'Cannot reach the laptop');
+        if (!stale()) show('off', 'Cannot reach the laptop');
       });
     }
 
@@ -226,10 +312,9 @@
     function refuse(message) {
       if (message && message.type === 'send') {
         const images = (message.attachments || []).length;
-        show('off', images ? 'Offline — not sent, images dropped' : 'Offline — not sent');
-        window.dispatchEvent(new MessageEvent('message', {
-          data: { type: 'editPrompt', text: message.text || '' }
-        }));
+        show('off', images ? 'Offline — not sent, images dropped' : 'Offline — not sent', 8000);
+        // After the client has finished sending, not during it.
+        tell({ type: 'editPrompt', text: message.text || '' });
       } else {
         show('off', 'Offline');
       }
@@ -261,6 +346,9 @@
       },
       getState: state.getState,
       setState: state.setState,
+      // Shown as a state, offered as an action: anything on the page that wants
+      // a retry button can call this rather than reloading.
+      retry: retryNow,
       // For the tests, and for anyone wondering in a console why nothing moves.
       __socket: function () { return socket; },
       __state: function () { return live() ? 'online' : (stopped ? 'refused' : (tries ? 'reconnecting' : 'offline')); }

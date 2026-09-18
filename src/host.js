@@ -16,12 +16,17 @@ const { transcriptPath } = require('./history');
  */
 function createHost(context, manager, extras) {
   const devices = (extras && extras.devices) || null;
+  const awake = (extras && extras.awake) || null;
   return {
+    // Whose window this is. A host belongs to one manager, and handing a hub
+    // somebody else's would give it the wrong fleet — which is exactly what a
+    // process-wide "installed host" would do if it were not checked.
+    manager,
     config: () => readConfig(),
     home: os.homedir(),
     knownCommands: () => (manager ? manager.knownCommands() : []),
     fleet: () => (manager ? manager.list : []),
-    env: (session) => describeEnv(context, manager, session, devices),
+    env: (session) => describeEnv(context, manager, session, devices, awake),
     openFile: (req) => openFile(req),
     switchTo: (id, from) => switchTo(context, manager, id, from),
     // What arrived from a device, allowed or not. The editor's own panel has no
@@ -32,9 +37,10 @@ function createHost(context, manager, extras) {
 }
 
 /** What the status report can only learn from the editor and the machine. */
-function describeEnv(context, manager, session, devices) {
+function describeEnv(context, manager, session, devices, awake) {
   const cfg = readConfig();
   return {
+    awake: awake ? awake.state() : null,
     devices: devices ? devices.list().map((d) => ({
       name: d.name, control: !!d.control, lastSeenAt: d.lastSeenAt, pairedAt: d.pairedAt
     })) : [],
@@ -81,4 +87,30 @@ function switchTo(context, manager, id, from) {
   SessionPanel.show(target, context, manager).focusInput();
 }
 
-module.exports = { createHost, describeEnv };
+/**
+ * The window's host, made once.
+ *
+ * A hub keeps the host of whichever client opened it, so two transports each
+ * building their own meant the panel's — which knows nothing about devices —
+ * could win the race and quietly turn the audit trail off. There is one now,
+ * installed at activation, and both transports ask for it.
+ */
+let installed = null;
+
+function installHost(host) {
+  installed = host;
+  return host;
+}
+
+function theHost(context, manager, extras) {
+  if (installed && installed.manager === manager) return installed;
+  // A test, or a window that somehow never activated: build one rather than
+  // handing back nothing, but do not install it — activation owns that.
+  return createHost(context, manager, extras);
+}
+
+function forgetHost() {
+  installed = null;
+}
+
+module.exports = { createHost, installHost, theHost, forgetHost, describeEnv };

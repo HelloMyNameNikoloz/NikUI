@@ -638,10 +638,31 @@
       ['Platform', (e.platform || '—') + (e.arch ? ' · ' + e.arch : '')],
       ['Machine', (e.cpus ? e.cpus + ' cores' : '—') + (e.memoryGb ? ' · ' + e.memoryGb + ' GB' : '')],
       ['Grouping', e.groupByProject || 'auto'],
-      ['Thinking blocks', e.showThinking === false ? 'hidden' : 'shown']
+      ['Thinking blocks', e.showThinking === false ? 'hidden' : 'shown'],
+      // A machine that will not sleep should never be a mystery.
+      ['Sleep', awakeLine(e.awake)]
     ]), { wide: true });
 
     return session + cfg + disk + host + remote(r);
+  }
+
+  /**
+   * Per-turn figures are measured over the turns still in memory. After a
+   * reload that is the last sixty of them, and saying so is the difference
+   * between a number and a wrong number.
+   */
+  function overTurns(r) {
+    const logged = (r.totals || {}).turnsLogged || 0;
+    const all = (r.totals || {}).turns || 0;
+    return logged && all > logged ? ' · over the last ' + logged : '';
+  }
+
+  function awakeLine(awake) {
+    if (!awake) return 'as the system decides';
+    if (!awake.supported) return 'as the system decides';
+    if (!awake.held) return 'allowed — nothing is holding this machine awake';
+    return 'held awake · ' + (awake.reason || 'an instance is running') +
+      (awake.since ? ' · since ' + fmt.when(awake.since) : '');
   }
 
   /**

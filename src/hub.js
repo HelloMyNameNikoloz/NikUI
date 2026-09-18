@@ -24,6 +24,10 @@ const STEERING = new Set([
 // not drive redraws for a client that has none.
 const STATUS_REFRESH_MS = 1500;
 
+// The fastest the running totals are worth sending. Fast enough that a counter
+// looks live, slow enough that a phone is not paying for it.
+const STATS_MIN_MS = 400;
+
 /**
  * One instance, however many people are watching it.
  *
@@ -42,6 +46,8 @@ class SessionHub {
     this.host = host || {};
     this.clients = new Map();
     this.listeners = [];
+    this.statsSentAt = 0;
+    this.statsTimer = null;
     this.watchers = new Set();
 
     const on = (event, fn) => {
@@ -173,8 +179,29 @@ class SessionHub {
     return safePost(entry.client, message);
   }
 
+  /**
+   * Numbers nobody reads twenty times a second.
+   *
+   * Items flush every fifty milliseconds while a turn streams, and stats used
+   * to go out with each one — doubling the messages on the wire for figures
+   * that change meaningfully once or twice a second. Throttled here, with the
+   * trailing edge kept so the last word is always the true one.
+   */
   broadcastStats() {
-    this.broadcast({ type: 'stats', stats: this.session.stats() });
+    const now = Date.now();
+    const since = now - (this.statsSentAt || 0);
+    if (since >= STATS_MIN_MS) {
+      this.statsSentAt = now;
+      this.broadcast({ type: 'stats', stats: this.session.stats() });
+      return;
+    }
+    if (this.statsTimer) return;
+    this.statsTimer = setTimeout(() => {
+      this.statsTimer = null;
+      this.statsSentAt = Date.now();
+      this.broadcast({ type: 'stats', stats: this.session.stats() });
+    }, STATS_MIN_MS - since);
+    if (this.statsTimer.unref) this.statsTimer.unref();
   }
 
   /**
@@ -254,12 +281,16 @@ class SessionHub {
         break;
 
       case 'permission': {
+        // Answer first, then say so. Marking the prompt resolved before knowing
+        // the answer went anywhere showed "Allowed" for an instance that had
+        // already died.
+        const delivered = session.respondToPermission(msg.requestId, msg.allow);
+        if (!delivered) break;
         const item = session.items.find((i) => i.kind === 'permission' && i.requestId === msg.requestId);
         if (item) {
           item.resolved = msg.allow ? 'allow' : 'deny';
           this.broadcast({ type: 'items', items: [item] });
         }
-        session.respondToPermission(msg.requestId, msg.allow);
         break;
       }
 
@@ -321,9 +352,28 @@ class SessionHub {
       try { replayed = await session.replayTranscript(); } catch (_) { replayed = false; }
       if (!replayed) session.noteMissingTranscript();
     }
-    if (!session.isRunning && this.host.autoStart !== false) session.start();
+    // Opening an instance starts it — but only for a client that could steer it
+    // anyway. Spawning a CLI process on this machine is not something a
+    // watch-only device should be able to do by looking.
+    if (!session.isRunning && this.host.autoStart !== false) {
+      if (this.mayControl(entry)) session.start();
+      else if (!session.items.length) {
+        // Watching an instance that is not running would otherwise be an empty
+        // page with no composer and nothing to explain either.
+        session._notice(
+          'This instance is not running, and this device can watch but not start it. ' +
+          'Open it on the laptop, or ask for control.',
+          'info'
+        );
+      }
+    }
 
     entry.ready = true;
+    // A webview VS Code threw away and rebuilt comes back with a fresh DOM and
+    // no sheet. Believing the old state made the dashboard open by itself over
+    // the conversation the moment anything changed.
+    entry.statusOpen = false;
+    if (entry.statusTimer) { clearTimeout(entry.statusTimer); entry.statusTimer = null; }
     safePost(entry.client, this.initMessage(entry.client.id));
     // Everyone learns who else turned up, including whoever just did.
     this.broadcastPresence();
@@ -380,7 +430,14 @@ class SessionHub {
   }
 
   queueSummary() {
-    return this.session.queue.map((q) => ({ id: q.id, text: q.text, images: q.attachments.length }));
+    return this.session.queue.map((q) => ({
+      id: q.id,
+      text: q.text,
+      images: q.attachments.length,
+      // A prompt that came back from a reload kept its words and lost its
+      // pictures. Saying so beats a chip that claims an image is still there.
+      lostImages: q.lostImages || 0
+    }));
   }
 
   queueMessage() {
@@ -395,7 +452,14 @@ class SessionHub {
       slashCommands: this.commandList(),
       commandArgs: commandArgs(),
       ownCommands: this.ownCommands(cfg),
-      snippets: cfg.promptSnippets || {}
+      snippets: cfg.promptSnippets || {},
+      // The settings the page draws itself with. They were only ever sent in
+      // `init`, so changing the font or hiding thinking blocks did nothing
+      // until the tab was closed and opened again.
+      showThinking: cfg.showThinking,
+      singleEscape: !!cfg.interruptOnSingleEscape,
+      font: cfg.fontFamily || '',
+      fontSize: cfg.fontSize || 13
     };
   }
 
@@ -480,6 +544,8 @@ class SessionHub {
   dispose() {
     if (this.ticker) clearInterval(this.ticker);
     this.ticker = null;
+    if (this.statsTimer) clearTimeout(this.statsTimer);
+    this.statsTimer = null;
     for (const undo of this.listeners) { try { undo(); } catch (_) { /* already gone */ } }
     this.listeners = [];
     this.watchers.clear();
@@ -529,4 +595,11 @@ function closeAllHubs() {
   for (const id of [...hubs.keys()]) closeHub(id);
 }
 
-module.exports = { SessionHub, hubFor, closeHub, closeAllHubs, OWN_COMMANDS, STEERING, STATUS_REFRESH_MS };
+/** Every hub in this window — for anything that changed for all of them. */
+function eachHub(fn) {
+  for (const hub of hubs.values()) {
+    try { fn(hub); } catch (_) { /* one hub's problem */ }
+  }
+}
+
+module.exports = { SessionHub, hubFor, closeHub, closeAllHubs, eachHub, OWN_COMMANDS, STEERING, STATUS_REFRESH_MS, STATS_MIN_MS };

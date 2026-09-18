@@ -7,19 +7,22 @@ const { SessionManager, readConfig } = require('./manager');
 const { SessionTree } = require('./tree');
 const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
-const { closeHub, closeAllHubs } = require('./hub');
+const { closeHub, closeAllHubs, eachHub } = require('./hub');
 const { HistoryTree } = require('./historyTree');
 const { projectsRoot } = require('./history');
 const { nextTicket } = require('./ticket');
 const { labelFor } = require('./label');
-const { createHost } = require('./host');
+const { createHost, installHost, forgetHost } = require('./host');
 const { RemoteServer } = require('./remote');
 const { DeviceStore } = require('./devices');
 const { DevicesTree } = require('./devicesTree');
 const { PairingWindow } = require('./pairing');
 const { PairPanel } = require('./pairPanel');
 const { loadIdentity } = require('./identity');
-const { Tailscale } = require('./tunnel');
+const { Tailscale, Cloudflared } = require('./tunnel');
+const { Awake, shouldHold } = require('./awake');
+const { loadVapid } = require('./push');
+const { Notifier } = require('./notify');
 
 let manager;
 
@@ -38,14 +41,28 @@ function activate(context) {
 
   const history = new HistoryTree();
   const historyView = vscode.window.createTreeView('nikui.history', { treeDataProvider: history });
-  context.subscriptions.push(historyView);
+  context.subscriptions.push(historyView, history);
   // Scope and filter live in the header, not in a status-bar message that has
   // already gone by the time you wonder why the list looks short.
   const showScope = () => { historyView.description = history.summary; };
   showScope();
   // Transcripts are written continuously; re-read whenever the panel is shown.
   context.subscriptions.push(historyView.onDidChangeVisibility((e) => { if (e.visible) history.refresh(); }));
-  manager.on('changed', () => history.refresh());
+  // A sweep of every transcript on the machine is not a thing to do on every
+  // status change of every instance. The list only changes when a conversation
+  // is created or removed, and a moment's delay is invisible either way.
+  let historySoon = null;
+  const refreshHistory = () => {
+    if (historySoon) return;
+    historySoon = setTimeout(() => { historySoon = null; history.refresh(); }, 1500);
+  };
+  context.subscriptions.push({ dispose: () => { if (historySoon) clearTimeout(historySoon); } });
+  manager.on('removed', refreshHistory);
+  manager.on('session-changed', (session) => {
+    // A conversation gets its id the first time the CLI answers; that is when
+    // it becomes something History could show.
+    if (session && session.claudeSessionId) refreshHistory();
+  });
 
   // Keep the sidebar badge honest about how many instances are busy.
   // Whatever removes an instance, its panel goes with it; an orphaned panel
@@ -92,7 +109,7 @@ function activate(context) {
   register('nikui.newSession', async () => {
     const cwd = await pickFolder(manager);
     if (!cwd) return;
-    const session = manager.create({ cwd: cwd.path, resume: cwd.resume, title: cwd.title });
+    const session = manager.create({ cwd: cwd.path });
     SessionPanel.show(session, context, manager).focusInput();
   });
 
@@ -421,9 +438,73 @@ function activate(context) {
     }
   }));
 
-  serveLocally(context, manager);
+  // The sheet should be able to say whether the machine is being held awake,
+  // and the thing holding it needs to know whether the server is listening, so
+  // each is handed a way to ask the other rather than a reference to it.
+  let awake = null;
+  const server = serveLocally(context, manager, { state: () => (awake ? awake.state() : null) });
+  awake = keepAwake(context, manager, server);
+
+  // Settings that change how a conversation is drawn reach the pages that are
+  // already open. They used to be sent once, in the first message a client got,
+  // so changing the font did nothing until the tab was closed and reopened.
+  if (vscode.workspace.onDidChangeConfiguration) {
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event && event.affectsConfiguration && !event.affectsConfiguration('nikui')) return;
+      eachHub((hub) => hub.broadcast(hub.metaMessage()));
+      tree.refresh();
+    }));
+  }
 
   context.subscriptions.push({ dispose: () => { closeAllHubs(); manager.disposeAll(); } });
+}
+
+/**
+ * Keep the machine awake while there is something worth staying awake for.
+ *
+ * Off unless asked, because keeping somebody's laptop awake is not a decision
+ * to make for them; released the moment nothing needs it, because a machine
+ * that never sleeps through a forgotten flag is its own bug.
+ */
+function keepAwake(context, manager, server) {
+  // A keep-awake that cannot hold anything says so once, rather than looking
+  // like a machine that simply had nothing to hold.
+  const awake = new Awake({
+    log: (line) => {
+      if (!/could not|nothing to hold/.test(line) || awake.complained) return;
+      awake.complained = true;
+      vscode.window.showWarningMessage('NikUI: ' + line +
+        '. The machine may still sleep and take its instances with it.');
+    }
+  });
+
+  const reconsider = () => {
+    let enabled = false;
+    try { enabled = vscode.workspace.getConfiguration('nikui').get('keepAwake', false); } catch (_) { enabled = false; }
+    const verdict = shouldHold({
+      enabled,
+      sessions: manager.list,
+      serving: !!(server && server.listening)
+    });
+    if (verdict.hold) awake.hold(verdict.reason);
+    else awake.release();
+  };
+
+  manager.on('changed', reconsider);
+  manager.on('session-changed', reconsider);
+  manager.on('paused', reconsider);
+  manager.on('resumed', reconsider);
+  if (server && server.onState) context.subscriptions.push({ dispose: server.onState(reconsider) });
+  if (vscode.workspace.onDidChangeConfiguration) {
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event || !event.affectsConfiguration || event.affectsConfiguration('nikui.keepAwake')) reconsider();
+    }));
+  }
+  // Quitting the editor lets go of it, rather than leaving the machine awake
+  // on the strength of a process that is no longer there.
+  context.subscriptions.push({ dispose: () => awake.dispose() });
+  reconsider();
+  return awake;
 }
 
 /**
@@ -434,7 +515,7 @@ function activate(context) {
  * here. The status bar item is not decoration — it is the answer to "is it
  * listening right now", which should never need looking up.
  */
-function serveLocally(context, manager) {
+function serveLocally(context, manager, awakeState) {
   const bar = vscode.window.createStatusBarItem
     ? vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
     : null;
@@ -448,14 +529,21 @@ function serveLocally(context, manager) {
   const identity = loadIdentity(context.globalState);
   const devices = new DeviceStore(context.globalState);
   const pairing = new PairingWindow();
+  // The identity this window sends notifications under. Separate from the one
+  // devices pair against: one proves who the laptop is to a phone, the other
+  // proves who the sender is to a push service.
+  const vapid = loadVapid(context.globalState);
 
   const server = new RemoteServer({
     root: context.extensionUri.fsPath,
-    host: createHost(context, manager, { devices }),
+    // Installed, not just built: the panel asks for this same object, so a hub
+    // opened from the editor knows about devices and the trail as well.
+    host: installHost(createHost(context, manager, { devices, awake: awakeState || null })),
     sessions: { list: () => manager.list, get: (id) => manager.get(id) },
     devices,
     identity,
     pairing,
+    vapid,
     watchFleet: (fn) => {
       const on = () => fn();
       manager.on('changed', on);
@@ -468,7 +556,29 @@ function serveLocally(context, manager) {
   // The mesh in front of the server, when there is one. Nothing binds anywhere
   // but loopback either way: this asks Tailscale's own proxy to forward to us.
   const tailscale = new Tailscale();
+  const cloudflared = new Cloudflared({
+    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
+  });
   let weExposed = false;
+
+  /**
+   * Being told, rather than checking. Three things are worth a phone buzzing;
+   * a turn finishing is available and off, because four agents finishing
+   * overnight is a phone buzzing all night.
+   */
+  const notifier = new Notifier({
+    devices,
+    vapid,
+    // A notification whose instance cannot be opened is a notification that
+    // teaches you to ignore them.
+    reachable: () => server.listening,
+    settings: () => {
+      try { return vscode.workspace.getConfiguration('nikui').get('notifyDevices', {}) || {}; }
+      catch (_) { return {}; }
+    },
+    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  push: ' + line); }
+  });
+  context.subscriptions.push({ dispose: notifier.watch(manager) });
 
   const tree = new DevicesTree(devices, server);
   const view = vscode.window.createTreeView('nikui.devices', { treeDataProvider: tree });
@@ -497,20 +607,42 @@ function serveLocally(context, manager) {
     try {
       await server.start(port);
     } catch (err) {
-      const why = err && err.code === 'EADDRINUSE'
-        ? `port ${port} is already taken — change nikui.remote.port`
-        : (err && err.message) || 'unknown error';
-      vscode.window.showWarningMessage('NikUI could not start the local server: ' + why);
+      vscode.window.showWarningMessage(
+        'NikUI could not start the local server: ' + ((err && err.message) || 'unknown error')
+      );
       return null;
+    }
+    if (server.movedFrom) {
+      // Another window already has the usual port. Said once, quietly: the
+      // address is handed out rather than typed, so the number rarely matters.
+      vscode.window.setStatusBarMessage(
+        `NikUI: ${server.movedFrom} was taken, so this window is serving on ${server.port}`, 6000
+      );
     }
     paint();
     return server;
   };
 
+  /** Whatever this window put in front of the server, taken back down. */
+  const closeTunnels = async () => {
+    const problems = [];
+    if (cloudflared.running) {
+      const out = await cloudflared.hide();
+      if (!out.ok) problems.push(out.reason);
+    }
+    if (weExposed) {
+      const out = await tailscale.hide();
+      if (!out.ok) problems.push(out.reason);
+    }
+    weExposed = false;
+    server.publicHost = null;
+    return problems;
+  };
+
   const stop = async () => {
-    // Taking the server down leaves the tailnet pointing at nothing, so the
-    // forwarding goes with it — but only the forwarding this window set up.
-    if (weExposed) { await tailscale.hide(); weExposed = false; server.publicHost = null; }
+    // The server going away leaves anything in front of it pointing at
+    // nothing, so both go — but only what this window set up.
+    await closeTunnels();
     await server.stop();
     paint();
   };
@@ -557,16 +689,61 @@ function serveLocally(context, manager) {
     if (next === 'Copy the address' && vscode.env.clipboard) await vscode.env.clipboard.writeText(out.url);
   };
 
-  const unreach = async () => {
-    if (!weExposed) {
-      vscode.window.setStatusBarMessage('NikUI: this window was not reachable from the tailnet', 4000);
+  /**
+   * The other way out, and the one you have to read something first.
+   *
+   * A tailnet is a set of devices you authorised. A public hostname is the
+   * internet, and the difference is the whole of the threat model's third
+   * attacker — so this says exactly what changes, and does not proceed until
+   * somebody has said yes to that sentence rather than to a button.
+   */
+  const reachPublicly = async () => {
+    if (!(await start())) return;
+    const choice = await vscode.window.showWarningMessage(
+      'Open a public address for this window?',
+      {
+        modal: true,
+        detail: 'This puts a hostname on the internet that forwards to this window. ' +
+          'Nobody can reach an instance without a paired device — but the pairing page ' +
+          'becomes reachable by anyone who learns the address, and NikUI runs Claude with ' +
+          'permissions bypassed, so a device that pairs and is granted control can run any ' +
+          'command here.\n\n' +
+          'Tailscale is the better path if you can use it: a tailnet is devices you already ' +
+          'authorised. THREAT-MODEL.md in the repository is the long version.'
+      },
+      'Open it anyway', 'Read the threat model'
+    );
+    if (choice === 'Read the threat model') {
+      const file = vscode.Uri.joinPath(context.extensionUri, 'THREAT-MODEL.md');
+      return vscode.commands.executeCommand('markdown.showPreview', file);
+    }
+    if (choice !== 'Open it anyway') return;
+
+    const opened = await cloudflared.expose(server.port);
+    if (!opened.ok) {
+      vscode.window.showWarningMessage('NikUI could not open a public tunnel: ' + opened.reason);
       return;
     }
-    const out = await tailscale.hide();
-    weExposed = false;
-    server.publicHost = null;
+    weExposed = true;
+    server.publicHost = opened.host;
     paint();
-    if (!out.ok) vscode.window.showWarningMessage('NikUI: Tailscale would not stop forwarding: ' + out.reason);
+    const next = await vscode.window.showWarningMessage(
+      `NikUI is on the internet at ${opened.url} until you close it or this window.`,
+      'Pair a device', 'Close it now'
+    );
+    if (next === 'Pair a device') return pair();
+    if (next === 'Close it now') return unreach();
+  };
+
+  const unreach = async () => {
+    const wasOpen = cloudflared.running || weExposed;
+    if (!wasOpen) {
+      vscode.window.setStatusBarMessage('NikUI: nothing outside this machine could reach this window', 4000);
+      return;
+    }
+    const problems = await closeTunnels();
+    paint();
+    if (problems.length) vscode.window.showWarningMessage('NikUI: ' + problems.join('; '));
     else vscode.window.setStatusBarMessage('NikUI: only this machine can reach this window again', 4000);
   };
 
@@ -594,9 +771,12 @@ function serveLocally(context, manager) {
       server.exposed
         ? { label: '$(circle-slash) Stop being reachable from my phone', id: 'unreach' }
         : { label: '$(radio-tower) Reach this window from my phone', id: 'reach' },
+      server.exposed
+        ? null
+        : { label: '$(globe) Open a public address (read this first)', id: 'public' },
       { label: '$(clippy) Copy the link', id: 'copy' },
       { label: '$(debug-stop) Stop the server', id: 'stop' }
-    ], {
+    ].filter(Boolean), {
       placeHolder: server.exposed
         ? `NikUI is reachable at ${server.publicScheme}://${server.publicHost}`
         : `NikUI is serving on 127.0.0.1:${server.port}`
@@ -605,6 +785,7 @@ function serveLocally(context, manager) {
     if (choice.id === 'open') return open();
     if (choice.id === 'pair') return pair();
     if (choice.id === 'reach') return reach();
+    if (choice.id === 'public') return reachPublicly();
     if (choice.id === 'unreach') return unreach();
     if (choice.id === 'stop') return stop();
     if (choice.id === 'copy' && vscode.env.clipboard) {
@@ -684,12 +865,13 @@ function serveLocally(context, manager) {
     vscode.commands.registerCommand('nikui.pairDevice', pair),
     vscode.commands.registerCommand('nikui.reachFromPhone', reach),
     vscode.commands.registerCommand('nikui.stopReaching', unreach),
+    vscode.commands.registerCommand('nikui.reachPublicly', reachPublicly),
     vscode.commands.registerCommand('nikui.grantControl', async (node) => grant(await pick(node))),
     vscode.commands.registerCommand('nikui.revokeControl', async (node) => revoke(await pick(node))),
     vscode.commands.registerCommand('nikui.forgetDevice', async (node) => forget(await pick(node))),
     vscode.commands.registerCommand('nikui.renameDevice', async (node) => rename(await pick(node))),
     { dispose: () => {
-      if (weExposed) tailscale.hide();
+      closeTunnels();
       server.dispose();
       if (bar) bar.dispose();
       if (out) out.dispose();
@@ -880,6 +1062,7 @@ function folderIdOf(node) {
 }
 
 function deactivate() {
+  forgetHost();
   closeAllHubs();
   if (manager) manager.disposeAll();
 }

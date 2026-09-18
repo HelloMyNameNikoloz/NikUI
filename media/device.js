@@ -37,6 +37,14 @@
     });
   }
 
+  const fromBase64 = (text) => {
+    const padded = String(text || '').replace(/-/g, '+').replace(/_/g, '/');
+    const binary = window.atob(padded + '==='.slice((padded.length + 3) % 4));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  };
+
   const toBase64 = (buffer) => {
     const bytes = new Uint8Array(buffer);
     let binary = '';
@@ -88,20 +96,60 @@
     });
   }
 
-  /** After pairing: who the laptop says we are, and which laptop it was. */
+  /**
+   * After pairing: who the laptop says we are, and — the part that matters —
+   * the laptop's own public key. Keeping only a fingerprint would leave nothing
+   * to check a signature against, and a fingerprint compared against a
+   * fingerprint the other end simply claims is not a check at all.
+   */
   function remember(details) {
     return ensure().then(function (record) {
       record.id = details.id || record.id;
       record.fingerprint = details.fingerprint || record.fingerprint;
+      record.serverKey = details.serverKey || record.serverKey || null;
       record.laptop = details.laptop || record.laptop || null;
       record.pairedAt = Date.now();
       return inStore('readwrite', (store) => store.put(record, RECORD)).then(function () { return record; });
     });
   }
 
+  /** Half a SHA-256 of a public key, the way the laptop computes it. */
+  function fingerprintOf(spki) {
+    return window.crypto.subtle.digest('SHA-256', fromBase64(spki))
+      .then(function (digest) { return toBase64(digest.slice(0, 16)); });
+  }
+
+  /**
+   * Is this the laptop this device paired with?
+   *
+   * Two questions, and both have to be answered yes. Does the key it is
+   * offering hash to the fingerprint that was pinned — which is what makes the
+   * fingerprint a pin rather than an echo. And can it sign for that key right
+   * now, over a nonce this device chose a moment ago, which is what makes it
+   * the laptop rather than a recording of one.
+   */
+  function verifyLaptop(record, serverKeySpki, message, signature) {
+    if (!record || !record.fingerprint) return Promise.resolve(false);
+    if (!serverKeySpki || !signature) return Promise.resolve(false);
+    return fingerprintOf(serverKeySpki).then(function (fingerprint) {
+      if (fingerprint !== record.fingerprint) return false;
+      return window.crypto.subtle.importKey(
+        'spki', fromBase64(serverKeySpki), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']
+      ).then(function (key) {
+        return window.crypto.subtle.verify(
+          { name: 'ECDSA', hash: 'SHA-256' }, key,
+          fromBase64(signature), new TextEncoder().encode(String(message))
+        );
+      });
+    }).catch(function () { return false; });
+  }
+
   function forget() {
     return inStore('readwrite', (store) => store.delete(RECORD)).catch(function () { return null; });
   }
 
-  window.nikDevice = { available, load, ensure, sign, remember, forget, toBase64 };
+  window.nikDevice = {
+    available, load, ensure, sign, remember, forget, toBase64, fromBase64,
+    fingerprintOf, verifyLaptop
+  };
 })();

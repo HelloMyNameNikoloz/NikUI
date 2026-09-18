@@ -23,7 +23,11 @@ class FakeSocket {
   drop() { this.readyState = 3; if (this.onclose) this.onclose(); }
 }
 
-const pill = { className: '', textContent: '', hidden: true };
+const pill = {
+  className: '', textContent: '', hidden: true, clicks: [],
+  addEventListener: (name, fn) => { pill.clicks.push({ name, fn }); },
+  click: () => pill.clicks.forEach((c) => c.fn())
+};
 const stored = {};
 const delivered = [];
 
@@ -59,11 +63,17 @@ global.document = {
 
 // A device identity, as media/device.js would provide it.
 const identity = { record: { id: 'dev-1', fingerprint: 'fp-1', publicKey: 'pk' }, signed: [] };
+identity.verdict = true;
+identity.asked = [];
 global.window.nikDevice = {
   available: () => true,
   load: () => Promise.resolve(identity.record),
   ensure: () => Promise.resolve(identity.record),
-  sign: (message) => { identity.signed.push(message); return Promise.resolve('signature-for-' + message); }
+  sign: (message) => { identity.signed.push(message); return Promise.resolve('signature-for-' + message); },
+  verifyLaptop: (record, key, message, signature) => {
+    identity.asked.push({ key, message, signature });
+    return Promise.resolve(identity.verdict);
+  }
 };
 global.window.crypto = { getRandomValues: (bytes) => { for (let i = 0; i < bytes.length; i++) bytes[i] = i + 1; return bytes; } };
 global.window.btoa = (binary) => Buffer.from(binary, 'binary').toString('base64');
@@ -137,15 +147,24 @@ module.exports = async function () {
   check('and a reconnect is queued rather than hammered', clock.length === 1 && clock[0].ms >= 400);
 
   transport.postMessage({ type: 'send', text: 'typed while offline', sent: 'typed while offline', snippets: [] });
+  // Not during the send: the client clears its composer on the line after
+  // postMessage returns, so handing the words back inside that call would mean
+  // handing them straight into the clearing.
+  checkEqual('nothing is handed back while the client is still sending', delivered.length, before);
+  await settle();
   checkEqual('a prompt sent with no socket is refused, not swallowed', delivered.length, before + 1);
-  checkEqual('and the words come straight back to the composer',
+  checkEqual('and the words come back to the composer once it has finished',
     delivered[delivered.length - 1], { type: 'editPrompt', text: 'typed while offline' });
   check('with the reason on screen', /not sent/.test(pill.textContent));
+  await settle();
+  check('and the reason is not overwritten by the connection check behind it',
+    /not sent/.test(pill.textContent));
 
   transport.postMessage({
     type: 'send', text: 'with a photo', sent: 'with a photo', snippets: [],
     attachments: [{ name: 'a.png' }]
   });
+  await settle();
   check('and it says when an image could not be kept', /images dropped/.test(pill.textContent));
 
   suite('and when it comes back');
@@ -195,6 +214,50 @@ module.exports = async function () {
   check('and the client is told why', /not the laptop/i.test(pill.textContent));
   check('rather than signing anyway', laptopSwapped.__state() !== 'online');
 
+  suite('trying again on purpose');
+
+  const stuck = withFakeClock((scheduled) => {
+    const t = socketTransport({ session: 'nik-5', socket: '/socket?session=nik-5' });
+    sockets[sockets.length - 1].drop();
+    scheduled.length = 0;
+    return t;
+  });
+  const waiting = sockets.length;
+  withFakeClock(() => pill.click());
+  check('tapping the connection state tries again at once', sockets.length > waiting);
+  check('and the transport offers the same as a function', typeof stuck.retry === 'function');
+
+  suite('and the laptop has to prove itself back');
+
+  const proving = withFakeClock(() => socketTransport({ session: 'nik-6', socket: '/socket?session=nik-6' }));
+  const proven = sockets[sockets.length - 1];
+  proven.accept();
+  proven.deliver({ type: '@challenge', nonce: 'their-nonce', fingerprint: 'fp-1', serverKey: 'their-spki' });
+  await settle();
+  const answered = proven.sent.find((m) => m.type === '@auth');
+  proven.deliver({ type: '@welcome', device: { control: true }, signature: 'from-the-laptop' });
+  await settle();
+  checkEqual('the welcome is checked, not taken on trust', identity.asked.length, 1);
+  checkEqual('against the key the challenge offered', identity.asked[0].key, 'their-spki');
+  checkEqual('over the nonces of this connection, in the order it signed them',
+    identity.asked[0].message, 'nikui-auth' === 'x' ? '' : 'nikui-host:' + answered.nonce + ':their-nonce');
+  checkEqual('and only then is the socket live', proving.__state(), 'online');
+
+  identity.verdict = false;
+  identity.asked.length = 0;
+  const impostor = withFakeClock(() => socketTransport({ session: 'nik-7', socket: '/socket?session=nik-7' }));
+  const pretending = sockets[sockets.length - 1];
+  pretending.accept();
+  pretending.deliver({ type: '@challenge', nonce: 'n', fingerprint: 'fp-1', serverKey: 'not-the-laptop' });
+  await settle();
+  pretending.deliver({ type: '@welcome', device: { control: true }, signature: 'forged' });
+  await settle();
+  checkEqual('a laptop that cannot sign for its key gets nothing', impostor.__state() !== 'online', true);
+  check('the client is told which way it went wrong', /not the laptop/i.test(pill.textContent));
+  checkEqual('and nothing was said on that socket',
+    pretending.sent.filter((m) => m.type !== '@auth').length, 0);
+  identity.verdict = true;
+
   suite('backoff');
 
   const waits = [];
@@ -212,6 +275,10 @@ module.exports = async function () {
   check('but never longer than a quarter of a minute', waits.every((ms) => ms < 15000));
   check('and the transport still answers', typeof fresh.postMessage === 'function');
 
+  // Anything this transport handed to its own page arrives on a later turn of
+  // the loop, so let those land before taking the page away from underneath it.
+  await settle();
+  await settle();
   delete global.window;
   delete global.document;
   delete global.WebSocket;

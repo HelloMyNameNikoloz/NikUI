@@ -1301,3 +1301,25 @@ body.dropping::after {
     var(--lg-lift);
 }
 .card.waiting-card h3, .card.waiting-card .note { color: var(--orange); }
+
+/* ---- things the sheet says --------------------------------------------- */
+
+/* A card with nothing in it yet says so, quietly. */
+.muted {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--fs-small);
+}
+
+/* A refused attempt should not read like an allowed one. */
+.grid tr.refused { color: var(--red); }
+.grid tr.refused td:first-child { position: relative; }
+.grid tr.refused td:first-child::before {
+  content: "";
+  position: absolute;
+  left: -6px; top: 50%;
+  width: 3px; height: 12px;
+  margin-top: -6px;
+  border-radius: 2px;
+  background: var(--red);
+}

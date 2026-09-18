@@ -3,7 +3,7 @@
 const vscode = require('vscode');
 const { readConfig } = require('./manager');
 const { hubFor, closeHub } = require('./hub');
-const { createHost } = require('./host');
+const { theHost } = require('./host');
 const { renderPage, randomNonce } = require('./page');
 
 const DEFAULT_EMOJI = {
@@ -84,7 +84,7 @@ class SessionPanel {
     };
     this.panel.webview.html = this.html();
 
-    this.hub = hubFor(session, createHost(context, manager));
+    this.hub = hubFor(session, theHost(context, manager));
     this.hub.attach({ id: this.clientId, kind: 'webview', post: (m) => this.panel.webview.postMessage(m) });
     // The tab's title and icon follow the instance for as long as this panel is
     // one of its clients, and stop following the moment it is not.

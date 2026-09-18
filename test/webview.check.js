@@ -16,13 +16,13 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { findChrome } = require('./helpers/chrome.js');
+const { skipped } = require('./helpers/skip.js');
 
 const ROOT = path.join(__dirname, '..');
 
 const chrome = findChrome();
 if (!chrome) {
-  console.log('No Chrome found — skipping the webview check. Set CHROME=/path/to/chrome to run it.');
-  process.exit(0);
+  skipped('No Chrome found — the webview check did not run. Set CHROME=/path/to/chrome.');
 }
 
 const { install, fakeContext } = require('./helpers/vscode-stub.js');

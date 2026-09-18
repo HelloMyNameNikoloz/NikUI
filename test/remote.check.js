@@ -15,11 +15,11 @@
 
 const path = require('path');
 const { findChrome, launch, wait } = require('./helpers/chrome.js');
+const { skipped } = require('./helpers/skip.js');
 
 const chrome = findChrome();
 if (!chrome) {
-  console.log('No Chrome found — skipping the remote check. Set CHROME=/path/to/chrome to run it.');
-  process.exit(0);
+  skipped('No Chrome found — the remote check did not run. Set CHROME=/path/to/chrome.');
 }
 
 const { install, memoryState } = require('./helpers/vscode-stub.js');
@@ -65,7 +65,8 @@ const record = (name, ok) => checks.push([name, !!ok]);
     devices, identity, pairing, localKey: auth
   });
   await server.start(0);
-  const base = `http://127.0.0.1:${server.port}`;
+  const port = server.port;
+  const base = `http://127.0.0.1:${port}`;
 
   // ---- this laptop ----------------------------------------------------------
   const laptop = await launch(chrome);
@@ -175,6 +176,16 @@ const record = (name, ok) => checks.push([name, !!ok]);
       /what was already here/.test(await phone.evaluate('document.getElementById("stream").textContent')));
     record('but the composer is not offered to it',
       (await phone.evaluate('document.body.classList.contains("read-only")')) === true);
+    record('nor is anything else it cannot do',
+      (await phone.evaluate(`(() => {
+        const hidden = (el) => !el || getComputedStyle(el).display === 'none';
+        return hidden(document.querySelector('.composer')) && hidden(document.querySelector('.hint'));
+      })()`)) === true);
+    record('and the standing explanation survives a refused tap',
+      (await phone.evaluate(`(() => {
+        const banner = document.getElementById('watching');
+        return !banner.hidden && /Watching only/.test(banner.textContent);
+      })()`)) === true);
 
     const held = session.items.length + session.queue.length;
     await phone.evaluate(`(() => {
@@ -191,6 +202,45 @@ const record = (name, ok) => checks.push([name, !!ok]);
     record('and written down against the device that tried it',
       devices.recent(5).some((e) => e.action === 'send' && e.allowed === false && e.device === 'Check phone'));
 
+    // ---- installable, and able to reach out ---------------------------------
+    record('the service worker takes charge of the page',
+      await phone.until('!!navigator.serviceWorker.controller', 10000));
+    record('the manifest is one the browser accepted',
+      (await phone.evaluate(`fetch('/manifest.webmanifest').then(r => r.json()).then(m => m.display)`)) === 'standalone');
+
+    // What cannot be checked here: a notification actually appearing. Headless
+    // Chrome on this machine refuses notification permission whatever the
+    // DevTools protocol is told, so there is no way to observe one. The payload
+    // that would carry it — the encryption, the token, the rules about what is
+    // worth sending — is covered in test/push.test.js; the worker's handler is
+    // twenty lines and is the part a real phone proves.
+    record('the worker is registered where a push would arrive',
+      (await phone.evaluate(`navigator.serviceWorker.getRegistration().then(r => r.scope)`)) === base + '/');
+
+    // ---- and the laptop has to prove itself, with the browser's own crypto ---
+    record('the device kept the laptop\'s key, not only its fingerprint',
+      !!(await phone.evaluate('window.nikDevice.load().then(r => r.serverKey || null)')));
+    record('and that key really is the one it pinned',
+      (await phone.evaluate(`window.nikDevice.load()
+        .then(r => window.nikDevice.fingerprintOf(r.serverKey).then(f => f === r.fingerprint))`)) === true);
+
+    // Pin something else and the same laptop becomes an impostor: this is the
+    // check being load-bearing rather than decorative.
+    const realFingerprint = await phone.evaluate('window.nikDevice.load().then(r => r.fingerprint)');
+    await phone.evaluate(`window.nikDevice.remember({ fingerprint: 'not-the-laptop-you-paired-with' })`);
+    await phone.navigate(`${base}/s/${session.id}`);
+    record('a laptop that does not match the pin is refused',
+      await phone.until('document.getElementById("link").className.includes("off")', 10000));
+    record('and says which way it went wrong',
+      /not the laptop/i.test(await phone.evaluate('document.getElementById("link").textContent')));
+    record('with the socket never seated', server.clients.size === 0 ||
+      [...server.clients].every((c) => !c.binding));
+
+    await phone.evaluate(`window.nikDevice.remember({ fingerprint: ${JSON.stringify(realFingerprint)} })`);
+    await phone.navigate(`${base}/s/${session.id}`);
+    record('and the real one is let back in once the pin is right again',
+      await phone.until('document.getElementById("link").textContent === "Live"', 10000));
+
     devices.setControl(paired.id, true);
     record('granting control reaches the socket it is already holding',
       await phone.until('!document.body.classList.contains("read-only")', 5000));
@@ -202,6 +252,75 @@ const record = (name, ok) => checks.push([name, !!ok]);
   } finally {
     phone.close();
   }
+
+  // ---- opening it with the laptop gone --------------------------------------
+  const cold = await launch(chrome);
+  try {
+    await cold.navigate(`${base}/?key=${auth.key}`);
+    await cold.until('document.querySelectorAll(".row").length === 1', 8000);
+    record('a list seen once is remembered',
+      !!(await cold.evaluate('window.localStorage.getItem("nikui:fleet")')));
+    await cold.until('!!navigator.serviceWorker.controller', 10000);
+    // Visit the conversation too, so the worker has both pages to hand back.
+    await cold.navigate(`${base}/s/${session.id}`);
+    await cold.until('document.getElementById("link").textContent === "Live"', 10000);
+    await cold.navigate(`${base}/`);
+
+    // The laptop goes away entirely — the tunnel down, the lid shut, whatever.
+    await server.stop();
+    await cold.navigate(`${base}/`);
+    record('the shell still opens from the cache',
+      (await cold.evaluate('!!document.getElementById("rows")')) === true);
+    record('and says it is not current rather than pretending',
+      await cold.until('document.body.classList.contains("stale")', 8000));
+    record('naming when it last saw the window',
+      /last seen|looked like/i.test(await cold.evaluate('document.getElementById("lede").textContent')));
+    record('with a way to try again',
+      await cold.until('!!document.getElementById("retry")', 8000));
+    record('and nothing tappable pretending to be live',
+      (await cold.evaluate(`getComputedStyle(document.querySelector('.row')).pointerEvents`)) === 'none');
+
+    // The seam neither suite could reach: type into a conversation with the
+    // laptop switched off, and the words must still be there afterwards.
+    await cold.navigate(`${base}/s/${session.id}`);
+    record('a conversation opened before still opens from the cache',
+      await cold.until('!!document.getElementById("input")', 8000));
+    await cold.evaluate(`(() => {
+      const input = document.getElementById('input');
+      input.value = 'typed while the laptop was gone';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    })()`);
+    await wait(400);
+    record('a prompt typed with nothing to send it to is not swallowed',
+      (await cold.evaluate('document.getElementById("input").value')) === 'typed while the laptop was gone');
+    record('and the client says why rather than looking sent',
+      /not sent/i.test(await cold.evaluate('document.getElementById("link").textContent')));
+  } finally {
+    cold.close();
+  }
+
+  // Back on the same port, so the address the browsers know still means this.
+  await server.start(port);
+
+  // ---- a list that stops being current says so ------------------------------
+  const watching = await launch(chrome);
+  try {
+    await watching.navigate(`${base}/?key=${auth.key}`);
+    await watching.until('document.querySelectorAll(".row").length === 1', 8000);
+    record('a live list is not dimmed',
+      (await watching.evaluate('document.body.classList.contains("stale")')) === false);
+
+    for (const client of [...server.clients]) client.close(1001, 'gone');
+    await server.stop();
+    record('and when the socket dies under it, it stops looking live',
+      await watching.until('document.body.classList.contains("stale")', 12000));
+    record('naming when it last was',
+      /last seen|looked like/i.test(await watching.evaluate('document.getElementById("lede").textContent')));
+    record('with a way to ask again', await watching.until('!!document.getElementById("retry")', 6000));
+  } finally {
+    watching.close();
+  }
+  await server.start(port);
 
   // ---- and on a screen the size of a phone ----------------------------------
   const small = await launch(chrome);

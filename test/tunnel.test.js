@@ -1,5 +1,6 @@
 'use strict';
-const { Tailscale, matchesDomain } = require('../src/tunnel.js');
+const { EventEmitter } = require('events');
+const { Tailscale, Cloudflared, matchesDomain } = require('../src/tunnel.js');
 
 /** A tailnet made of canned answers, so none of this needs one. */
 function fake(answers, options) {
@@ -114,6 +115,55 @@ module.exports = async function () {
   checkEqual('a forward left over from a previous window is noticed',
     await already.tailscale.serving(4517), true);
   checkEqual('and one for another port is not', await already.tailscale.serving(9999), false);
+
+  suite('the other way out');
+
+  // cloudflared is a process that talks rather than a command that answers, so
+  // this is one of those: it says where it is on its way up, and that line is
+  // the only record a quick tunnel leaves.
+  function fakeCloudflared(script) {
+    const started = [];
+    const proc = new EventEmitter();
+    proc.stdout = new EventEmitter();
+    proc.stderr = new EventEmitter();
+    proc.kill = () => { proc.killed = true; };
+    const tunnel = new Cloudflared({
+      places: ['/fake/cloudflared'],
+      exists: (file) => file === '/fake/cloudflared',
+      spawn: (binary, args) => { started.push([binary].concat(args).join(' ')); setTimeout(() => script(proc), 0); return proc; }
+    });
+    return { tunnel, started, proc };
+  }
+
+  const missingBinary = new Cloudflared({ places: ['/nowhere'], exists: () => false });
+  const refusedOutright = await missingBinary.expose(4517);
+  checkEqual('without cloudflared it says so', refusedOutright.ok, false);
+  check('and points at the better path first', /Tailscale is the better path/.test(refusedOutright.reason));
+
+  const quick = fakeCloudflared((proc) => {
+    proc.stderr.emit('data', 'INF |  https://brave-mountain-1234.trycloudflare.com  |');
+  });
+  const open = await quick.tunnel.expose(4517);
+  checkEqual('a quick tunnel reports where it is', open.ok, true);
+  checkEqual('by the hostname it was given', open.host, 'brave-mountain-1234.trycloudflare.com');
+  checkEqual('over https, since a device cannot hold a key without it',
+    open.url, 'https://brave-mountain-1234.trycloudflare.com/');
+  checkEqual('and it forwards to loopback, like everything else here',
+    quick.started[0], '/fake/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:4517');
+  check('it is running', quick.tunnel.running);
+  await quick.tunnel.hide();
+  checkEqual('closing it kills the process', quick.proc.killed, true);
+  checkEqual('and nothing is left claiming to be open', quick.tunnel.running, false);
+
+  const dies = fakeCloudflared((proc) => proc.emit('exit', 1));
+  const fellOver = await dies.tunnel.expose(4517);
+  checkEqual('a tunnel that falls over is a refusal, not a hang', fellOver.ok, false);
+  check('with the code it went out on', /code 1/.test(fellOver.reason));
+
+  const mute = fakeCloudflared(() => { /* says nothing at all */ });
+  const gaveUp = await mute.tunnel.expose(4517, { timeoutMs: 40 });
+  checkEqual('one that never says where it is gives up', gaveUp.ok, false);
+  check('rather than waiting forever', /did not say where it was/.test(gaveUp.reason));
 
   suite('which names a certificate covers');
 

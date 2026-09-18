@@ -211,4 +211,34 @@ module.exports = function () {
 
   account.disposeAll();
   later.disposeAll();
+
+  suite('a reload keeps the prompts nobody has answered yet');
+
+  // The pause that makes a queue long is remembered across a reload — so
+  // forgetting the queue itself would be the worst possible pair to keep.
+  const ctxQueue = { workspaceState: memoryState(), globalState: memoryState() };
+  const typed = new SessionManager(ctxQueue);
+  const waiting = typed.create({ cwd: '/Users/nikoloz/Codes/Peuka', autoStart: false });
+  waiting.claudeSessionId = 'sess-queue';
+  waiting.enqueue('finish the migration');
+  waiting.enqueue('then write it up', [{ name: 'shot.png', mediaType: 'image/png', data: 'AAAA' }]);
+  typed.persist();
+
+  const written = JSON.stringify(ctxQueue.workspaceState.get('nikui.sessions.v1', []));
+  check('the prompts are written down', written.indexOf('finish the migration') > 0);
+  check('their images are not — that would be a copy of the conversation',
+    written.indexOf('AAAA') < 0);
+
+  const afterQueueReload = new SessionManager(ctxQueue);
+  afterQueueReload.restoreOpen();
+  const queued = afterQueueReload.get(waiting.id);
+  checkEqual('both come back, in order', queued.queue.map((q) => q.text),
+    ['finish the migration', 'then write it up']);
+  checkEqual('and one of them says it lost a picture',
+    queued.queue.map((q) => q.lostImages), [0, 1]);
+  check('with nothing pretending the image is still there',
+    queued.queue.every((q) => q.attachments.length === 0));
+
+  afterQueueReload.disposeAll();
+  typed.disposeAll();
 };

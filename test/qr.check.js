@@ -16,6 +16,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const qr = require('../src/qr.js');
 const { qrToPng } = require('./helpers/png.js');
+const { skipped } = require('./helpers/skip.js');
 
 function haveSwift() {
   try {
@@ -25,8 +26,7 @@ function haveSwift() {
 }
 
 if (!haveSwift()) {
-  console.log('No swift found — skipping the QR check. It needs the Xcode command line tools.');
-  process.exit(0);
+  skipped('No swift found — the QR check did not run. It needs the Xcode command line tools.');
 }
 
 const decoder = path.join(__dirname, 'helpers', 'qr-decode.swift');

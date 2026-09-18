@@ -9,6 +9,7 @@ const { LocalKey } = require('../src/auth.js');
 const { DeviceStore } = require('../src/devices.js');
 const { PairingWindow } = require('../src/pairing.js');
 const { loadIdentity } = require('../src/identity.js');
+const { loadVapid } = require('../src/push.js');
 const { closeHub } = require('../src/hub.js');
 const ws = require('./helpers/ws.js');
 const { makeDevice } = require('./helpers/device.js');
@@ -55,6 +56,19 @@ function request(options) {
   });
 }
 
+/**
+ * The handshake, from a client's side. Everyone is challenged now — a client
+ * with nothing to prove says exactly that, and is seated on the key it arrived
+ * with, which is what stops an unprompted welcome from meaning anything.
+ */
+async function signIn(client, device) {
+  const challenge = await client.waitFor('@challenge');
+  client.send(device
+    ? await device.answer(challenge, device.id)
+    : { type: '@auth', device: null, nonce: 'a-nonce-from-a-client-with-nothing-to-prove' });
+  return { challenge, welcome: await client.waitFor('@welcome') };
+}
+
 module.exports = async function () {
   const first = quietSession('alpha');
   const second = quietSession('beta');
@@ -71,12 +85,13 @@ module.exports = async function () {
   const devices = new DeviceStore(memento);
   const identity = loadIdentity(memoryState());
   const pairing = new PairingWindow();
+  const vapid = loadVapid(memoryState());
   const auth = new LocalKey('test-key-not-a-secret');
   host.audit = (entry) => devices.record(entry);
 
   let fleetChanged = null;
   const server = new RemoteServer({
-    root: ROOT, host, sessions, devices, identity, pairing, localKey: auth,
+    root: ROOT, host, sessions, devices, identity, pairing, vapid, localKey: auth,
     watchFleet: (fn) => { fleetChanged = fn; return () => { fleetChanged = null; }; }
   });
 
@@ -89,6 +104,16 @@ module.exports = async function () {
 
   const port = server.port;
   const cookie = { cookie: 'nikui=' + auth.key };
+
+  suite('a second window is a normal thing to have open');
+
+  const rival = new RemoteServer({ root: ROOT, host, sessions, localKey: auth });
+  await rival.start(port);
+  check('it starts rather than refusing', rival.listening);
+  check('on a port of its own', rival.port !== port);
+  checkEqual('and says which one it wanted', rival.movedFrom, port);
+  check('the first one is untouched', server.listening);
+  await rival.stop();
 
   suite('the pages carry nothing, so they can be public');
 
@@ -121,11 +146,81 @@ module.exports = async function () {
   check('which is not readable by script', /HttpOnly/.test(String(handed.headers['set-cookie'])));
   check('and is not sent to other sites', /SameSite=Strict/.test(String(handed.headers['set-cookie'])));
 
+  suite('and nowhere but loopback, whatever else this machine has');
+
+  // The issue this answers is "confirm the server cannot be reached other than
+  // through loopback, on a machine with several interfaces" — so it asks the
+  // machine what interfaces it has and tries every one of them.
+  const os = require('os');
+  const interfaces = [];
+  for (const [name, addresses] of Object.entries(os.networkInterfaces())) {
+    for (const address of addresses || []) {
+      if (address.internal || address.family !== 'IPv4') continue;
+      interfaces.push({ name, address: address.address });
+    }
+  }
+  const reachable = [];
+  for (const where of interfaces) {
+    const open = await new Promise((resolve) => {
+      const socket = require('net').connect({ host: where.address, port, timeout: 800 });
+      socket.on('connect', () => { socket.destroy(); resolve(true); });
+      socket.on('error', () => resolve(false));
+      socket.on('timeout', () => { socket.destroy(); resolve(false); });
+    });
+    if (open) reachable.push(where.name + ' (' + where.address + ')');
+  }
+  checkEqual('no other address on this machine answers', reachable, []);
+  check('and there was at least one to try, or this proves nothing',
+    interfaces.length > 0 || process.env.CI === 'true');
+  checkEqual('the socket says the same', server.server.address().address, '127.0.0.1');
+
+  suite('and it is an app you can install');
+
+  const manifest = await get(port, '/manifest.webmanifest');
+  checkEqual('the manifest is served', manifest.status, 200);
+  checkEqual('as a manifest', manifest.headers['content-type'], 'application/manifest+json; charset=utf-8');
+  checkEqual('standing alone rather than in a browser frame', manifest.json.display, 'standalone');
+  checkEqual('with somewhere to start', manifest.json.start_url, '/');
+  check('and icons big enough for a home screen',
+    manifest.json.icons.some((icon) => icon.sizes === '512x512'));
+  check('including one the platform may crop to its own shape',
+    manifest.json.icons.some((icon) => icon.purpose === 'maskable'));
+  checkEqual('the icons are really there',
+    (await get(port, '/media/icons/nikui-512.png')).status, 200);
+  checkEqual('and the one iOS asks for by name',
+    (await get(port, '/media/icons/apple-touch-icon-180.png')).status, 200);
+
+  const worker = await get(port, '/sw.js');
+  checkEqual('the worker is served from the root', worker.status, 200);
+  checkEqual('so it can look after every page, not just /media',
+    worker.headers['service-worker-allowed'], '/');
+  check('it caches the shell', /media\/panel\.js/.test(worker.body));
+  check('and says plainly that it caches no conversation', /never caches is a conversation/.test(worker.body));
+
+  const shell = await get(port, '/');
+  check('the page points at the manifest', /rel="manifest"/.test(shell.body));
+  check('carries a colour for the bar at the top', /name="theme-color"/.test(shell.body));
+  check('an icon for iOS', /apple-touch-icon/.test(shell.body));
+  check('and asks to be full screen there', /apple-mobile-web-app-capable/.test(shell.body));
+
+  suite('being told about things');
+
+  const key = await get(port, '/push/key');
+  checkEqual('the sending key is public, because it has to be', key.status, 200);
+  checkEqual('and it is the raw point a browser wants', key.json.key, vapid.applicationServerKey);
+
+  const health = await get(port, '/health');
+  checkEqual('the laptop can be asked whether it is there at all', health.status, 200);
+  checkEqual('and answers nothing else', JSON.stringify(health.json), '{"ok":true}');
+
   suite('a socket from this machine needs no ceremony');
 
   const mine = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`, { headers: cookie });
-  const welcome = await mine.waitFor('@welcome');
-  checkEqual('the key in the cookie is enough', welcome.device.kind, 'local');
+  const { welcome, challenge: asked } = await signIn(mine);
+  check('even this machine is asked to say who it is', !!asked.nonce);
+  checkEqual('the key in the cookie is the answer', welcome.device.kind, 'local');
+  check('and the laptop signs its own welcome anyway, so nothing is ever unproven',
+    typeof welcome.signature === 'string' && welcome.signature.length > 40);
   check('and it may steer', welcome.device.control === true);
   mine.send({ type: 'ready' });
   const init = await mine.waitFor('init');
@@ -153,6 +248,13 @@ module.exports = async function () {
   check('a device nobody paired is refused', /not paired/.test(unknown.reason));
   await stranger.waitClosed();
   check('and the socket goes with it', !!stranger.closed);
+
+  const unproven = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`);
+  await unproven.waitFor('@challenge');
+  unproven.send({ type: '@auth', device: null, nonce: 'no-key-either' });
+  const refusedOutright = await unproven.waitFor('@denied');
+  check('a client with no key and nothing to prove is refused', /not paired/.test(refusedOutright.reason));
+  await unproven.waitClosed();
 
   suite('pairing a device');
 
@@ -192,12 +294,73 @@ module.exports = async function () {
   await new Promise((r) => setTimeout(r, 40));
   checkEqual('a code nobody used expires', expiring.isOpen, false);
 
+  suite('and can ask to be told when it is not looking');
+
+  const endpoint = 'https://web.push.apple.com/send/' + phone.id;
+  const now = Date.now();
+  const unsigned = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: { device: phone.id, endpoint, at: now, keys: { p256dh: 'x', auth: 'y' }, signature: 'nope' }
+  });
+  checkEqual('a subscription nobody signed for is refused', unsigned.status, 403);
+
+  const notMine = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: {
+      device: phone.id, endpoint, at: now, keys: { p256dh: 'x', auth: 'y' },
+      signature: await phone.sign(`nikui-push:${now}:https://web.push.apple.com/send/somebody-else`)
+    }
+  });
+  checkEqual('and so is one signed for a different endpoint', notMine.status, 403);
+
+  const elsewhere = 'https://internal.example.corp/steal';
+  const offSite = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: {
+      device: phone.id, endpoint: elsewhere, at: now, keys: { p256dh: 'x', auth: 'y' },
+      signature: await phone.sign(`nikui-push:${now}:${elsewhere}`)
+    }
+  });
+  checkEqual('an endpoint that is not a push service is refused, however well signed',
+    offSite.status, 400);
+
+  const stale = Date.now() - 600000;
+  const captured = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: {
+      device: phone.id, endpoint, at: stale, keys: { p256dh: 'x', auth: 'y' },
+      signature: await phone.sign(`nikui-push:${stale}:${endpoint}`)
+    }
+  });
+  checkEqual('and a body captured earlier is too old to use', captured.status, 403);
+
+  const subscribed = await request({
+    port, method: 'POST', path: '/push/subscribe',
+    body: {
+      device: phone.id, endpoint,
+      at: Date.now(),
+      keys: { p256dh: 'BPa6q2n8dFhO8Yd5lHjLgL0kq8i8nqFQlHZ8p6y5v3hYpXsS1bF7oB2aQ0Zq1nGp8wJ2r6xS9cB7nT4uV5wX6yZ', auth: 'c29tZS1hdXRoLXNlY3JldA' },
+      signature: await phone.sign(`nikui-push:${Date.now()}:${endpoint}`)
+    }
+  });
+  checkEqual('one the device signed for is kept', subscribed.status, 200);
+  checkEqual('against that device, and no second list to forget',
+    devices.get(phone.id).push.endpoint, endpoint);
+  checkEqual('so it is one of the subscribers', devices.subscribers().length, 1);
+
+  suite('and pairing is not something to sit and hammer at');
+
+  let lastAttempt = null;
+  for (let i = 0; i < 14; i++) {
+    lastAttempt = await request({ port, method: 'POST', path: '/pair', body: { code: 'NOPENOPE' } });
+  }
+  checkEqual('an address that keeps trying is told to wait', lastAttempt.status, 429);
+  check('and it is written down', server.refusals.some((r) => /too many/.test(r.why)));
+
   suite('a paired device can watch');
 
   const watcher = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`);
-  const ask = await watcher.waitFor('@challenge');
-  watcher.send(await phone.answer(ask, phone.id));
-  const seated = await watcher.waitFor('@welcome');
+  const { welcome: seated } = await signIn(watcher, phone);
   checkEqual('the right signature gets a seat', seated.device.name, 'Test phone');
   checkEqual('read-only, because that is what pairing grants', seated.device.control, false);
   watcher.send({ type: 'ready' });
@@ -236,6 +399,7 @@ module.exports = async function () {
   suite('revoking takes the socket with it');
 
   devices.forget(phone.id);
+  checkEqual('forgetting a device forgets where to reach it too', devices.subscribers().length, 0);
   const dropped = await watcher.waitClosed();
   check('the live socket is closed', !!dropped);
   const afterwards = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`);
@@ -248,7 +412,7 @@ module.exports = async function () {
   suite('the window as a list');
 
   const fleet = await ws.connect(`ws://127.0.0.1:${port}/socket`, { headers: cookie });
-  await fleet.waitFor('@welcome');
+  await signIn(fleet);
   fleet.send({ type: 'ready' });
   const listed = await fleet.waitFor('fleet');
   checkEqual('every instance is listed', listed.instances.length, 2);
@@ -261,7 +425,7 @@ module.exports = async function () {
   suite('a socket that misbehaves is not fatal');
 
   const rude = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${second.id}`, { headers: cookie });
-  await rude.waitFor('@welcome');
+  await signIn(rude);
   rude.writeRaw(wire.encodeText('unmasked, which a client may never send'));
   const shut = await rude.waitClosed();
   checkEqual('a frame that breaks the rules closes that socket', shut.code, wire.CLOSE.PROTOCOL);

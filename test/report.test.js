@@ -74,8 +74,15 @@ module.exports = async function () {
   checkEqual('worked time is the sum of the turns', r.totals.workedMs, 5000 + 6000 + 7000 + 8000);
   checkEqual('idle time is the rest of the session', r.totals.idleMs, 3600000 - 26000);
   checkEqual('the average turn is the worked time over the turns', r.totals.avgTurnMs, 6500);
-  check('the burn rate is money over worked hours',
-    Math.abs(r.totals.burnPerHour - 0.55 / (26000 / 3600000)) < 1e-9);
+  // Both sides from the same turns: the running total is the whole session's
+  // and the worked time is only the turns still in hand, so mixing them used to
+  // print a rate that did not match either number beside it.
+  const logged = 0.01 + 0.02 + 0.03 + 0.04;
+  check('the burn rate is the logged money over the logged hours',
+    Math.abs(r.totals.burnPerHour - logged / (26000 / 3600000)) < 1e-9);
+  check('and the average turn cost multiplies back to it',
+    Math.abs(r.totals.avgCost * r.totals.turnsLogged - logged) < 1e-9);
+  checkEqual('with the count it was measured over', r.totals.turnsLogged, 4);
   check('throughput is output over worked seconds',
     Math.abs(r.totals.outputPerSecond - 2000 / 26) < 1e-9);
 

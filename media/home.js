@@ -3,7 +3,13 @@
    The page arrives empty — the server sends markup and no data — and this fills
    it from the same socket the conversation uses. So the list is live, and an
    unpaired device gets an empty shell and an explanation rather than a list of
-   what is running on somebody's laptop. */
+   what is running on somebody's laptop.
+
+   What it does keep is the last list it saw, so opening the app from a home
+   screen shows something immediately instead of a white rectangle. That list is
+   never dressed up as current: it is dimmed, dated, and has a way to try
+   again. A stale conversation shown as if it were live is worse than a blank
+   screen, and the same goes for a fleet. */
 (function () {
   'use strict';
 
@@ -11,9 +17,32 @@
   const rows = $('rows');
   const lede = $('lede');
   const transport = window.nikTransport();
+  const REMEMBERED = 'nikui:fleet';
+  const openedAt = Date.now();
 
   const money = (value) => '$' + (Number(value) || 0).toFixed(2);
   const shortPath = (value) => String(value || '').split('/').slice(-2).join('/');
+
+  function ago(at) {
+    const ms = Date.now() - at;
+    if (ms < 45000) return 'a moment ago';
+    if (ms < 3600000) return Math.round(ms / 60000) + ' minutes ago';
+    if (ms < 86400000) return Math.round(ms / 3600000) + ' hours ago';
+    return Math.round(ms / 86400000) + ' days ago';
+  }
+
+  function remember(instances) {
+    try {
+      window.localStorage.setItem(REMEMBERED, JSON.stringify({ at: Date.now(), instances: instances }));
+    } catch (_) { /* private mode, or a full disk: not worth failing over */ }
+  }
+
+  function remembered() {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(REMEMBERED) || 'null');
+      return saved && Array.isArray(saved.instances) ? saved : null;
+    } catch (_) { return null; }
+  }
 
   function draw(instances) {
     rows.textContent = '';
@@ -55,8 +84,47 @@
     }
   }
 
+  function live(instances) {
+    document.body.classList.remove('stale');
+    const retry = document.getElementById('retry');
+    if (retry) retry.remove();
+    draw(instances);
+    remember(instances);
+  }
+
+  /**
+   * What there is to show when the laptop cannot be reached: the last list,
+   * said to be the last list, and a way to ask again.
+   */
+  function stale(why) {
+    const saved = remembered();
+    document.body.classList.add('stale');
+    if (!saved) {
+      rows.textContent = '';
+      lede.textContent = why || 'Cannot reach the laptop.';
+    } else {
+      draw(saved.instances);
+      lede.textContent = (why || 'Cannot reach the laptop.') + ' Showing what it looked like ' + ago(saved.at) + '.';
+    }
+    if (!document.getElementById('retry')) {
+      const retry = document.createElement('button');
+      retry.className = 'go-on';
+      retry.id = 'retry';
+      retry.type = 'button';
+      retry.textContent = 'Try again';
+      retry.addEventListener('click', function () {
+        lede.textContent = 'Trying again…';
+        transport.retry();
+      });
+      // Outside the list, so the list can be dimmed without dimming the way
+      // out of it.
+      rows.parentNode.appendChild(retry);
+    }
+  }
+
   function refused(message) {
     rows.textContent = '';
+    document.body.classList.remove('stale');
     lede.textContent = message.reason || 'This device cannot see this window.';
     if (!message.pair) return;
     const link = document.createElement('a');
@@ -69,9 +137,37 @@
   window.addEventListener('message', function (event) {
     const message = event.data;
     if (!message || typeof message.type !== 'string') return;
-    if (message.type === 'fleet') draw(message.instances || []);
+    if (message.type === 'fleet') live(message.instances || []);
     else if (message.type === '@denied') refused(message);
   });
+
+  // Something to look at while the socket is still shaking hands.
+  const saved = remembered();
+  if (saved) {
+    document.body.classList.add('stale');
+    draw(saved.instances);
+    lede.textContent = 'Last seen ' + ago(saved.at) + '. Reconnecting…';
+  }
+
+  /**
+   * A list is only current while the socket is. Nothing pushes "the connection
+   * died" — there is no connection to push it — so the page asks, and the
+   * moment the answer stops being "online" the list says what it is.
+   */
+  let wasLive = false;
+  let saidOffline = false;
+  setInterval(function () {
+    const live = transport.__state && transport.__state() === 'online';
+    if (live) { wasLive = true; saidOffline = false; return; }
+    // Keyed on having said it, not on the dimming: the page starts dimmed while
+    // it reconnects, and reading that back would mean never saying anything.
+    if (saidOffline) return;
+    // A first connection gets a few seconds before it is called a failure; a
+    // list that was live and is not any more needs no grace at all.
+    if (!wasLive && Date.now() - openedAt < 6000) return;
+    saidOffline = true;
+    stale('Cannot reach the laptop.');
+  }, 2000);
 
   transport.postMessage({ type: 'ready' });
 })();

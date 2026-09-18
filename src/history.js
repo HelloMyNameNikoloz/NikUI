@@ -101,7 +101,23 @@ async function describe(file) {
  * Recent transcripts, newest first. `cwd` limits to one project folder;
  * omit it to sweep every project.
  */
-async function listSessions({ cwd, limit = 30 } = {}) {
+/**
+ * The most recent conversations, newest first.
+ *
+ * `keep` is the reason this takes a callback at all: the caller wants N
+ * entries *that match something*, and the matching needs a described entry.
+ * Truncating to a limit first and filtering afterwards is how the History view
+ * used to come up empty on a machine with a couple of hundred transcripts —
+ * every one of the newest 200 belonged to another project, so the page had
+ * nothing in it and nothing to click for more.
+ *
+ * @param {object} [options]
+ * @param {string} [options.cwd]    only this project's transcripts
+ * @param {number} [options.limit]  how many wanted, after keep()
+ * @param {(entry: object) => boolean} [options.keep]
+ * @param {number} [options.scan]   how many files to open before giving up
+ */
+async function listSessions({ cwd, limit = 30, keep, scan = 600 } = {}) {
   const root = projectsRoot();
   let dirs = [];
   if (cwd) {
@@ -129,12 +145,20 @@ async function listSessions({ cwd, limit = 30 } = {}) {
   }
 
   files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  const picked = files.slice(0, limit);
   const out = [];
-  for (const f of picked) {
+  let opened = 0;
+  for (const f of files) {
+    if (out.length >= limit) break;
+    // A ceiling on work, not on results: without one, a filter that matches
+    // nothing would read every transcript on the machine.
+    if (opened >= scan) break;
+    opened++;
     const entry = await describe(f.file);
-    if (entry) out.push(entry);
+    if (!entry) continue;
+    if (keep && !keep(entry)) continue;
+    out.push(entry);
   }
+  out.exhausted = out.length < limit && opened < scan;
   return out;
 }
 

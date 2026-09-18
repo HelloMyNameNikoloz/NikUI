@@ -78,6 +78,9 @@
       return window.nikDevice.remember({
         id: result.body.device,
         fingerprint: result.body.fingerprint,
+        // Kept so every later connection can be checked against a signature,
+        // rather than against the other end agreeing with itself.
+        serverKey: result.body.serverKey,
         laptop: laptop
       }).then(function () { return result.body; });
     }).then(function (body) {

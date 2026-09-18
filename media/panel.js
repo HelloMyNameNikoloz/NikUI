@@ -189,7 +189,10 @@
   }
 
   setInterval(function () { if (statsBase.running) paintStats(); }, 1000);
-  setInterval(paintQueue, 1000);
+  // Only while there is a countdown to advance. Rebuilding the queue's markup
+  // every second destroyed the buttons under the reader's focus and their
+  // half-finished clicks, to redraw text that had not changed.
+  setInterval(function () { if (drainAt) paintQueue(); }, 1000);
 
   function setStats(s) {
     statsBase = Object.assign({}, s, { at: Date.now() });
@@ -213,7 +216,11 @@
     const allowed = !device || device.control !== false;
     document.body.classList.toggle('read-only', !allowed);
     const banner = $('watching');
-    if (banner) banner.hidden = allowed;
+    if (banner) {
+      banner.hidden = allowed;
+      if (refusalTimer) { clearTimeout(refusalTimer); refusalTimer = null; }
+      banner.textContent = WATCHING;
+    }
     input.disabled = !allowed;
   }
 
@@ -232,11 +239,21 @@
       : others.length + ' others are looking at this instance.';
   }
 
+  const WATCHING = 'Watching only — this device has not been granted control.';
+  let refusalTimer = null;
+
   function flashRefusal(msg) {
     const banner = $('watching');
     if (!banner) return;
     banner.hidden = false;
     banner.textContent = (msg && msg.reason) || 'That is not allowed from this device.';
+    // And then back to the standing explanation. Overwriting it permanently
+    // meant one refused tap cost the page its only account of why.
+    if (refusalTimer) clearTimeout(refusalTimer);
+    refusalTimer = setTimeout(function () {
+      refusalTimer = null;
+      banner.textContent = WATCHING;
+    }, 6000);
   }
 
   function setMeta(meta) {
@@ -307,13 +324,18 @@
       }
 
       case 'tool': {
-        const running = item.status !== 'done';
+        // Running means running. Anything else is finished, one way or another:
+        // a result, an error, or a turn that ended without either.
+        const running = item.status === 'running';
+        const abandoned = item.status === 'stopped';
         el.className = 'tool' + (item.isError ? ' err' : '');
         const details = el.querySelector('details');
         const open = details ? details.open : false;
         const mark = running ? '<span class="spinner"></span>'
           : (item.isError ? '<span class="cross">' + icon('alert', 13) + '</span>'
-                          : '<span class="tick">' + icon('check', 13) + '</span>');
+            : abandoned ? '<span class="cross" title="This tool never reported back — the turn ended first.">' +
+                icon('alert', 13) + '</span>'
+              : '<span class="tick">' + icon('check', 13) + '</span>');
         let body = '<div class="label">Input</div><pre>' + esc(pretty(item.input)) + '</pre>';
         if (item.result !== undefined && item.result !== '') {
           body += '<div class="label">' + (item.isError ? 'Error' : 'Result') + '</div><pre>' + esc(item.result) + '</pre>';
@@ -515,6 +537,8 @@
         return '<div class="queue-row"><span class="n">' + (i + 1) + '</span>' +
           '<span class="t">' + esc(q.text || '(image only)') + '</span>' +
           (q.images ? '<span class="imgs">' + icon('image', 11) + q.images + '</span>' : '') +
+          (q.lostImages ? '<span class="imgs" title="Images are not saved across a reload — the words came back, the pictures did not.">' +
+            icon('image', 11) + q.lostImages + ' lost</span>' : '') +
           (i > 0 ? '<button class="drop" data-promote="' + esc(q.id) + '" title="Send this one next">' + icon('chevron', 11) + '</button>' : '') +
           '<button class="drop" data-edit="' + esc(q.id) + '" title="Take it back to the composer">' + icon('paperclip', 11) + '</button>' +
           '<button class="drop" data-unqueue="' + esc(q.id) + '" title="Remove">' + icon('x', 11) + '</button></div>';
@@ -986,7 +1010,16 @@
   function focusHit(scroll) {
     hits.forEach((m, i) => m.classList.toggle('on', i === hitAt));
     const mark = hits[hitAt];
-    if (mark && scroll !== false) mark.scrollIntoView({ block: 'center' });
+    if (!mark) return;
+    // Tool inputs and thinking blocks are collapsed by default, and find looks
+    // inside them — so stepping onto a match there used to scroll to a closed
+    // disclosure and highlight nothing. Whatever it is in, it opens.
+    let box = mark.closest ? mark.closest('details') : null;
+    while (box) {
+      box.open = true;
+      box = box.parentElement && box.parentElement.closest ? box.parentElement.closest('details') : null;
+    }
+    if (scroll !== false) mark.scrollIntoView({ block: 'center' });
   }
 
   function paintFind() {
@@ -1216,6 +1249,16 @@
         paintQueue();
         break;
       case 'meta':
+        // Settings can change while this page is open, so they arrive here as
+        // well as in `init` — and are applied the same way.
+        if (typeof msg.showThinking === 'boolean') showThinking = msg.showThinking;
+        if (typeof msg.singleEscape === 'boolean') { singleEscape = msg.singleEscape; disarmEscape(); }
+        if (msg.font !== undefined) {
+          document.documentElement.style.setProperty('--nik-font', msg.font || '');
+        }
+        if (msg.fontSize) {
+          document.documentElement.style.setProperty('--nik-font-size', msg.fontSize + 'px');
+        }
         setMeta(msg.meta);
         if (msg.slashCommands) commands = msg.slashCommands;
         if (msg.commandArgs) commandArgs = msg.commandArgs;
@@ -1227,6 +1270,10 @@
       case 'reset':
         stream.innerHTML = '<div class="empty">Context cleared.</div>';
         nodes.clear();
+        // Everything that described the conversation goes with it: a cleared
+        // context has no dropped messages and no search results.
+        dropped = 0;
+        closeFind();
         break;
       case 'focus': input.focus(); break;
 

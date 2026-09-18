@@ -152,10 +152,16 @@ body.home .row-cost {
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
 
+/* The selectors are the markup panel.js writes, checked against it: .perm
+   .actions for Allow/Deny, .queue-head .link for Clear, .queue-row .drop for
+   the per-row controls. Two of these used to be class names that existed
+   nowhere, so a watch-only device was offered every button and the host
+   refused each one after the tap. */
 body.read-only .composer,
 body.read-only .hint,
-body.read-only .queue-actions,
-body.read-only .perm-actions { display: none; }
+body.read-only .perm .actions,
+body.read-only .queue-head .link,
+body.read-only .queue-row .drop { display: none; }
 
 /* ---- pairing ------------------------------------------------------------- */
 
@@ -355,4 +361,19 @@ body.home .sdot.asleep {
   /* Nothing scrolls sideways except the fleet table, which says so itself. */
   body { overflow-x: hidden; }
   .msg-text pre { max-width: 100%; }
+}
+
+/* ---- a list that is not current ------------------------------------------
+   Kept so the app opens with something in it, and dimmed and dated so it is
+   never mistaken for what is happening now. */
+
+body.stale .rows { opacity: 0.5; }
+/* Not tappable while it is a memory: a row that opens nothing is worse than a
+   row that says it is waiting. */
+body.stale .row { pointer-events: none; }
+
+button.go-on {
+  font: inherit;
+  border: 0;
+  cursor: pointer;
 }
