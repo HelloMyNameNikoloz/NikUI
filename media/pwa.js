@@ -63,9 +63,11 @@
     const body = {
       device: record.id,
       endpoint: raw.endpoint,
-      keys: raw.keys
+      keys: raw.keys,
+      // Signed with the time, so this body is worth nothing a minute from now.
+      at: Date.now()
     };
-    return window.nikDevice.sign('nikui-push:' + raw.endpoint).then(function (signature) {
+    return window.nikDevice.sign('nikui-push:' + body.at + ':' + raw.endpoint).then(function (signature) {
       body.signature = signature;
       return fetch('/push/subscribe', {
         method: 'POST',

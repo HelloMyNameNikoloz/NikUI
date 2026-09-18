@@ -321,7 +321,10 @@ class SessionHub {
       try { replayed = await session.replayTranscript(); } catch (_) { replayed = false; }
       if (!replayed) session.noteMissingTranscript();
     }
-    if (!session.isRunning && this.host.autoStart !== false) session.start();
+    // Opening an instance starts it — but only for a client that could steer it
+    // anyway. Spawning a CLI process on this machine is not something a
+    // watch-only device should be able to do by looking.
+    if (!session.isRunning && this.host.autoStart !== false && this.mayControl(entry)) session.start();
 
     entry.ready = true;
     safePost(entry.client, this.initMessage(entry.client.id));

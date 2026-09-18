@@ -125,6 +125,29 @@ module.exports = async function () {
   checkEqual('disposing lets every client go', hub.size, 0);
   session.dispose();
 
+  suite('watching is not starting');
+
+  // Not quietSession(): this one has to look stopped, which is the whole case.
+  const sleeping = new Session({ cwd: '/tmp' });
+  let started = 0;
+  sleeping.start = function () { started++; this.everStarted = true; };
+  sleeping._write = function () {};
+  const guarded = new SessionHub(sleeping, host(sleeping));
+
+  const onlooker = viewer('onlooker');
+  guarded.attach({ id: onlooker.id, post: onlooker.post, device: { id: 'd0', name: 'A phone', kind: 'device', control: false } });
+  await guarded.receive('onlooker', { type: 'ready' });
+  checkEqual('a device that may only watch does not spawn a process', started, 0);
+  check('but it still sees the conversation', !!onlooker.last('init'));
+
+  const steerer = viewer('steerer');
+  guarded.attach({ id: steerer.id, post: steerer.post, device: { id: 'd1', name: 'A trusted phone', kind: 'device', control: true } });
+  await guarded.receive('steerer', { type: 'ready' });
+  checkEqual('a device that may steer does', started, 1);
+
+  guarded.dispose();
+  sleeping.dispose();
+
   suite('two live views of one instance');
 
   const shared2 = quietSession();
