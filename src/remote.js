@@ -83,6 +83,7 @@ class RemoteServer {
     this.seq = 0;
     this.refusals = [];
     this.attempts = new Map();
+    this.movedFrom = null;
     this.stopWatching = null;
     this.stateWatchers = new Set();
 
@@ -140,7 +141,26 @@ class RemoteServer {
     return !!this.host_;
   }
 
-  start(port) {
+  /**
+   * Listen, on the port asked for if it is free and on any free one if it is
+   * not. A second window is a normal thing to have open, and telling somebody
+   * to go and change a setting they share between windows is not an answer —
+   * especially as the address is handed out rather than typed.
+   */
+  async start(port, options) {
+    try {
+      return await this.listen(port);
+    } catch (err) {
+      const taken = err && err.code === 'EADDRINUSE';
+      if (!taken || (options && options.exactly) || !Number(port)) throw err;
+      this.log(`port ${port} is taken; asking for any free one`);
+      const server = await this.listen(0);
+      this.movedFrom = Number(port);
+      return server;
+    }
+  }
+
+  listen(port) {
     if (this.listening) return Promise.resolve(this);
     const server = http.createServer((req, res) => {
       this.handle(req, res).catch((err) => {

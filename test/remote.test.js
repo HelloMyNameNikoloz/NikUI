@@ -105,6 +105,16 @@ module.exports = async function () {
   const port = server.port;
   const cookie = { cookie: 'nikui=' + auth.key };
 
+  suite('a second window is a normal thing to have open');
+
+  const rival = new RemoteServer({ root: ROOT, host, sessions, localKey: auth });
+  await rival.start(port);
+  check('it starts rather than refusing', rival.listening);
+  check('on a port of its own', rival.port !== port);
+  checkEqual('and says which one it wanted', rival.movedFrom, port);
+  check('the first one is untouched', server.listening);
+  await rival.stop();
+
   suite('the pages carry nothing, so they can be public');
 
   const home = await get(port, '/');

@@ -254,12 +254,16 @@ class SessionHub {
         break;
 
       case 'permission': {
+        // Answer first, then say so. Marking the prompt resolved before knowing
+        // the answer went anywhere showed "Allowed" for an instance that had
+        // already died.
+        const delivered = session.respondToPermission(msg.requestId, msg.allow);
+        if (!delivered) break;
         const item = session.items.find((i) => i.kind === 'permission' && i.requestId === msg.requestId);
         if (item) {
           item.resolved = msg.allow ? 'allow' : 'deny';
           this.broadcast({ type: 'items', items: [item] });
         }
-        session.respondToPermission(msg.requestId, msg.allow);
         break;
       }
 
@@ -327,6 +331,11 @@ class SessionHub {
     if (!session.isRunning && this.host.autoStart !== false && this.mayControl(entry)) session.start();
 
     entry.ready = true;
+    // A webview VS Code threw away and rebuilt comes back with a fresh DOM and
+    // no sheet. Believing the old state made the dashboard open by itself over
+    // the conversation the moment anything changed.
+    entry.statusOpen = false;
+    if (entry.statusTimer) { clearTimeout(entry.statusTimer); entry.statusTimer = null; }
     safePost(entry.client, this.initMessage(entry.client.id));
     // Everyone learns who else turned up, including whoever just did.
     this.broadcastPresence();

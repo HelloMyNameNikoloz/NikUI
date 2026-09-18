@@ -467,12 +467,14 @@
       {
         "command": "nikui.nextInstance",
         "key": "ctrl+alt+]",
-        "mac": "cmd+alt+]"
+        "mac": "cmd+alt+]",
+        "when": "!editorTextFocus"
       },
       {
         "command": "nikui.previousInstance",
         "key": "ctrl+alt+[",
-        "mac": "cmd+alt+["
+        "mac": "cmd+alt+[",
+        "when": "!editorTextFocus"
       },
       {
         "command": "nikui.status",

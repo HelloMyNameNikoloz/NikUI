@@ -148,6 +148,27 @@ module.exports = async function () {
   guarded.dispose();
   sleeping.dispose();
 
+  suite('a client that has just loaded has no sheet open');
+
+  const returning = quietSession();
+  const backAgain = new SessionHub(returning, host(returning));
+  const tab = viewer('tab');
+  backAgain.attach(tab);
+  await backAgain.receive('tab', { type: 'ready' });
+  await backAgain.receive('tab', { type: 'statusOpen', open: true });
+  checkEqual('the host knows the sheet is open', backAgain.clients.get('tab').statusOpen, true);
+
+  // VS Code throws a hidden webview away and rebuilds it; the same client id
+  // says hello again with a fresh, empty DOM.
+  await backAgain.receive('tab', { type: 'ready' });
+  checkEqual('coming back, the host believes the fresh page, not the old one',
+    backAgain.clients.get('tab').statusOpen, false);
+  backAgain.refreshStatus();
+  checkEqual('so nothing opens the dashboard by itself',
+    backAgain.clients.get('tab').statusTimer, null);
+  backAgain.dispose();
+  returning.dispose();
+
   suite('two live views of one instance');
 
   const shared2 = quietSession();

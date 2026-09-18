@@ -246,5 +246,32 @@ module.exports = function () {
 
   s.dispose();
   r.dispose();
-};
 
+  suite('an answer nobody can deliver does not look delivered');
+
+  const gone = new Session({ cwd: '/tmp' });
+  gone._upsert({ id: 'p1', kind: 'permission', requestId: 'r1', name: 'Bash', input: {}, resolved: null });
+  checkEqual('the instance is not running', gone.isRunning, false);
+  checkEqual('so the answer is refused rather than swallowed', gone.respondToPermission('r1', true), false);
+  checkEqual('and it is not left looking busy', gone.status, 'idle');
+  check('the reason is in the conversation',
+    gone.items.some((i) => i.kind === 'notice' && /not running any more/.test(i.text)));
+  gone.dispose();
+
+  suite('a process on its way out does not feed the one replacing it');
+
+  const swapping = new Session({ cwd: '/tmp' });
+  const dying = { stdout: { on: () => {} }, stderr: { on: () => {}, setEncoding: () => {} }, on: () => {} };
+  let fed = 0;
+  swapping._onStdout = function () { fed++; };
+  // What start() wires up, without spawning anything: the guard is the closure.
+  const handler = (chunk) => { if (swapping.proc === dying) swapping._onStdout(chunk); };
+  swapping.proc = dying;
+  handler('{"type":"result"}');
+  checkEqual('its output counts while it is the process', fed, 1);
+  swapping.proc = { different: true };
+  handler('{"type":"result"}');
+  checkEqual('and is ignored once it is not', fed, 1);
+  swapping.proc = null;
+  swapping.dispose();
+};

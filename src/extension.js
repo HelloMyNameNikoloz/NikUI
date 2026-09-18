@@ -12,7 +12,7 @@ const { HistoryTree } = require('./historyTree');
 const { projectsRoot } = require('./history');
 const { nextTicket } = require('./ticket');
 const { labelFor } = require('./label');
-const { createHost } = require('./host');
+const { createHost, installHost, forgetHost } = require('./host');
 const { RemoteServer } = require('./remote');
 const { DeviceStore } = require('./devices');
 const { DevicesTree } = require('./devicesTree');
@@ -502,7 +502,9 @@ function serveLocally(context, manager, awakeState) {
 
   const server = new RemoteServer({
     root: context.extensionUri.fsPath,
-    host: createHost(context, manager, { devices, awake: awakeState || null }),
+    // Installed, not just built: the panel asks for this same object, so a hub
+    // opened from the editor knows about devices and the trail as well.
+    host: installHost(createHost(context, manager, { devices, awake: awakeState || null })),
     sessions: { list: () => manager.list, get: (id) => manager.get(id) },
     devices,
     identity,
@@ -568,11 +570,17 @@ function serveLocally(context, manager, awakeState) {
     try {
       await server.start(port);
     } catch (err) {
-      const why = err && err.code === 'EADDRINUSE'
-        ? `port ${port} is already taken — change nikui.remote.port`
-        : (err && err.message) || 'unknown error';
-      vscode.window.showWarningMessage('NikUI could not start the local server: ' + why);
+      vscode.window.showWarningMessage(
+        'NikUI could not start the local server: ' + ((err && err.message) || 'unknown error')
+      );
       return null;
+    }
+    if (server.movedFrom) {
+      // Another window already has the usual port. Said once, quietly: the
+      // address is handed out rather than typed, so the number rarely matters.
+      vscode.window.setStatusBarMessage(
+        `NikUI: ${server.movedFrom} was taken, so this window is serving on ${server.port}`, 6000
+      );
     }
     paint();
     return server;
@@ -1011,6 +1019,7 @@ function folderIdOf(node) {
 }
 
 function deactivate() {
+  forgetHost();
   closeAllHubs();
   if (manager) manager.disposeAll();
 }

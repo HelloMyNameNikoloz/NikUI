@@ -204,7 +204,11 @@ class Session extends EventEmitter {
 
     proc.on('error', (err) => this._fail(spawnMessage(this.claudePath, err), err.code || null));
     proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', (chunk) => this._onStdout(chunk));
+    // Only while this is still the process. A restart replaces it 300ms later
+    // while the old one has up to five seconds to flush: its last `result`
+    // would otherwise be counted against the new one — doubling the cost and
+    // inventing a turn — and its half-line would corrupt the new init.
+    proc.stdout.on('data', (chunk) => { if (this.proc === proc) this._onStdout(chunk); });
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (chunk) => {
       const text = String(chunk).trim();
@@ -234,6 +238,8 @@ class Session extends EventEmitter {
 
   stop() {
     this._setStatus(STATUS.STOPPED);
+    // Nothing half-read carries over into the next process's first line.
+    this._stdoutBuf = '';
     // As pause() and dispose() do: a drain timer outliving the process it was
     // waiting for is a timer that re-arms itself once a second forever.
     this._clearDrain();
@@ -503,6 +509,16 @@ class Session extends EventEmitter {
   }
 
   respondToPermission(requestId, allow, message) {
+    if (!this.isRunning) {
+      // The CLI that asked is gone. Saying "working" here left the instance
+      // spinning forever with nothing behind it.
+      this._notice(
+        'This instance is not running any more, so that answer could not be delivered. ' +
+        'Send a message to start it again.',
+        'info'
+      );
+      return false;
+    }
     this._write({
       type: 'control_response',
       response: {
@@ -514,6 +530,7 @@ class Session extends EventEmitter {
       }
     });
     this._setStatus(STATUS.WORKING);
+    return true;
   }
 
   /**
