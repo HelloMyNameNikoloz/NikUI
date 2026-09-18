@@ -226,6 +226,12 @@ const record = (name, ok) => {
         .some(r => /Move it into the chip/.test(r.textContent))`, 8000));
     record('and says where the key is now',
       /In this app/.test(await phone.evaluate('document.body.textContent')));
+    // The rows this phase added are held to what every other row is held to.
+    record('the rows it added are thumb-sized too',
+      (await phone.evaluate(`[...document.querySelectorAll('.row')]
+        .every(r => Math.round(r.getBoundingClientRect().height) >= 44)`)) === true);
+    record('and say what they do in words, not in cryptography',
+      !/SPKI|P-256|ECDSA|r‖s|DER|base64/i.test(await phone.evaluate('document.body.textContent')));
 
     await phone.evaluate(`(() => {
       const row = [...document.querySelectorAll('.row')].find(r => /Move it into the chip/.test(r.textContent));
