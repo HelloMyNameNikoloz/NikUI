@@ -168,8 +168,27 @@ PairPanel.current = null;
 
 const spaced = (code) => String(code || '').replace(/(.{4})(?=.)/g, '$1 ');
 
+/**
+ * What to call this laptop on a phone's screen.
+ *
+ * `os.hostname()` is whatever the network handed out, which on a home router is
+ * often something like `Mac.fritz.box` — the router's name for this machine,
+ * not the owner's. macOS knows the name a person actually chose, so ask for
+ * that first and fall back to a hostname with its domain taken off.
+ */
 function laptopName() {
-  try { return require('os').hostname().replace(/\.local$/, ''); } catch (_) { return 'This laptop'; }
+  if (process.platform === 'darwin') {
+    try {
+      const chosen = require('child_process')
+        .execFileSync('/usr/sbin/scutil', ['--get', 'ComputerName'], { encoding: 'utf8', timeout: 2000 })
+        .trim();
+      if (chosen) return chosen;
+    } catch (_) { /* fall through to the hostname */ }
+  }
+  try {
+    // Everything after the first dot is the network's business, not a name.
+    return require('os').hostname().replace(/\..*$/, '') || 'This laptop';
+  } catch (_) { return 'This laptop'; }
 }
 
 module.exports = { PairPanel, laptopName };

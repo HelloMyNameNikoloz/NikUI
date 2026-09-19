@@ -151,10 +151,23 @@
 
   // ---- the exchange --------------------------------------------------------
 
+  /**
+   * "Load failed" on iOS, "Failed to fetch" on Android: the browser's way of
+   * saying it could not open a connection, which tells somebody holding a
+   * phone nothing at all. The two reasons that actually happen are worth
+   * telling apart, and neither is a thing the phone did wrong.
+   */
+  function unreachable(host) {
+    const tailnet = /\.ts\.net$/i.test(host);
+    return new Error(tailnet
+      ? 'Could not reach ' + host + '. That is a tailnet address — install Tailscale on this phone and sign in with the same account as your laptop.'
+      : 'Could not reach ' + host + '. Check the laptop is still showing the code, and that this phone can reach that address.');
+  }
+
   async function pair(where, code, name) {
     const record = await window.nikDevice.ensure();
     const signature = await window.nikDevice.sign('nikui-pair:' + code);
-    const response = await fetch(where + '/pair', {
+    const response = await fetchOr(where, where + '/pair', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -223,6 +236,15 @@
     go.disabled = working;
     $('accept').disabled = working;
     $('accept').textContent = working ? 'Pairing…' : 'Pair';
+  }
+
+  /** fetch, with the one failure that matters said in words. */
+  async function fetchOr(where, url, options) {
+    try {
+      return await fetch(url, options);
+    } catch (_) {
+      throw unreachable(String(where).replace(/^https?:\/\//, ''));
+    }
   }
 
   form.addEventListener('submit', (event) => {

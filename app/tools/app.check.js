@@ -172,6 +172,27 @@ const record = (name, ok) => {
     record('and the phone says something happened',
       (await phone.evaluate('window.__buzz.buzzes().length')) > 0);
 
+    // The failure somebody actually hits: a laptop the phone has no route to.
+    // "Load failed" is what the browser says; it has to become something that
+    // tells you what to do about it.
+    record('a laptop this phone cannot reach says so in words', (await phone.evaluate(`(async () => {
+      const form = document.getElementById('form');
+      const host = document.getElementById('host').value;
+      document.getElementById('host').value = 'nowhere.tailabcdef.ts.net';
+      document.getElementById('form').hidden = false;
+      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 200));
+        const said = document.getElementById('note').textContent;
+        if (/Could not reach/.test(said)) {
+          document.getElementById('host').value = host;
+          return /Tailscale/.test(said);
+        }
+      }
+      document.getElementById('host').value = host;
+      return false;
+    })()`)) === true);
+
     await phone.evaluate(`document.getElementById('name').value = 'Check phone'`);
     await phone.evaluate('document.getElementById("accept").click()');
 
