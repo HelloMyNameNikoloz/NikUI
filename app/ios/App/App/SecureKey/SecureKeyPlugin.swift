@@ -125,8 +125,12 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func publicKey(_ call: CAPPluginCall) {
         let alias = call.getString("alias") ?? "nikui.device"
-        guard let key = findKey(alias: alias), let exported = exportPublicKey(key) else {
-            return call.reject("no key under that name")
+        let found = findKey(alias: alias)
+        guard let key = found.key else {
+            return reject(call, found.status, alias)
+        }
+        guard let exported = exportPublicKey(key) else {
+            return call.reject("that key's public half could not be read", "UNREADABLE")
         }
         call.resolve(["publicKey": exported, "alias": alias])
     }
@@ -140,8 +144,9 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let reason = call.getString("reason") ?? "Prove this phone to your laptop"
 
-        guard let key = findKey(alias: alias, reason: reason) else {
-            return call.reject("no key under that name")
+        let found = findKey(alias: alias, reason: reason)
+        guard let key = found.key else {
+            return reject(call, found.status, alias)
         }
         guard let bytes = message.data(using: .utf8) else {
             return call.reject("that message is not text")
@@ -179,7 +184,35 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
         return Data("\(service).\(alias)".utf8)
     }
 
-    private func findKey(alias: String, reason: String? = nil) -> SecKey? {
+    /**
+     * Why a lookup failed, not merely that it did.
+     *
+     * These are three different worlds and only one of them means the identity
+     * is gone. `errSecItemNotFound` is genuinely gone — most often because the
+     * app was rebuilt under a different team, which changes the keychain access
+     * group and hides everything the last build stored. `errSecInteractionNotAllowed`
+     * is a locked phone: the key is right there and will be readable in a moment,
+     * because it was made `WhenUnlockedThisDeviceOnly`. Anything else is a fault.
+     *
+     * Collapsing all three into one nil is what made a pairing failure say "no
+     * key under that name" and leave nowhere to go. It would also, if the caller
+     * reacted by making a fresh key, throw away a working identity for no better
+     * reason than that the screen happened to be off.
+     */
+    private func reject(_ call: CAPPluginCall, _ status: OSStatus, _ alias: String) {
+        switch status {
+        case errSecItemNotFound:
+            call.reject("this app holds no key called \(alias)", "NO_KEY")
+        case errSecInteractionNotAllowed:
+            call.reject("unlock this phone first", "LOCKED")
+        case errSecMissingEntitlement:
+            call.reject("this build cannot reach its keychain", "NO_ENTITLEMENT")
+        default:
+            call.reject("the keychain refused (\(status))", "KEYCHAIN_ERROR")
+        }
+    }
+
+    private func findKey(alias: String, reason: String? = nil) -> (key: SecKey?, status: OSStatus) {
         var query: [String: Any] = [
             kSecClass as String: kSecClassKey,
             kSecAttrApplicationTag as String: tag(alias),
@@ -195,9 +228,10 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
             query[kSecUseAuthenticationContext as String] = context
         }
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let found = item else { return (nil, status) }
         // swiftlint:disable:next force_cast
-        return (item as! SecKey)
+        return ((found as! SecKey), status)
     }
 
     private func exportPublicKey(_ privateKey: SecKey) -> String? {

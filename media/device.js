@@ -292,10 +292,66 @@
    * a non-extractable browser key otherwise. The public half is the only part
    * that ever travels.
    */
+  /**
+   * Is the key this record points at still there?
+   *
+   * A record is a name, not a key: the key itself is in the chip and the record
+   * only says what it is called. That pointer can dangle — an app rebuilt under
+   * a different signing team gets a different keychain access group and cannot
+   * see what the last build stored — and when it does, every signature fails
+   * with an error about a name, which explains nothing.
+   *
+   * Only a flat "there is no such key" counts. A locked phone, a chip that is
+   * busy, a plugin that is not there yet: none of those mean the identity is
+   * gone, and treating them as if they did would throw away a working pairing
+   * because a screen happened to be off. When it cannot be told, the answer is
+   * yes — a signature that fails is recoverable, an identity that was deleted
+   * for no reason is not.
+   */
+  const GONE = ['NO_KEY', 'NO_ENTITLEMENT'];
+
+  function saysKeyIsGone(err) {
+    const code = (err && (err.code || err.errorCode)) || '';
+    if (GONE.indexOf(String(code)) >= 0) return true;
+    // Older builds of the native side said only "no key under that name", with
+    // no code to read. That exact sentence is still believed, because a phone
+    // carrying one is the phone this was written for.
+    const said = String((err && (err.message || err.errorMessage)) || '');
+    return /no key under that name|holds no key/i.test(said);
+  }
+
+  function stillThere(record) {
+    if (!record || !record.protection || record.protection === 'software') {
+      return Promise.resolve(true);
+    }
+    const api = plugin();
+    if (!api || typeof api.publicKey !== 'function') return Promise.resolve(true);
+    return api.publicKey({ alias: record.alias || ALIAS })
+      .then(function (out) { return !!(out && out.publicKey); })
+      .catch(function (err) { return !saysKeyIsGone(err); });
+  }
+
   function ensure(options) {
     return load().then(function (existing) {
-      if (existing && existing.publicKey) return existing;
-      return bestOffer().then(function (offer) {
+      if (existing && existing.publicKey) {
+        return stillThere(existing).then(function (there) {
+          if (there) return existing;
+          // The identity is gone, not merely unreadable: there is nothing to
+          // recover and nothing to ask. A new key is made, and the pairing that
+          // named the old one is void — so it is forgotten rather than left to
+          // fail on every connection with a signature nobody can check.
+          // Kept in the record, not just returned: the screen that has to say
+          // this is the next page load, and a flag that only lived in one
+          // promise would be gone before anybody could be told.
+          return mint(options, { lostKey: true });
+        });
+      }
+      return mint(options);
+    });
+  }
+
+  function mint(options, extra) {
+    return bestOffer().then(function (offer) {
         if (!offer) return Promise.reject(new Error('this device cannot hold a key'));
         if (offer.kind !== 'hardware') {
           // On a phone this is not a neutral outcome: the key is weaker than
@@ -314,9 +370,8 @@
             return made;
           });
         });
-      }).then(function (made) {
-        return put(Object.assign({ id: null, fingerprint: null }, made));
-      });
+    }).then(function (made) {
+      return put(Object.assign({ id: null, fingerprint: null }, made, extra || {}));
     });
   }
 
@@ -464,6 +519,8 @@
       record.serverKey = details.serverKey || record.serverKey || null;
       record.laptop = details.laptop || record.laptop || null;
       record.pairedAt = Date.now();
+      // Paired again, so there is nothing left to warn about.
+      delete record.lostKey;
       return put(record);
     });
   }
@@ -513,7 +570,7 @@
 
   window.nikDevice = {
     available, load, ensure, sign, remember, forget, toBase64, fromBase64,
-    fingerprintOf, verifyLaptop, authMessage, nativePlugin,
+    fingerprintOf, verifyLaptop, authMessage, nativePlugin, stillThere, saysKeyIsGone,
     protection, stageUpgrade, commitUpgrade, discardUpgrade,
     spkiFromPublicKey, p1363FromSignature, UNLOCK_WINDOW_SECONDS
   };
@@ -522,6 +579,6 @@
   // verifier, which is the only way to know a device nobody here owns will be
   // believed by it.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { spkiFromPublicKey, p1363FromSignature, P256_SPKI_HEADER };
+    module.exports = { spkiFromPublicKey, p1363FromSignature, P256_SPKI_HEADER, saysKeyIsGone };
   }
 })();

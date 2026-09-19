@@ -170,16 +170,28 @@ public class SecureKeyPlugin extends Plugin {
         return asked ? "strongbox" : "keystore";
     }
 
+    /**
+     * A key that is absent and a keystore that cannot be asked are different
+     * answers. Only the first means the identity is gone and a new one has to be
+     * made; the second is a fault that will pass, and reacting to it by making a
+     * fresh key would discard a working pairing for nothing.
+     */
     @PluginMethod
     public void publicKey(PluginCall call) {
         String alias = call.getString("alias", DEFAULT_ALIAS);
         try {
+            KeyStore store = KeyStore.getInstance(STORE);
+            store.load(null);
+            if (!store.containsAlias(alias)) {
+                call.reject("this app holds no key called " + alias, "NO_KEY");
+                return;
+            }
             JSObject out = new JSObject();
             out.put("publicKey", exportPublicKey(alias));
             out.put("alias", alias);
             call.resolve(out);
         } catch (Exception error) {
-            call.reject("no key under that name", error);
+            call.reject("the keystore refused: " + error.getMessage(), "KEYSTORE_ERROR", error);
         }
     }
 

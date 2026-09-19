@@ -321,6 +321,11 @@
       // A phone that could have done better and did not should say so: the key
       // still works, and it is not the key this device was capable of.
       if (record.fellBack) say('Note: ' + record.fellBack + '. The key is still safe here.', 'warn');
+      // Being silently unpaired is the confusing version of this. The key this
+      // phone had is gone from the chip — usually a reinstall — so the pairing
+      // that named it cannot be honoured by either end, and saying so is kinder
+      // than letting it look like the laptop stopped answering.
+      else if (record.lostKey) say('This phone made a new key, so it needs pairing again.', 'warn');
     } catch (err) {
       say('This device could not make a key: ' + ((err && err.message) || err), 'bad');
       busy(true);

@@ -46,6 +46,30 @@ const SOURCE = `(function () {
     return Uint8Array.from([0x30, body.length].concat(body));
   }
 
+  /**
+   * Two ways a chip stops answering, because they mean opposite things.
+   *
+   * 'wipe' is a reinstall: the keys are really gone and the app has to make
+   * another. 'jam' is a locked phone: the keys are there and the lookup simply
+   * cannot be done this second. An app that cannot tell these apart either
+   * strands itself on a key that no longer exists or deletes a working identity
+   * because a screen was off, so both are driven here.
+   */
+  const fail = (code, said) => {
+    const err = new Error(said);
+    err.code = code;
+    return Promise.reject(err);
+  };
+
+  window.__chip = {
+    // A reinstall takes the keys and nothing else. The tally of how many were
+    // ever made is not in the chip and survives, which is how a test can tell a
+    // key that was made again from one that was quietly kept.
+    wipe: function () { keep({ made: shelf().made || 0 }); },
+    jam: function (on) { const all = shelf(); all.jammed = !!on; keep(all); },
+    made: function () { return shelf().made || 0; }
+  };
+
   window.Capacitor = window.Capacitor || {};
   window.Capacitor.Plugins = window.Capacitor.Plugins || {};
   window.Capacitor.Plugins.SecureKey = {
@@ -74,14 +98,16 @@ const SOURCE = `(function () {
         });
     },
     publicKey: function (options) {
+      if (shelf().jammed) return fail('LOCKED', 'unlock this phone first');
       const held = shelf()[options.alias];
-      if (!held) return Promise.reject(new Error('no key under that name'));
+      if (!held) return fail('NO_KEY', 'this app holds no key called ' + options.alias);
       const spki = Uint8Array.from(atob(held.spki), function (c) { return c.charCodeAt(0); });
       return Promise.resolve({ publicKey: b64(spki.subarray(26)), alias: options.alias });
     },
     sign: function (options) {
+      if (shelf().jammed) return fail('LOCKED', 'unlock this phone first');
       const held = shelf()[options.alias];
-      if (!held) return Promise.reject(new Error('no key under that name'));
+      if (!held) return fail('NO_KEY', 'this app holds no key called ' + options.alias);
       return privateKeyFor(held.jwk).then(function (key) {
         return subtle().sign({ name: 'ECDSA', hash: 'SHA-256' }, key,
           new TextEncoder().encode(String(options.message)));

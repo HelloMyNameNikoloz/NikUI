@@ -29,7 +29,7 @@ const laptopSecure = require('../src/secure.js');
 global.window = global.window || {};
 window.atob = global.atob;
 window.btoa = global.btoa;
-const { spkiFromPublicKey, p1363FromSignature, P256_SPKI_HEADER } = require('../media/device.js');
+const { spkiFromPublicKey, p1363FromSignature, P256_SPKI_HEADER, saysKeyIsGone } = require('../media/device.js');
 
 const b64 = (bytes) => Buffer.from(bytes).toString('base64url');
 
@@ -320,4 +320,34 @@ module.exports = async function () {
   checkEqual('a word it does not is not put on a screen', cleanProtection('unbreakable'), 'unknown');
   checkEqual('and saying nothing means the browser', cleanProtection(undefined), 'software');
   checkEqual('case is not a way to smuggle one in', cleanProtection('Secure-Enclave'), 'secure-enclave');
+
+
+  suite('a key that is gone, and a chip that merely will not answer');
+
+  // The record a phone keeps is a name, not a key. When the two come apart —
+  // an app rebuilt under a different signing team sees a different keychain
+  // access group and none of what the last build stored — every signature fails
+  // and the only cure is a new key. But almost every *other* way a chip says no
+  // is temporary, and reacting to one of those by making a new key would throw
+  // away a working pairing because a phone was in a pocket.
+  const gone = (err) => saysKeyIsGone(err);
+
+  check('a native NO_KEY is the identity being gone', gone({ code: 'NO_KEY' }));
+  check('so is a build that cannot reach its own keychain',
+    gone({ code: 'NO_ENTITLEMENT' }));
+  check('the sentence older builds used is still understood',
+    gone(new Error('no key under that name')));
+  check('and the one the new build uses', gone(new Error('this app holds no key called nikui.device.7')));
+
+  check('a locked phone is not', gone({ code: 'LOCKED' }) === false);
+  check('nor a keystore having a bad moment', gone({ code: 'KEYSTORE_ERROR' }) === false);
+  check('nor a cancelled face check', gone({ code: 'CANCELLED' }) === false);
+  check('nor a chip that would not sign', gone(new Error('the chip would not sign: -25293')) === false);
+  check('nor a keychain error with a number in it', gone({ code: 'KEYCHAIN_ERROR' }) === false);
+  check('nor nothing at all', gone(null) === false && gone(undefined) === false);
+  check('nor an error with neither code nor message', gone({}) === false);
+
+  // Capacitor puts the code on `errorCode` on one platform and `code` on the
+  // other, and a check that only read one of them would be half a check.
+  check('the code is read wherever Capacitor put it', gone({ errorCode: 'NO_KEY' }));
 };

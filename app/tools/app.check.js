@@ -821,6 +821,54 @@ const record = (name, ok) => {
     record('which the laptop verified as the new key, not the old one',
       devices.get(paired.id).fingerprint === movedTo.fingerprint);
 
+    // ---- the chip loses the key the record points at -------------------------
+    //
+    // The record is a name; the key is in the chip. Rebuild the app under a
+    // different signing team and the keychain access group changes with it, so
+    // the new build sees none of what the old one stored — while the WebView's
+    // own storage, sitting in the same container, survives untouched. The phone
+    // then holds a perfectly good-looking identity pointing at nothing, and
+    // every signature fails with a sentence about a name.
+    //
+    // A locked phone looks almost identical from here and means the opposite,
+    // so it is driven first: whatever this does about a missing key, it must not
+    // do it to a phone that is merely in a pocket.
+
+    const before = await phone.evaluate(
+      '(async () => JSON.stringify(await window.nikDevice.load()))()');
+    const wasPublic = JSON.parse(before).publicKey;
+
+    await phone.evaluate('window.__chip.jam(true)');
+    const whileLocked = JSON.parse(await phone.evaluate(
+      '(async () => JSON.stringify(await window.nikDevice.ensure()))()'));
+    record('a locked phone does not lose its identity',
+      whileLocked.publicKey === wasPublic);
+    record('and is not told it has to pair again', !whileLocked.lostKey);
+    await phone.evaluate('window.__chip.jam(false)');
+
+    const madeBefore = await phone.evaluate('window.__chip.made()');
+    await phone.evaluate('window.__chip.wipe()');
+    const after = JSON.parse(await phone.evaluate(
+      '(async () => JSON.stringify(await window.nikDevice.ensure()))()'));
+    record('a key that is really gone is noticed', !!after.lostKey);
+    record('and a new one is made rather than nothing working',
+      !!after.publicKey && after.publicKey !== wasPublic);
+    record('in the chip, which is still a chip', after.protection === 'secure-enclave');
+    record('it really was made, not copied from the old record',
+      (await phone.evaluate('window.__chip.made()')) === madeBefore + 1);
+    record('the pairing that named the old key is not carried over',
+      after.id === null && after.fingerprint === null);
+    record('and the new key can actually sign',
+      (await phone.evaluate(`(async () => {
+        try { return !!(await window.nikDevice.sign('hello')); } catch (_) { return false; }
+      })()`)) === true);
+
+    // Said out loud, because being silently unpaired looks like the laptop
+    // going away and sends somebody to the wrong end of the problem.
+    await phone.navigate(appOrigin + '/connect.html');
+    record('and the app says why it is asking to pair again',
+      await phone.until('/needs pairing again/.test(document.body.textContent)', 8000));
+
     record('and nothing threw on any screen',
       (await phone.evaluate('window.__errors ? window.__errors.length : 0')) === 0);
   } finally {
