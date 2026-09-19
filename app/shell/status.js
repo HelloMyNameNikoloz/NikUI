@@ -13,7 +13,7 @@
   if (!where) return;
 
   const screen = $('screen');
-  const state = { report: null, trouble: null, section: null };
+  const state = { report: null, trouble: null, section: null, connected: false };
 
   function draw() {
     if (!state.report) {
@@ -74,6 +74,7 @@
     const message = event.data;
     if (!message || typeof message.type !== 'string') return;
     if (message.type === '@welcome' || message.type === '@device') {
+      state.connected = true;
       transport.postMessage({ type: 'status' });
       // Numbers that stop moving are numbers nobody trusts.
       if (!asking) asking = setInterval(() => transport.postMessage({ type: 'status' }), 5000);
@@ -93,9 +94,17 @@
     draw();
   });
 
+  // Two different silences, and telling them apart is the whole difference
+  // between looking at your network and reloading a window. A laptop that never
+  // answered anything cannot be reached; one that answered the handshake and
+  // then ignored this is running a client that does not know the question.
   setTimeout(() => {
-    if (!state.report && !state.trouble) { state.trouble = 'Cannot reach the laptop.'; draw(); }
-  }, 15000);
+    if (state.report || state.trouble) return;
+    state.trouble = state.connected
+      ? 'Your laptop is connected but did not send its status. It is running an older NikUI — reload its VS Code window.'
+      : 'Cannot reach the laptop.';
+    draw();
+  }, 8000);
 
   draw();
 })();

@@ -18,7 +18,7 @@
   const screen = $('screen');
   const search = $('search');
 
-  const state = { entries: null, trouble: null, filter: '', limit: 60 };
+  const state = { entries: null, trouble: null, filter: '', limit: 60, connected: false };
 
   const el = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -134,6 +134,7 @@
     const message = event.data;
     if (!message || typeof message.type !== 'string') return;
     if (message.type === '@welcome' || message.type === '@device') {
+      state.connected = true;
       transport.postMessage({ type: 'history', limit: 200 });
       return;
     }
@@ -152,10 +153,15 @@
 
   // Nothing arrives until the socket is seated, and if it never is, say so
   // rather than showing "Looking…" for ever.
+  // As on the status screen: a laptop that answered the handshake and then said
+  // nothing is a laptop running an older client, not an unreachable one.
   setTimeout(() => {
-    if (state.entries === null) state.trouble = 'Cannot reach the laptop.';
+    if (state.entries !== null) return;
+    state.trouble = state.connected
+      ? 'Your laptop is connected but did not send its history. It is running an older NikUI — reload its VS Code window.'
+      : 'Cannot reach the laptop.';
     draw();
-  }, 15000);
+  }, 8000);
 
   search.addEventListener('input', () => {
     state.filter = search.value.trim();

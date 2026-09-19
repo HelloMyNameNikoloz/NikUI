@@ -726,6 +726,35 @@ const record = (name, ok) => {
     record('and its stretch stays inside the bar rather than bursting out of it',
       sx <= 1.2 && sy >= 0.88);
 
+    // A laptop that answers the handshake and then ignores a question is not an
+    // unreachable laptop, and saying so sends somebody to look at their network
+    // instead of at the window that needs reloading.
+    record('a laptop that cannot build a status says so at once',
+      await (async () => {
+        const knew = laptop.report;
+        laptop.report = null;
+        await phone.navigate(appOrigin + '/status.html');
+        const said = await phone.until('/too old/i.test(document.body.textContent)', 12000);
+        laptop.report = knew;
+        return said;
+      })());
+
+    // The case actually hit: a laptop running a client from before this screen
+    // existed answers the handshake and then ignores the question entirely.
+    record('and one that simply never answers says to reload it, not to check the network',
+      await (async () => {
+        const knew = laptop.statusMessage;
+        laptop.statusMessage = () => ({ type: 'not-a-thing-this-client-knows' });
+        await phone.navigate(appOrigin + '/status.html');
+        const said = await phone.until('/older NikUI|reload/i.test(document.body.textContent)', 16000);
+        const blamed = /Cannot reach/.test(await phone.evaluate('document.body.textContent'));
+        laptop.statusMessage = knew;
+        return said && !blamed;
+      })());
+
+    await phone.navigate(appOrigin + '/index.html');
+    await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+
     record('the app is dark whatever the phone is',
       (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');
 
