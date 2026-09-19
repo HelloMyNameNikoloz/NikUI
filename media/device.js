@@ -154,8 +154,34 @@
 
   // ---- where a key can live ---------------------------------------------------
 
+  /**
+   * A plugin that lives in this app rather than in a package.
+   *
+   * Android's bridge injects every registered native plugin into
+   * `Capacitor.Plugins`; iOS does not, and an app-local plugin has no
+   * JavaScript package to do it either. `registerPlugin` is the API that works
+   * on both — it hands back a proxy whose calls reject when there is no native
+   * half, which is exactly what `offer()` already treats as "not here".
+   *
+   * Reading `Capacitor.Plugins` alone is why an iPhone quietly used the browser
+   * fallback and said it would keep its key "here": nothing failed, the plugin
+   * simply was not where it was looked for.
+   */
+  function nativePlugin(name) {
+    const cap = window.Capacitor;
+    if (!cap) return null;
+    if (cap.Plugins && cap.Plugins[name]) return cap.Plugins[name];
+    if (typeof cap.registerPlugin !== 'function') return null;
+    try {
+      const made = cap.registerPlugin(name);
+      // Cached, so asking twice is one proxy rather than two.
+      if (cap.Plugins) cap.Plugins[name] = made;
+      return made;
+    } catch (_) { return null; }
+  }
+
   const plugin = () => {
-    const found = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SecureKey;
+    const found = nativePlugin('SecureKey');
     return found && typeof found.sign === 'function' ? found : null;
   };
 
@@ -271,10 +297,23 @@
       if (existing && existing.publicKey) return existing;
       return bestOffer().then(function (offer) {
         if (!offer) return Promise.reject(new Error('this device cannot hold a key'));
-        if (offer.kind !== 'hardware') return software.create();
+        if (offer.kind !== 'hardware') {
+          // On a phone this is not a neutral outcome: the key is weaker than
+          // the device can manage, and nobody would ever find out. So the
+          // reason is kept and shown rather than swallowed.
+          return software.create().then(function (made) {
+            if (window.Capacitor) made.fellBack = 'this phone offered no secure hardware';
+            return made;
+          });
+        }
         // A chip that says yes and then refuses is not a reason to have no
         // identity at all; the software key still works.
-        return hardware.create(aliasForNewKey(), options).catch(function () { return software.create(); });
+        return hardware.create(aliasForNewKey(), options).catch(function (err) {
+          return software.create().then(function (made) {
+            made.fellBack = (err && (err.message || err.errorMessage)) || 'the secure hardware refused';
+            return made;
+          });
+        });
       }).then(function (made) {
         return put(Object.assign({ id: null, fingerprint: null }, made));
       });
@@ -474,7 +513,7 @@
 
   window.nikDevice = {
     available, load, ensure, sign, remember, forget, toBase64, fromBase64,
-    fingerprintOf, verifyLaptop, authMessage,
+    fingerprintOf, verifyLaptop, authMessage, nativePlugin,
     protection, stageUpgrade, commitUpgrade, discardUpgrade,
     spkiFromPublicKey, p1363FromSignature, UNLOCK_WINDOW_SECONDS
   };

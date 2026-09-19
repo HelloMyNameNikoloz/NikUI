@@ -136,6 +136,7 @@
     'secure-enclave': 'This iPhone will keep its key in the Secure Enclave, where nothing can copy it.',
     'strongbox': 'This phone will keep its key in its security chip, where nothing can copy it.',
     'keystore': 'This phone will keep its key in the Android Keystore, where nothing can copy it.',
+    'keychain': 'This iPhone will keep its key in its Keychain, where nothing can copy it.',
     'software': 'This device will keep its key here, and never send it anywhere.'
   };
 
@@ -295,6 +296,9 @@
       const record = await window.nikDevice.ensure();
       const held = $('held');
       if (held) held.textContent = WHERE[record.protection] || WHERE.software;
+      // A phone that could have done better and did not should say so: the key
+      // still works, and it is not the key this device was capable of.
+      if (record.fellBack) say('Note: ' + record.fellBack + '. The key is still safe here.', 'warn');
     } catch (err) {
       say('This device could not make a key: ' + ((err && err.message) || err), 'bad');
       busy(true);

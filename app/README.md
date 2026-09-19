@@ -297,6 +297,30 @@ Capacitor finds plugin methods by reflection, so R8 removes them unless told
 not to, and the failure happens in release builds only. `proguard-rules.pro`
 holds the rules and `npm test` checks they are still there.
 
+## The two platforms are not symmetrical
+
+Android's bridge builds `window.Capacitor.Plugins` itself, so a plugin
+registered natively is simply there. **iOS does not**, and a plugin that lives
+in this app rather than in a package has no JavaScript package to do it either.
+Two things follow, and both were found by running the app on an iPhone rather
+than by reading about it:
+
+- **`@capacitor/core`'s runtime ships in the bundle** (`www/capacitor.js`,
+  copied from `node_modules` by the build like everything else). Without it
+  `Capacitor.registerPlugin` does not exist, and on iOS that is the only way to
+  reach a plugin.
+- **Plugins are asked for by name**, not read out of `Capacitor.Plugins` — see
+  `nativePlugin()` in `media/device.js`.
+
+And the key: iOS falls back to the **Keychain** where there is no Secure
+Enclave, rather than to a browser key. WebKit cannot store a `CryptoKey` in
+IndexedDB at all, so the fallback that works on Android does not exist here —
+the Keychain is the floor and the Enclave is the ceiling, and neither lets the
+key out.
+
+When the key does end up in software on a phone, the app now says so and says
+why, rather than quietly holding a weaker key than the device was capable of.
+
 ## What is not here yet
 
 Nothing in the plan. What remains is not code: none of the native halves —

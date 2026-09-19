@@ -102,6 +102,7 @@
     'secure-enclave': 'Secure Enclave',
     'strongbox': 'Security chip',
     'keystore': 'Android Keystore',
+    'keychain': 'iOS Keychain',
     'software': 'In this app'
   };
 

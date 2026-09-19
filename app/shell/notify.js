@@ -34,8 +34,15 @@
 
   const plugins = () => (window.Capacitor && window.Capacitor.Plugins) || null;
   const local = () => { const p = plugins(); return (p && p.LocalNotifications) || null; };
-  const watcher = () => { const p = plugins(); return (p && p.Watcher) || null; };
-  const appleToken = () => { const p = plugins(); return (p && p.AppleToken) || null; };
+
+  // This app's own two, which iOS does not put in `Capacitor.Plugins` — see
+  // nativePlugin in media/device.js for why asking by name is the only way
+  // that works on both platforms.
+  const ours = (name) => (window.nikDevice && window.nikDevice.nativePlugin
+    ? window.nikDevice.nativePlugin(name)
+    : (plugins() || {})[name] || null);
+  const watcher = () => ours('Watcher');
+  const appleToken = () => ours('AppleToken');
 
   function read() {
     try { return Object.assign({}, DEFAULTS, JSON.parse(window.localStorage.getItem(PREFS)) || {}); }

@@ -678,6 +678,7 @@
       'secure-enclave': 'key in a Secure Enclave',
       'strongbox': 'key in a StrongBox chip',
       'keystore': 'key in the Android Keystore',
+      'keychain': 'key in the iOS Keychain',
       'software': 'key in its browser',
       'unknown': 'key held somewhere unnamed'
     }[d.protection || 'software'];

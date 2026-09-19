@@ -26,6 +26,11 @@ const PROJECT = path.join(APP, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj')
 // each becomes in the navigator.
 const FOLDERS = ['SecureKey', 'AppleToken'];
 
+// Sources that sit directly in ios/App/App/ rather than in a folder of their
+// own. MainViewController is the one place this app's plugins are handed to the
+// bridge, and an unlisted one means they are not registered at all.
+const LOOSE = ['MainViewController.swift'];
+
 // Files that have to be *in the bundle* rather than compiled. The privacy
 // manifest is the one that matters: a submission without it is rejected, and
 // a manifest sitting in the folder unlisted is exactly as absent as no manifest
@@ -37,7 +42,7 @@ const idFor = (what) => crypto.createHash('sha256').update('nikui:' + what)
   .digest('hex').slice(0, 24).toUpperCase();
 
 function ensure(text, folder, file) {
-  const relative = folder + '/' + file;
+  const relative = folder ? folder + '/' + file : file;
   const fileId = idFor('file:' + relative);
   const buildId = idFor('build:' + relative);
   const groupId = idFor('group:' + folder);
@@ -52,6 +57,15 @@ function ensure(text, folder, file) {
   out = out.replace('/* Begin PBXFileReference section */',
     '/* Begin PBXFileReference section */\n' +
     `\t\t${fileId} /* ${file} */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ${file}; sourceTree = "<group>"; };`);
+
+  // No folder: it belongs to the App group directly.
+  if (!folder) {
+    out = out.replace(/(504EC3061FED79650016851F \/\* App \*\/ = \{\n\t\t\tisa = PBXGroup;\n\t\t\tchildren = \(\n)/,
+      `$1\t\t\t\t${fileId} /* ${file} */,\n`);
+    out = out.replace(/(isa = PBXSourcesBuildPhase;\n\t\t\tbuildActionMask = \d+;\n\t\t\tfiles = \(\n)/,
+      `$1\t\t\t\t${buildId} /* ${file} in Sources */,\n`);
+    return { text: out, added: true };
+  }
 
   // The group, made once and then filled.
   if (!out.includes(`${groupId} /* ${folder} */ = {`)) {
@@ -106,6 +120,14 @@ function sync() {
   let text = fs.readFileSync(PROJECT, 'utf8');
   let added = 0;
   let present = 0;
+  for (const file of LOOSE) {
+    if (!fs.existsSync(path.join(APP, 'ios', 'App', 'App', file))) continue;
+    present++;
+    const result = ensure(text, '', file);
+    text = result.text;
+    if (result.added) added++;
+  }
+
   for (const folder of FOLDERS) {
     const dir = path.join(APP, 'ios', 'App', 'App', folder);
     if (!fs.existsSync(dir)) continue;

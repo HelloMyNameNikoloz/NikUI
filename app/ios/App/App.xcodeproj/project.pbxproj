@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F93D0993D785C077D3DA31FD /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032F4EC2002ED0CDC49D7EB3 /* MainViewController.swift */; };
 		8FB5D29ADD3C98F17ABEAC8E /* AppleTokenPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6113D9AD75C91CDB5D93AFA /* AppleTokenPlugin.swift */; };
 		FF9871153F53C036B4C4B69C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9E0C3D460884B050D47D70CC /* PrivacyInfo.xcprivacy */; };
 		02DDD1D1AD79E731D0F2E88A /* SecureKeyPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB1840ADD314AB3112D6342 /* SecureKeyPlugin.swift */; };
@@ -22,6 +23,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		032F4EC2002ED0CDC49D7EB3 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		B6113D9AD75C91CDB5D93AFA /* AppleTokenPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTokenPlugin.swift; sourceTree = "<group>"; };
 		9E0C3D460884B050D47D70CC /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		7FB1840ADD314AB3112D6342 /* SecureKeyPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureKeyPlugin.swift; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
+				032F4EC2002ED0CDC49D7EB3 /* MainViewController.swift */,
 				32140392253CB956A3B91977 /* AppleToken */,
 				9E0C3D460884B050D47D70CC /* PrivacyInfo.xcprivacy */,
 				D24C17FFB2D12E6AE0D18BB7 /* SecureKey */,
@@ -184,6 +187,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F93D0993D785C077D3DA31FD /* MainViewController.swift in Sources */,
 				8FB5D29ADD3C98F17ABEAC8E /* AppleTokenPlugin.swift in Sources */,
 				02DDD1D1AD79E731D0F2E88A /* SecureKeyPlugin.swift in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,

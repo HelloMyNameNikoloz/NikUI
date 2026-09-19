@@ -84,6 +84,7 @@ function held(device) {
     'secure-enclave': 'which it says is in a Secure Enclave',
     'strongbox': 'which it says is in a StrongBox chip',
     'keystore': 'which it says is in the Android Keystore',
+    'keychain': 'which it says is in the iOS Keychain',
     'software': 'held in its browser',
     'unknown': 'held somewhere it did not name'
   }[device.protection || 'software'];

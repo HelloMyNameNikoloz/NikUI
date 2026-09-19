@@ -107,9 +107,29 @@ const head = (title, extra) =>
   '<link rel="stylesheet" href="app.css">\n' +
   (extra || '');
 
+/**
+ * Capacitor's own runtime, copied in rather than bundled.
+ *
+ * The app has no bundler, and did not appear to need one: Android's bridge
+ * builds `Capacitor.Plugins` itself, so every plugin was simply there. iOS does
+ * not — `Capacitor.registerPlugin` comes from this file, and without it an
+ * iPhone finds none of this app's own plugins and quietly falls back to a
+ * browser key. Eight kilobytes, shipped from node_modules like everything else
+ * in www/, and checked against its source so it cannot drift.
+ */
+function copyCapacitor() {
+  const from = path.join(APP, 'node_modules', '@capacitor', 'core', 'dist', 'capacitor.js');
+  if (!fs.existsSync(from)) {
+    throw new Error('@capacitor/core is not installed: run npm install in app/');
+  }
+  fs.copyFileSync(from, path.join(OUT, 'capacitor.js'));
+  return 1;
+}
+
 /** A screen that is the app's own, rather than the client's. */
 function page({ file, title, body, scripts, cls }) {
-  const tags = (scripts || []).map((s) => `  <script src="${s}"></script>`).join('\n');
+  const tags = ['capacitor.js'].concat(scripts || [])
+    .map((s) => `  <script src="${s}"></script>`).join('\n');
   fs.writeFileSync(path.join(OUT, file), `<!DOCTYPE html>
 <html lang="en" class="app">
 <head>
@@ -140,6 +160,7 @@ function conversationPage() {
     // it starts, and a deferred script would run after it.
     head: '<link rel="stylesheet" href="media/browser.css">\n' +
       '<link rel="stylesheet" href="app.css">\n' +
+      '<script src="capacitor.js"></script>\n' +
       '<script src="app.js"></script>\n' +
       '<script src="notify.js"></script>\n' +
       '<script src="media/mobile.js" defer></script>\n',
@@ -275,6 +296,7 @@ function build() {
   clean(OUT);
   const version = clientVersion();
   const copied = copyClient();
+  copyCapacitor();
   conversationPage();
   homePage();
   historyPage();

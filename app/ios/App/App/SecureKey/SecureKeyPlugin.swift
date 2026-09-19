@@ -42,9 +42,14 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
         let enclave = SecureEnclave.isAvailable
         var error: NSError?
         let biometrics = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+        // Always available on iOS, and it has to be: WebKit cannot store a
+        // CryptoKey in IndexedDB at all — a non-extractable key put there comes
+        // back as "the object can not be cloned" — so the browser fallback that
+        // works on Android does not exist here. The Keychain is the floor, the
+        // Secure Enclave is the ceiling, and neither lets the key out.
         call.resolve([
-            "available": enclave,
-            "protection": enclave ? "secure-enclave" : "none",
+            "available": true,
+            "protection": enclave ? "secure-enclave" : "keychain",
             "biometrics": biometrics,
             "platform": "ios"
         ])
@@ -57,9 +62,7 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
         let biometric = call.getBool("biometric") ?? false
         reuseWindow = TimeInterval(call.getInt("validitySeconds") ?? 300)
 
-        guard SecureEnclave.isAvailable else {
-            return call.reject("this device has no Secure Enclave")
-        }
+        let enclave = SecureEnclave.isAvailable
 
         // Without biometrics: the key is usable while the phone is unlocked, and
         // never leaves this device — not to a backup, not to a new phone.
@@ -84,10 +87,9 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
         // Anything already under this name goes first, or the add is a duplicate.
         deleteKey(alias: alias)
 
-        let attributes: [String: Any] = [
+        var attributes: [String: Any] = [
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeySizeInBits as String: 256,
-            kSecAttrTokenID as String: kSecAttrTokenIDSecureEnclave,
             kSecPrivateKeyAttrs as String: [
                 kSecAttrIsPermanent as String: true,
                 kSecAttrApplicationTag as String: tag(alias),
@@ -95,6 +97,12 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
                 kSecAttrAccessControl as String: access
             ]
         ]
+        // Only when there is one. Asking for the Enclave where there is none —
+        // a simulator, an older device — fails the whole creation rather than
+        // degrading, and a phone with no key cannot pair at all.
+        if enclave {
+            attributes[kSecAttrTokenID as String] = kSecAttrTokenIDSecureEnclave
+        }
 
         var createError: Unmanaged<CFError>?
         guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &createError) else {
@@ -109,7 +117,7 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
         contextMadeAt = .distantPast
         call.resolve([
             "publicKey": exported,
-            "protection": "secure-enclave",
+            "protection": enclave ? "secure-enclave" : "keychain",
             "biometric": biometric,
             "alias": alias
         ])

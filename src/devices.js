@@ -301,7 +301,7 @@ class DeviceStore {
  * device and is shown to a person: an unknown word is `unknown`, not whatever
  * the device felt like putting on the screen.
  */
-const HOLDINGS = ['secure-enclave', 'strongbox', 'keystore', 'software'];
+const HOLDINGS = ['secure-enclave', 'strongbox', 'keystore', 'keychain', 'software'];
 function cleanProtection(reported) {
   const said = String(reported == null ? '' : reported).toLowerCase();
   if (HOLDINGS.includes(said)) return said;

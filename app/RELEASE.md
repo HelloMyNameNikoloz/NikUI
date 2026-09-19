@@ -75,6 +75,24 @@ update later.
 
 ## iPhone
 
+### One thing that is not obvious
+
+**An unsigned iOS build has no keychain access at all**, and the failure is
+nowhere near the cause: WebKit cannot store a `CryptoKey` in IndexedDB without
+it, so the app reports *"could not make a key: the object can not be cloned"*
+and the only clue is one line in the device log —
+`Could not find WebCrypto master key in Keychain, error -34018`
+(`errSecMissingEntitlement`).
+
+So build with signing on, even for the simulator:
+
+```sh
+xcodebuild -scheme App -destination 'platform=iOS Simulator,name=iPhone 15 Pro'   CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=YES CODE_SIGNING_ALLOWED=YES build
+```
+
+`CODE_SIGNING_ALLOWED=NO` builds, installs and launches, and then fails at the
+first thing that matters.
+
 ### Free, for seven days
 
 Open `app/ios/App/App.xcodeproj`, sign in with any Apple ID under
