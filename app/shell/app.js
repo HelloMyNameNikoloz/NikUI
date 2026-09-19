@@ -227,6 +227,25 @@
   const config = remote(session);
   if (config) window.NIKUI_REMOTE = config;
 
+  /**
+   * Which phone this is, on the root element.
+   *
+   * Not for feature detection — everything functional asks the platform
+   * directly — but for the one thing that genuinely differs: an iPhone expects
+   * to look like an iPhone. Liquid Glass is Apple's material and belongs on
+   * Apple's hardware; Android has its own and gets the flat one.
+   */
+  function markPlatform() {
+    let platform = 'web';
+    try {
+      const cap = window.Capacitor;
+      if (cap && typeof cap.getPlatform === 'function') platform = cap.getPlatform();
+    } catch (_) { /* a browser, then */ }
+    document.documentElement.classList.add('plat-' + platform);
+    return platform;
+  }
+
+  markPlatform();
   applyPrefs();
   const start = () => { wireChrome(); wireNative(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

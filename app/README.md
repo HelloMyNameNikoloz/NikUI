@@ -88,6 +88,33 @@ where that is granted. Which laptop, which key is pinned, when it was paired.
 Text size. Versions of both the app and the client it carries. Copy diagnostics.
 And one way to undo it, which asks twice.
 
+## Liquid Glass, on iPhones
+
+iOS 26 made the system chrome a material rather than a surface: it floats above
+the content, the content passes under it, and the edges catch light. An app that
+keeps flat opaque bars on that system looks like it was written for an older one.
+
+So on an iPhone — and only on an iPhone, because this is Apple's material and
+Android has its own — the chrome becomes glass:
+
+- the title bar and the conversation's header
+- the tab strip, which becomes a capsule floating clear of the edges
+- the composer, and History's search field
+
+Three things make it read as glass rather than as a blur: a strong backdrop blur
+with the saturation pushed up, so colour bleeds through rather than grey; a
+bright hairline along the top edge and a dim one along the bottom, which is how
+a bevel catches light; and the float itself, so there is somewhere for the
+content to go.
+
+**Not on the content.** Glass over something you have to read is a legibility
+problem pretending to be a style, so the cards stay solid. The browser check
+asserts exactly that: the chrome is glass on `plat-ios`, the cards never are,
+and nothing is glass without it.
+
+`prefers-reduced-transparency` turns all of it back into a surface. That is an
+accessibility setting, not a preference.
+
 ## Design
 
 Dark only, and pinned dark: `browser.css` switches its palette on the phone's

@@ -953,3 +953,147 @@ body.app.settings .screen {
 /* A bar with nothing on the left still needs the column, or the title stops
    being centred. */
 .bar-left { grid-column: 1; }
+
+/* ---- Liquid Glass, on the hardware it belongs to ----------------------------
+
+   iOS 26 made the system chrome a material rather than a surface: it floats
+   above the content, the content passes under it, and the edges catch light.
+   An app that keeps flat opaque bars on that system looks like it was written
+   for an older one.
+
+   So this is scoped to iPhones, and to the *chrome* only. Glass over content is
+   a legibility problem pretending to be a style: the bars, the tab strip and
+   the composer are glass; the cards you read are not.
+
+   Three things make it read as glass rather than as a blur:
+     the refraction   a strong backdrop blur with the saturation pushed up, so
+                      colour bleeds through rather than grey
+     the edge         a bright hairline along the top and a dim one along the
+                      bottom, which is how a real bevel catches light
+     the float        it sits off the edges with a shadow under it, so there is
+                      somewhere for the content to go */
+
+html.plat-ios body.app {
+  /* The chrome floats, so the content owns the whole height and passes beneath
+     it. Without this there is nothing to see through. */
+  overflow: hidden;
+}
+
+html.plat-ios .bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to bottom,
+    rgba(28, 28, 32, 0.72),
+    rgba(20, 20, 24, 0.58));
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border-bottom: 0;
+  box-shadow:
+    inset 0 -0.5px 0 rgba(255, 255, 255, 0.10),
+    0 1px 18px rgba(0, 0, 0, 0.28);
+}
+
+/* The content starts under the bar and scrolls beneath it. */
+html.plat-ios .screen {
+  padding-top: calc(var(--app-top) + 56px);
+}
+
+html.plat-ios.no-bar .screen { padding-top: calc(var(--app-top) + 12px); }
+
+/* The tab strip is the piece that reads most as iOS 26: a capsule floating
+   clear of the edges, not a bar welded to the bottom. */
+html.plat-ios .tabs {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--app-bottom) + 8px);
+  padding-bottom: 0;
+  border-top: 0;
+  border-radius: 26px;
+  overflow: hidden;
+  background: linear-gradient(to bottom,
+    rgba(34, 34, 38, 0.74),
+    rgba(22, 22, 26, 0.62));
+  backdrop-filter: blur(30px) saturate(200%);
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+  box-shadow:
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -0.5px 0 rgba(255, 255, 255, 0.06),
+    0 10px 30px rgba(0, 0, 0, 0.40);
+}
+
+html.plat-ios .tab { min-height: 54px; }
+
+/* Room for the strip to float over, rather than under the last row. */
+html.plat-ios body.app.home .screen,
+html.plat-ios body.app.history .screen,
+html.plat-ios body.app.settings .screen {
+  padding-bottom: calc(var(--app-bottom) + 84px);
+}
+
+/* The search field on History is chrome too, and sits under the floating bar. */
+html.plat-ios .search-wrap {
+  padding-top: calc(var(--app-top) + 56px);
+}
+
+html.plat-ios .search-wrap + .screen { padding-top: 4px; }
+
+html.plat-ios .search-wrap input {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* Anybody who has asked their phone for less transparency gets a surface
+   instead of a material. This is an accessibility setting, not a preference. */
+@media (prefers-reduced-transparency: reduce) {
+  html.plat-ios .bar,
+  html.plat-ios .tabs,
+  html.plat-ios .search-wrap input {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--app-raised);
+  }
+}
+
+/* The composer is chrome as well: it floats over the transcript rather than
+   sitting in a tray beneath it. */
+html.plat-ios body.app-conversation footer {
+  background: linear-gradient(to top,
+    rgba(20, 20, 24, 0.86),
+    rgba(20, 20, 24, 0.58));
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border-top: 0;
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.10);
+}
+
+html.plat-ios body.app-conversation .composer {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+}
+
+/* The conversation's own header gets the same material as a tab screen's bar. */
+html.plat-ios body.app-conversation header {
+  background: linear-gradient(to bottom,
+    rgba(28, 28, 32, 0.74),
+    rgba(20, 20, 24, 0.56));
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  box-shadow: inset 0 -0.5px 0 rgba(255, 255, 255, 0.10);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html.plat-ios body.app-conversation footer,
+  html.plat-ios body.app-conversation header,
+  html.plat-ios body.app-conversation .composer {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

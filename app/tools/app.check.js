@@ -531,6 +531,29 @@ const record = (name, ok) => {
     await phone.navigate(appOrigin + '/settings.html');
     await phone.until('document.querySelectorAll(".group").length >= 5', 10000);
 
+    // Liquid Glass is Apple's material, so it belongs on Apple's hardware and
+    // nowhere else. What is checked is that: the class gates it, and the chrome
+    // — not the content — is what becomes glass.
+    await phone.navigate(appOrigin + '/index.html');
+    await phone.until('document.querySelectorAll(".tabs .tab").length === 3', 10000);
+    record('a phone that is not an iPhone gets no glass',
+      (await phone.evaluate(`getComputedStyle(document.querySelector('.tabs')).backdropFilter`))
+        .indexOf('blur(30px)') < 0);
+    await phone.evaluate(`document.documentElement.classList.add('plat-ios')`);
+    record('and an iPhone gets it on the chrome',
+      (await phone.evaluate(`getComputedStyle(document.querySelector('.tabs')).backdropFilter`))
+        .indexOf('blur(30px)') >= 0);
+    record('floating clear of the edges rather than welded to them',
+      (await phone.evaluate(`(() => {
+        const box = document.querySelector('.tabs').getBoundingClientRect();
+        return box.left > 4 && (window.innerWidth - box.right) > 4;
+      })()`)) === true);
+    record('with the content passing under it',
+      (await phone.evaluate(`getComputedStyle(document.querySelector('.tabs')).position`)) === 'absolute');
+    record('and never on the cards somebody has to read',
+      (await phone.evaluate(`getComputedStyle(document.querySelector('.rows-card')).backdropFilter`)) === 'none');
+    await phone.evaluate(`document.documentElement.classList.remove('plat-ios')`);
+
     record('the app is dark whatever the phone is',
       (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');
 
