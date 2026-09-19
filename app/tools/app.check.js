@@ -317,6 +317,17 @@ const record = (name, ok) => {
     record('and is told why',
       /Only a device that may send prompts/.test(await phone.evaluate('document.body.textContent')));
 
+    record('the device rows are thumb-sized and fit the screen',
+      (await phone.evaluate(`(() => {
+        const rows = [...document.querySelectorAll('.row')].filter(r =>
+          /The other phone|Check phone/.test(r.textContent));
+        if (rows.length < 2) return false;
+        return rows.every(r => {
+          const box = r.getBoundingClientRect();
+          return Math.round(box.height) >= 44 && box.right <= window.innerWidth + 1 && box.left >= -1;
+        });
+      })()`)) === true);
+
     devices.setControl(paired.id, true);
     record('granting control turns the other row into a control',
       await phone.until(`(() => {
