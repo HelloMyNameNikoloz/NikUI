@@ -554,7 +554,7 @@ body.app .link {
   gap: 6px;
   padding: 3px 10px 3px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   background: rgba(255, 255, 255, 0.07);
@@ -1326,15 +1326,87 @@ html.plat-ios .tile {
 
 /* ---- /status, on a phone ---------------------------------------------------
 
-   The sheet's markup is the panel's, which was laid out for something the width
-   of an editor. Nothing about it is rewritten here — that would be the second
-   opinion this screen exists to avoid — but the places it assumes width are
-   allowed to give. */
-body.app.status .screen { padding-left: 12px; padding-right: 12px; }
+   The sheet's markup is the panel's, and deliberately so: one report, one set of
+   renderers, one place where a number is formatted. What is not shared is the
+   shape, because the panel was laid out for the width of an editor and a phone
+   is 393 points. Squeezing that layout is what made this screen scroll forever
+   and read like a spreadsheet seen through a letterbox.
 
-/* The rail becomes a strip you swipe. browser.css already turns it sideways on
-   a phone; what it cannot know is that outside a `.sheet` its items still need
-   telling not to shrink. */
+   So this is a layout, not a patch: one column, two columns of tiles, tables
+   that stop being tables, and type that starts at 12px rather than 10.5. */
+
+body.app.status {
+  /* The panel's scale is for a screen you sit two feet from. Raised once, here,
+     so every `--fs-small` and `--fs-micro` under it moves together rather than
+     being chased one rule at a time. */
+  --fs-body: 15px;
+  --fs-small: 13px;
+  --fs-micro: 12px;
+}
+
+/* The screen carries no side padding of its own; each part below carries its
+   own. That is what lets the section strip run edge to edge — the way a strip
+   you swipe should — without a negative margin making its parent wider than
+   the screen, which is a real overflow however good it looks. */
+body.app.status .screen { padding: 0 0 12px; }
+
+/* ---- the head: which instance, and a way to ask again ---------------------- */
+
+body.app.status .sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 12px;
+  background: none;
+  border: 0;
+}
+
+body.app.status .sheet-title {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* One line each, cut with an ellipsis. An instance is named by a person and can
+   be a sentence; wrapping it to three lines pushes the screen down by as much
+   as the name is long. */
+body.app.status .sheet-title b,
+body.app.status .sheet-title .dim {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.app.status .sheet-title b {
+  font-size: 17px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+}
+
+body.app.status .sheet-title .dim {
+  margin-top: 1px;
+  font-size: var(--fs-small);
+  color: var(--app-dim);
+}
+
+body.app.status .sheet-actions { display: flex; flex: 0 0 auto; margin: 0; }
+
+body.app.status .sheet-actions .icon-only {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  background: var(--app-raised);
+  color: var(--vscode-foreground);
+  border: 0;
+}
+
+/* ---- the sections: a strip of names, not a column of glyphs ---------------- */
+
 body.app.status .sheet-body {
   display: flex;
   flex-direction: column;
@@ -1343,13 +1415,13 @@ body.app.status .sheet-body {
 
 body.app.status .sheet-nav {
   flex: 0 0 auto;
-  /* Not 186 points of column. */
   width: auto;
   flex-direction: row;
+  gap: 6px;
   overflow-x: auto;
   overflow-y: hidden;
-  margin: 0 -2px 10px;
-  padding: 4px;
+  margin: 0 0 12px;
+  padding: 2px 14px 4px;
   border: 0;
   background: transparent;
   scrollbar-width: none;
@@ -1357,46 +1429,44 @@ body.app.status .sheet-nav {
 
 body.app.status .sheet-nav::-webkit-scrollbar { display: none; }
 
-body.app.status .nav-item { flex: 0 0 auto; }
-
-body.app.status .sheet-content {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 0;
-}
-
 body.app.status .sheet-nav .nav-item {
   flex: 0 0 auto;
   min-height: 38px;
-  padding: 7px 13px;
-  border-radius: 10px;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 19px;
   background: var(--app-raised);
   color: var(--app-dim);
   border: 0;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
 }
+
+/* The panel hides these under 980px because its rail is 52 points wide there.
+   This is not a rail — it is a row with room — and six unlabelled glyphs is a
+   guessing game. */
+body.app.status .sheet-nav .nav-item span { display: inline; }
+body.app.status .sheet-nav .nav-item kbd { display: none; }
 
 body.app.status .sheet-nav .nav-item.on {
   background: var(--app-raised-2);
   color: var(--vscode-foreground);
+  font-weight: 590;
 }
 
-/* The number nobody needs at 46px on a 393pt screen. */
-body.app.status .hero {
-  padding: 4px 2px 14px;
-  gap: 14px;
+body.app.status .sheet-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-body.app.status .hero-value { font-size: 34px; }
+/* ---- one column, and cards that own their edges --------------------------- */
 
-body.app.status .hero-side {
-  margin-left: 0;
-  text-align: left;
-  align-items: flex-start;
-}
-
-/* Anything the sheet lays out in columns gets one. */
 body.app.status .grid,
 body.app.status .cards,
 body.app.status .sheet-section {
@@ -1405,45 +1475,255 @@ body.app.status .sheet-section {
 }
 
 body.app.status .card,
-body.app.status .hero,
-body.app.status .sheet-title,
-body.app.status [class*="hero-"] {
+body.app.status .hero {
+  display: block;
   min-width: 0;
   max-width: 100%;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
   overflow-wrap: anywhere;
 }
 
-/* The head is a name and its actions side by side, which needs width this
-   screen has not got: the name goes on its own line and the actions under it. */
-body.app.status .sheet-head {
-  display: block;
-  padding: 12px 14px;
+body.app.status .card h3 {
+  margin: 0 0 10px;
+  font-size: var(--fs-small);
+  letter-spacing: 0.03em;
+  color: var(--app-dim);
 }
 
-body.app.status .sheet-actions {
-  display: flex;
+body.app.status .card h3 .note { font-size: var(--fs-small); }
+
+/* ---- the hero: the one number, with room around it ------------------------ */
+
+body.app.status .hero { display: block; }
+
+body.app.status .hero-value {
+  font-size: 36px;
+  line-height: 1.1;
+  margin-top: 2px;
+}
+
+body.app.status .hero-sub { margin-top: 4px; }
+
+body.app.status .hero-side {
+  margin: 12px 0 0;
+  text-align: left;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* ---- tiles: two across, always ------------------------------------------- */
+
+/* auto-fit gives three narrow columns at this width, and a third of 369 points
+   is not enough for "$0.00 each" under a number. Two is the answer on every
+   phone, so it is stated rather than derived. */
+body.app.status .tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 10px;
 }
 
-body.app.status .sheet-actions button { min-height: 36px; }
-
-/* The title is a flex row of a name and a summary; on this width it is two
-   lines, not one that runs off the side. */
-body.app.status .sheet-title,
-body.app.status #sheet-title {
-  display: block;
+body.app.status .tile {
+  padding: 11px 13px;
+  border-radius: 16px;
   min-width: 0;
-  max-width: 100%;
-  white-space: normal;
+}
+
+body.app.status .tile-value {
+  font-size: 20px;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.app.status .tile-label,
+body.app.status .tile-sub {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- tables stop being tables --------------------------------------------- */
+
+/* Ten columns at 393 points is 760 points of sideways scroll, and a column of
+   numbers whose headings are off the left of the screen. Each row becomes a
+   card and each cell says its own name — which is why `table()` writes the
+   column heading onto every cell. */
+body.app.status .grid-scroll { overflow: visible; margin: 0; }
+
+body.app.status table.grid { display: block; width: 100%; min-width: 0; border-collapse: separate; }
+body.app.status table.grid thead { display: none; }
+body.app.status table.grid tbody { display: block; }
+
+body.app.status table.grid tr {
+  display: block;
+  margin-bottom: 8px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: var(--app-raised);
+  border: 0;
+}
+
+body.app.status table.grid tr:last-child { margin-bottom: 0; }
+
+/* `display: block` above beats the user agent's `[hidden] { display: none }`,
+   so a capped row would stay on the screen and the button would do nothing. */
+body.app.status table.grid tr[hidden] { display: none; }
+
+body.app.status table.grid td {
+  display: grid;
+  grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+  padding: 3px 0;
+  border: 0;
+  text-align: left;
+  min-width: 0;
+}
+
+body.app.status table.grid td::before {
+  content: attr(data-label);
+  color: var(--app-dim);
+  font-size: var(--fs-small);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The first cell is what the row *is*, not a field of it. */
+body.app.status table.grid td:first-child {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 0 6px;
+  font-weight: 590;
+}
+
+body.app.status table.grid td:first-child::before { content: none; }
+
+/* The name is the one thing in that row allowed to be long, so it is the one
+   thing allowed to shrink. Without this it pushes past the row's own rounded
+   edge and drags the status dot onto a line of its own. It may shrink but not
+   grow: a short filename that stretched to the full width would push the path
+   beside it onto a line of its own for no reason. */
+body.app.status table.grid td:first-child > .link,
+body.app.status table.grid td:first-child > b {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.app.status table.grid td:first-child > .sdot,
+body.app.status table.grid td:first-child > .badge { flex: 0 0 auto; }
+
+/* Whatever qualifies the name — a folder, a branch — is a second line and not
+   part of the heading, so it does not inherit the heading's weight. */
+body.app.status table.grid td:first-child > .dim {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-weight: 400;
+  color: var(--app-dim);
   overflow-wrap: anywhere;
 }
 
-body.app.status .sheet-title .dim { display: block; margin-top: 2px; }
+/* A row that is a link is tappable, so it is worth a target rather than a
+   cursor: the whole card, not the words in it. */
+body.app.status table.grid tr[data-action] { cursor: pointer; }
 
-/* A table of numbers is the one thing worth scrolling sideways for. */
-body.app.status table {
+body.app.status table.grid td.num { justify-items: start; }
+body.app.status table.grid td .spark svg { max-width: 100%; }
+
+body.app.status .show-all {
   display: block;
-  overflow-x: auto;
-  max-width: 100%;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--app-raised);
+  color: var(--blue, #0a84ff);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* ---- bars get their width back -------------------------------------------- */
+
+/* Four columns — name, bar, number, note — leaves about thirty points for the
+   bar at this width, which draws every row as the same small square and makes
+   the one chart whose whole job is comparison useless. The bar goes under its
+   own label instead, full width, where the difference between 9 and 1 is
+   visible from across the room. */
+body.app.status .hbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label value"
+    "track track"
+    "note note";
+  align-items: baseline;
+  gap: 3px 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: var(--fs-body);
+}
+
+body.app.status .hbar-label { grid-area: label; }
+body.app.status .hbar-value { grid-area: value; }
+body.app.status .hbar-track { grid-area: track; align-self: center; }
+body.app.status .hbar-note { grid-area: note; font-size: var(--fs-small); }
+body.app.status .hbar-note:empty { display: none; }
+
+/* ---- charts, legends and the small print ---------------------------------- */
+
+body.app.status .chart,
+body.app.status .card svg { max-width: 100%; }
+
+body.app.status .legend { gap: 8px 14px; font-size: var(--fs-small); }
+body.app.status .axis { font-size: var(--fs-small); }
+body.app.status .hint { font-size: var(--fs-small); line-height: 1.45; }
+
+body.app.status .meter-line { gap: 10px; }
+body.app.status .meter-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- the foot: copy it, and when it was measured -------------------------- */
+
+body.app.status .sheet-foot {
+  display: block;
+  padding: 14px 14px 4px;
+  border: 0;
+  background: none;
+  text-align: center;
+}
+
+body.app.status .sheet-foot .wide-action {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border-radius: 14px;
+  background: var(--app-raised);
+  color: var(--vscode-foreground);
+  border: 0;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+body.app.status .sheet-foot span {
+  display: block;
+  margin-top: 10px;
+  font-size: var(--fs-small);
+  color: var(--app-dim);
 }

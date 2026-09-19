@@ -669,6 +669,87 @@ const record = (name, ok) => {
         return document.querySelector('.sheet-body').textContent !== before;
       })()`)) === true);
 
+    // ---- and it is a phone screen, not a panel squeezed into one -------------
+    //
+    // This screen draws a layout built for the width of an editor. Left alone it
+    // reads like a spreadsheet through a letterbox: six unlabelled glyphs for
+    // the sections, a ten-column table scrolling sideways past the edge of the
+    // screen, and one card nineteen hundred points tall. Each of those is
+    // checked here rather than looked at once, because each came back the
+    // moment something else moved.
+
+    record('every section is named, not just iconned',
+      (await phone.evaluate(`[...document.querySelectorAll('.sheet-nav [data-section] span')]
+        .every((s) => s.textContent.trim() && s.getBoundingClientRect().width > 8)`)) === true);
+
+    const layout = JSON.parse(await phone.evaluate(`(async () => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const out = [];
+      const rail = [...document.querySelectorAll('.sheet-nav [data-section]')];
+      for (const button of rail) {
+        button.click();
+        await wait(60);
+        const vw = window.innerWidth;
+        const all = [...document.querySelectorAll('.sheet-content *')];
+        // A strip you swipe is allowed to run off its own ends; the page is not.
+        const inStrip = (el) => {
+          for (let p = el.parentElement; p; p = p.parentElement) {
+            const s = getComputedStyle(p);
+            if (/auto|scroll/.test(s.overflowX) && p.scrollWidth > p.clientWidth + 2) return true;
+          }
+          return false;
+        };
+        const wide = all.filter((el) => {
+          if (el.ownerSVGElement || inStrip(el)) return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 1 && (r.right > vw + 1 || r.left < -1);
+        }).length;
+        const tiny = all.filter((el) => el.children.length === 0 && el.textContent.trim() &&
+          el.getBoundingClientRect().width > 0 &&
+          parseFloat(getComputedStyle(el).fontSize) < 12).length;
+        // Measured, not asked: hidden is an attribute a stylesheet can lose an
+        // argument with, and a row still on the screen is still on the screen
+        // however it is marked.
+        const rows = [...document.querySelectorAll('.sheet-content table.grid')]
+          .map((t) => [...t.tBodies[0].rows]
+            .filter((r) => r.getBoundingClientRect().height > 0).length);
+        out.push({
+          id: button.dataset.section,
+          screens: document.querySelector('.screen').scrollHeight / window.innerHeight,
+          wide, tiny, rows
+        });
+      }
+      return JSON.stringify(out);
+    })()`));
+
+    const worstWide = layout.filter((s) => s.wide);
+    record('nothing on any section is wider than the screen',
+      worstWide.length === 0 || !console.log('  wide on: ' +
+        worstWide.map((s) => s.id + '×' + s.wide).join(', ')));
+    record('and nothing on one is smaller than 12px',
+      layout.every((s) => s.tiny === 0) || !console.log('  small text on: ' +
+        layout.filter((s) => s.tiny).map((s) => s.id).join(', ')));
+    // Stacking a table makes each row about seven times taller, so a table that
+    // was fine on a panel is two screens on a phone unless it is folded.
+    record('no table opens with more than a handful of rows',
+      layout.every((s) => s.rows.every((n) => n <= 6)) || !console.log('  long tables: ' +
+        JSON.stringify(layout.map((s) => [s.id, s.rows]))));
+    record('and no section is more than about three screens tall',
+      layout.every((s) => s.screens < 3.6) || !console.log('  tall: ' +
+        layout.map((s) => s.id + ' ' + s.screens.toFixed(2)).join(', ')));
+    record('a folded table can still be opened in full',
+      (await phone.evaluate(`(() => {
+        const more = document.querySelector('.show-all');
+        if (!more) return 'none';
+        const table = more.previousElementSibling;
+        const shown = () => [...table.tBodies[0].rows]
+          .filter((r) => r.getBoundingClientRect().height > 0).length;
+        const before = shown();
+        more.click();
+        const after = shown();
+        return after > before && !document.querySelector('.show-all');
+      })()`)) !== false);
+
     await phone.navigate(appOrigin + '/index.html');
     await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
 

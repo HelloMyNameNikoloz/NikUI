@@ -31,7 +31,9 @@
 
     // The panel's own markup, whole. It already contains its rail and its body;
     // wrapping it in a second set of those was drawing the sheet twice.
-    screen.innerHTML = sheet.renderSheet(state.report, state.section);
+    // `compact` is what makes it a phone screen rather than a panel squeezed
+    // into one: same report, same sections, a head that fits.
+    screen.innerHTML = sheet.renderSheet(state.report, state.section, { compact: true });
 
     for (const button of screen.querySelectorAll('[data-section]')) {
       button.addEventListener('click', () => {
@@ -42,12 +44,9 @@
       });
     }
 
-    // Two of the sheet's own buttons mean something here and two do not: there
-    // is no sheet to close, and the CLI is not this phone's to talk to.
-    const close = screen.querySelector('[data-act="close"]');
-    if (close) close.remove();
-    const cli = screen.querySelector('[data-act="cli"]');
-    if (cli) cli.remove();
+    // Neither of the sheet's other two buttons is drawn in compact: there is no
+    // sheet to close and the CLI is not this phone's to talk to.
+    capLongTables();
 
     const refresh = screen.querySelector('[data-act="refresh"]');
     if (refresh) refresh.addEventListener('click', () => transport.postMessage({ type: 'status' }));
@@ -62,6 +61,46 @@
       Promise.resolve(done).then(() => { copy.textContent = 'Copied'; })
         .catch(() => { copy.textContent = 'Could not copy'; });
     });
+  }
+
+  /**
+   * Long tables show their first few rows and offer the rest.
+   *
+   * A table cannot stay a table at this width, so each row becomes a stack of
+   * labelled lines — which is readable, and roughly seven times taller. Recent
+   * turns is fourteen rows: nineteen hundred points of scrolling, more than two
+   * phone screens, for one card. Nobody reaches the end of that, and everything
+   * under it might as well not be on the screen.
+   *
+   * So the rest is behind a tap. Nothing is dropped — the laptop's whole report
+   * is here, and the button says exactly how much of it is folded away — but the
+   * screen is a screen again. This lives here rather than in the shared renderer
+   * because it is only true of a phone: on a panel the same table is six lines
+   * tall and hiding half of it would be silly.
+   */
+  const SHOWN = 5;
+
+  function capLongTables() {
+    for (const table of screen.querySelectorAll('table.grid')) {
+      const rows = table.tBodies[0] ? [...table.tBodies[0].rows] : [];
+      if (rows.length <= SHOWN + 1) continue;
+
+      const hidden = rows.length - SHOWN;
+      table.classList.add('capped');
+      rows.forEach((row, i) => { if (i >= SHOWN) row.hidden = true; });
+
+      const more = document.createElement('button');
+      more.className = 'show-all';
+      more.type = 'button';
+      more.textContent = 'Show all ' + rows.length;
+      more.addEventListener('click', () => {
+        rows.forEach((row) => { row.hidden = false; });
+        table.classList.remove('capped');
+        more.remove();
+      });
+      more.setAttribute('aria-label', 'Show ' + hidden + ' more of ' + rows.length);
+      table.parentNode.insertBefore(more, table.nextSibling);
+    }
   }
 
   // ---- where it comes from ---------------------------------------------------

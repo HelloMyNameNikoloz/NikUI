@@ -730,6 +730,7 @@
     "test:app": "node app/tools/app.check.js",
     "app": "cd app && npm run sync",
     "app:android": "cd app && npm run sync && npx cap run android",
-    "test:hardware": "node test/run.js hardware"
+    "test:hardware": "node test/run.js hardware",
+    "test:look": "node app/tools/look.js"
   }
 }

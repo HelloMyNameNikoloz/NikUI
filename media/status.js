@@ -104,13 +104,20 @@
     const o = Object.assign({ numFrom: 1 }, opts || {});
     if (!body.length) return hint('Nothing recorded yet.');
     const num = (i) => (i >= o.numFrom ? ' class="num"' : '');
+    // Every cell carries its column's name. A table cannot stay a table at 393
+    // points — ten columns become a sideways scroll nobody finds the end of —
+    // so on a phone the header row is dropped and each cell shows its own
+    // label instead. Written here rather than looked up in CSS because the
+    // heading text is only known at this point, and a stacked row with no
+    // labels is a column of numbers meaning nothing.
+    const label = (i) => ' data-label="' + esc(head[i] || '') + '"';
     // The scroll lives on a wrapper: a grid item that is itself a scroll
     // container collapses to the height of its first child.
     return '<div class="grid-scroll"><table class="grid"><thead><tr>' +
       head.map((h, i) => '<th' + num(i) + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' +
       body.map((row) => '<tr' + (row.action ? ' data-action="' + esc(row.action) + '" tabindex="0"' : '') +
         (row.tip ? ' data-tip="' + esc(row.tip) + '"' : '') + '>' +
-        row.cells.map((c, i) => '<td' + num(i) + '>' + c + '</td>').join('') + '</tr>').join('') +
+        row.cells.map((c, i) => '<td' + num(i) + label(i) + '>' + c + '</td>').join('') + '</tr>').join('') +
       '</tbody></table></div>';
   }
 
@@ -757,28 +764,58 @@
       icon(s.icon, 14) + '<span>' + esc(s.title) + '</span><kbd>' + (i + 1) + '</kbd></button>').join('');
   }
 
-  /** The sheet's whole inner HTML for one report and one open section. */
-  function renderSheet(report, activeId) {
+  /**
+   * The sheet's whole inner HTML for one report and one open section.
+   *
+   * `compact` is the phone. Not a different report and not a different set of
+   * sections — the same numbers, drawn by the same code — but the head is a row
+   * rather than a block, because on a 393-point screen the desktop head is four
+   * hundred points of title and buttons repeated above every section, and what
+   * somebody came to read starts below the fold. The window's title bar already
+   * says Status, so this only has to say *which instance*.
+   */
+  function renderSheet(report, activeId, opts) {
+    const o = opts || {};
     const section = SECTIONS.find((s) => s.id === activeId) || SECTIONS[0];
+    const summary = word(report.instance) + (report.instance.asleep ? ' · asleep' : '') + ' · ' +
+      fmt.money(report.totals.cost) + ' · ' + fmt.tokens(report.totals.tokens.total) + ' tokens';
+
+    const head = o.compact
+      ? '<div class="sheet-head">' +
+        '<div class="sheet-title">' +
+        '<b>' + esc(report.instance.label) + '</b>' +
+        '<span class="dim">' + esc(summary) + '</span>' +
+        '</div>' +
+        '<div class="sheet-actions">' +
+        '<button class="icon-only" data-act="refresh" aria-label="Refresh">' + icon('refresh', 17) + '</button>' +
+        '</div></div>'
+      : '<div class="sheet-head">' +
+        '<div class="sheet-title">' + icon('sparkles', 15) +
+        '<b>' + esc(report.instance.label) + '</b>' +
+        '<span class="dim">' + esc(summary) + '</span>' +
+        '</div>' +
+        '<div class="sheet-actions">' +
+        '<button class="ghost" data-act="cli" title="Send /status to the Claude Code CLI itself">CLI</button>' +
+        '<button class="ghost" data-act="copy">Copy report</button>' +
+        '<button class="ghost" data-act="refresh">Refresh</button>' +
+        '<button class="icon-only" data-act="close" title="Close">' + icon('x', 15) + '</button>' +
+        '</div></div>';
+
+    // On a phone the keyboard hints are a lie and Copy belongs at the end of
+    // what it copies, not above it.
+    const foot = o.compact
+      ? '<div class="sheet-foot">' +
+        '<button class="ghost wide-action" data-act="copy">Copy report</button>' +
+        '<span>' + esc('Measured ' + fmt.when(report.generatedAt)) + '</span></div>'
+      : '<div class="sheet-foot">' + esc('Measured ' + fmt.when(report.generatedAt) +
+        ' · ↑↓ or 1–6 to move · Esc to close') + '</div>';
+
     return '<h2 class="sr-only" id="sheet-title">Status of ' + esc(report.instance.label) + '</h2>' +
-      '<div class="sheet-head">' +
-      '<div class="sheet-title">' + icon('sparkles', 15) +
-      '<b>' + esc(report.instance.label) + '</b>' +
-      '<span class="dim">' + esc(word(report.instance) + (report.instance.asleep ? ' · asleep' : '')) + ' · ' +
-      esc(fmt.money(report.totals.cost)) + ' · ' + esc(fmt.tokens(report.totals.tokens.total)) + ' tokens</span>' +
-      '</div>' +
-      '<div class="sheet-actions">' +
-      '<button class="ghost" data-act="cli" title="Send /status to the Claude Code CLI itself">CLI</button>' +
-      '<button class="ghost" data-act="copy">Copy report</button>' +
-      '<button class="ghost" data-act="refresh">Refresh</button>' +
-      '<button class="icon-only" data-act="close" title="Close">' + icon('x', 15) + '</button>' +
-      '</div></div>' +
+      head +
       '<div class="sheet-body">' +
       '<nav class="sheet-nav">' + renderNav(section.id) + '</nav>' +
       '<div class="sheet-content" tabindex="0">' + section.render(report) + '</div>' +
-      '</div>' +
-      '<div class="sheet-foot">' + esc('Measured ' + fmt.when(report.generatedAt) +
-        ' · ↑↓ or 1–6 to move · Esc to close') + '</div>';
+      '</div>' + foot;
   }
 
   /** A plain-text version of the report, for the Copy button. */
