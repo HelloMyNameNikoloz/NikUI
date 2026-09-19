@@ -121,6 +121,8 @@ const OVERFLOW = `(() => {
     // Text that was *told* to shorten itself is not a fault: an ellipsis is a
     // decision. What this is looking for is text with nowhere to go and no
     // instruction about it — the kind that simply disappears.
+    // Visually hidden text is clipped on purpose; that is what it is for.
+    if (node.classList.contains('sr-only')) continue;
     const shortens = style.textOverflow === 'ellipsis' && style.overflow !== 'visible';
     const clipped = !shortens && node.scrollWidth > node.clientWidth + 2 &&
       style.overflowX !== 'auto' && style.overflowX !== 'scroll';

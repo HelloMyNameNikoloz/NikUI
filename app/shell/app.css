@@ -1119,10 +1119,11 @@ html.plat-ios body.app-conversation header {
   background: rgba(255, 255, 255, 0.10);
   box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.22);
   transform: translate3d(0, 0, 0);
-  transition:
-    transform 420ms cubic-bezier(0.22, 1.2, 0.36, 1),
-    box-shadow 200ms ease,
-    background-color 200ms ease;
+  /* No transition on the transform: a spring drives it frame by frame, because
+     a duration and an easing curve cannot have momentum. What is left to CSS
+     is how it looks, not where it is. */
+  transition: box-shadow 200ms ease, background-color 200ms ease;
+  will-change: transform;
   pointer-events: none;
   z-index: 0;
 }
@@ -1176,6 +1177,14 @@ html.plat-ios .tab-pill.held {
    is simply in the right place. */
 @media (prefers-reduced-motion: reduce) {
   .tab-pill { transition: none; }
+}
+
+/* Thicker as it flexes. Apple: "when glass flexes and morphs to larger sizes,
+   its material characteristics change to simulate a thicker, more substantial
+   material." `--thick` is how far it is being stretched right now. */
+html.plat-ios .tab-pill {
+  backdrop-filter: blur(calc(12px + var(--thick, 0) * 16px)) saturate(calc(180% + var(--thick, 0) * 60%));
+  -webkit-backdrop-filter: blur(calc(12px + var(--thick, 0) * 16px)) saturate(calc(180% + var(--thick, 0) * 60%));
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -1313,4 +1322,128 @@ html.plat-ios .tile {
 
 @media (prefers-reduced-motion: reduce) {
   .tab-pill::before { transition: none; }
+}
+
+/* ---- /status, on a phone ---------------------------------------------------
+
+   The sheet's markup is the panel's, which was laid out for something the width
+   of an editor. Nothing about it is rewritten here — that would be the second
+   opinion this screen exists to avoid — but the places it assumes width are
+   allowed to give. */
+body.app.status .screen { padding-left: 12px; padding-right: 12px; }
+
+/* The rail becomes a strip you swipe. browser.css already turns it sideways on
+   a phone; what it cannot know is that outside a `.sheet` its items still need
+   telling not to shrink. */
+body.app.status .sheet-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+body.app.status .sheet-nav {
+  flex: 0 0 auto;
+  /* Not 186 points of column. */
+  width: auto;
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0 -2px 10px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  scrollbar-width: none;
+}
+
+body.app.status .sheet-nav::-webkit-scrollbar { display: none; }
+
+body.app.status .nav-item { flex: 0 0 auto; }
+
+body.app.status .sheet-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+}
+
+body.app.status .sheet-nav .nav-item {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 7px 13px;
+  border-radius: 10px;
+  background: var(--app-raised);
+  color: var(--app-dim);
+  border: 0;
+  font: inherit;
+  font-size: 13.5px;
+}
+
+body.app.status .sheet-nav .nav-item.on {
+  background: var(--app-raised-2);
+  color: var(--vscode-foreground);
+}
+
+/* The number nobody needs at 46px on a 393pt screen. */
+body.app.status .hero {
+  padding: 4px 2px 14px;
+  gap: 14px;
+}
+
+body.app.status .hero-value { font-size: 34px; }
+
+body.app.status .hero-side {
+  margin-left: 0;
+  text-align: left;
+  align-items: flex-start;
+}
+
+/* Anything the sheet lays out in columns gets one. */
+body.app.status .grid,
+body.app.status .cards,
+body.app.status .sheet-section {
+  display: block;
+  min-width: 0;
+}
+
+body.app.status .card,
+body.app.status .hero,
+body.app.status .sheet-title,
+body.app.status [class*="hero-"] {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* The head is a name and its actions side by side, which needs width this
+   screen has not got: the name goes on its own line and the actions under it. */
+body.app.status .sheet-head {
+  display: block;
+  padding: 12px 14px;
+}
+
+body.app.status .sheet-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+body.app.status .sheet-actions button { min-height: 36px; }
+
+/* The title is a flex row of a name and a summary; on this width it is two
+   lines, not one that runs off the side. */
+body.app.status .sheet-title,
+body.app.status #sheet-title {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+body.app.status .sheet-title .dim { display: block; margin-top: 2px; }
+
+/* A table of numbers is the one thing worth scrolling sideways for. */
+body.app.status table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
 }

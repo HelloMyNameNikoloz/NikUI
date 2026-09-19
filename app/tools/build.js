@@ -34,7 +34,7 @@ const CLIENT_FILES = SCRIPTS.concat([
   'panel.css', 'browser.css', 'mobile.js', 'home.js', 'device.js'
 ]);
 
-const SHELL_FILES = ['app.css', 'app.js', 'notify.js', 'connect.js', 'settings.js', 'history.js', 'stats.js'];
+const SHELL_FILES = ['app.css', 'app.js', 'notify.js', 'connect.js', 'settings.js', 'history.js', 'status.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -98,14 +98,22 @@ const CSP = [
   "frame-ancestors 'none'"
 ].join('; ');
 
+/**
+ * `extra` goes *before* the app's own stylesheets, never after.
+ *
+ * A page that borrows the panel's markup borrows panel.css with it, and
+ * panel.css is written for something the width of an editor. Loaded last it
+ * wins every argument — a 186px rail stays 186px on a 393pt screen — so it is
+ * loaded first and the phone's rules get the final word.
+ */
 const head = (title, extra) =>
   '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">\n' +
   `<meta http-equiv="Content-Security-Policy" content="${CSP}">\n` +
   '<meta name="color-scheme" content="dark">\n' +
   `<title>${title}</title>\n` +
+  (extra || '') +
   '<link rel="stylesheet" href="media/browser.css">\n' +
-  '<link rel="stylesheet" href="app.css">\n' +
-  (extra || '');
+  '<link rel="stylesheet" href="app.css">\n';
 
 /**
  * Capacitor's own runtime, copied in rather than bundled.
@@ -127,14 +135,14 @@ function copyCapacitor() {
 }
 
 /** A screen that is the app's own, rather than the client's. */
-function page({ file, title, body, scripts, cls }) {
+function page({ file, title, body, scripts, cls, css }) {
   const tags = ['capacitor.js'].concat(scripts || [])
     .map((s) => `  <script src="${s}"></script>`).join('\n');
   fs.writeFileSync(path.join(OUT, file), `<!DOCTYPE html>
 <html lang="en" class="app">
 <head>
 <meta charset="UTF-8">
-${head(title)}</head>
+${head(title, (css || []).map((href) => `<link rel="stylesheet" href="${href}">\n`).join(''))}</head>
 <body class="app${cls ? ' ' + cls : ''}">
 ${body}
 ${tags}
@@ -250,14 +258,14 @@ function connectPage() {
   });
 }
 
-function statsPage() {
+function statusPage() {
   page({
-    file: 'stats.html',
-    title: 'Stats',
-    cls: 'stats',
+    file: 'status.html',
+    title: 'Status',
+    cls: 'status',
     body: `  <header class="bar">
     <div class="bar-left"></div>
-    <span class="bar-title">Stats</span>
+    <span class="bar-title">Status</span>
     <div class="bar-right">
       <div class="link" id="link" role="status" aria-live="polite" hidden></div>
     </div>
@@ -265,7 +273,9 @@ function statsPage() {
   <main class="screen" id="screen"></main>
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
     scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
-      'media/transport.js', 'stats.js']
+      'media/transport.js', 'media/charts.js', 'media/markdown.js', 'media/status.js', 'status.js'],
+    // The sheet is the panel's own markup, so it needs the panel's own styles.
+    css: ['media/panel.css']
   });
 }
 
@@ -318,7 +328,7 @@ function build() {
   copyCapacitor();
   conversationPage();
   homePage();
-  statsPage();
+  statusPage();
   historyPage();
   connectPage();
   settingsPage();

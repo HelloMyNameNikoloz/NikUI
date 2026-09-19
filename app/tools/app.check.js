@@ -99,7 +99,10 @@ const record = (name, ok) => {
     history: async () => [{
       sessionId: 'past-1', label: 'an earlier turn', title: 'what happened before',
       cwd: REPO, branch: 'main', modified: new Date()
-    }]
+    }],
+    // The same report the editor's /status builds, from the same builder.
+    report: () => require(path.join(REPO, 'src', 'report.js'))
+      .buildReport({ session, fleet: [session], env: { home: '/home' } })
   });
   // Deliberately not the version in the bundle: a phone carrying a different
   // copy of the client from the laptop is the case worth seeing said out loud.
@@ -225,9 +228,9 @@ const record = (name, ok) => {
       await phone.until('document.querySelectorAll(".rows-card").length >= 1', 8000));
     record('and four peer screens reachable from a tab bar',
       (await phone.evaluate('document.querySelectorAll(".tabs .tab").length')) === 4);
-    record('with Stats between Instances and History',
+    record('with Status between Instances and History',
       (await phone.evaluate(`[...document.querySelectorAll('.tab-label')].map(n => n.textContent).join(',')`))
-        === 'Instances,Stats,History,Settings');
+        === 'Instances,Status,History,Settings');
     record('the one you are on being the one that is marked',
       (await phone.evaluate(`document.querySelector('.tab.here .tab-label').textContent`)) === 'Instances');
     record('each tab drawn with the product\u2019s own icons',
@@ -515,6 +518,8 @@ const record = (name, ok) => {
         const style = getComputedStyle(node);
         if (style.display === 'none' || style.visibility === 'hidden') continue;
         if (style.textOverflow === 'ellipsis' && style.overflow !== 'visible') continue;
+        // Text that exists only for a screen reader is clipped on purpose.
+        if (node.classList.contains('sr-only')) continue;
         if (style.webkitLineClamp && style.webkitLineClamp !== 'none') continue;
         if (style.overflowX === 'auto' || style.overflowX === 'scroll') continue;
         const text = (node.textContent || '').trim();
@@ -525,7 +530,7 @@ const record = (name, ok) => {
       }
       return bad.slice(0, 6).join(' | ');
     })()`;
-    for (const screen of ['index.html', 'stats.html', 'history.html', 'settings.html']) {
+    for (const screen of ['index.html', 'status.html', 'history.html', 'settings.html']) {
       await phone.navigate(appOrigin + '/' + screen);
       await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
       const cut = await phone.evaluate(CLIPPED);
@@ -632,7 +637,7 @@ const record = (name, ok) => {
           screen.dispatchEvent(new PointerEvent('pointermove', at(box.left + 40)));
           screen.dispatchEvent(new PointerEvent('pointerup', at(box.left + 40)));
         })()`);
-        return phone.until('location.pathname.endsWith("stats.html")', 8000);
+        return phone.until('location.pathname.endsWith("status.html")', 8000);
       })());
     record('and a vertical drag does not',
       await (async () => {
@@ -647,12 +652,22 @@ const record = (name, ok) => {
           screen.dispatchEvent(new PointerEvent('pointerup', at(box.top + 320)));
         })()`);
         await wait(900);
-        return (await phone.evaluate('location.pathname')).endsWith('stats.html');
+        return (await phone.evaluate('location.pathname')).endsWith('status.html');
       })());
-    record('the stats screen says what the window is doing',
-      await phone.until('document.querySelectorAll(".tile").length === 3', 12000));
-    record('with the numbers somebody opens it for',
-      /instance|need you/.test(await phone.evaluate('document.body.textContent')));
+    // The point of this screen is that it is not a second opinion: the same
+    // report, drawn by the same renderer the editor's panel uses.
+    record('the status screen draws the panel\u2019s own sheet',
+      await phone.until('document.querySelectorAll(".sheet-nav [data-section]").length >= 3', 15000));
+    record('from the report the laptop builds for /status',
+      /Tokens|Cost|Tools|Context/i.test(await phone.evaluate('document.body.textContent')));
+    record('and its sections can be moved between',
+      (await phone.evaluate(`(() => {
+        const rail = [...document.querySelectorAll('.sheet-nav [data-section]')];
+        if (rail.length < 2) return false;
+        const before = document.querySelector('.sheet-body').textContent;
+        rail[1].click();
+        return document.querySelector('.sheet-body').textContent !== before;
+      })()`)) === true);
 
     await phone.navigate(appOrigin + '/index.html');
     await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);

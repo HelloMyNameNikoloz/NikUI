@@ -542,31 +542,32 @@ function serveLocally(context, manager, awakeState, folders) {
   // proves who the sender is to a push service.
   const vapid = loadVapid(context.globalState);
 
+  // Installed, not just built: the panel asks for this same object, so a hub
+  // opened from the editor knows about devices and the trail as well — and so
+  // the phone's status screen is built from exactly the same facts.
+  const served = installHost(createHost(context, manager, { devices, awake: awakeState || null }));
+
   const server = new RemoteServer({
     root: context.extensionUri.fsPath,
-    // Installed, not just built: the panel asks for this same object, so a hub
-    // opened from the editor knows about devices and the trail as well.
-    host: installHost(createHost(context, manager, { devices, awake: awakeState || null })),
+    host: served,
     sessions: { list: () => manager.list, get: (id) => manager.get(id) },
     // The same folders, projects and history the editor shows, so a phone is
     // looking at this window rather than at a list of what happens to be in it.
     folders,
     projectRoot,
     history: (ask) => require('./history').listSessions(ask),
-    // The window's own numbers, which the editor already gathers for its
-    // status sheet: the quota, whether this machine is being held awake, and
-    // what is in front of the server.
-    stats: () => {
-      try {
-        const env = (host && host.env) ? host.env(manager.list[0] || null) : {};
-        return {
-          limits: env.limits || (manager && manager.limits) || null,
-          pause: env.pause || (manager && manager.pause) || null,
-          awake: env.awake || null,
-          reach: env.reach || null,
-          home: env.home || null
-        };
-      } catch (_) { return {}; }
+    // What /status draws, built exactly as the hub builds it — the instance
+    // somebody is most likely asking about, with the rest as its fleet.
+    report: () => {
+      const { buildReport } = require('./report');
+      const open = manager.list;
+      const session = manager.get(manager.activeId) || open[0] || null;
+      if (!session) return null;
+      return buildReport({
+        session,
+        fleet: open,
+        env: served.env ? served.env(session) : {}
+      });
     },
     devices,
     identity,

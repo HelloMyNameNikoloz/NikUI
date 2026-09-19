@@ -65,7 +65,7 @@ class RemoteServer {
    * @param {object} [deps.folders] the user's own folders, so a phone sees the same ones
    * @param {(cwd: string) => string} [deps.projectRoot] which project a directory belongs to
    * @param {(opts: object) => Promise<Array>} [deps.history] past conversations on this machine
-   * @param {() => object} [deps.stats] what the window looks like as a whole
+   * @param {() => object} [deps.report] exactly what /status draws
    * @param {(line: string) => void} [deps.log]
    */
   constructor(deps) {
@@ -87,7 +87,7 @@ class RemoteServer {
     this.folders = deps.folders || null;
     this.projectRoot = deps.projectRoot || null;
     this.history = deps.history || null;
-    this.stats = deps.stats || null;
+    this.report = deps.report || null;
     this.requireSealed = deps.requireSealed || (() => true);
     this.appOnly = deps.appOnly || (() => false);
     this.gate = deps.gate || new Gate({
@@ -854,7 +854,7 @@ ${this.appHead(nonce)}</head>
         if (!message) return;
         if (message.type === 'ready') return void client.post(this.fleetMessage());
         if (message.type === 'history') return void client.post(await this.historyMessage(message));
-        if (message.type === 'stats') return void client.post(this.statsMessage());
+        if (message.type === 'status') return void client.post(this.statusMessage());
       },
       device: () => {},
       detach: () => this.fleetClients.delete(client)
@@ -894,38 +894,21 @@ ${this.appHead(nonce)}</head>
   }
 
   /**
-   * The window as a whole, rather than one instance in it: what is running,
-   * what it has cost, what the quota is doing, and what can reach this laptop.
+   * Exactly what `/status` draws, built the same way the hub builds it.
    *
-   * The same facts the status sheet shows in the editor, gathered once for a
-   * screen rather than per conversation.
+   * Not a summary of it and not a second opinion about it: the same
+   * `buildReport` over the same facts, rendered on the phone by the same
+   * `media/status.js`. A screen that says almost what another screen says is
+   * two screens to keep in step.
    */
-  statsMessage() {
-    const instances = this.sessions.list();
-    const byStatus = {};
-    let cost = 0;
-    let queued = 0;
-    for (const session of instances) {
-      const status = session.status || 'idle';
-      byStatus[status] = (byStatus[status] || 0) + 1;
-      cost += session.totalCost || 0;
-      queued += (session.queue || []).length;
+  statusMessage() {
+    if (!this.report) return { type: 'status', report: null, available: false };
+    try {
+      return { type: 'status', report: this.report(), available: true };
+    } catch (err) {
+      this.log('the status report could not be built: ' + (err && err.message));
+      return { type: 'status', report: null, available: true, trouble: 'could not be built' };
     }
-    const extra = this.stats ? (this.stats() || {}) : {};
-    return Object.assign({
-      type: 'stats',
-      instances: instances.length,
-      byStatus,
-      cost,
-      queued,
-      devices: this.devices ? this.devices.list().map((d) => ({
-        name: d.name, control: !!d.control, lastSeenAt: d.lastSeenAt,
-        protection: d.protection || 'software',
-        reach: { push: !!d.push, apple: !!d.apns }
-      })) : [],
-      version: this.version,
-      at: Date.now()
-    }, extra);
   }
 
   /**

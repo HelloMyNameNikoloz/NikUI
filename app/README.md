@@ -70,11 +70,13 @@ Typing is still there, behind *Type the code instead*, for when that does not
 work. The key is made before either button is pressed, so tapping one does one
 thing and does it now.
 
-**Stats** — the window as a whole rather than one conversation in it: how many
-instances and what they are doing, what it has cost, what the quota is doing,
-whether the laptop is being held awake, what is in front of the server, and
-every device paired with it. Three big numbers first, because that is what
-somebody opens it for.
+**Status** — exactly what `/status` draws. Not a summary of it and not a second
+opinion about it: the laptop builds the same report with the same `buildReport`,
+and the phone draws it with the same `media/status.js` the editor's panel uses.
+A screen that says almost what another screen says is two screens to keep in
+step. What the phone adds is the width: the rail lies flat, the head stacks, and
+`panel.css` is loaded *before* the app's own stylesheets so the phone's rules
+get the last word rather than a 186-point column winning on a 393-point screen.
 
 **Instances** — the fleet, live, filed the way the editor files it: folders
 somebody made first, then projects, then everything else. One group draws no
@@ -133,6 +135,15 @@ It can also be dragged. A finger anywhere on the strip takes hold of it, the tab
 underneath lights up as you pass, and letting go both settles it and goes there.
 A strip of three things with a shape sitting on one of them invites being
 pushed, and the best control on a phone is the one that does what you tried.
+
+It moves on a spring rather than a transition, because what Apple's glass has is
+momentum and a duration cannot have any. Throw it and it carries; the shape
+stretches along the throw and thins across it, the way a volume of liquid must;
+it thickens optically as it stretches, which is Apple's own rule — *"when glass
+flexes and morphs to larger sizes, its material characteristics change to
+simulate a thicker, more substantial material"*; and it arrives with a little
+overshoot rather than stopping. Which tab it lands on is decided by where the
+throw would *end*, not where the finger left it.
 
 The tab under it takes the colour **by degrees** rather than at a threshold:
 `--lit` is how much of each tab the capsule currently covers, set every frame,

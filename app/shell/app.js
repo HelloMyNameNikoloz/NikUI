@@ -169,7 +169,7 @@
   // already is.
   const TABS = [
     { page: 'index.html', label: 'Instances', icon: 'terminal' },
-    { page: 'stats.html', label: 'Stats', icon: 'activity' },
+    { page: 'status.html', label: 'Status', icon: 'activity' },
     { page: 'history.html', label: 'History', icon: 'history' },
     { page: 'settings.html', label: 'Settings', icon: 'settings' }
   ];
@@ -229,118 +229,170 @@
    * are holding out from under you.
    */
   function slide(host, pill, buttons, startAt) {
+    const count = buttons.length;
     let at = startAt;
-    let dragging = false;
-    let moved = false;
 
-    const place = (index, animate) => {
-      const span = 100 / buttons.length;
-      pill.style.transition = animate ? '' : 'none';
-      pill.style.width = span + '%';
-      pill.style.transform = 'translate3d(' + (index * 100) + '%, 0, 0)';
-      if (!animate) {
-        // Let the browser take the jump before transitions are allowed back.
-        void pill.offsetWidth;
-        pill.style.transition = '';
-      }
-    };
+    // Where the capsule is and how fast, in pixels and pixels per millisecond.
+    // A CSS transition cannot do this: it has a duration and an easing curve,
+    // and what Apple's glass has is momentum — throw it and it carries, with
+    // the shape stretching while it travels and springing back when it lands.
+    let x = 0;
+    let v = 0;
+    let target = 0;
+    let dragging = false;
+    let frame = null;
+    let moved = false;
+    let arrive = null;
+
+    const span = () => host.getBoundingClientRect().width / count;
+    const clamp = (value) => Math.max(0, Math.min((count - 1) * span(), value));
 
     /**
-     * How much of each tab the capsule is currently over.
+     * Gel, in two numbers.
      *
-     * Not a threshold: as the capsule crosses a tab it takes its colour by
-     * degrees, so at the halfway point two tabs are half lit. That is the
-     * difference between something sliding under a light and something
-     * switching on when it arrives.
+     * Apple's own words for this material are "gel-like flexibility" and that
+     * elements "stretch, bounce, and morph"; its sliders "preserve momentum and
+     * stretch when they are moved". A thing made of liquid that is pushed
+     * lengthens along the push and thins across it — the volume has to go
+     * somewhere — and thickens optically as it does.
      */
-    const tint = () => {
-      const glass = pill.getBoundingClientRect();
-      buttons.forEach((button, i) => {
-        const box = button.getBoundingClientRect();
-        const over = Math.max(0, Math.min(glass.right, box.right) - Math.max(glass.left, box.left));
-        const lit = box.width ? Math.max(0, Math.min(1, over / box.width)) : 0;
-        button.style.setProperty('--lit', lit.toFixed(3));
-        button.classList.toggle('here', lit > 0.5);
-        if (lit > 0.5) button.setAttribute('aria-current', 'page');
-        else button.removeAttribute('aria-current');
-      });
-    };
-
-    const lightUp = () => tint();
-
-    // Drawn where it belongs before anything can animate: a capsule that slides
-    // in from the left on every page load would be a page load you can see.
-    place(at, false);
-    tint();
-
-    const nearest = (clientX) => {
-      const box = host.getBoundingClientRect();
-      const across = (clientX - box.left) / box.width;
-      return Math.max(0, Math.min(buttons.length - 1, Math.floor(across * buttons.length)));
-    };
-
-    let was = null;
-    const follow = (clientX) => {
-      const box = host.getBoundingClientRect();
-      const span = box.width / buttons.length;
-      // Clamped to the strip, so the capsule never leaves the glass it lives in.
-      const left = Math.max(0, Math.min(box.width - span, clientX - box.left - span / 2));
-      pill.style.transition = 'none';
-      pill.style.transform = 'translate3d(' + ((left / span) * 100) + '%, 0, 0)';
-      // Which way it is going, and how hard. The highlight lags behind the
-      // movement, which is what makes a thing look like it is made of liquid
-      // rather than being slid along a rail.
-      if (was !== null) {
-        const drift = Math.max(-1, Math.min(1, (left - was) / 22));
-        pill.style.setProperty('--drift', drift.toFixed(3));
-      }
-      was = left;
+    const paint = () => {
+      const stretch = Math.max(-0.30, Math.min(0.30, v * 0.030));
+      const pull = Math.abs(stretch);
+      pill.style.transform =
+        'translate3d(' + x.toFixed(2) + 'px, 0, 0)' +
+        ' scaleX(' + (1 + pull).toFixed(4) + ')' +
+        ' scaleY(' + (1 - pull * 0.55).toFixed(4) + ')';
+      // Which way it is leaning, for the highlight that lags behind it.
+      pill.style.setProperty('--drift', (stretch / 0.30).toFixed(3));
+      // "When glass flexes and morphs to larger sizes, its material
+      // characteristics change to simulate a thicker, more substantial
+      // material." So it does.
+      pill.style.setProperty('--thick', pull.toFixed(3));
       tint();
     };
 
-    const settle = (clientX) => {
-      const index = nearest(clientX);
-      pill.style.transition = '';
-      place(index, true);
-      pill.style.setProperty('--drift', '0');
-      was = null;
-      // After the transition, not before it: the tint has to follow the
-      // capsule the whole way rather than jumping ahead of it.
-      const chase = setInterval(tint, 16);
-      setTimeout(() => { clearInterval(chase); tint(); }, 460);
-      return index;
+    /**
+     * How much of each tab the capsule is over.
+     *
+     * Not a threshold: as it crosses a tab it takes its colour by degrees, so
+     * halfway across two tabs are half lit. That is the difference between
+     * something sliding under a light and something switching on when it
+     * arrives.
+     */
+    function tint() {
+      const glass = pill.getBoundingClientRect();
+      for (let i = 0; i < count; i++) {
+        const box = buttons[i].getBoundingClientRect();
+        const over = Math.max(0, Math.min(glass.right, box.right) - Math.max(glass.left, box.left));
+        const lit = box.width ? Math.max(0, Math.min(1, over / box.width)) : 0;
+        buttons[i].style.setProperty('--lit', lit.toFixed(3));
+        buttons[i].classList.toggle('here', lit > 0.5);
+        if (lit > 0.5) buttons[i].setAttribute('aria-current', 'page');
+        else buttons[i].removeAttribute('aria-current');
+      }
+    }
+
+    /** A spring with a little left in it, so it arrives rather than stopping. */
+    const STIFFNESS = 0.013;
+    const DAMPING = 0.155;
+
+    let last = 0;
+    function step(now) {
+      frame = null;
+      const dt = Math.min(32, last ? now - last : 16);
+      last = now;
+
+      if (!dragging) {
+        const away = x - target;
+        v += (-STIFFNESS * away - DAMPING * v) * dt;
+        x = clamp(x + v * dt);
+        if (Math.abs(away) < 0.4 && Math.abs(v) < 0.004) {
+          x = target;
+          v = 0;
+          paint();
+          if (arrive) { const go = arrive; arrive = null; go(); }
+          return;
+        }
+      }
+      paint();
+      frame = requestAnimationFrame(step);
+    }
+
+    const run = () => {
+      if (frame) return;
+      last = 0;
+      frame = requestAnimationFrame(step);
     };
+
+    const settled = (index, animate) => {
+      at = index;
+      target = index * span();
+      if (!animate) {
+        x = target;
+        v = 0;
+        pill.style.width = (100 / count) + '%';
+        paint();
+        return;
+      }
+      run();
+    };
+
+    pill.style.width = (100 / count) + '%';
+    // Drawn where it belongs before anything can move: a capsule that springs
+    // in from the left on every page load would be a page load you can see.
+    settled(at, false);
+
+    // ---- the finger ----------------------------------------------------------
+
+    let wasX = 0;
+    let wasAt = 0;
 
     host.addEventListener('pointerdown', (event) => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
       dragging = true;
       moved = false;
+      arrive = null;
       pill.classList.add('held');
       host.setPointerCapture(event.pointerId);
+      wasX = x;
+      wasAt = event.timeStamp || performance.now();
+      run();
     });
 
     host.addEventListener('pointermove', (event) => {
       if (!dragging) return;
       moved = true;
       event.preventDefault();
-      follow(event.clientX);
+      const box = host.getBoundingClientRect();
+      const next = clamp(event.clientX - box.left - span() / 2);
+      const now = event.timeStamp || performance.now();
+      const dt = Math.max(1, now - wasAt);
+      // Measured rather than guessed, so a slow drag does not stretch and a
+      // flick does.
+      v = (next - wasX) / dt;
+      wasX = next;
+      wasAt = now;
+      x = next;
+      paint();
     });
 
     const release = (event) => {
       if (!dragging) return;
       dragging = false;
       pill.classList.remove('held');
-      const index = settle(event.clientX);
+      // Thrown, not dropped: where it would come to rest decides which tab it
+      // lands on, which is what makes a flick feel like it went somewhere.
+      const projected = x + v * 130;
+      const index = Math.max(0, Math.min(count - 1, Math.round(projected / span())));
       if (index === at) {
-        // Back where it started: a tap on the tab you are already on, or a drag
-        // that changed its mind. Nothing to navigate to.
-        if (!moved) return;
+        settled(index, true);
         return;
       }
-      at = index;
+      const next = index;
+      arrive = () => go(TABS[next].page);
       buzz();
-      // After the capsule has arrived, so the last thing seen is it landing.
-      setTimeout(() => go(TABS[index].page), 180);
+      settled(next, true);
     };
 
     host.addEventListener('pointerup', release);
@@ -348,25 +400,23 @@
       if (!dragging) return;
       dragging = false;
       pill.classList.remove('held');
-      place(at, true);
-      tint();
+      settled(at, true);
     });
 
-    // A keyboard, or anything that is not a finger.
     buttons.forEach((button, index) => {
       button.addEventListener('click', (event) => {
         if (moved) { event.preventDefault(); return; }
         if (index === at) return;
-        at = index;
-        place(index, true);
-        const chase = setInterval(tint, 16);
-        setTimeout(() => { clearInterval(chase); tint(); }, 460);
+        // A tap has no throw of its own, so it is given one: the capsule leaves
+        // with a push rather than easing away from a standstill.
+        v = (index > at ? 1 : -1) * 0.55;
+        arrive = () => go(TABS[index].page);
         buzz();
-        setTimeout(() => go(TABS[index].page), 180);
+        settled(index, true);
       });
     });
 
-    window.addEventListener('resize', () => place(at, false));
+    window.addEventListener('resize', () => settled(at, false));
   }
 
   /**

@@ -87,9 +87,11 @@ check('settings has somewhere to draw itself', /id="screen"/.test(settings));
 const history = read('history.html');
 check('history has somewhere to draw itself', /id="screen"/.test(history));
 check('and something to search with', /id="search"/.test(history));
-const stats = read('stats.html');
-check('stats has somewhere to draw itself', /id="screen"/.test(stats));
-for (const page of ['index.html', 'stats.html', 'history.html', 'settings.html']) {
+const status = read('status.html');
+check('status has somewhere to draw itself', /id="screen"/.test(status));
+check('and loads the panel\u2019s own renderer, rather than a second one',
+  status.includes('media/status.js') && status.includes('media/panel.css'));
+for (const page of ['index.html', 'status.html', 'history.html', 'settings.html']) {
   check(page + ' carries the tab bar', /<nav class="tabs" id="tabs"/.test(read(page)));
   check(page + ' loads the icons it draws them with', read(page).includes('media/icons.js'));
 }
