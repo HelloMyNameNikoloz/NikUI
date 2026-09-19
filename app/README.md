@@ -311,6 +311,10 @@ than by reading about it:
   reach a plugin.
 - **Plugins are asked for by name**, not read out of `Capacitor.Plugins` — see
   `nativePlugin()` in `media/device.js`.
+- **`SceneDelegate` builds the root view controller itself**, so it has to build
+  `MainViewController` — the one place this app's plugins are handed to the
+  bridge. Naming that class in `Main.storyboard` does nothing, because nothing
+  reads the storyboard. That one cost an afternoon and a Secure Enclave.
 
 And the key: iOS falls back to the **Keychain** where there is no Secure
 Enclave, rather than to a browser key. WebKit cannot store a `CryptoKey` in

@@ -12,6 +12,10 @@ import Capacitor
 /// That is exactly how this was found: the app said it would keep its key "here"
 /// on an iPhone, which is the wording for the browser fallback, and nothing in
 /// any log said why.
+///
+/// It is instantiated by SceneDelegate, which builds the root view controller
+/// itself. Naming this class in Main.storyboard does nothing — nothing reads
+/// the storyboard — and that cost an afternoon.
 class MainViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(SecureKeyPlugin())

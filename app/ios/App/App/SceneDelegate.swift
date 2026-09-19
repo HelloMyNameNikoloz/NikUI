@@ -8,7 +8,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        // MainViewController, not CAPBridgeViewController: this app's own
+        // plugins are registered in its `capacitorDidLoad`, and iOS finds them
+        // nowhere else. The storyboard names it too, but nothing reads the
+        // storyboard — the scene builds the controller itself, which is why a
+        // custom class set there had no effect at all.
+        window?.rootViewController = MainViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
