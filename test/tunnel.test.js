@@ -135,6 +135,25 @@ module.exports = async function () {
     await already.tailscale.serving(4517), true);
   checkEqual('and one for another port is not', await already.tailscale.serving(9999), false);
 
+  // The reason that question is worth asking: a window that does not ask
+  // refuses its own tailnet name with a 403, and hands out a pairing code that
+  // names 127.0.0.1 — which fails on a phone as "failed to fetch".
+  const { RemoteServer } = require('../src/remote.js');
+  const orphaned = new RemoteServer({
+    root: require('path').join(__dirname, '..'),
+    host: { config: () => ({ promptSnippets: {} }), home: '/tmp', knownCommands: () => [],
+      fleet: () => [], env: () => ({}) },
+    sessions: { list: () => [], get: () => null }
+  });
+  await orphaned.start(0);
+  check('a window that has not been told its name answers to loopback only',
+    orphaned.exposed === false &&
+    orphaned.hosts().every((h) => /^(127\.0\.0\.1|localhost|\[?::1\]?)(:|$)/.test(h)));
+  orphaned.publicHost = 'laptop.tailnet.ts.net';
+  check('and once it has been, it answers to that too',
+    orphaned.exposed === true && orphaned.hosts().includes('laptop.tailnet.ts.net'));
+  await orphaned.dispose();
+
   suite('the other way out');
 
   // cloudflared is a process that talks rather than a command that answers, so

@@ -670,6 +670,8 @@ function serveLocally(context, manager, awakeState) {
       );
       return null;
     }
+    // Cheap, and the answer changes what this window will answer to.
+    adoptTunnel();
     if (server.movedFrom) {
       // Another window already has the usual port. Said once, quietly: the
       // address is handed out rather than typed, so the number rarely matters.
@@ -733,7 +735,7 @@ function serveLocally(context, manager, awakeState) {
     const out = await tailscale.expose(server.port);
     if (!out.ok) {
       vscode.window.showWarningMessage('NikUI could not ask Tailscale to forward to it: ' + out.reason);
-      return;
+      return false;
     }
     weExposed = true;
     server.publicHost = out.host;
@@ -743,8 +745,32 @@ function serveLocally(context, manager, awakeState) {
       `NikUI is reachable at ${out.url} from anything on your tailnet.`,
       'Pair a device', 'Copy the address'
     );
-    if (next === 'Pair a device') return pair();
+    if (next === 'Pair a device') { pair(); return true; }
     if (next === 'Copy the address' && vscode.env.clipboard) await vscode.env.clipboard.writeText(out.url);
+    return true;
+  };
+
+  /**
+   * The tailnet may already be forwarding to this port — from a window closed
+   * without tidying up, or a `tailscale serve` set up by hand. Without noticing
+   * it, the server refuses its own tailnet name with a 403 and the pairing code
+   * carries 127.0.0.1, which is exactly the shape of "it says failed to fetch".
+   *
+   * Noticed, not claimed: this window did not set it up, so stopping does not
+   * tear it down.
+   */
+  const adoptTunnel = async () => {
+    if (!server.listening || server.exposed) return false;
+    let already = false;
+    try { already = await tailscale.serving(server.port); } catch (_) { return false; }
+    if (!already) return false;
+    const state = await tailscale.status().catch(() => null);
+    if (!state || !state.name) return false;
+    server.publicHost = state.name;
+    if (out) out.appendLine(new Date().toISOString() +
+      `  the tailnet was already forwarding to ${server.port}; this window answers to ${state.name}`);
+    paint();
+    return true;
   };
 
   /**
@@ -819,6 +845,29 @@ function serveLocally(context, manager, awakeState) {
    */
   const pair = async () => {
     if (!(await start())) return;
+    await adoptTunnel();
+
+    // A phone is not this machine, and a pairing code for 127.0.0.1 is a code
+    // that cannot work from one — it fails as "failed to fetch", which says
+    // nothing about why. So the question is asked here, once, rather than
+    // discovered on a phone: pairing something that is not here needs this
+    // window to be reachable, and that is one tap away.
+    if (!server.exposed) {
+      const choice = await vscode.window.showInformationMessage(
+        'Only this machine can reach this window.',
+        {
+          modal: true,
+          detail: 'A phone somewhere else cannot use a pairing code that points at 127.0.0.1. ' +
+            'Putting your tailnet in front of this window lets it — nothing new listens, ' +
+            'Tailscale forwards to loopback, and it is one command to undo.'
+        },
+        'Make it reachable', 'Pair something on this machine'
+      );
+      if (!choice) return;
+      if (choice === 'Make it reachable') {
+        if (!(await reach())) return;
+      }
+    }
     PairPanel.show(context, pairing, server, devices);
   };
 

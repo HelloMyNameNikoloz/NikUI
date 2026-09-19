@@ -163,6 +163,30 @@ module.exports = async function () {
   const closedUp = new PairingWindow();
   checkEqual('with no window open there is nothing to hand out', closedUp.appLink(), null);
 
+  suite('a code that cannot be used says so');
+
+  // The failure this prevents: a pairing panel showing a QR for 127.0.0.1 to
+  // somebody holding a phone. It scans, the app fills itself in, and the fetch
+  // fails with a message that says nothing about why.
+  const { PairPanel } = require('../src/pairPanel.js');
+  const draw = (host, scheme) => {
+    const window = new PairingWindow();
+    window.start({ host, scheme, fingerprint: 'fp', laptop: 'A laptop' });
+    return PairPanel.prototype.codeBody.call(
+      { qrFor: PairPanel.prototype.qrFor }, window.state());
+  };
+
+  const local = draw('127.0.0.1:4517', 'http');
+  check('a loopback code is called out before anybody scans it', /only works on this machine/i.test(local));
+  check('naming the address that cannot be reached', /127\.0\.0\.1:4517/.test(local));
+  check('and what to do about it', /Reach this window from my phone/.test(local));
+
+  const reachable = draw('laptop.tailnet.ts.net', 'https');
+  check('a tailnet code is not', !/only works on this machine/i.test(reachable));
+  check('and says a phone elsewhere can use it', /reachable from your tailnet/i.test(reachable));
+
+  check('localhost counts as loopback too', /only works on this machine/i.test(draw('localhost:4517', 'http')));
+
   suite('the whole exchange, as the phone does it');
 
   // Node's WebCrypto on one side, the host's verify on the other: two

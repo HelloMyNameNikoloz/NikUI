@@ -166,3 +166,19 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   .choose button { transition: none; }
 }
+
+/* A code nobody can use is worse than no code, so when the address in it is
+   loopback that is the first thing on the screen rather than the third bullet
+   under it. */
+.warn {
+  margin: 0 0 20px;
+  padding: 12px 16px;
+  max-width: 42ch;
+  border-radius: 10px;
+  background: var(--vscode-inputValidation-warningBackground, rgba(255, 159, 10, 0.14));
+  border: 1px solid var(--vscode-inputValidation-warningBorder, rgba(255, 159, 10, 0.4));
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}

@@ -102,9 +102,16 @@ ${body}
     // Two invitations to the same pairing: one a phone's camera hands to the
     // app, one it hands to a browser. Both are drawn now and one is shown,
     // because swapping them is a tap rather than a round trip.
+    // A code that names 127.0.0.1 cannot be used by anything that is not this
+    // machine, and the way that fails on a phone is "failed to fetch" — which
+    // says nothing. So it is said here, before anybody points a camera at it.
+    const onlyHere = /^(127\.0\.0\.1|localhost|\[?::1\]?)(:|$)/.test(String(state.host || ''));
     return `  <main class="pair">
     <h1>Pair a device</h1>
     <p class="lede">Point your phone's camera at this. It lasts one minute and works once.</p>
+${onlyHere ? `    <p class="warn" role="alert"><strong>This code only works on this machine.</strong>
+      It points at ${escapeHtml(String(state.host || '127.0.0.1'))}, which a phone cannot reach.
+      Run <strong>NikUI: Reach this window from my phone</strong> and pair again.</p>` : ''}
     <div class="choose" role="tablist" aria-label="What is scanning this">
       <button class="chosen" id="for-app" role="tab" aria-selected="true">The app</button>
       <button id="for-browser" role="tab" aria-selected="false">A browser</button>
@@ -120,9 +127,9 @@ ${this.qrFor(state.link, 'browser', true)}
     <ul class="terms">
       <li>The device makes a key that never leaves it, and proves it on every connection.</li>
       <li>It can <strong>watch</strong> as soon as it pairs. Sending prompts is a separate grant.</li>
-      <li>${state.scheme === 'https'
-        ? 'This window is reachable from the tailnet, so a phone elsewhere can pair with it.'
-        : 'Only this machine can reach this window. Run <strong>NikUI: Reach this window from my phone</strong> first if the device is not here.'}</li>
+      <li>${onlyHere
+        ? 'Only this machine can reach this window right now.'
+        : 'This window is reachable from your tailnet, so a phone elsewhere can pair with it.'}</li>
     </ul>
   </main>`;
   }
