@@ -115,9 +115,14 @@ class RemoteServer {
     this.stateWatchers = new Set();
 
     // A grant taken away has to reach a socket that is already open, or
-    // revoking would mean "next time".
+    // revoking would mean "next time". The same change is also news to every
+    // other device watching the list — a phone removed on the laptop should
+    // disappear from the other phone's screen, not linger until it is reopened.
     if (this.devices && this.devices.onChange) {
-      this.stopWatchingDevices = this.devices.onChange(() => this.reconcile());
+      this.stopWatchingDevices = this.devices.onChange(() => {
+        this.reconcile();
+        this.broadcastDevices();
+      });
     }
     if (typeof deps.watchFleet === 'function') {
       this.stopWatching = deps.watchFleet(() => this.broadcastFleet());
@@ -849,15 +854,23 @@ ${this.appHead(nonce)}</head>
     }
 
     this.fleetClients.add(client);
+    // Who is connected is part of what the list says, so arriving and leaving
+    // are both changes to it.
+    this.broadcastDevices();
     client.bind({
       receive: async (message) => {
         if (!message) return;
         if (message.type === 'ready') return void client.post(this.fleetMessage());
         if (message.type === 'history') return void client.post(await this.historyMessage(message));
         if (message.type === 'status') return void client.post(this.statusMessage());
+        if (message.type === 'devices') return void client.post(this.devicesMessage(client));
+        if (message.type === 'forget') return void this.forgetFor(client, message.id);
       },
       device: () => {},
-      detach: () => this.fleetClients.delete(client)
+      detach: () => {
+        this.fleetClients.delete(client);
+        this.broadcastDevices();
+      }
     });
     this.log(`${client.id} is watching the window as ${client.device.name}`);
     return true;
@@ -927,6 +940,111 @@ ${this.appHead(nonce)}</head>
     } catch (err) {
       this.log('history could not be read: ' + (err && err.message));
       return { type: 'history', entries: [], available: true, trouble: 'could not be read' };
+    }
+  }
+
+  /**
+   * The other devices paired with this window, as one of them sees them.
+   *
+   * A phone that can be paired should be able to see what else is paired, and
+   * take one off — losing a phone is exactly when you are not at the laptop, and
+   * the laptop is where the only remove button was.
+   *
+   * `here` is measured from the sockets that are open right now rather than
+   * from `lastSeenAt`, because "is my other phone connected" is a question about
+   * now. `me` is how the app knows which row is its own.
+   */
+  devicesMessage(client) {
+    const seat = client && client.device;
+    const open = new Set();
+    for (const other of this.clients) {
+      if (other.device && other.device.kind === 'device') open.add(other.device.id);
+    }
+    const list = (this.devices ? this.devices.list() : []).map((device) => ({
+      id: device.id,
+      name: device.name,
+      control: !!device.control,
+      protection: device.protection || 'software',
+      biometric: !!device.biometric,
+      pairedAt: device.pairedAt || null,
+      lastSeenAt: device.lastSeenAt || null,
+      here: open.has(device.id),
+      me: !!(seat && seat.id === device.id)
+    }));
+    return {
+      type: 'devices',
+      devices: list,
+      // Removing your own is always yours to do. Removing somebody else's is
+      // the same authority as sending a prompt, and for the same reason: it is
+      // a change to what this machine will accept, not a thing you are reading.
+      mayManage: !!(seat && seat.kind === 'device' && seat.control),
+      me: seat && seat.kind === 'device' ? seat.id : null
+    };
+  }
+
+  /**
+   * Take a device off, at another device's asking.
+   *
+   * Its own is always allowed — a phone should be able to hand itself back
+   * without needing the laptop. Anyone else's needs control, because a watching
+   * device that could unpair the others would be a way to lock somebody out of
+   * their own machine from a seat that is supposed to be read-only.
+   */
+  forgetFor(client, id) {
+    const seat = client && client.device;
+    const wanted = String(id || '');
+    const target = this.devices ? this.devices.get(wanted) : null;
+    const mine = !!(seat && seat.id === wanted);
+
+    if (!seat || seat.kind !== 'device') {
+      return void client.post({ type: 'devices', refused: 'only a paired device can do that' });
+    }
+    if (!target) {
+      return void client.post(Object.assign(this.devicesMessage(client),
+        { refused: 'that device is already gone' }));
+    }
+    if (!mine && !seat.control) {
+      this.devices.record({
+        device: { id: seat.id, name: seat.name }, allowed: false,
+        action: 'tried to remove another device', detail: target.name
+      });
+      return void client.post(Object.assign(this.devicesMessage(client),
+        { refused: 'this device may watch, but not remove another' }));
+    }
+
+    this.devices.record({
+      device: { id: seat.id, name: seat.name }, allowed: true,
+      action: mine ? 'removed itself' : 'removed another device',
+      detail: mine ? null : target.name
+    });
+    // The store's own change fires `reconcile`, which closes whatever socket
+    // the removed device was holding — including this one, when it is its own.
+    this.devices.forget(target.id);
+  }
+
+  /**
+   * Everyone still connected learns who is left — but only when that changed.
+   *
+   * The store fires one change event for everything it writes, including a line
+   * in the trail, and a trail line is not news about who is paired. Sending the
+   * list anyway put an unasked-for message in front of every answer to a
+   * question, which is both noise and a way for a reply to arrive second.
+   *
+   * What counts as changed is what the other devices can see, so a device
+   * merely being seen again does not wake four sockets.
+   */
+  broadcastDevices() {
+    if (!this.fleetClients.size) return;
+    const shape = JSON.stringify((this.devices ? this.devices.list() : []).map((d) =>
+      [d.id, d.name, !!d.control, d.protection, !!d.biometric]));
+    const here = JSON.stringify([...this.clients]
+      .filter((c) => c.device && c.device.kind === 'device').map((c) => c.device.id).sort());
+    const now = shape + here;
+    if (now === this.lastDevices) return;
+    this.lastDevices = now;
+    for (const client of this.fleetClients) {
+      if (!client.open) continue;
+      client.post(this.devicesMessage(client));
     }
   }
 

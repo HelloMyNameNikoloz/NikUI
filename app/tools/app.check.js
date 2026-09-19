@@ -21,6 +21,7 @@ const { skipped } = require(path.join(REPO, 'test', 'helpers', 'skip.js'));
 const { SOURCE: CHIP } = require(path.join(REPO, 'test', 'helpers', 'chip.js'));
 const { SOURCE: PHONE } = require(path.join(REPO, 'test', 'helpers', 'phone.js'));
 const { Notifier } = require(path.join(REPO, 'src', 'notify.js'));
+const { makeDevice } = require(path.join(REPO, 'test', 'helpers', 'device.js'));
 
 const chrome = findChrome();
 if (!chrome) skipped('No Chrome found — the app check did not run. Set CHROME=/path/to/chrome.');
@@ -288,6 +289,66 @@ const record = (name, ok) => {
       new RegExp(`127.0.0.1:${laptop.port}`).test(await phone.evaluate('document.body.textContent')));
     record('and that the key is pinned',
       /pinned/i.test(await phone.evaluate('document.body.textContent')));
+    // ---- the other devices, from this one ------------------------------------
+    //
+    // Losing a phone is the moment you are not at the laptop, and the laptop was
+    // the only place with a remove button. So the list is on the phone, with the
+    // same rule as sending a prompt: your own is always yours to hand back, and
+    // anybody else's needs the grant.
+
+    const other = devices.add({
+      name: 'The other phone',
+      publicKey: (await makeDevice('The other phone')).publicKey,
+      protection: 'strongbox'
+    });
+
+    record('settings lists every device paired with the laptop',
+      await phone.until(`/The other phone/.test(document.body.textContent) &&
+        /Check phone/.test(document.body.textContent)`, 8000));
+    record('and says which row is this one',
+      /This device/.test(await phone.evaluate('document.body.textContent')));
+    record('with where each keeps its key',
+      /Security chip/.test(await phone.evaluate('document.body.textContent')));
+    record('a watching-only device is not offered somebody else\u2019s remove',
+      (await phone.evaluate(`(() => {
+        const row = [...document.querySelectorAll('.row')].find(r => /The other phone/.test(r.textContent));
+        return !!row && row.tagName !== 'BUTTON';
+      })()`)) === true);
+    record('and is told why',
+      /Only a device that may send prompts/.test(await phone.evaluate('document.body.textContent')));
+
+    devices.setControl(paired.id, true);
+    record('granting control turns the other row into a control',
+      await phone.until(`(() => {
+        const row = [...document.querySelectorAll('.row')].find(r => /The other phone/.test(r.textContent));
+        return !!row && row.tagName === 'BUTTON';
+      })()`, 8000));
+
+    record('one tap arms it rather than doing it',
+      (await phone.evaluate(`(() => {
+        const row = [...document.querySelectorAll('.row')].find(r => /The other phone/.test(r.textContent));
+        row.click();
+        return /Tap again/.test(row.textContent);
+      })()`)) === true && !!devices.get(other.id));
+
+    await phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.row')].find(r => /Tap again/.test(r.textContent));
+      row.click();
+    })()`);
+    let removed = null;
+    for (let i = 0; i < 100 && !removed; i++) {
+      removed = devices.get(other.id) ? null : true;
+      if (!removed) await wait(50);
+    }
+    record('the second tap removes it, on the laptop', !!removed);
+    record('and it leaves the phone\u2019s list without a reload',
+      await phone.until('!/The other phone/.test(document.body.textContent)', 8000));
+    record('written down as one device removing another',
+      devices.recent(8).some((e) => /removed another device/.test(e.action)));
+
+    devices.setControl(paired.id, false);
+    await phone.until('/Watching only/.test(document.body.textContent)', 8000);
+
     record('settings says the connection is sealed',
       await phone.until('/End-to-end encrypted/.test(document.body.textContent)', 10000));
     record('and offers a way to check it really is your laptop',

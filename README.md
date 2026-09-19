@@ -345,7 +345,8 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.interruptOnSingleEscape` | `false` | Interrupt on the first Escape, the way the CLI does |
 | `nikui.statusEmoji` | see below | Emoji per status in tab titles |
 | `nikui.remote.port` | `4517` | Port for the local server, on `127.0.0.1` only; `0` picks a free one. A second window takes the next free port rather than refusing |
-| `nikui.remote.autoStart` | `false` | Start that server when the window opens |
+| `nikui.remote.autoStart` | `true` | Start that server when the window opens, so a phone that tries to connect can |
+| `nikui.remote.tailnet` | `true` | Put this window on your tailnet when it starts serving. Needs Tailscale with HTTPS certificates; does nothing without it, and only one window at a time holds the address |
 | `nikui.remote.requireEncryption` | `true` | Refuse a device that will not seal the channel end to end |
 | `nikui.remote.appOnly` | `false` | Serve the app and nothing else outside this machine |
 | `nikui.apns.*` | empty | Apple team ID, key ID, `.p8` path and topic, for telling an iPhone something while the app is closed |
@@ -394,6 +395,29 @@ two windows and run it in the second, and the phone follows to the second.
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
 
+### More than one device, and taking one off from the other
+
+Any number of devices can be paired, and any number connected at once: each one
+has a key of its own, gets its own seat, and is named and granted separately.
+Pairing is one device per code — the window closes on the first claim — so two
+phones are two codes, not a code that two phones share.
+
+The list is also on the phone, under Settings → Devices, with what each one is,
+where it keeps its key and whether it is connected now. From there:
+
+- **Its own** may always be removed. That is the honest end of "this phone is
+  not mine any more", and it takes the phone's key with it so nothing is left
+  pointing at a record the laptop no longer has.
+- **Anybody else's** needs the same grant as sending a prompt. A watching-only
+  device that could unpair the others would be a way to lock somebody out of
+  their own machine from a seat that is supposed to be read-only. The refusal is
+  written into the trail like any other.
+
+A removal reaches a socket that is already open: the device loses its connection
+at once rather than at its next one, and every other device watching the list
+sees it go without reloading anything. The same is true the other way — a device
+forgotten on the laptop disappears from the phone's list as it happens.
+
 ## One instance, many clients
 
 A session does not know what is looking at it. `src/hub.js` owns that
@@ -425,9 +449,24 @@ conformance suite waiting for it rather than a reading exercise.
 `NikUI: Start the local server` serves the client over HTTP on this machine, and
 `NikUI: Open NikUI in a browser` opens it. A paired device — see below — reaches
 the same pages without the key. A status bar item appears while it is
-listening — clicking it offers the link, the clipboard and the off switch. It is
-off until you start it (`nikui.remote.autoStart` changes that), and the port is
-`nikui.remote.port`.
+listening — clicking it offers the link, the clipboard and the off switch. The
+port is `nikui.remote.port`.
+
+It starts with the window, and puts itself on the tailnet while it is at it, so
+a phone that tries to reach this laptop from somewhere else can. Both are
+settings (`nikui.remote.autoStart`, `nikui.remote.tailnet`) and both default to
+on, because a phone that only works when somebody remembered to arm the laptop
+is a phone that works at the desk it was not needed at. Nothing new listens for
+either: the server binds to `127.0.0.1` and nowhere else, `tailscale serve`
+takes the connection on the mesh and forwards to it, and a device still has to
+be paired before it may say a word.
+
+`tailscale serve` is one setting for the whole machine, so exactly one window
+can hold the tailnet address. A second window checks before it claims: if the
+address already forwards to a port where a NikUI is still answering, it leaves
+it alone and serves on loopback. If it forwards to a port where nothing answers
+— a window that was closed, a laptop that restarted — it picks it up. Without
+that, opening a second window would silently move every phone to it.
 
 The browser runs the same `media/*.js` as the panel. The one call that knew what
 was hosting the page — `acquireVsCodeApi()` — is now `window.nikTransport()`,

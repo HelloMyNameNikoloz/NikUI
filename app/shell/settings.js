@@ -27,7 +27,10 @@
     watching: null,         // whether it can keep listening in a pocket
     laptopVersion: null,    // what the laptop is running, as it said on connecting
     explaining: false,      // the one paragraph that says what any of this is
-    apple: null             // whether this iPhone can be reached while closed
+    apple: null,            // whether this iPhone can be reached while closed
+    devices: null,          // everything paired with this laptop, as this device sees it
+    mayManage: false,       // whether this device may take another one off
+    me: null                // which of them is this one
   };
 
   const el = (tag, className, text) => {
@@ -187,6 +190,8 @@
       value: state.control === null ? 'Unknown' : state.control ? 'Can send prompts' : 'Watching only',
       tone: state.control === false ? 'warn' : state.control ? 'good' : ''
     });
+
+    drawDevices();
 
     const identity = group('This device',
       'The key is made on this device and cannot leave it. The laptop knows only the public half.');
@@ -375,6 +380,80 @@
     });
   }
 
+  /**
+   * Everything paired with this laptop, and a way to take one off.
+   *
+   * The remove button used to live only on the laptop, which is the one place
+   * you are not when you need it: a phone left in a taxi is unpaired from the
+   * phone you still have, or not at all until you get home.
+   *
+   * Its own is always offered. Anyone else's needs the same permission as
+   * sending a prompt, because it is the same kind of act — a change to what the
+   * laptop will accept, rather than something you are reading — and a
+   * watching-only device that could unpair the others would be a way to lock
+   * somebody out of their own machine from a read-only seat.
+   */
+  function drawDevices() {
+    if (!state.devices) return;
+
+    const others = state.devices.filter((d) => !d.me).length;
+    const list = group(
+      others ? 'Devices' : 'Devices',
+      state.mayManage
+        ? 'Removing a device deletes the laptop\u2019s record of it. It cannot connect again without pairing.'
+        : others
+          ? 'Only a device that may send prompts can remove another. This one can still remove itself.'
+          : 'Nothing else is paired with this laptop.');
+
+    for (const device of state.devices) {
+      const where = HELD[device.protection] || HELD.software;
+      const when = device.here ? 'connected now' : 'last seen ' + ago(device.lastSeenAt);
+      const may = device.me || state.mayManage;
+      row(list, {
+        label: device.name,
+        hint: where + ' \u00b7 ' + when + (device.control ? ' \u00b7 can send prompts' : ''),
+        value: device.me ? 'This device' : may ? 'Remove' : '',
+        dot: device.here ? 'live' : null,
+        tone: device.me ? '' : may ? 'danger' : '',
+        stacked: true,
+        tap: may ? (event) => armRemove(event, device) : null,
+        chevron: may && !device.me
+      });
+    }
+  }
+
+  /**
+   * Two taps, and the second one says what it is about to do by name.
+   *
+   * The same shape as forgetting the laptop, for the same reason: this is not
+   * undoable from here, and a list of rows where one of them unpairs a phone is
+   * a list somebody will hit by accident.
+   */
+  function armRemove(event, device) {
+    const node = event.currentTarget;
+    const name = node.querySelector('b');
+    if (node.dataset.armed === '1') {
+      if (!transport) return flash('Your laptop is not connected.');
+      transport.postMessage({ type: 'forget', id: device.id });
+      buzz('heavy');
+      // Its own removal ends this device's pairing, so the key goes with it
+      // rather than being left pointing at a record the laptop no longer has.
+      if (device.me) {
+        app.forget();
+        window.location.replace('connect.html');
+      }
+      return;
+    }
+    node.dataset.armed = '1';
+    name.textContent = device.me ? 'Tap again to remove this device' : 'Tap again to remove ' + device.name;
+    buzz('heavy');
+    setTimeout(() => {
+      if (!node.isConnected) return;
+      node.dataset.armed = '';
+      name.textContent = device.name;
+    }, 4000);
+  }
+
   // ---- what the screen checks ----------------------------------------------
 
   /** Is the laptop there, and would it have us? */
@@ -405,6 +484,15 @@
         state.connection = 'live';
         state.control = message.device ? message.device.control !== false : null;
         state.sealed = !!(transport && transport.sealed && transport.sealed());
+        transport.postMessage({ type: 'devices' });
+        draw();
+      } else if (message.type === 'devices') {
+        if (message.refused) flash(message.refused);
+        if (message.devices) {
+          state.devices = message.devices;
+          state.mayManage = !!message.mayManage;
+          state.me = message.me || null;
+        }
         draw();
       } else if (message.type === '@denied') {
         state.connection = 'refused';
@@ -585,6 +673,13 @@
   function confirmForget(event) {
     const node = event.currentTarget;
     if (node.dataset.armed === '1') {
+      // Tell the laptop first, so it does not keep a record of a device whose
+      // key no longer exists. Best effort: the key goes either way, because the
+      // person asked for that and an unreachable laptop is not a reason to
+      // leave a key on a phone they are giving away.
+      if (transport && state.me) {
+        try { transport.postMessage({ type: 'forget', id: state.me }); } catch (_) { /* going anyway */ }
+      }
       app.forget();
       window.location.replace('connect.html');
       return;

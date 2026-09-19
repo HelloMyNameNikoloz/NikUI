@@ -172,16 +172,30 @@ class Tailscale {
   }
 
   /**
+   * Which local port the tailnet is forwarding to, if any.
+   *
+   * `tailscale serve` is one setting for the whole machine, not one per window,
+   * so this is the question a second window has to ask before it does anything:
+   * claiming the tunnel when another window already holds it would silently
+   * take every phone with it.
+   *
+   * @returns {Promise<number|null>}
+   */
+  async forwardedPort() {
+    const out = await this.run(['serve', 'status', '--json']);
+    if (out.code !== 0) return null;
+    try {
+      const found = JSON.stringify(JSON.parse(out.stdout || '{}')).match(/127\.0\.0\.1:(\d+)/);
+      return found ? Number(found[1]) : null;
+    } catch (_) { return null; }
+  }
+
+  /**
    * Whether the tailnet is already forwarding to this port — which it may be
    * from a window that was closed without tidying up.
    */
   async serving(port) {
-    const out = await this.run(['serve', 'status', '--json']);
-    if (out.code !== 0) return false;
-    try {
-      const parsed = JSON.parse(out.stdout || '{}');
-      return JSON.stringify(parsed).indexOf(`127.0.0.1:${port}`) >= 0;
-    } catch (_) { return false; }
+    return (await this.forwardedPort()) === Number(port);
   }
 }
 

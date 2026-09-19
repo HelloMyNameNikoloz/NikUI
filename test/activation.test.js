@@ -85,11 +85,86 @@ module.exports = async function () {
     check('and is listening without anybody asking twice', resumed.listening === true);
     await resumed.dispose();
 
+    // A window nobody has asked for anything now serves by default, because the
+    // alternative is a phone that can only reach a laptop somebody remembered
+    // to arm. The server still binds to loopback and nothing else; a device
+    // still has to be paired to say a word to it.
+    const vscode = require('vscode');
     const fresh = fakeContext({ extensionUri: { fsPath: path.join(__dirname, '..') } });
-    const quiet = serveLocally(fresh, manager, { state: () => null }, null);
+    const eager = serveLocally(fresh, manager, { state: () => null }, null);
     await new Promise((r) => setTimeout(r, 120));
-    check('a window that was not serving stays quiet', quiet.listening === false);
+    check('a fresh window serves by default, so a phone can find it', eager.listening === true);
+    checkEqual('on loopback and nowhere else', eager.server.address().address, '127.0.0.1');
+    await eager.dispose();
+
+    // And the setting still means what it says.
+    vscode.__config['remote.autoStart'] = false;
+    const off = fakeContext({ extensionUri: { fsPath: path.join(__dirname, '..') } });
+    const quiet = serveLocally(off, manager, { state: () => null }, null);
+    await new Promise((r) => setTimeout(r, 120));
+    check('a window told not to start stays quiet', quiet.listening === false);
+    delete vscode.__config['remote.autoStart'];
     await quiet.dispose();
+  }
+
+  suite('only one window at a time holds the tailnet');
+
+  // `tailscale serve` is one setting for the whole machine. Two windows both
+  // claiming it would mean the second quietly takes every phone from the first:
+  // the address does not change, so nothing looks wrong — the phone is simply
+  // showing a different window's instances. That is the failure this prevents,
+  // and it cannot be found by looking at one window.
+  {
+    const { serveLocally } = extension;
+    const manager = { list: [], get: () => null, on() {}, off() {}, activeId: null };
+    const fake = (held) => {
+      const it = {
+        held,
+        exposed: [],
+        forwardedPort: async () => it.held,
+        status: async () => ({ installed: true, running: true, https: true, name: 'laptop.example.ts.net' }),
+        expose: async (port) => {
+          it.exposed.push(port);
+          it.held = port;
+          return { ok: true, host: 'laptop.example.ts.net', url: 'https://laptop.example.ts.net/' };
+        },
+        hide: async () => { it.held = null; return { ok: true }; }
+      };
+      return it;
+    };
+    const open = (tailscale) => serveLocally(
+      fakeContext({ extensionUri: { fsPath: path.join(__dirname, '..') } }),
+      manager, { state: () => null }, null, { tailscale });
+    const settle = () => new Promise((r) => setTimeout(r, 400));
+
+    const nobodys = fake(null);
+    const first = open(nobodys);
+    await settle();
+    checkEqual('a free tailnet is claimed by the window that starts', nobodys.exposed.length, 1);
+    checkEqual('and it forwards to that window', nobodys.exposed[0], first.port);
+    check('which is then reachable', first.exposed === true);
+
+    // The same machine-wide state, seen by a second window, while the first is
+    // still answering on it.
+    const taken = fake(first.port);
+    const second = open(taken);
+    await settle();
+    checkEqual('a second window does not take it away', taken.exposed.length, 0);
+    check('it still serves, on loopback', second.listening === true);
+    check('but it does not claim to be reachable', second.exposed === false);
+    check('and the first still holds the address', first.exposed === true);
+    await second.dispose();
+
+    // A window that was closed leaves the machine-wide setting pointing at a
+    // port where nothing answers. That is not somebody else's tunnel; it is
+    // litter, and the next window should pick it up.
+    const stale = fake(first.port);
+    await first.stop();
+    const third = open(stale);
+    await settle();
+    checkEqual('a tunnel pointing at a dead port is claimed', stale.exposed.length, 1);
+    checkEqual('by the window that is alive', stale.exposed[0], third.port);
+    await third.dispose();
   }
 
   check('the flag is per window rather than shared between them',

@@ -2,6 +2,7 @@
 
 const vscode = require('vscode');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const { SessionManager, readConfig } = require('./manager');
 const { projectRoot } = require('./tree');
@@ -523,7 +524,8 @@ function keepAwake(context, manager, server) {
  * @param {object} [folders] the user's own folders, so a phone is shown the
  *   window the way the editor shows it rather than a flat list of what is in it
  */
-function serveLocally(context, manager, awakeState, folders) {
+function serveLocally(context, manager, awakeState, folders, deps) {
+  const injected = deps || {};
   const bar = vscode.window.createStatusBarItem
     ? vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
     : null;
@@ -606,7 +608,10 @@ function serveLocally(context, manager, awakeState, folders) {
 
   // The mesh in front of the server, when there is one. Nothing binds anywhere
   // but loopback either way: this asks Tailscale's own proxy to forward to us.
-  const tailscale = new Tailscale();
+  // Injectable so the one decision that can silently take every phone away
+  // from another window — who holds the tailnet — can be driven in a test
+  // without a mesh to drive it on.
+  const tailscale = injected.tailscale || new Tailscale();
   const cloudflared = new Cloudflared({
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
   });
@@ -697,8 +702,12 @@ function serveLocally(context, manager, awakeState, folders) {
       );
       return null;
     }
-    // Cheap, and the answer changes what this window will answer to.
-    adoptTunnel();
+    // Being reachable is the point of serving at all: a phone that has to be on
+    // the same wifi is a phone that works at the desk it was not needed at. So
+    // the tailnet goes in front by itself unless somebody turned that off, and
+    // falls back to merely noticing a tunnel that is already there.
+    if (vscode.workspace.getConfiguration('nikui').get('remote.tailnet', true)) becomeReachable();
+    else adoptTunnel();
     context.workspaceState.update('nikui.remote.wasServing', true);
     if (server.movedFrom) {
       // Another window already has the usual port. Said once, quietly: the
@@ -790,16 +799,84 @@ function serveLocally(context, manager, awakeState, folders) {
    * Noticed, not claimed: this window did not set it up, so stopping does not
    * tear it down.
    */
-  const adoptTunnel = async () => {
+  const adoptTunnel = async (knownPort) => {
     if (!server.listening || server.exposed) return false;
     let already = false;
-    try { already = await tailscale.serving(server.port); } catch (_) { return false; }
+    try {
+      already = knownPort === undefined
+        ? await tailscale.serving(server.port)
+        : knownPort === server.port;
+    } catch (_) { return false; }
     if (!already) return false;
     const state = await tailscale.status().catch(() => null);
     if (!state || !state.name) return false;
     server.publicHost = state.name;
     if (out) out.appendLine(new Date().toISOString() +
       `  the tailnet was already forwarding to ${server.port}; this window answers to ${state.name}`);
+    paint();
+    return true;
+  };
+
+  /**
+   * Is a NikUI still answering on that port?
+   *
+   * Asked of a port the tailnet is already forwarding to, to tell "another
+   * window has this" from "a window that had it is gone". Only /health, which
+   * says nothing but yes and needs no credentials.
+   */
+  const answering = (port) => new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/health', timeout: 700 }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve(res.statusCode === 200 && /"ok"\s*:\s*true/.test(body)));
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
+
+  /**
+   * Put this window on the tailnet by itself, if nothing else is using it.
+   *
+   * `tailscale serve` is one setting for the whole machine. Two windows both
+   * claiming it would mean the second silently takes every phone away from the
+   * first — the address does not change, so nothing would look wrong; the phone
+   * would simply be showing a different window's instances.
+   *
+   * So the tunnel is claimed only when it is free, or when it points at a port
+   * where nothing answers any more — a window that was closed, or a laptop that
+   * restarted. A window that loses the race keeps serving on loopback, which is
+   * what it would have done anyway, and says so in the log rather than in a
+   * dialog nobody asked for.
+   */
+  const becomeReachable = async () => {
+    if (!server.listening || server.exposed) return false;
+    let held = null;
+    try { held = await tailscale.forwardedPort(); } catch (_) { return false; }
+    if (held === server.port) return adoptTunnel(held);
+    if (held !== null && await answering(held)) {
+      if (out) out.appendLine(new Date().toISOString() +
+        `  the tailnet is already forwarding to ${held}, which is another window; ` +
+        `this one is serving on ${server.port} and is reachable from this machine only`);
+      return false;
+    }
+
+    const state = await tailscale.status().catch(() => null);
+    if (!state || !state.installed || !state.running || !state.https) {
+      if (out && state) out.appendLine(new Date().toISOString() +
+        '  not putting this window on the tailnet: ' + (state.reason || 'Tailscale is not ready'));
+      return false;
+    }
+    const done = await tailscale.expose(server.port);
+    if (!done.ok) {
+      if (out) out.appendLine(new Date().toISOString() +
+        '  tailscale serve refused: ' + done.reason);
+      return false;
+    }
+    weExposed = true;
+    server.publicHost = done.host;
+    if (out) out.appendLine(new Date().toISOString() +
+      `  this window answers to ${done.host} on the tailnet`);
     paint();
     return true;
   };
@@ -1115,8 +1192,10 @@ function serveLocally(context, manager, awakeState, folders) {
    */
   const SERVING = 'nikui.remote.wasServing';
   if (context.workspaceState.get(SERVING, false) ||
-      vscode.workspace.getConfiguration('nikui').get('remote.autoStart', false)) {
-    start().then((up) => { if (up) adoptTunnel(); });
+      vscode.workspace.getConfiguration('nikui').get('remote.autoStart', true)) {
+    // `start` already puts the tailnet in front when it is allowed to; there is
+    // nothing left to do here but let it fail quietly if Tailscale is not up.
+    start();
   }
   return server;
 }
