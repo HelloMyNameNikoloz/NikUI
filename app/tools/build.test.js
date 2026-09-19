@@ -87,7 +87,9 @@ check('settings has somewhere to draw itself', /id="screen"/.test(settings));
 const history = read('history.html');
 check('history has somewhere to draw itself', /id="screen"/.test(history));
 check('and something to search with', /id="search"/.test(history));
-for (const page of ['index.html', 'history.html', 'settings.html']) {
+const stats = read('stats.html');
+check('stats has somewhere to draw itself', /id="screen"/.test(stats));
+for (const page of ['index.html', 'stats.html', 'history.html', 'settings.html']) {
   check(page + ' carries the tab bar', /<nav class="tabs" id="tabs"/.test(read(page)));
   check(page + ' loads the icons it draws them with', read(page).includes('media/icons.js'));
 }

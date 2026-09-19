@@ -553,6 +553,21 @@ function serveLocally(context, manager, awakeState, folders) {
     folders,
     projectRoot,
     history: (ask) => require('./history').listSessions(ask),
+    // The window's own numbers, which the editor already gathers for its
+    // status sheet: the quota, whether this machine is being held awake, and
+    // what is in front of the server.
+    stats: () => {
+      try {
+        const env = (host && host.env) ? host.env(manager.list[0] || null) : {};
+        return {
+          limits: env.limits || (manager && manager.limits) || null,
+          pause: env.pause || (manager && manager.pause) || null,
+          awake: env.awake || null,
+          reach: env.reach || null,
+          home: env.home || null
+        };
+      } catch (_) { return {}; }
+    },
     devices,
     identity,
     pairing,

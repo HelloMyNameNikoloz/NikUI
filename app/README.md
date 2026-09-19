@@ -70,6 +70,12 @@ Typing is still there, behind *Type the code instead*, for when that does not
 work. The key is made before either button is pressed, so tapping one does one
 thing and does it now.
 
+**Stats** — the window as a whole rather than one conversation in it: how many
+instances and what they are doing, what it has cost, what the quota is doing,
+whether the laptop is being held awake, what is in front of the server, and
+every device paired with it. Three big numbers first, because that is what
+somebody opens it for.
+
 **Instances** — the fleet, live, filed the way the editor files it: folders
 somebody made first, then projects, then everything else. One group draws no
 heading, because a heading over the only thing on screen is noise.
@@ -118,6 +124,8 @@ accessibility setting, not a preference.
 
 ### The capsule moves, and can be pushed
 
+Four tabs, and the selected one is a capsule you can drag.
+
 The selected tab is a shape rather than a colour, and the shape is what travels
 — iOS 26 morphs it from one tab to the next instead of redrawing the strip.
 
@@ -125,6 +133,23 @@ It can also be dragged. A finger anywhere on the strip takes hold of it, the tab
 underneath lights up as you pass, and letting go both settles it and goes there.
 A strip of three things with a shape sitting on one of them invites being
 pushed, and the best control on a phone is the one that does what you tried.
+
+The tab under it takes the colour **by degrees** rather than at a threshold:
+`--lit` is how much of each tab the capsule currently covers, set every frame,
+so halfway across two tabs are half lit. That is the difference between
+something sliding under a light and something switching on when it arrives.
+
+The edges do what glass edges do. A hairline gathers light all the way round,
+and a lens highlight sits just inside it — offset by `--drift`, which is which
+way the capsule is travelling, so the highlight lags behind the movement. That
+lag is what reads as liquid rather than as a rectangle being slid along a rail.
+
+A horizontal swipe **anywhere on the content** moves between tabs as well, in
+the order they are in. A phone held in one hand has a thumb near the bottom and
+a whole screen under it; making only the strip work means reaching for the
+strip. The gesture locks to an axis in the first ten pixels, because a list that
+sometimes changes tab when you meant to scroll it is worse than one that never
+does.
 
 Two details that are the difference between smooth and not. The easing overshoots
 very slightly — linear reads as a progress bar, a little weight reads as

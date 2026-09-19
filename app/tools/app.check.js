@@ -223,12 +223,15 @@ const record = (name, ok) => {
     // ---- the window, filed the way the editor files it ----------------------
     record('the fleet is drawn as cards rather than one long list',
       await phone.until('document.querySelectorAll(".rows-card").length >= 1', 8000));
-    record('and three peer screens reachable from a tab bar',
-      (await phone.evaluate('document.querySelectorAll(".tabs .tab").length')) === 3);
+    record('and four peer screens reachable from a tab bar',
+      (await phone.evaluate('document.querySelectorAll(".tabs .tab").length')) === 4);
+    record('with Stats between Instances and History',
+      (await phone.evaluate(`[...document.querySelectorAll('.tab-label')].map(n => n.textContent).join(',')`))
+        === 'Instances,Stats,History,Settings');
     record('the one you are on being the one that is marked',
       (await phone.evaluate(`document.querySelector('.tab.here .tab-label').textContent`)) === 'Instances');
     record('each tab drawn with the product\u2019s own icons',
-      (await phone.evaluate('document.querySelectorAll(".tabs .tab .ico").length')) === 3);
+      (await phone.evaluate('document.querySelectorAll(".tabs .tab .ico").length')) === 4);
 
     record('nothing scrolls sideways',
       (await phone.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')) === true);
@@ -522,9 +525,9 @@ const record = (name, ok) => {
       }
       return bad.slice(0, 6).join(' | ');
     })()`;
-    for (const screen of ['index.html', 'history.html', 'settings.html']) {
+    for (const screen of ['index.html', 'stats.html', 'history.html', 'settings.html']) {
       await phone.navigate(appOrigin + '/' + screen);
-      await phone.until('document.querySelectorAll(".tabs .tab").length === 3', 10000);
+      await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
       const cut = await phone.evaluate(CLIPPED);
       record('nothing is cut off on ' + screen + (cut ? ' — ' + cut : ''), cut === '');
     }
@@ -584,16 +587,75 @@ const record = (name, ok) => {
     })()`)) === true);
     record('and letting go over another tab goes there',
       await phone.until('location.pathname.endsWith("settings.html")', 8000));
-    await phone.until('document.querySelectorAll(".tabs .tab").length === 3', 10000);
+    await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
     record('with the capsule already under the new tab when it lands',
       (await phone.evaluate(`(() => {
         const pill = document.querySelector('.tab-pill').getBoundingClientRect();
-        const tab = document.querySelectorAll('.tabs .tab')[2].getBoundingClientRect();
+        const tab = document.querySelectorAll('.tabs .tab')[3].getBoundingClientRect();
         return Math.abs(pill.left - tab.left) < 6;
       })()`)) === true);
     await phone.evaluate(`document.documentElement.classList.remove('plat-ios')`);
     await phone.navigate(appOrigin + '/index.html');
-    await phone.until('document.querySelectorAll(".tabs .tab").length === 3', 10000);
+    await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+
+    // The tint travels with the capsule rather than switching at a threshold:
+    // halfway across, two tabs are half lit.
+    record('a tab takes the colour by degrees as the capsule crosses it',
+      (await phone.evaluate(`(() => {
+        const tabs = document.getElementById('tabs');
+        const box = tabs.getBoundingClientRect();
+        tabs.setPointerCapture = () => {};
+        const at = (x) => ({ clientX: x, clientY: box.top + box.height / 2, pointerId: 3, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
+        tabs.dispatchEvent(new PointerEvent('pointerdown', at(box.left + box.width / 8)));
+        // Straddling the boundary between the first two tabs.
+        tabs.dispatchEvent(new PointerEvent('pointermove', at(box.left + box.width / 4)));
+        const lit = [...document.querySelectorAll('.tabs .tab')]
+          .map(t => Number(getComputedStyle(t).getPropertyValue('--lit')));
+        tabs.dispatchEvent(new PointerEvent('pointercancel', at(box.left + box.width / 4)));
+        const partial = lit.filter(v => v > 0.05 && v < 0.95).length;
+        return partial >= 2;
+      })()`)) === true);
+
+    // A swipe across the content is the tab strip too, for a thumb that is
+    // nowhere near the bottom of the screen.
+    record('swiping the content sideways changes tab',
+      await (async () => {
+        await phone.navigate(appOrigin + '/index.html');
+        await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+        await phone.evaluate(`(() => {
+          const screen = document.querySelector('.screen');
+          const box = screen.getBoundingClientRect();
+          const y = box.top + box.height / 2;
+          const at = (x) => ({ clientX: x, clientY: y, pointerId: 4, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
+          screen.dispatchEvent(new PointerEvent('pointerdown', at(box.right - 40)));
+          screen.dispatchEvent(new PointerEvent('pointermove', at(box.right - 120)));
+          screen.dispatchEvent(new PointerEvent('pointermove', at(box.left + 40)));
+          screen.dispatchEvent(new PointerEvent('pointerup', at(box.left + 40)));
+        })()`);
+        return phone.until('location.pathname.endsWith("stats.html")', 8000);
+      })());
+    record('and a vertical drag does not',
+      await (async () => {
+        await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+        await phone.evaluate(`(() => {
+          const screen = document.querySelector('.screen');
+          const box = screen.getBoundingClientRect();
+          const x = box.left + box.width / 2;
+          const at = (y) => ({ clientX: x, clientY: y, pointerId: 5, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
+          screen.dispatchEvent(new PointerEvent('pointerdown', at(box.top + 60)));
+          screen.dispatchEvent(new PointerEvent('pointermove', at(box.top + 200)));
+          screen.dispatchEvent(new PointerEvent('pointerup', at(box.top + 320)));
+        })()`);
+        await wait(900);
+        return (await phone.evaluate('location.pathname')).endsWith('stats.html');
+      })());
+    record('the stats screen says what the window is doing',
+      await phone.until('document.querySelectorAll(".tile").length === 3', 12000));
+    record('with the numbers somebody opens it for',
+      /instance|need you/.test(await phone.evaluate('document.body.textContent')));
+
+    await phone.navigate(appOrigin + '/index.html');
+    await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
 
     record('the app is dark whatever the phone is',
       (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');

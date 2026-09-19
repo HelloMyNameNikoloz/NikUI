@@ -1149,9 +1149,11 @@ html.plat-ios body.app-conversation header {
    the strip — which is what makes it read as a bubble sitting in it rather than
    a rectangle painted on it. */
 html.plat-ios .tab-pill {
+  /* Thin. The rim and the lens do the work of looking like glass; a fill this
+     side of opaque just looks like a lighter rectangle. */
   background: linear-gradient(to bottom,
-    rgba(255, 255, 255, 0.20),
-    rgba(255, 255, 255, 0.07));
+    rgba(255, 255, 255, 0.11),
+    rgba(255, 255, 255, 0.035));
   backdrop-filter: blur(12px) saturate(180%);
   -webkit-backdrop-filter: blur(12px) saturate(180%);
   box-shadow:
@@ -1162,8 +1164,8 @@ html.plat-ios .tab-pill {
 
 html.plat-ios .tab-pill.held {
   background: linear-gradient(to bottom,
-    rgba(255, 255, 255, 0.28),
-    rgba(255, 255, 255, 0.12));
+    rgba(255, 255, 255, 0.16),
+    rgba(255, 255, 255, 0.06));
   box-shadow:
     inset 0 0.5px 0 rgba(255, 255, 255, 0.6),
     inset 0 -0.5px 0 rgba(255, 255, 255, 0.14),
@@ -1182,4 +1184,133 @@ html.plat-ios .tab-pill.held {
     -webkit-backdrop-filter: none;
     background: var(--app-raised-2);
   }
+}
+
+/* ---- the numbers somebody opens Stats for ----------------------------------
+
+   Three of them, big, before anything that needs reading. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 4px 0 20px;
+}
+
+.tile {
+  padding: 16px 10px 14px;
+  border-radius: var(--app-radius);
+  background: var(--app-raised);
+  text-align: center;
+}
+
+.tile-value {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-foreground);
+}
+
+.tile-label {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--app-faint);
+}
+
+.tile.warn .tile-value { color: var(--app-orange); }
+.tile.good .tile-value { color: var(--app-green); }
+.tile.bad .tile-value { color: var(--app-red); }
+
+html.plat-ios .tile {
+  background: linear-gradient(to bottom,
+    rgba(255, 255, 255, 0.07),
+    rgba(255, 255, 255, 0.035));
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.14);
+}
+
+/* Four tabs, not three. */
+.tab-pill { width: 25%; }
+
+/* ---- the tint the capsule carries ------------------------------------------
+
+   `--lit` is how much of this tab the capsule is currently over, set on every
+   frame of the gesture. Colour by degrees rather than at a threshold: crossing
+   between two tabs lights both of them halfway, which is what makes the capsule
+   look like it is carrying the colour with it. */
+.tabs .tab {
+  color: color-mix(in srgb, var(--app-accent) calc(var(--lit, 0) * 100%), var(--app-faint));
+  transition: none;
+}
+
+.tabs .tab .ico {
+  /* Slightly ahead of the label, so the icon takes the light first. */
+  opacity: calc(0.72 + var(--lit, 0) * 0.28);
+}
+
+.tabs .tab .tab-label {
+  font-weight: calc(500 + var(--lit, 0) * 100);
+}
+
+/* ---- the edges ------------------------------------------------------------
+
+   Glass does two things at an edge that a flat panel does not: it gathers light
+   into a bright rim, and it bends what is behind it just inside that rim. The
+   rim is an inset hairline; the bending is a band of brighter, tighter blur
+   held just inside the border, which is as close as a browser gets to a lens.
+
+   `--drift` is which way the capsule is travelling. The highlight lags behind
+   it, so the trailing edge stays lit a moment longer — the thing that reads as
+   liquid rather than as a rectangle being moved. */
+.tab-pill {
+  --drift: 0;
+  isolation: isolate;
+}
+
+.tab-pill::before,
+.tab-pill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* The lens: a ring just inside the edge, brighter where the light is coming
+   from, which moves as the capsule moves. */
+.tab-pill::before {
+  background:
+    radial-gradient(120% 140% at calc(50% - var(--drift) * 38%) -20%,
+      rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.06) 42%, transparent 62%),
+    radial-gradient(90% 120% at calc(50% - var(--drift) * 46%) 118%,
+      rgba(255, 255, 255, 0.14), transparent 58%);
+  transition: background 220ms ease;
+}
+
+/* The rim: a hairline that is brightest along the trailing edge. */
+.tab-pill::after {
+  /* A hairline all the way round rather than a top edge only: light gathers at
+     every edge of a lens, and the mask below decides which of them is brightest
+     at this moment. */
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.30),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.55);
+  mask-image: linear-gradient(
+    to right,
+    rgba(0, 0, 0, calc(0.45 + var(--drift) * -0.55)),
+    rgba(0, 0, 0, 1) 45%,
+    rgba(0, 0, 0, calc(0.45 + var(--drift) * 0.55)));
+  -webkit-mask-image: linear-gradient(
+    to right,
+    rgba(0, 0, 0, calc(0.45 + var(--drift) * -0.55)),
+    rgba(0, 0, 0, 1) 45%,
+    rgba(0, 0, 0, calc(0.45 + var(--drift) * 0.55)));
+}
+
+/* The content scrolls sideways under a finger as well as under the strip, so
+   it must not also try to pan itself. */
+.screen { touch-action: pan-y; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-pill::before { transition: none; }
 }

@@ -152,6 +152,7 @@
    */
   function wireChrome() {
     tabs();
+    swipeScreens();
 
     // The client's own back link points at the server's root; in a bundle the
     // fleet is a page rather than a path.
@@ -168,6 +169,7 @@
   // already is.
   const TABS = [
     { page: 'index.html', label: 'Instances', icon: 'terminal' },
+    { page: 'stats.html', label: 'Stats', icon: 'activity' },
     { page: 'history.html', label: 'History', icon: 'history' },
     { page: 'settings.html', label: 'Settings', icon: 'settings' }
   ];
@@ -243,13 +245,33 @@
       }
     };
 
-    const lightUp = (index) => {
-      buttons.forEach((button, i) => button.classList.toggle('here', i === index));
+    /**
+     * How much of each tab the capsule is currently over.
+     *
+     * Not a threshold: as the capsule crosses a tab it takes its colour by
+     * degrees, so at the halfway point two tabs are half lit. That is the
+     * difference between something sliding under a light and something
+     * switching on when it arrives.
+     */
+    const tint = () => {
+      const glass = pill.getBoundingClientRect();
+      buttons.forEach((button, i) => {
+        const box = button.getBoundingClientRect();
+        const over = Math.max(0, Math.min(glass.right, box.right) - Math.max(glass.left, box.left));
+        const lit = box.width ? Math.max(0, Math.min(1, over / box.width)) : 0;
+        button.style.setProperty('--lit', lit.toFixed(3));
+        button.classList.toggle('here', lit > 0.5);
+        if (lit > 0.5) button.setAttribute('aria-current', 'page');
+        else button.removeAttribute('aria-current');
+      });
     };
+
+    const lightUp = () => tint();
 
     // Drawn where it belongs before anything can animate: a capsule that slides
     // in from the left on every page load would be a page load you can see.
     place(at, false);
+    tint();
 
     const nearest = (clientX) => {
       const box = host.getBoundingClientRect();
@@ -257,6 +279,7 @@
       return Math.max(0, Math.min(buttons.length - 1, Math.floor(across * buttons.length)));
     };
 
+    let was = null;
     const follow = (clientX) => {
       const box = host.getBoundingClientRect();
       const span = box.width / buttons.length;
@@ -264,14 +287,27 @@
       const left = Math.max(0, Math.min(box.width - span, clientX - box.left - span / 2));
       pill.style.transition = 'none';
       pill.style.transform = 'translate3d(' + ((left / span) * 100) + '%, 0, 0)';
-      lightUp(nearest(clientX));
+      // Which way it is going, and how hard. The highlight lags behind the
+      // movement, which is what makes a thing look like it is made of liquid
+      // rather than being slid along a rail.
+      if (was !== null) {
+        const drift = Math.max(-1, Math.min(1, (left - was) / 22));
+        pill.style.setProperty('--drift', drift.toFixed(3));
+      }
+      was = left;
+      tint();
     };
 
     const settle = (clientX) => {
       const index = nearest(clientX);
       pill.style.transition = '';
       place(index, true);
-      lightUp(index);
+      pill.style.setProperty('--drift', '0');
+      was = null;
+      // After the transition, not before it: the tint has to follow the
+      // capsule the whole way rather than jumping ahead of it.
+      const chase = setInterval(tint, 16);
+      setTimeout(() => { clearInterval(chase); tint(); }, 460);
       return index;
     };
 
@@ -313,7 +349,7 @@
       dragging = false;
       pill.classList.remove('held');
       place(at, true);
-      lightUp(at);
+      tint();
     });
 
     // A keyboard, or anything that is not a finger.
@@ -323,13 +359,75 @@
         if (index === at) return;
         at = index;
         place(index, true);
-        lightUp(index);
+        const chase = setInterval(tint, 16);
+        setTimeout(() => { clearInterval(chase); tint(); }, 460);
         buzz();
         setTimeout(() => go(TABS[index].page), 180);
       });
     });
 
     window.addEventListener('resize', () => place(at, false));
+  }
+
+  /**
+   * The content is the tab strip too.
+   *
+   * A phone held in one hand has a thumb near the bottom and a whole screen
+   * under it; making only the strip work means reaching for the strip. So a
+   * horizontal swipe anywhere on the content moves between tabs, in the order
+   * they are in.
+   *
+   * Locked to one axis on the first few pixels: these screens scroll, and a
+   * list that sometimes changes tab when you meant to scroll it is worse than
+   * one that never does.
+   */
+  function swipeScreens() {
+    const screen = document.querySelector('.screen');
+    const host = document.getElementById('tabs');
+    if (!screen || !host) return;
+    const here = (window.location.pathname.split('/').pop() || 'index.html');
+    let at = TABS.findIndex((t) => t.page === here);
+    if (at < 0) at = 0;
+
+    let startX = 0;
+    let startY = 0;
+    let axis = null;
+    let tracking = false;
+
+    screen.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse') return;
+      tracking = true;
+      axis = null;
+      startX = event.clientX;
+      startY = event.clientY;
+    });
+
+    screen.addEventListener('pointermove', (event) => {
+      if (!tracking) return;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (!axis) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        axis = Math.abs(dx) > Math.abs(dy) * 1.4 ? 'x' : 'y';
+      }
+      if (axis !== 'x') return;
+      event.preventDefault();
+    });
+
+    const done = (event) => {
+      if (!tracking) return;
+      tracking = false;
+      if (axis !== 'x') return;
+      const dx = event.clientX - startX;
+      if (Math.abs(dx) < 60) return;
+      const next = at + (dx < 0 ? 1 : -1);
+      if (next < 0 || next >= TABS.length) return;
+      buzz();
+      go(TABS[next].page);
+    };
+
+    screen.addEventListener('pointerup', done);
+    screen.addEventListener('pointercancel', () => { tracking = false; });
   }
 
   /** The small knock that makes a selection feel like it happened. */

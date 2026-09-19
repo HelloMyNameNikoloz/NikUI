@@ -65,6 +65,7 @@ class RemoteServer {
    * @param {object} [deps.folders] the user's own folders, so a phone sees the same ones
    * @param {(cwd: string) => string} [deps.projectRoot] which project a directory belongs to
    * @param {(opts: object) => Promise<Array>} [deps.history] past conversations on this machine
+   * @param {() => object} [deps.stats] what the window looks like as a whole
    * @param {(line: string) => void} [deps.log]
    */
   constructor(deps) {
@@ -86,6 +87,7 @@ class RemoteServer {
     this.folders = deps.folders || null;
     this.projectRoot = deps.projectRoot || null;
     this.history = deps.history || null;
+    this.stats = deps.stats || null;
     this.requireSealed = deps.requireSealed || (() => true);
     this.appOnly = deps.appOnly || (() => false);
     this.gate = deps.gate || new Gate({
@@ -852,6 +854,7 @@ ${this.appHead(nonce)}</head>
         if (!message) return;
         if (message.type === 'ready') return void client.post(this.fleetMessage());
         if (message.type === 'history') return void client.post(await this.historyMessage(message));
+        if (message.type === 'stats') return void client.post(this.statsMessage());
       },
       device: () => {},
       detach: () => this.fleetClients.delete(client)
@@ -888,6 +891,41 @@ ${this.appHead(nonce)}</head>
       folders: placed.map((f) => ({ id: f.id, name: f.name })),
       at: Date.now()
     };
+  }
+
+  /**
+   * The window as a whole, rather than one instance in it: what is running,
+   * what it has cost, what the quota is doing, and what can reach this laptop.
+   *
+   * The same facts the status sheet shows in the editor, gathered once for a
+   * screen rather than per conversation.
+   */
+  statsMessage() {
+    const instances = this.sessions.list();
+    const byStatus = {};
+    let cost = 0;
+    let queued = 0;
+    for (const session of instances) {
+      const status = session.status || 'idle';
+      byStatus[status] = (byStatus[status] || 0) + 1;
+      cost += session.totalCost || 0;
+      queued += (session.queue || []).length;
+    }
+    const extra = this.stats ? (this.stats() || {}) : {};
+    return Object.assign({
+      type: 'stats',
+      instances: instances.length,
+      byStatus,
+      cost,
+      queued,
+      devices: this.devices ? this.devices.list().map((d) => ({
+        name: d.name, control: !!d.control, lastSeenAt: d.lastSeenAt,
+        protection: d.protection || 'software',
+        reach: { push: !!d.push, apple: !!d.apns }
+      })) : [],
+      version: this.version,
+      at: Date.now()
+    }, extra);
   }
 
   /**

@@ -34,7 +34,7 @@ const CLIENT_FILES = SCRIPTS.concat([
   'panel.css', 'browser.css', 'mobile.js', 'home.js', 'device.js'
 ]);
 
-const SHELL_FILES = ['app.css', 'app.js', 'notify.js', 'connect.js', 'settings.js', 'history.js'];
+const SHELL_FILES = ['app.css', 'app.js', 'notify.js', 'connect.js', 'settings.js', 'history.js', 'stats.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -250,6 +250,25 @@ function connectPage() {
   });
 }
 
+function statsPage() {
+  page({
+    file: 'stats.html',
+    title: 'Stats',
+    cls: 'stats',
+    body: `  <header class="bar">
+    <div class="bar-left"></div>
+    <span class="bar-title">Stats</span>
+    <div class="bar-right">
+      <div class="link" id="link" role="status" aria-live="polite" hidden></div>
+    </div>
+  </header>
+  <main class="screen" id="screen"></main>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
+    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+      'media/transport.js', 'stats.js']
+  });
+}
+
 function historyPage() {
   page({
     file: 'history.html',
@@ -299,6 +318,7 @@ function build() {
   copyCapacitor();
   conversationPage();
   homePage();
+  statsPage();
   historyPage();
   connectPage();
   settingsPage();
