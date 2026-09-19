@@ -554,6 +554,47 @@ const record = (name, ok) => {
       (await phone.evaluate(`getComputedStyle(document.querySelector('.rows-card')).backdropFilter`)) === 'none');
     await phone.evaluate(`document.documentElement.classList.remove('plat-ios')`);
 
+    // The capsule: where it starts, that it can be pushed, and that pushing it
+    // far enough goes somewhere.
+    await phone.evaluate(`document.documentElement.classList.add('plat-ios')`);
+    record('the selected tab is a capsule rather than a colour',
+      (await phone.evaluate('!!document.querySelector(".tabs .tab-pill")')) === true);
+    record('drawn where it belongs before anything can animate',
+      (await phone.evaluate(`(() => {
+        const pill = document.querySelector('.tab-pill').getBoundingClientRect();
+        const tab = document.querySelectorAll('.tabs .tab')[0].getBoundingClientRect();
+        return Math.abs(pill.left - tab.left) < 6;
+      })()`)) === true);
+    record('and it is glass in its own right on an iPhone',
+      (await phone.evaluate(`getComputedStyle(document.querySelector('.tab-pill')).backdropFilter`))
+        .indexOf('blur(12px)') >= 0);
+
+    record('a finger dragged across the strip carries it', (await phone.evaluate(`(() => {
+      const tabs = document.getElementById('tabs');
+      const box = tabs.getBoundingClientRect();
+      const pill = document.querySelector('.tab-pill');
+      const at = (x) => ({ clientX: x, clientY: box.top + box.height / 2, pointerId: 1, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
+      tabs.setPointerCapture = () => {};
+      tabs.dispatchEvent(new PointerEvent('pointerdown', at(box.left + box.width / 6)));
+      tabs.dispatchEvent(new PointerEvent('pointermove', at(box.left + box.width * 0.84)));
+      const held = pill.classList.contains('held');
+      const moved = pill.getBoundingClientRect().left > box.left + box.width / 3;
+      tabs.dispatchEvent(new PointerEvent('pointerup', at(box.left + box.width * 0.84)));
+      return held && moved;
+    })()`)) === true);
+    record('and letting go over another tab goes there',
+      await phone.until('location.pathname.endsWith("settings.html")', 8000));
+    await phone.until('document.querySelectorAll(".tabs .tab").length === 3', 10000);
+    record('with the capsule already under the new tab when it lands',
+      (await phone.evaluate(`(() => {
+        const pill = document.querySelector('.tab-pill').getBoundingClientRect();
+        const tab = document.querySelectorAll('.tabs .tab')[2].getBoundingClientRect();
+        return Math.abs(pill.left - tab.left) < 6;
+      })()`)) === true);
+    await phone.evaluate(`document.documentElement.classList.remove('plat-ios')`);
+    await phone.navigate(appOrigin + '/index.html');
+    await phone.until('document.querySelectorAll(".tabs .tab").length === 3', 10000);
+
     record('the app is dark whatever the phone is',
       (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');
 

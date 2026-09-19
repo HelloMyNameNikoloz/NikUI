@@ -98,7 +98,8 @@ So on an iPhone — and only on an iPhone, because this is Apple's material and
 Android has its own — the chrome becomes glass:
 
 - the title bar and the conversation's header
-- the tab strip, which becomes a capsule floating clear of the edges
+- the tab strip, which becomes a capsule floating clear of the edges, with a
+  second glass capsule inside it marking the tab you are on
 - the composer, and History's search field
 
 Three things make it read as glass rather than as a blur: a strong backdrop blur
@@ -114,6 +115,24 @@ and nothing is glass without it.
 
 `prefers-reduced-transparency` turns all of it back into a surface. That is an
 accessibility setting, not a preference.
+
+### The capsule moves, and can be pushed
+
+The selected tab is a shape rather than a colour, and the shape is what travels
+— iOS 26 morphs it from one tab to the next instead of redrawing the strip.
+
+It can also be dragged. A finger anywhere on the strip takes hold of it, the tab
+underneath lights up as you pass, and letting go both settles it and goes there.
+A strip of three things with a shape sitting on one of them invites being
+pushed, and the best control on a phone is the one that does what you tried.
+
+Two details that are the difference between smooth and not. The easing overshoots
+very slightly — linear reads as a progress bar, a little weight reads as
+something that has arrived. And the page changes on *release*, after the capsule
+has landed: every screen here is its own document, so navigating mid-gesture
+would tear the thing you are holding out from under you. On the new page the
+capsule is drawn in place before transitions are allowed, so a page load is
+never something you can see.
 
 ## Design
 

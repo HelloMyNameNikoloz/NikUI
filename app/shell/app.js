@@ -176,6 +176,19 @@
     const host = document.getElementById('tabs');
     if (!host) return;
     const here = (window.location.pathname.split('/').pop() || 'index.html');
+    let at = TABS.findIndex((t) => t.page === here);
+    if (at < 0) at = 0;
+
+    // The selected tab is a glass capsule of its own, sitting inside the strip
+    // — the thing iOS 26 morphs from one tab to the next rather than redrawing.
+    // It is a sibling of the buttons rather than a background on one, because
+    // it has to be able to move independently of both.
+    const pill = document.createElement('span');
+    pill.className = 'tab-pill';
+    pill.setAttribute('aria-hidden', 'true');
+    host.appendChild(pill);
+
+    const buttons = [];
     for (const tab of TABS) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -193,9 +206,139 @@
       words.className = 'tab-label';
       words.textContent = tab.label;
       button.appendChild(words);
-      if (tab.page !== here) button.addEventListener('click', () => go(tab.page));
       host.appendChild(button);
+      buttons.push(button);
     }
+
+    slide(host, pill, buttons, at);
+  }
+
+  /**
+   * The capsule, and the finger that can drag it.
+   *
+   * Tapping a tab is the ordinary way through, and it still is. But a strip of
+   * three things with a shape sitting on one of them invites being pushed, and
+   * on a phone the best control is the one that does what you tried. So the
+   * capsule follows a finger across the strip, the tab under it lights up as
+   * you pass, and letting go both settles it and goes there.
+   *
+   * The page changes on release rather than while dragging: every screen here
+   * is its own document, and navigating mid-gesture would tear the thing you
+   * are holding out from under you.
+   */
+  function slide(host, pill, buttons, startAt) {
+    let at = startAt;
+    let dragging = false;
+    let moved = false;
+
+    const place = (index, animate) => {
+      const span = 100 / buttons.length;
+      pill.style.transition = animate ? '' : 'none';
+      pill.style.width = span + '%';
+      pill.style.transform = 'translate3d(' + (index * 100) + '%, 0, 0)';
+      if (!animate) {
+        // Let the browser take the jump before transitions are allowed back.
+        void pill.offsetWidth;
+        pill.style.transition = '';
+      }
+    };
+
+    const lightUp = (index) => {
+      buttons.forEach((button, i) => button.classList.toggle('here', i === index));
+    };
+
+    // Drawn where it belongs before anything can animate: a capsule that slides
+    // in from the left on every page load would be a page load you can see.
+    place(at, false);
+
+    const nearest = (clientX) => {
+      const box = host.getBoundingClientRect();
+      const across = (clientX - box.left) / box.width;
+      return Math.max(0, Math.min(buttons.length - 1, Math.floor(across * buttons.length)));
+    };
+
+    const follow = (clientX) => {
+      const box = host.getBoundingClientRect();
+      const span = box.width / buttons.length;
+      // Clamped to the strip, so the capsule never leaves the glass it lives in.
+      const left = Math.max(0, Math.min(box.width - span, clientX - box.left - span / 2));
+      pill.style.transition = 'none';
+      pill.style.transform = 'translate3d(' + ((left / span) * 100) + '%, 0, 0)';
+      lightUp(nearest(clientX));
+    };
+
+    const settle = (clientX) => {
+      const index = nearest(clientX);
+      pill.style.transition = '';
+      place(index, true);
+      lightUp(index);
+      return index;
+    };
+
+    host.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      dragging = true;
+      moved = false;
+      pill.classList.add('held');
+      host.setPointerCapture(event.pointerId);
+    });
+
+    host.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      moved = true;
+      event.preventDefault();
+      follow(event.clientX);
+    });
+
+    const release = (event) => {
+      if (!dragging) return;
+      dragging = false;
+      pill.classList.remove('held');
+      const index = settle(event.clientX);
+      if (index === at) {
+        // Back where it started: a tap on the tab you are already on, or a drag
+        // that changed its mind. Nothing to navigate to.
+        if (!moved) return;
+        return;
+      }
+      at = index;
+      buzz();
+      // After the capsule has arrived, so the last thing seen is it landing.
+      setTimeout(() => go(TABS[index].page), 180);
+    };
+
+    host.addEventListener('pointerup', release);
+    host.addEventListener('pointercancel', () => {
+      if (!dragging) return;
+      dragging = false;
+      pill.classList.remove('held');
+      place(at, true);
+      lightUp(at);
+    });
+
+    // A keyboard, or anything that is not a finger.
+    buttons.forEach((button, index) => {
+      button.addEventListener('click', (event) => {
+        if (moved) { event.preventDefault(); return; }
+        if (index === at) return;
+        at = index;
+        place(index, true);
+        lightUp(index);
+        buzz();
+        setTimeout(() => go(TABS[index].page), 180);
+      });
+    });
+
+    window.addEventListener('resize', () => place(at, false));
+  }
+
+  /** The small knock that makes a selection feel like it happened. */
+  function buzz() {
+    const plugins = native();
+    const haptics = plugins && plugins.Haptics;
+    if (!haptics || !haptics.selectionChanged) return;
+    const call = haptics.selectionChanged();
+    if (call && call.catch) call.catch(function () {});
   }
 
   function wireNative() {
