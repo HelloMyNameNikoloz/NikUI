@@ -65,4 +65,11 @@
     <!-- Keeping the socket open while the app is in a pocket, and nothing else. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- The key in the Keystore can be made to require a face or a finger before
+         it will sign. Asking for that without declaring it does not fail the
+         check: BiometricPrompt throws, and the app has no identity at all.
+         USE_FINGERPRINT is the same thing under the name it had before 28, and
+         this ships to 24. Both are normal permissions: nothing is prompted for. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" android:maxSdkVersion="27" />
 </manifest>

@@ -28,6 +28,21 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "remove", returnType: CAPPluginReturnPromise)
     ]
 
+    /**
+     * Everything this plugin does happens here, one at a time.
+     *
+     * Capacitor hands plugin calls out on a concurrent queue, and two sockets
+     * signing in at the same moment — which is the ordinary case, not a rare
+     * one — put two calls inside `sign` at once. They share one `LAContext`,
+     * and both write to it while the other is inside `SecItemCopyMatching`.
+     * `LAContext` is not thread safe and that is a plain data race.
+     *
+     * It also gives the right behaviour for the biometric case: two concurrent
+     * signs would ask for a face twice, and queued the second is still inside
+     * the reuse window the first one opened.
+     */
+    private let queue = DispatchQueue(label: "com.nikoloz.nikui.securekey")
+
     /// One context, reused for as long as the policy allows, so a phone that
     /// reconnects four times crossing a street is asked for a face once.
     private var context = LAContext()
@@ -39,6 +54,10 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - what this device can do
 
     @objc func isAvailable(_ call: CAPPluginCall) {
+        queue.async { self.doIsAvailable(call) }
+    }
+
+    private func doIsAvailable(_ call: CAPPluginCall) {
         let enclave = SecureEnclave.isAvailable
         var error: NSError?
         let biometrics = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
@@ -58,6 +77,10 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - making one
 
     @objc func create(_ call: CAPPluginCall) {
+        queue.async { self.doCreate(call) }
+    }
+
+    private func doCreate(_ call: CAPPluginCall) {
         let alias = call.getString("alias") ?? "nikui.device"
         let biometric = call.getBool("biometric") ?? false
         reuseWindow = TimeInterval(call.getInt("validitySeconds") ?? 300)
@@ -124,6 +147,10 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func publicKey(_ call: CAPPluginCall) {
+        queue.async { self.doPublicKey(call) }
+    }
+
+    private func doPublicKey(_ call: CAPPluginCall) {
         let alias = call.getString("alias") ?? "nikui.device"
         let found = findKey(alias: alias)
         guard let key = found.key else {
@@ -138,6 +165,10 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - using one
 
     @objc func sign(_ call: CAPPluginCall) {
+        queue.async { self.doSign(call) }
+    }
+
+    private func doSign(_ call: CAPPluginCall) {
         let alias = call.getString("alias") ?? "nikui.device"
         guard let message = call.getString("message") else {
             return call.reject("nothing to sign")
@@ -173,6 +204,10 @@ public class SecureKeyPlugin: CAPPlugin, CAPBridgedPlugin {
     // MARK: - housekeeping
 
     @objc func remove(_ call: CAPPluginCall) {
+        queue.async { self.doRemove(call) }
+    }
+
+    private func doRemove(_ call: CAPPluginCall) {
         let alias = call.getString("alias") ?? "nikui.device"
         deleteKey(alias: alias)
         call.resolve(["removed": true])
