@@ -22,9 +22,26 @@ const crypto = require('crypto');
 const APP = path.join(__dirname, '..');
 const PROJECT = path.join(APP, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj');
 
-// Folders under ios/App/App/ holding this app's own native code, and the group
-// each becomes in the navigator.
-const FOLDERS = ['SecureKey', 'AppleToken'];
+/**
+ * Folders under ios/App/App/ holding this app's own native code.
+ *
+ * Found rather than listed. A list is a thing to forget, and forgetting it here
+ * does not fail loudly: the plugin compiles nowhere, is registered nowhere, and
+ * the JavaScript falls back to its browser path as though the phone simply had
+ * no such feature. That is the failure this whole file exists to prevent, so it
+ * should not have a hand-written list at the top of it.
+ */
+function folders(root) {
+  if (!fs.existsSync(root)) return [];
+  return fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => {
+      const dir = path.join(root, name);
+      return fs.readdirSync(dir).some((file) => file.endsWith('.swift'));
+    })
+    .sort();
+}
 
 // Sources that sit directly in ios/App/App/ rather than in a folder of their
 // own. MainViewController is the one place this app's plugins are handed to the
@@ -128,9 +145,8 @@ function sync() {
     if (result.added) added++;
   }
 
-  for (const folder of FOLDERS) {
+  for (const folder of folders(path.join(APP, 'ios', 'App', 'App'))) {
     const dir = path.join(APP, 'ios', 'App', 'App', folder);
-    if (!fs.existsSync(dir)) continue;
     for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.swift')).sort()) {
       present++;
       const result = ensure(text, folder, file);

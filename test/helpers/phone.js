@@ -22,6 +22,49 @@ const SOURCE = `(function () {
   window.Capacitor = window.Capacitor || {};
   window.Capacitor.Plugins = window.Capacitor.Plugins || {};
 
+  // The face or finger the app lock asks for. What it answers is set from the
+  // test, because the whole point of the rule being tested — three tries and
+  // then the keypad — is what happens when it keeps saying no.
+  // Kept in localStorage, like everything else here, because this stand-in is
+  // re-installed on every document the app opens and the app opens a new one
+  // for every screen. Held in a variable it would forget what the test told it
+  // the moment the page it was told on went away — and its default is yes, so
+  // forgetting means silently unlocking.
+  const FACE = 'nikui.test.face';
+  const face = () => {
+    try { return Object.assign({ available: true, kind: 'face', say: 'yes', asked: 0 },
+      JSON.parse(localStorage.getItem(FACE) || '{}')); } catch (_) { return { available: true, kind: 'face', say: 'yes', asked: 0 }; }
+  };
+  const keepFace = (all) => localStorage.setItem(FACE, JSON.stringify(all));
+
+  Object.defineProperty(window, '__face', {
+    get: face,
+    set: (value) => keepFace(Object.assign(face(), value)),
+    configurable: true
+  });
+  window.__setFace = (patch) => keepFace(Object.assign(face(), patch));
+
+  window.Capacitor.Plugins.AppLock = {
+    available: function () {
+      const all = face();
+      return Promise.resolve({
+        available: !!all.available,
+        kind: all.kind,
+        enrolled: true,
+        reason: all.available ? '' : 'nothing is set up on this phone'
+      });
+    },
+    prompt: function () {
+      const all = face();
+      all.asked = (all.asked || 0) + 1;
+      keepFace(all);
+      if (all.say === 'yes') return Promise.resolve({ ok: true });
+      const err = new Error(all.say === 'no' ? 'that was not recognised' : 'cancelled');
+      err.code = all.say === 'no' ? 'FAILED' : String(all.say).toUpperCase();
+      return Promise.reject(err);
+    }
+  };
+
   window.Capacitor.Plugins.LocalNotifications = {
     checkPermissions: function () { return Promise.resolve({ display: shelf().permission }); },
     requestPermissions: function () {

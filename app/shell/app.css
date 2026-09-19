@@ -1744,3 +1744,170 @@ body.app.status .sheet-foot span {
   font-size: var(--fs-small);
   color: var(--app-dim);
 }
+
+/* ---- the lock ---------------------------------------------------------------
+
+   It covers the app rather than sitting over it: locked means nothing behind it
+   was ever drawn, not that it is hidden behind a panel somebody could dismiss.
+   The keypad is the phone's own shape — big round keys, thumb-reachable, the
+   delete where a thumb already expects it. */
+
+html.locked body > *:not(.lock) { display: none !important; }
+html.locked, html.locked body { overflow: hidden; }
+
+.lock {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--app-bg, #0f0f11);
+  padding: calc(var(--app-top) + 28px) 24px calc(var(--app-bottom) + 24px);
+  overscroll-behavior: contain;
+}
+
+/* The mark, the words and the dots sit together as one thing, with the keypad
+   at the bottom where a thumb is — rather than everything pinned to the top and
+   a hole in the middle. */
+.lock-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: auto 0;
+}
+
+.lock-mark {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 18px;
+  border-radius: 13px;
+  background: var(--app-raised);
+  position: relative;
+  flex: 0 0 auto;
+}
+
+/* A padlock, drawn rather than fetched: the policy allows no image from
+   anywhere, and an icon font for one glyph is a font for one glyph. */
+.lock-mark::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 11px;
+  width: 14px;
+  height: 11px;
+  margin-left: -7px;
+  border: 2px solid var(--app-dim);
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+}
+
+.lock-mark::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 20px;
+  width: 20px;
+  height: 15px;
+  margin-left: -10px;
+  border-radius: 4px;
+  background: var(--app-dim);
+}
+
+.lock-title {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.lock-said {
+  margin: 0;
+  min-height: 20px;
+  font-size: 14px;
+  color: var(--app-dim);
+  text-align: center;
+}
+
+.lock-dots {
+  display: flex;
+  gap: 18px;
+  margin: 26px 0 0;
+  min-height: 13px;
+}
+
+.lock-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid var(--app-dim);
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.lock-dot.on {
+  background: var(--vscode-foreground, #fff);
+  border-color: var(--vscode-foreground, #fff);
+  transform: scale(1.05);
+}
+
+/* Wrong is said with the phone's own gesture rather than a sentence you have to
+   read; the sentence is there too, underneath. */
+.lock.wrong .lock-dots { animation: nik-shake 400ms cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+
+@keyframes nik-shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-8px); }
+  40%, 60% { transform: translateX(8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lock.wrong .lock-dots { animation: none; }
+}
+
+.lock-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 76px);
+  gap: 18px 24px;
+  margin-bottom: 18px;
+  justify-content: center;
+}
+
+.lock-pad.held { opacity: 0.35; pointer-events: none; }
+
+.lock-key {
+  width: 76px;
+  height: 76px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--app-raised);
+  color: var(--vscode-foreground, #fff);
+  font: inherit;
+  font-size: 30px;
+  font-weight: 400;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 90ms ease, transform 90ms ease;
+}
+
+.lock-key:active { background: var(--app-raised-2); transform: scale(0.94); }
+.lock-key-thin { background: transparent; font-size: 24px; color: var(--app-dim); }
+.lock-key-thin:active { background: var(--app-raised); }
+
+/* Only offered once there is enough typed to be a passcode. */
+.lock .lock-pad .lock-key-thin:last-child { opacity: 0.35; pointer-events: none; }
+.lock.ready .lock-pad .lock-key-thin:last-child { opacity: 1; pointer-events: auto; color: var(--blue, #0a84ff); }
+
+.lock-face {
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--blue, #0a84ff);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.lock-face:disabled { opacity: 0.4; }

@@ -28,6 +28,8 @@
     laptopVersion: null,    // what the laptop is running, as it said on connecting
     explaining: false,      // the one paragraph that says what any of this is
     apple: null,            // whether this iPhone can be reached while closed
+    lock: null,             // whether this app asks for a passcode, and what it may use
+    biometrics: null,       // what this phone can check, and what to call it
     devices: null,          // everything paired with this laptop, as this device sees it
     mayManage: false,       // whether this device may take another one off
     me: null                // which of them is this one
@@ -179,6 +181,8 @@
       proof.textContent = groups(state.showing);
       safety.parentNode.insertBefore(proof, safety.nextSibling);
     }
+
+    drawLock();
 
     const permission = group('What this device may do',
       state.control === false
@@ -378,6 +382,86 @@
       tap: confirmForget,
       chevron: true
     });
+  }
+
+  /**
+   * The lock on this app's own front door.
+   *
+   * Worth being exact about what it is for, because the wrong idea about it
+   * would be dangerous: it stops the person this phone is handed to. The laptop
+   * is kept safe by the key in the chip, which the lock neither holds nor can
+   * reach. This is the difference between someone borrowing your phone and
+   * someone being able to send prompts to your machine.
+   */
+  function drawLock() {
+    const lock = window.nikLock;
+    if (!lock) return;
+    const has = state.lock !== null ? state.lock : lock.on();
+    const can = state.biometrics;
+
+    const list = group('Lock this app',
+      has
+        ? 'Asked for when the app opens, and again after a minute in your pocket. Moving between screens does not ask again.'
+        : 'Anyone holding this phone unlocked can read every instance, and send prompts if this device may.');
+
+    row(list, {
+      label: 'Require a passcode',
+      hint: has ? null : 'Four digits or more',
+      value: has ? 'On' : 'Off',
+      tone: has ? 'good' : '',
+      tap: toggleLock
+    });
+
+    if (!has) return;
+
+    row(list, { label: 'Change passcode', chevron: true, tap: changeCode });
+
+    if (can && can.available) {
+      const settings = lock.settings() || {};
+      row(list, {
+        label: 'Use ' + lock.named(can.kind),
+        hint: 'Three tries, then the passcode.' +
+          (can.finger && can.face ? ' Android chooses which it offers.' : ''),
+        value: settings.biometric === false ? 'Off' : 'On',
+        tone: settings.biometric === false ? '' : 'good',
+        tap: () => {
+          const now = lock.useBiometrics(settings.biometric === false);
+          buzz('light');
+          flash(now ? 'On.' : 'Off. The passcode is the only way in.');
+          draw();
+        }
+      });
+    } else if (can && can.reason) {
+      row(list, { label: 'Face or fingerprint', value: 'Unavailable', hint: can.reason, stacked: true });
+    }
+  }
+
+  function toggleLock() {
+    const lock = window.nikLock;
+    if (lock.on()) {
+      // Turning it off needs the code, or it would not be a lock.
+      lock.confirm('Enter your passcode to turn the lock off').then(() => lock.clear()).then(() => {
+        state.lock = false;
+        buzz('medium');
+        flash('The lock is off.');
+        draw();
+      });
+      return;
+    }
+    lock.choose().then(() => {
+      state.lock = true;
+      buzz('medium');
+      flash('Locked. It will ask next time the app opens.');
+      return lock.available().then((can) => { state.biometrics = can; });
+    }).then(draw).catch(() => { /* cancelled, and nothing changed */ });
+  }
+
+  function changeCode() {
+    const lock = window.nikLock;
+    lock.confirm('Enter your current passcode')
+      .then(() => lock.choose())
+      .then(() => { buzz('medium'); flash('Passcode changed.'); draw(); })
+      .catch(() => { /* cancelled */ });
   }
 
   /**
@@ -727,6 +811,10 @@
     app.version().then((v) => { state.version = v; draw(); });
     refreshKey();
     probe();
+    if (window.nikLock) {
+      state.lock = window.nikLock.on();
+      window.nikLock.available().then((can) => { state.biometrics = can; draw(); });
+    }
     if (window.NikNotify) {
       window.NikNotify.permission().then((verdict) => { state.notify = verdict; draw(); });
       window.NikNotify.background().then((watching) => { state.watching = watching; draw(); });

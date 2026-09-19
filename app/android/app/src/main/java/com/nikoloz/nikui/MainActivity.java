@@ -3,6 +3,7 @@ package com.nikoloz.nikui;
 import android.os.Bundle;
 
 import com.getcapacitor.BridgeActivity;
+import com.nikoloz.nikui.applock.AppLockPlugin;
 import com.nikoloz.nikui.securekey.SecureKeyPlugin;
 import com.nikoloz.nikui.watcher.WatcherPlugin;
 
@@ -14,6 +15,7 @@ public class MainActivity extends BridgeActivity {
         // first page would look for it and conclude the phone has no chip.
         registerPlugin(SecureKeyPlugin.class);
         registerPlugin(WatcherPlugin.class);
+        registerPlugin(AppLockPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

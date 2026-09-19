@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0D99ED863CFC3451FDA112CF /* AppLockPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8653FB6E88032138C379F8BA /* AppLockPlugin.swift */; };
 		F93D0993D785C077D3DA31FD /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032F4EC2002ED0CDC49D7EB3 /* MainViewController.swift */; };
 		8FB5D29ADD3C98F17ABEAC8E /* AppleTokenPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6113D9AD75C91CDB5D93AFA /* AppleTokenPlugin.swift */; };
 		FF9871153F53C036B4C4B69C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9E0C3D460884B050D47D70CC /* PrivacyInfo.xcprivacy */; };
@@ -23,6 +24,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		8653FB6E88032138C379F8BA /* AppLockPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockPlugin.swift; sourceTree = "<group>"; };
 		032F4EC2002ED0CDC49D7EB3 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		B6113D9AD75C91CDB5D93AFA /* AppleTokenPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTokenPlugin.swift; sourceTree = "<group>"; };
 		9E0C3D460884B050D47D70CC /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -52,6 +54,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		EC1E35EB5CED67FC23894704 /* AppLock */ = {
+			isa = PBXGroup;
+			children = (
+				8653FB6E88032138C379F8BA /* AppLockPlugin.swift */,
+			);
+			path = AppLock;
+			sourceTree = "<group>";
+		};
 		32140392253CB956A3B91977 /* AppleToken */ = {
 			isa = PBXGroup;
 			children = (
@@ -88,6 +98,7 @@
 		504EC3061FED79650016851F /* App */ = {
 			isa = PBXGroup;
 			children = (
+				EC1E35EB5CED67FC23894704 /* AppLock */,
 				032F4EC2002ED0CDC49D7EB3 /* MainViewController.swift */,
 				32140392253CB956A3B91977 /* AppleToken */,
 				9E0C3D460884B050D47D70CC /* PrivacyInfo.xcprivacy */,
@@ -187,6 +198,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0D99ED863CFC3451FDA112CF /* AppLockPlugin.swift in Sources */,
 				F93D0993D785C077D3DA31FD /* MainViewController.swift in Sources */,
 				8FB5D29ADD3C98F17ABEAC8E /* AppleTokenPlugin.swift in Sources */,
 				02DDD1D1AD79E731D0F2E88A /* SecureKeyPlugin.swift in Sources */,

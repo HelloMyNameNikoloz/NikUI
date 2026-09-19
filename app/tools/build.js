@@ -34,7 +34,8 @@ const CLIENT_FILES = SCRIPTS.concat([
   'panel.css', 'browser.css', 'mobile.js', 'home.js', 'device.js'
 ]);
 
-const SHELL_FILES = ['app.css', 'app.js', 'notify.js', 'connect.js', 'settings.js', 'history.js', 'status.js'];
+const SHELL_FILES = ['app.css', 'app.js', 'lock.js', 'notify.js', 'connect.js', 'settings.js',
+  'history.js', 'status.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -136,7 +137,11 @@ function copyCapacitor() {
 
 /** A screen that is the app's own, rather than the client's. */
 function page({ file, title, body, scripts, cls, css }) {
-  const tags = ['capacitor.js'].concat(scripts || [])
+  // The lock goes before everything, on every page. It paints over the app when
+  // there is one to paint, and does nothing at all when there is not — which is
+  // every phone until somebody turns one on. Put after the page's own scripts it
+  // would be a cover thrown over a screen that had already drawn.
+  const tags = ['capacitor.js', 'lock.js'].concat(scripts || [])
     .map((s) => `  <script src="${s}"></script>`).join('\n');
   fs.writeFileSync(path.join(OUT, file), `<!DOCTYPE html>
 <html lang="en" class="app">

@@ -1022,6 +1022,164 @@ const record = (name, ok) => {
     record('and the app says why it is asking to pair again',
       await phone.until('/needs pairing again/.test(document.body.textContent)', 8000));
 
+    // ---- the lock on the app's own front door --------------------------------
+    //
+    // It stops the person this phone is handed to. Not the laptop's safety —
+    // that is the key in the chip — but the difference between somebody
+    // borrowing your phone and somebody sending prompts to your machine.
+
+    const tap = (text) => phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.row')].find(r => new RegExp(${JSON.stringify(text)}).test(r.textContent));
+      if (!row) return false;
+      row.click();
+      return true;
+    })()`);
+    const key = (digit) => phone.evaluate(`(() => {
+      const k = [...document.querySelectorAll('.lock-key')]
+        .find(b => b.textContent.trim() === ${JSON.stringify(String(digit))});
+      if (!k) return false;
+      k.click();
+      return true;
+    })()`);
+    const punch = async (code) => { for (const d of String(code)) await key(d); };
+    // The row's own value, not the word appearing somewhere on the page: "On"
+    // is in half the sentences on this screen, and an assertion that matches
+    // any of them passes whatever the setting actually says.
+    const rowSays = (label, value) => phone.until(
+      '(() => {' +
+      '  const row = [...document.querySelectorAll(".row")].find(r =>' +
+      '    r.querySelector("b") && r.querySelector("b").textContent.indexOf(' + JSON.stringify(label) + ') >= 0);' +
+      '  const said = row && row.querySelector(".row-value");' +
+      '  return !!said && said.textContent.trim() === ' + JSON.stringify(value) + ';' +
+      '})()', 8000);
+
+    const enter = () => phone.evaluate(`(() => {
+      const go = [...document.querySelectorAll('.lock-key')].find(b => b.getAttribute('aria-label') === 'Unlock' ||
+        b.getAttribute('aria-label') === 'Continue');
+      if (!go) return false;
+      go.click();
+      return true;
+    })()`);
+
+    await phone.navigate(appOrigin + '/settings.html');
+    await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+    await phone.evaluate('window.__setFace({ say: "cancelled" })');
+
+    record('settings offers to lock the app', await tap('Require a passcode'));
+    record('which asks for a passcode, twice',
+      await phone.until('/Choose a passcode/.test(document.body.textContent)', 6000));
+
+    await punch('2468');
+    await enter();
+    record('and will not take a code that does not match the first',
+      await (async () => {
+        await phone.until('/Enter it again/.test(document.body.textContent)', 4000);
+        await punch('1357');
+        await enter();
+        return phone.until('/did not match/.test(document.body.textContent)', 4000);
+      })());
+
+    await punch('2468');
+    await enter();
+    await phone.until('/Enter it again/.test(document.body.textContent)', 4000);
+    await punch('2468');
+    await enter();
+    record('two that agree turn it on', await rowSays('Require a passcode', 'On'));
+
+    // The thing that matters: a fresh start is covered before it has drawn.
+    // Session storage is what makes moving between screens free, so clearing it
+    // is what "the app was killed and opened again" looks like from here.
+    const coldStart = async (page) => {
+      await phone.evaluate("window.sessionStorage.removeItem('nikui.app.unlocked')");
+      await phone.navigate(appOrigin + (page || '/index.html'));
+    };
+
+    await coldStart();
+    record('opening the app again asks for it',
+      await phone.until('document.querySelector(".lock") !== null', 8000));
+    record('and nothing behind it is on the screen',
+      (await phone.evaluate(`[...document.body.children]
+        .filter(el => !el.classList.contains('lock'))
+        .every(el => el.offsetParent === null)`)) === true);
+
+    record('a wrong one is refused and said so',
+      await (async () => {
+        await punch('1111');
+        await enter();
+        return phone.until('/Wrong passcode/.test(document.body.textContent)', 4000);
+      })());
+
+    record('the right one opens it',
+      await (async () => {
+        await punch('2468');
+        await enter();
+        return phone.until('document.querySelector(".lock") === null', 6000);
+      })());
+    record('and the app is there underneath',
+      await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 8000));
+
+    record('moving between screens does not ask again',
+      await (async () => {
+        await phone.navigate(appOrigin + '/settings.html');
+        await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+        return (await phone.evaluate('document.querySelector(".lock") === null')) === true;
+      })());
+
+    // Three tries with a face, and then the keypad — the rule that stops a phone
+    // held up to the wrong face turning into a loop of prompts.
+    await phone.evaluate('window.__setFace({ say: "no", asked: 0 })');
+    await coldStart();
+    await phone.until('document.querySelector(".lock") !== null', 8000);
+    // Offered once without being asked — on a phone, holding it up is the thing
+    // you were going to do anyway — and then twice more on the button.
+    record('a face is offered the moment the lock appears',
+      await phone.until('window.__face.asked === 1', 8000));
+    const again = () => phone.evaluate(`(() => {
+      const b = document.querySelector('.lock-face');
+      if (!b || b.hidden || b.disabled) return false;
+      b.click();
+      return true;
+    })()`);
+    record('and can be asked for twice more', await (async () => {
+      await phone.until('document.querySelector(".lock-face") && !document.querySelector(".lock-face").hidden', 4000);
+      if (!await again()) return false;
+      await phone.until('window.__face.asked === 2', 4000);
+      await phone.until('document.querySelector(".lock-face") && !document.querySelector(".lock-face").hidden', 4000);
+      if (!await again()) return false;
+      return phone.until('window.__face.asked === 3', 4000);
+    })());
+    record('three is the end of it', await (async () => {
+      await wait(300);
+      const offered = await phone.evaluate('!!document.querySelector(".lock-face") && !document.querySelector(".lock-face").hidden');
+      return offered === false && (await phone.evaluate('window.__face.asked')) === 3;
+    })());
+    record('and then the passcode is the only way in',
+      await phone.until(`/Enter your passcode instead/.test(document.body.textContent) &&
+        document.querySelector('.lock-face').hidden === true`, 6000));
+
+    await phone.evaluate('window.__setFace({ say: "yes" })');
+    await punch('2468');
+    await enter();
+    await phone.until('document.querySelector(".lock") === null', 6000);
+
+    record('turning the lock off needs the passcode',
+      await (async () => {
+        await phone.navigate(appOrigin + '/settings.html');
+        await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+        await tap('Require a passcode');
+        return phone.until('/turn the lock off/.test(document.body.textContent)', 6000);
+      })());
+
+    await punch('2468');
+    await enter();
+    record('and then it is off', await rowSays('Require a passcode', 'Off'));
+    record('so the app opens straight away again',
+      await (async () => {
+        await phone.navigate(appOrigin + '/index.html');
+        await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 8000);
+        return (await phone.evaluate('document.querySelector(".lock") === null')) === true;
+      })());
+
     record('and nothing threw on any screen',
       (await phone.evaluate('window.__errors ? window.__errors.length : 0')) === 0);
   } finally {

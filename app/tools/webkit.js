@@ -3,7 +3,8 @@
 
 // The status screen in real Mobile WebKit, on a real iPhone screen.
 //
-//   node app/tools/webkit.js [section]
+//   node app/tools/webkit.js [section]        # a section of Status
+//   node app/tools/webkit.js --lock           # the app lock, with a code set
 //
 // look.js draws the same screen in Chromium, which is fast and scriptable and
 // not the engine this ever runs in. The parts most likely to differ are the
@@ -117,6 +118,74 @@ function serve(section, down) {
   });
 }
 
+/**
+ * The lock screen, in the engine it will actually be drawn in.
+ *
+ * It covers the whole app and it is the only thing between somebody and the
+ * instances, so "it renders" is not a detail: a lock that draws wrong on iOS is
+ * an app that looks broken and cannot be opened.
+ */
+async function lookAtLock(device) {
+  const seed = {
+    '/__lock.js': `
+      document.documentElement.classList.remove('plat-web');
+      document.documentElement.classList.add('plat-ios');
+      document.documentElement.style.setProperty('--app-top', '59px');
+      document.documentElement.style.setProperty('--app-bottom', '34px');
+      localStorage.setItem('nikui.app.laptop', JSON.stringify({
+        host: 'laptop.example.ts.net', scheme: 'https', name: 'Laptop' }));
+      sessionStorage.removeItem('nikui.app.unlocked');
+      addEventListener('DOMContentLoaded', () => {
+        // Set through the app's own code, so what is drawn is what a person
+        // would have after choosing a passcode rather than a shape invented here.
+        window.nikLock.set('2468').then(() => {
+          sessionStorage.removeItem('nikui.app.unlocked');
+          location.reload();
+        });
+      }, { once: true });`
+  };
+  const ready = {
+    '/__lock.js': `
+      document.documentElement.classList.remove('plat-web');
+      document.documentElement.classList.add('plat-ios');
+      document.documentElement.style.setProperty('--app-top', '59px');
+      document.documentElement.style.setProperty('--app-bottom', '34px');`
+  };
+
+  let phase = 0;
+  const server = await new Promise((resolve) => {
+    const made = http.createServer((req, res) => {
+      const route = decodeURIComponent(req.url.split('?')[0]);
+      const files = phase === 0 ? seed : ready;
+      if (files[route]) {
+        phase = 1;
+        res.writeHead(200, { 'content-type': TYPES['.js'] });
+        return res.end(files[route]);
+      }
+      const file = path.join(WWW, route === '/' ? 'index.html' : route);
+      if (!file.startsWith(WWW)) { res.writeHead(403); return res.end(); }
+      fs.readFile(file, (err, body) => {
+        if (err) { res.writeHead(404); return res.end('no such file'); }
+        const out = file.endsWith('.html')
+          ? Buffer.from(String(body).replace('<head>', '<head><script src="/__lock.js"></' + 'script>'))
+          : body;
+        res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
+        res.end(out);
+      });
+    });
+    made.listen(0, '127.0.0.1', () => resolve(made));
+  });
+
+  try { sim('terminate', device, 'com.apple.mobilesafari'); } catch (_) { /* not running */ }
+  await wait(600);
+  sim('openurl', device, 'http://127.0.0.1:' + server.address().port + '/index.html');
+  await wait(9000);
+  const shot = path.join(OUT, 'webkit-lock.png');
+  sim('io', device, 'screenshot', shot);
+  console.log('shot  lock → ' + path.relative(REPO, shot));
+  server.close();
+}
+
 (async () => {
   const device = booted();
   if (!device) {
@@ -125,6 +194,8 @@ function serve(section, down) {
   }
   build();
   fs.mkdirSync(OUT, { recursive: true });
+
+  if (process.argv.includes('--lock')) return void await lookAtLock(device);
 
   const argv = process.argv.slice(2);
   const down = Number(argv.find((a) => /^\d+$/.test(a)) || 0);

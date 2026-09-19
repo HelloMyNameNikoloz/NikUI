@@ -20,5 +20,6 @@ class MainViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(SecureKeyPlugin())
         bridge?.registerPluginInstance(AppleTokenPlugin())
+        bridge?.registerPluginInstance(AppLockPlugin())
     }
 }
