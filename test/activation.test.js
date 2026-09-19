@@ -67,4 +67,32 @@ module.exports = async function () {
   checkEqual('history says which scope it searched', scoped.length, 2);
   check('and does so through a context key',
     scoped.every((w) => /nikui\.historyScope/.test(w.when || '')));
+
+  suite('a window that was serving comes back serving');
+
+  // Reloading the editor used to drop every phone: the server did not restart
+  // unless autoStart was on, and disposing tore down the tunnel in front of it.
+  // Neither is a decision somebody made — they are what a reload did to them.
+  {
+    const { serveLocally } = extension;
+    const manager = { list: [], get: () => null, on() {}, off() {}, activeId: null };
+
+    const remembered = fakeContext({ extensionUri: { fsPath: path.join(__dirname, '..') } });
+    remembered.workspaceState.update('nikui.remote.wasServing', true);
+    const resumed = serveLocally(remembered, manager, { state: () => null }, null);
+    check('a window that was serving starts its server again', !!resumed);
+    await new Promise((r) => setTimeout(r, 120));
+    check('and is listening without anybody asking twice', resumed.listening === true);
+    await resumed.dispose();
+
+    const fresh = fakeContext({ extensionUri: { fsPath: path.join(__dirname, '..') } });
+    const quiet = serveLocally(fresh, manager, { state: () => null }, null);
+    await new Promise((r) => setTimeout(r, 120));
+    check('a window that was not serving stays quiet', quiet.listening === false);
+    await quiet.dispose();
+  }
+
+  check('the flag is per window rather than shared between them',
+    /workspaceState/.test(require('fs').readFileSync(
+      path.join(__dirname, '..', 'src', 'extension.js'), 'utf8')));
 };

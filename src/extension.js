@@ -699,6 +699,7 @@ function serveLocally(context, manager, awakeState, folders) {
     }
     // Cheap, and the answer changes what this window will answer to.
     adoptTunnel();
+    context.workspaceState.update('nikui.remote.wasServing', true);
     if (server.movedFrom) {
       // Another window already has the usual port. Said once, quietly: the
       // address is handed out rather than typed, so the number rarely matters.
@@ -728,9 +729,12 @@ function serveLocally(context, manager, awakeState, folders) {
 
   const stop = async () => {
     // The server going away leaves anything in front of it pointing at
-    // nothing, so both go — but only what this window set up.
+    // nothing, so both go — but only what this window set up. This is the one
+    // path that takes the tunnel down, because it is the one where somebody
+    // said they were finished rather than the window merely reloading.
     await closeTunnels();
     await server.stop();
+    context.workspaceState.update('nikui.remote.wasServing', false);
     paint();
   };
 
@@ -1086,14 +1090,34 @@ function serveLocally(context, manager, awakeState, folders) {
     vscode.commands.registerCommand('nikui.forgetDevice', async (node) => forget(await pick(node))),
     vscode.commands.registerCommand('nikui.renameDevice', async (node) => rename(await pick(node))),
     { dispose: () => {
-      closeTunnels();
+      // Deliberately not closeTunnels(). This runs on a window reload as well
+      // as on a window closing, and a reload that tears the tunnel down leaves
+      // a phone that was connected a moment ago saying it cannot reach
+      // anything — for a reason nobody watching could possibly guess.
+      //
+      // `tailscale serve` outlives this process by design, so the next window
+      // adopts it. Stopping the server on purpose still takes it down, because
+      // that is somebody saying they are finished.
       server.dispose();
       if (bar) bar.dispose();
       if (out) out.dispose();
     } }
   );
 
-  if (vscode.workspace.getConfiguration('nikui').get('remote.autoStart', false)) start();
+  /**
+   * A window that was serving when it went away starts serving when it comes
+   * back.
+   *
+   * Not the same thing as autoStart, which is a standing instruction to listen.
+   * This is narrower and it is the honest reading of what happened: somebody
+   * asked this window to serve, and a reload is not them changing their mind.
+   * Without it, every reload of the editor silently drops every phone.
+   */
+  const SERVING = 'nikui.remote.wasServing';
+  if (context.workspaceState.get(SERVING, false) ||
+      vscode.workspace.getConfiguration('nikui').get('remote.autoStart', false)) {
+    start().then((up) => { if (up) adoptTunnel(); });
+  }
   return server;
 }
 
