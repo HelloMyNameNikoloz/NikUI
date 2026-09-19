@@ -225,14 +225,20 @@
       });
     }
 
+    // A different thing from the lock above, and confusing the two is how
+    // somebody ends up with a phone that will not connect. The lock is a door
+    // on the app. This is a condition on the *key*: the chip itself refuses to
+    // sign without a face, so every connection needs one, and a face that is
+    // not there means no connection rather than a screen you can still read.
     if (hardware && state.key && state.key.biometrics) {
       row(identity, {
-        label: 'Ask for Face ID or a fingerprint',
+        label: 'Make the key itself need your face',
         hint: state.device && state.device.biometric
-          ? 'Asked once, then not again for five minutes.'
-          : 'Off. Unlocking the phone is enough.',
+          ? 'On: every connection needs a face. Asked once, then not for five minutes.'
+          : 'Off. The lock above is the lighter way to do this.',
         value: state.device && state.device.biometric ? 'On' : 'Off',
         tone: state.device && state.device.biometric ? 'good' : '',
+        stacked: true,
         tap: toggleBiometric,
         chevron: true
       });
