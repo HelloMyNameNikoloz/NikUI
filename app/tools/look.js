@@ -117,6 +117,12 @@ const SECTIONS = ['fleet', 'overview', 'usage', 'tools', 'timeline', 'system'];
 // nobody scrolls to the end, and anything down there might as well not be on it.
 const TALL = 3.1;
 
+// Shared with webkit.js, so the same instance is drawn in both engines and a
+// difference between the pictures is a difference between the engines.
+module.exports = { report, SECTIONS };
+
+if (require.main !== module) return;
+
 (async () => {
   const chrome = findChrome();
   if (!chrome) { console.error('No Chrome found. Set CHROME=/path/to/chrome.'); process.exit(1); }

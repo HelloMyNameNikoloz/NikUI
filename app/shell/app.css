@@ -1623,10 +1623,12 @@ body.app.status table.grid td:first-child > b {
 body.app.status table.grid td:first-child > .sdot,
 body.app.status table.grid td:first-child > .badge { flex: 0 0 auto; }
 
-/* Whatever qualifies the name — a folder, a branch — is a second line and not
-   part of the heading, so it does not inherit the heading's weight. */
+/* Whatever qualifies the name — a time, a folder, a branch — is not part of the
+   heading, so it does not inherit the heading's weight. It wraps to its own line
+   when it needs one and sits alongside when it does not: forcing the break made
+   every turn in Recent turns two lines to say "14" and the time it ended. */
 body.app.status table.grid td:first-child > .dim {
-  flex: 1 1 100%;
+  flex: 0 1 auto;
   min-width: 0;
   font-weight: 400;
   color: var(--app-dim);
