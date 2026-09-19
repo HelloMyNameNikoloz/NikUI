@@ -105,6 +105,13 @@
    * because a link that pairs on sight is a link somebody else could send you.
    */
   function invited(link) {
+    if (!link) {
+      // A link arrived and could not be read. Silence here is the worst
+      // answer: somebody has just pointed a camera at a screen and is waiting
+      // for something to happen.
+      say('That pairing link was incomplete. Show the code again, or type it in.', 'bad');
+      return false;
+    }
     if (!fill(link)) return false;
     $('headline').textContent = 'Pair with this laptop?';
     $('lede').textContent = 'It invited this phone. Pairing lets it watch — nothing more until you say so.';
