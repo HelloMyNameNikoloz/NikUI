@@ -3,7 +3,15 @@
    Not a summary of it and not a second opinion about it: the laptop builds the
    same report with the same `buildReport`, and this draws it with the same
    `media/status.js` the editor's panel uses. A screen that says almost what
-   another screen says is two screens to keep in step. */
+   another screen says is two screens to keep in step.
+
+   The one thing this does not do is redraw. The report arrives every five
+   seconds and the renderer hands back the whole sheet as a string, so the
+   obvious thing — put it in `innerHTML` — rebuilds every node on the screen
+   twelve times a minute. That reads as the screen flashing, loses where you had
+   scrolled to, and folds back up any table you had opened. So what comes back is
+   compared against what is already there, and only the parts that actually say
+   something different are replaced. */
 (function () {
   'use strict';
 
@@ -15,13 +23,21 @@
   const screen = $('screen');
   const state = { report: null, trouble: null, section: null, connected: false };
 
+  // Tables the reader has opened in full, by section and position. Kept out
+  // here because a table is replaced whenever its numbers move, and a list that
+  // folded itself back up every five seconds would be unusable.
+  const opened = new Set();
+  let copiedUntil = 0;
+  let copiedSaid = '';
+
+  // ---- drawing ---------------------------------------------------------------
+
   function draw() {
     if (!state.report) {
-      screen.innerHTML = '';
       const said = document.createElement('p');
       said.className = 'lede';
       said.textContent = state.trouble || 'Looking…';
-      screen.appendChild(said);
+      screen.replaceChildren(said);
       return;
     }
 
@@ -33,34 +49,71 @@
     // wrapping it in a second set of those was drawing the sheet twice.
     // `compact` is what makes it a phone screen rather than a panel squeezed
     // into one: same report, same sections, a head that fits.
-    screen.innerHTML = sheet.renderSheet(state.report, state.section, { compact: true });
-
-    for (const button of screen.querySelectorAll('[data-section]')) {
-      button.addEventListener('click', () => {
-        state.section = button.dataset.section;
-        draw();
-        const now = screen.querySelector('[data-section="' + state.section + '"]');
-        if (now && now.scrollIntoView) now.scrollIntoView({ inline: 'center', block: 'nearest' });
-      });
-    }
-
-    // Neither of the sheet's other two buttons is drawn in compact: there is no
-    // sheet to close and the CLI is not this phone's to talk to.
+    paint(sheet.renderSheet(state.report, state.section, { compact: true }));
     capLongTables();
 
-    const refresh = screen.querySelector('[data-act="refresh"]');
-    if (refresh) refresh.addEventListener('click', () => transport.postMessage({ type: 'status' }));
+    // A button that said "Copied" gets a moment to be read before the next
+    // report puts its own label back.
+    if (Date.now() < copiedUntil) {
+      const copy = screen.querySelector('[data-act="copy"]');
+      if (copy) copy.textContent = copiedSaid;
+    }
+  }
 
-    const copy = screen.querySelector('[data-act="copy"]');
-    if (copy) copy.addEventListener('click', () => {
-      const text = sheet.asText ? sheet.asText(state.report) : '';
-      const plugins = app.native();
-      const done = plugins && plugins.Clipboard
-        ? plugins.Clipboard.write({ string: text })
-        : navigator.clipboard.writeText(text);
-      Promise.resolve(done).then(() => { copy.textContent = 'Copied'; })
-        .catch(() => { copy.textContent = 'Could not copy'; });
-    });
+  function paint(html) {
+    const next = document.createElement('div');
+    next.innerHTML = html;
+    if (!screen.firstElementChild) {
+      screen.replaceChildren.apply(screen, Array.prototype.slice.call(next.childNodes));
+      return;
+    }
+    morph(screen, next);
+  }
+
+  /**
+   * Make `live` say what `next` says, touching as little as possible.
+   *
+   * Walks the two trees together. A node whose markup already matches is left
+   * alone — with whatever the reader has done to it and wherever the browser has
+   * scrolled it — and a node that differs is descended into rather than
+   * replaced, so a card whose one number moved does not take the other nine
+   * cards down with it. Only leaves and mismatched shapes are really swapped.
+   *
+   * Nothing is re-wired afterwards because there is nothing to re-wire: every
+   * tap on this screen is handled by one listener on the screen itself, which is
+   * the only arrangement that survives its own children being replaced
+   * underneath it.
+   */
+  function morph(live, next) {
+    // Snapshots, not the live collections. Moving a node out of `next` into
+    // `live` takes it out of `next.children` as it goes, so every index after
+    // it shifts by one and the walk reads past the end — which throws, halfway
+    // through, leaving the screen holding half of one report and half of
+    // another.
+    const here = Array.prototype.slice.call(live.children);
+    const there = Array.prototype.slice.call(next.children);
+    if (here.length !== there.length) {
+      live.replaceChildren.apply(live, Array.prototype.slice.call(next.childNodes));
+      return;
+    }
+    for (let i = 0; i < here.length; i++) {
+      const a = here[i];
+      const b = there[i];
+      if (a.outerHTML === b.outerHTML) continue;
+      if (a.tagName !== b.tagName || a.className !== b.className || !a.children.length) {
+        a.replaceWith(b);
+        continue;
+      }
+      morph(a, b);
+      // Attributes can differ with no child differing at all: which section is
+      // open is a class on a button whose words never change.
+      for (const at of Array.prototype.slice.call(b.attributes)) {
+        if (a.getAttribute(at.name) !== at.value) a.setAttribute(at.name, at.value);
+      }
+      for (const at of Array.prototype.slice.call(a.attributes)) {
+        if (!b.hasAttribute(at.name)) a.removeAttribute(at.name);
+      }
+    }
   }
 
   /**
@@ -81,27 +134,100 @@
   const SHOWN = 5;
 
   function capLongTables() {
-    for (const table of screen.querySelectorAll('table.grid')) {
-      const rows = table.tBodies[0] ? [...table.tBodies[0].rows] : [];
-      if (rows.length <= SHOWN + 1) continue;
+    const tables = screen.querySelectorAll('.sheet-content table.grid');
+    for (let i = 0; i < tables.length; i++) {
+      const table = tables[i];
+      const rows = table.tBodies[0] ? Array.prototype.slice.call(table.tBodies[0].rows) : [];
+      const key = state.section + ':' + i;
+      const button = table.nextElementSibling &&
+        table.nextElementSibling.classList.contains('show-all')
+        ? table.nextElementSibling : null;
 
-      const hidden = rows.length - SHOWN;
+      if (rows.length <= SHOWN + 1 || opened.has(key)) {
+        for (const row of rows) row.hidden = false;
+        table.classList.remove('capped');
+        if (button) button.remove();
+        continue;
+      }
+
       table.classList.add('capped');
-      rows.forEach((row, i) => { if (i >= SHOWN) row.hidden = true; });
+      table.dataset.cap = key;
+      rows.forEach((row, at) => { row.hidden = at >= SHOWN; });
 
+      const said = 'Show all ' + rows.length;
+      if (button) {
+        if (button.textContent !== said) button.textContent = said;
+        continue;
+      }
       const more = document.createElement('button');
       more.className = 'show-all';
       more.type = 'button';
-      more.textContent = 'Show all ' + rows.length;
-      more.addEventListener('click', () => {
-        rows.forEach((row) => { row.hidden = false; });
-        table.classList.remove('capped');
-        more.remove();
-      });
-      more.setAttribute('aria-label', 'Show ' + hidden + ' more of ' + rows.length);
+      more.textContent = said;
+      more.setAttribute('aria-label', 'Show ' + (rows.length - SHOWN) + ' more of ' + rows.length);
       table.parentNode.insertBefore(more, table.nextSibling);
     }
   }
+
+  /**
+   * Bring a section's name to the middle of the strip.
+   *
+   * Done by hand rather than with `scrollIntoView`, which has no idea the bar
+   * floats above the content: asked to make a name fully visible it scrolls the
+   * *page* until the name clears the top of the viewport, which on iOS puts it —
+   * and a hundred and sixty points of what was under it — beneath the bar. Only
+   * the strip should move, and only sideways.
+   */
+  function centre(id) {
+    const rail = screen.querySelector('.sheet-nav');
+    const now = rail && rail.querySelector('[data-section="' + id + '"]');
+    if (!rail || !now) return;
+    const to = now.offsetLeft - (rail.clientWidth - now.offsetWidth) / 2;
+    const most = rail.scrollWidth - rail.clientWidth;
+    rail.scrollTo({ left: Math.max(0, Math.min(most, to)), behavior: 'smooth' });
+  }
+
+  // ---- one listener, because the nodes under it come and go -------------------
+
+  screen.addEventListener('click', (event) => {
+    const section = event.target.closest('[data-section]');
+    if (section) {
+      state.section = section.dataset.section;
+      draw();
+      // A different section starts at its own beginning, not wherever the last
+      // one had been scrolled to.
+      screen.scrollTop = 0;
+      centre(state.section);
+      return;
+    }
+
+    const more = event.target.closest('.show-all');
+    if (more) {
+      const table = more.previousElementSibling;
+      if (table && table.dataset.cap) opened.add(table.dataset.cap);
+      capLongTables();
+      return;
+    }
+
+    // Neither of the sheet's other two buttons is drawn in compact: there is no
+    // sheet to close and the CLI is not this phone's to talk to.
+    const act = event.target.closest('[data-act]');
+    if (!act) return;
+    if (act.dataset.act === 'refresh') return ask();
+    if (act.dataset.act !== 'copy') return;
+
+    const sheet = window.statusSheet;
+    const text = sheet.asText ? sheet.asText(state.report) : '';
+    const plugins = app.native();
+    const done = plugins && plugins.Clipboard
+      ? plugins.Clipboard.write({ string: text })
+      : navigator.clipboard.writeText(text);
+    const say = (word) => {
+      copiedSaid = word;
+      copiedUntil = Date.now() + 2500;
+      act.textContent = word;
+    };
+    Promise.resolve(done).then(() => say('Copied')).catch(() => say('Could not copy'));
+  });
 
   // ---- where it comes from ---------------------------------------------------
 
@@ -109,14 +235,17 @@
   const transport = window.nikTransport();
   let asking = null;
 
+  const ask = () => transport.postMessage({ type: 'status' });
+
   window.addEventListener('message', (event) => {
     const message = event.data;
     if (!message || typeof message.type !== 'string') return;
     if (message.type === '@welcome' || message.type === '@device') {
       state.connected = true;
-      transport.postMessage({ type: 'status' });
-      // Numbers that stop moving are numbers nobody trusts.
-      if (!asking) asking = setInterval(() => transport.postMessage({ type: 'status' }), 5000);
+      ask();
+      // Numbers that stop moving are numbers nobody trusts — but a screen
+      // nobody is looking at does not need them.
+      if (!asking) asking = setInterval(() => { if (!document.hidden) ask(); }, 5000);
       return;
     }
     if (message.type !== 'status') return;
@@ -131,6 +260,12 @@
       state.trouble = null;
     }
     draw();
+  });
+
+  // Coming back to the app should not mean waiting five seconds to find out
+  // what happened while it was away.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && state.connected) ask();
   });
 
   // Two different silences, and telling them apart is the whole difference

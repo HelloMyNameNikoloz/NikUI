@@ -1347,8 +1347,18 @@ body.app.status {
 /* The screen carries no side padding of its own; each part below carries its
    own. That is what lets the section strip run edge to edge — the way a strip
    you swipe should — without a negative margin making its parent wider than
-   the screen, which is a real overflow however good it looks. */
-body.app.status .screen { padding: 0 0 12px; }
+   the screen, which is a real overflow however good it looks.
+
+   Three properties rather than the shorthand, and that is the whole point: on
+   iOS the bar floats above the content and `html.plat-ios .screen` pays for it
+   with a top padding of the safe area plus 56 points. A `padding:` shorthand
+   here silently sets that back to zero, and the instance's name spends its life
+   underneath the word Status. */
+body.app.status .screen {
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: 12px;
+}
 
 /* ---- the head: which instance, and a way to ask again ---------------------- */
 
@@ -1593,6 +1603,11 @@ body.app.status table.grid td::before {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A cell with no column name has nothing to put in the label track, so it takes
+   the whole width rather than indenting its value against an empty column. */
+body.app.status table.grid td:not([data-label]),
+body.app.status table.grid td[data-label=""] { display: block; }
 
 /* The first cell is what the row *is*, not a field of it. */
 body.app.status table.grid td:first-child {

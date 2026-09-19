@@ -113,9 +113,35 @@ function report() {
 
 const SECTIONS = ['fleet', 'overview', 'usage', 'tools', 'timeline', 'system'];
 
+/**
+ * Make the page believe it is on an iPhone, after it has stopped arguing.
+ *
+ * Saying so is not decoration. On iOS the bar floats over the content and the
+ * screen pays for it with a top padding of the safe area plus 56 points; drawn
+ * as plat-web the bar is in the flow, everything clears it by itself, and a rule
+ * that wipes that padding looks perfectly fine right up until it is on a phone.
+ *
+ * It has to be done here rather than before the page's own scripts, because
+ * Capacitor's own runtime is one of those scripts: it replaces any window.
+ * Capacitor put there first and then answers 'web'. The class is the only thing
+ * the stylesheet reads, so the class is what is set.
+ */
+async function asIPhone(page) {
+  await page.evaluate(`(() => {
+    const html = document.documentElement;
+    html.classList.remove('plat-web');
+    html.classList.add('plat-ios');
+    // env(safe-area-inset-*) is zero in a desktop browser. An iPhone 15 Pro's
+    // are not, and that difference is most of the height of the thing that
+    // covers what it covers.
+    html.style.setProperty('--app-top', '59px');
+    html.style.setProperty('--app-bottom', '34px');
+  })()`);
+}
+
 // A screen is too tall when it is more than about two phone-fulls: past that
 // nobody scrolls to the end, and anything down there might as well not be on it.
-const TALL = 3.1;
+const TALL = 3.3;
 
 // Shared with webkit.js, so the same instance is drawn in both engines and a
 // difference between the pictures is a difference between the engines.
@@ -140,13 +166,31 @@ if (require.main !== module) return;
   try {
     await phone.asPhone(393, 852);
     await phone.beforeEachPage(`
-      window.localStorage.setItem('nikui.app.laptop', JSON.stringify({
-        host: 'nikolozs-macbook-pro.tailf76b2f.ts.net', scheme: 'https', name: 'Laptop'
-      }));
+      // localStorage in a try: this runs on every document the browser opens,
+      // including about:blank, where touching it throws a SecurityError — and a
+      // throw here abandons the rest of the script without a word.
+      //
+      // env(safe-area-inset-*) is zero in a desktop browser. An iPhone 15 Pro's
+      // are not, and that difference is most of the height of the thing that
+      // covers what it covers. Set through the CSSOM, because the page's own
+      // policy is style-src 'self' and a <style> element would be dropped.
+      addEventListener('DOMContentLoaded', () => {
+        document.documentElement.style.setProperty('--app-top', '59px');
+        document.documentElement.style.setProperty('--app-bottom', '34px');
+      });
+
       window.__errors = [];
       window.addEventListener('error', (e) => window.__errors.push(String(e.message)));
+
+      try {
+        window.localStorage.setItem('nikui.app.laptop', JSON.stringify({
+          host: 'nikolozs-macbook-pro.tailf76b2f.ts.net', scheme: 'https', name: 'Laptop'
+        }));
+      } catch (_) { /* about:blank has no storage to write to */ }
     `);
+
     await phone.navigate(origin + '/status.html');
+    await asIPhone(phone);
 
     const REPORT = JSON.stringify(report());
     for (const id of sections) {
@@ -206,6 +250,22 @@ if (require.main !== module) return;
             el.textContent.trim().slice(0, 24) + '"'
         })).filter((x) => x.px < 12).slice(0, 4);
 
+        // A stacked row is only readable because every cell says which column
+        // it came from. One table built by hand rather than by the shared
+        // helper and the whole card is values indented against nothing.
+        const bare = [];
+        for (const t of document.querySelectorAll('.sheet-content table.grid')) {
+          const heads = [...t.tHead.rows[0].cells].map((h) => h.textContent.trim());
+          for (const row of t.tBodies[0].rows) {
+            [...row.cells].forEach((c, at) => {
+              if (at > 0 && !(c.dataset.label || '').trim()) {
+                bare.push(heads.join('|') + ' #' + at + ' = ' + c.textContent.trim().slice(0, 18));
+              }
+            });
+          }
+        }
+        const unlabelled = bare.length;
+
         // Stacking a table makes each row about seven times taller, so one that
         // read fine on a panel is two screens here unless it opens folded.
         const rows = [...document.querySelectorAll('.sheet-content table.grid')]
@@ -222,16 +282,60 @@ if (require.main !== module) return;
         const blocks = [...document.querySelectorAll('.sheet-content > *')].map((el) =>
           (el.querySelector('h3, .hero-label') || el).textContent.trim().slice(0, 26) +
           ' ' + Math.round(el.getBoundingClientRect().height) + 'px');
+        // The bar floats over the content on iOS, so the first thing the screen
+        // draws has to start below it. Measured against the bar itself rather
+        // than a number, because the number is the safe area plus a constant
+        // and both move.
+        const bar = document.querySelector('.bar');
+        const first = document.querySelector('.screen > *');
+        const under = bar && first
+          ? Math.round(bar.getBoundingClientRect().bottom - first.getBoundingClientRect().top)
+          : 0;
+
         return JSON.stringify({
-          blocks,
+          plat: document.documentElement.className,
+          padTop: getComputedStyle(document.querySelector('.screen')).paddingTop,
+          barPos: bar ? getComputedStyle(bar).position : 'none',
+          topVar: getComputedStyle(document.documentElement).getPropertyValue('--app-top'),
+          blocks, under,
           vh, vw,
           scroll: tallest.scrollHeight,
           screens: +(tallest.scrollHeight / vh).toFixed(2),
-          wide, clipped, small, rows,
+          wide, clipped, small, rows, unlabelled, bare: bare.slice(0, 3), said: window.__errors.slice(0, 3),
           errors: window.__errors.length
         });
       })()`);
       const m = JSON.parse(seen);
+
+      // ---- and it does not flash ------------------------------------------
+      //
+      // The report arrives every five seconds. Rebuilding the screen from it is
+      // the obvious thing and it is what made the screen blink twelve times a
+      // minute, throw away where you had scrolled to, and fold up any table you
+      // had opened. So: mark every card, hand the page the same report again,
+      // and count how many of the marked cards are still the same nodes.
+      const steady = await phone.evaluate(`(() => {
+        const cards = [...document.querySelectorAll('.sheet-content > *')];
+        cards.forEach((el, at) => { el.__kept = at; });
+        document.querySelector('.screen').scrollTop = 240;
+        return cards.length;
+      })()`);
+      await phone.evaluate(
+        `window.postMessage({ type: 'status', available: true, report: ${REPORT} }, '*')`);
+      await wait(300);
+      const after = JSON.parse(await phone.evaluate(`(() => {
+        const cards = [...document.querySelectorAll('.sheet-content > *')];
+        return JSON.stringify({
+          kept: cards.filter((el) => el.__kept !== undefined).length,
+          all: cards.length,
+          top: Math.round(document.querySelector('.screen').scrollTop)
+        });
+      })()`));
+      await phone.evaluate(`document.querySelector('.screen').scrollTop = 0`);
+      await wait(120);
+
+      const flashed = after.kept !== steady || after.all !== steady;
+      const jumped = after.top !== 240;
 
       const shot = await phone.call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
       fs.writeFileSync(path.join(OUT, 'status-' + id + '.png'), Buffer.from(shot.data, 'base64'));
@@ -258,8 +362,12 @@ if (require.main !== module) return;
       if (m.wide.length) bad.push(m.wide.length + ' wider than the screen');
       if (m.clipped.length) bad.push(m.clipped.length + ' cut off');
       if (m.rows.length) bad.push('a table opens with ' + Math.max(...m.rows) + ' rows');
+      if (m.unlabelled) bad.push(m.unlabelled + ' table cells with no column name: ' + m.bare.join(' ; '));
       if (m.small.length) bad.push('text under 12px');
-      if (m.errors) bad.push(m.errors + ' errors thrown');
+      if (m.under > 1) bad.push(m.under + 'px hidden under the bar');
+      if (m.errors) bad.push(m.errors + ' errors thrown: ' + m.said.join(' | '));
+      if (flashed) bad.push('redrawn on every report (' + after.kept + ' of ' + steady + ' cards kept)');
+      if (jumped) bad.push('scroll lost on every report (240 → ' + after.top + ')');
       notes.push({ id, m, bad });
       console.log((bad.length ? 'LOOK  ' : 'ok    ') + id.padEnd(9) +
         String(m.screens).padStart(5) + ' screens' +
@@ -267,7 +375,11 @@ if (require.main !== module) return;
       for (const w of m.wide) console.log('         wide: ' + w);
       for (const c of m.clipped) console.log('         cut:  ' + c);
       for (const t of m.small) console.log('         ' + t.px + 'px: ' + t.what);
-      if (process.env.BLOCKS) for (const b of m.blocks) console.log('         · ' + b);
+      if (process.env.BLOCKS) {
+        for (const b of m.blocks) console.log('         · ' + b);
+        console.log('         html=' + m.plat + ' padTop=' + m.padTop + ' bar=' + m.barPos +
+          ' --app-top=' + m.topVar + ' under=' + m.under);
+      }
     }
   } finally {
     phone.close();

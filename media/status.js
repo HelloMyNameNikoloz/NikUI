@@ -115,7 +115,8 @@
     // container collapses to the height of its first child.
     return '<div class="grid-scroll"><table class="grid"><thead><tr>' +
       head.map((h, i) => '<th' + num(i) + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' +
-      body.map((row) => '<tr' + (row.action ? ' data-action="' + esc(row.action) + '" tabindex="0"' : '') +
+      body.map((row) => '<tr' + (row.klass ? ' class="' + esc(row.klass) + '"' : '') +
+        (row.action ? ' data-action="' + esc(row.action) + '" tabindex="0"' : '') +
         (row.tip ? ' data-tip="' + esc(row.tip) + '"' : '') + '>' +
         row.cells.map((c, i) => '<td' + num(i) + label(i) + '>' + c + '</td>').join('') + '</tr>').join('') +
       '</tbody></table></div>';
@@ -728,19 +729,25 @@
       : '<p class="muted">No devices are paired. Only this machine can reach this window.</p>',
       { wide: true });
 
-    const rows = trail.slice(0, 12).map((entry) =>
-      '<tr class="' + (entry.allowed ? '' : 'refused') + '">' +
-      '<td>' + esc(fmt.when(entry.at)) + '</td>' +
-      '<td>' + esc(entry.device) + '</td>' +
-      '<td>' + esc(entry.action) + '</td>' +
-      '<td>' + esc(entry.instance || '—') + '</td>' +
-      '<td>' + (entry.allowed ? 'allowed' : 'refused') + '</td>' +
-      '</tr>').join('');
+    // Built by `table()` rather than by hand. Written out here it looked the
+    // same on a panel and was quietly different on a phone: the shared one
+    // writes each column's heading onto every cell, which is what lets a row
+    // stack into labelled lines, and without that every entry was four values
+    // indented against nothing.
+    const rows = trail.slice(0, 12).map((entry) => ({
+      klass: entry.allowed ? '' : 'refused',
+      cells: [
+        esc(fmt.when(entry.at)),
+        esc(entry.device),
+        esc(entry.action),
+        esc(entry.instance || '—'),
+        entry.allowed ? 'allowed' : 'refused'
+      ]
+    }));
 
     const log = card('What arrived from a device', trail.length
-      ? '<div class="grid-scroll"><table class="grid"><thead><tr>' +
-        '<th>When</th><th>Device</th><th>What</th><th>Instance</th><th>Outcome</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+      // None of these are numbers, so none of them are set in a number column.
+      ? table(['When', 'Device', 'What', 'Instance', 'Outcome'], rows, { numFrom: Infinity })
       : '<p class="muted">Nothing has arrived from a device yet.</p>',
       { wide: true });
 

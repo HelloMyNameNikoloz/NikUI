@@ -64,6 +64,13 @@ function serve(section, down) {
       host: 'nikolozs-macbook-pro.tailf76b2f.ts.net', scheme: 'https', name: 'Laptop' }));`,
     '/__seed.js': `window.__report = ${JSON.stringify(report())};
       window.__want = ${JSON.stringify(section)};
+      // Safari on a simulator is a browser, not the app, so Capacitor's runtime
+      // answers 'web' and the page lays itself out with the bar in the flow.
+      // On iOS the bar floats over the content instead, which is the whole
+      // reason the screen carries a top padding — so the class the stylesheet
+      // reads is set here, after the page's own scripts have had their say.
+      document.documentElement.classList.remove('plat-web');
+      document.documentElement.classList.add('plat-ios');
       window.__down = ${Number(down) || 0};
       addEventListener('load', () => {
         const send = () => postMessage({ type: 'status', available: true, report: window.__report }, '*');
