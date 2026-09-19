@@ -4,6 +4,7 @@ const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 const { SessionManager, readConfig } = require('./manager');
+const { projectRoot } = require('./tree');
 const { SessionTree } = require('./tree');
 const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
@@ -444,7 +445,8 @@ function activate(context) {
   // and the thing holding it needs to know whether the server is listening, so
   // each is handed a way to ask the other rather than a reference to it.
   let awake = null;
-  const server = serveLocally(context, manager, { state: () => (awake ? awake.state() : null) });
+  const server = serveLocally(context, manager,
+    { state: () => (awake ? awake.state() : null) }, folders);
   awake = keepAwake(context, manager, server);
 
   // Settings that change how a conversation is drawn reach the pages that are
@@ -517,7 +519,11 @@ function keepAwake(context, manager, server) {
  * here. The status bar item is not decoration — it is the answer to "is it
  * listening right now", which should never need looking up.
  */
-function serveLocally(context, manager, awakeState) {
+/**
+ * @param {object} [folders] the user's own folders, so a phone is shown the
+ *   window the way the editor shows it rather than a flat list of what is in it
+ */
+function serveLocally(context, manager, awakeState, folders) {
   const bar = vscode.window.createStatusBarItem
     ? vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
     : null;
@@ -542,6 +548,11 @@ function serveLocally(context, manager, awakeState) {
     // opened from the editor knows about devices and the trail as well.
     host: installHost(createHost(context, manager, { devices, awake: awakeState || null })),
     sessions: { list: () => manager.list, get: (id) => manager.get(id) },
+    // The same folders, projects and history the editor shows, so a phone is
+    // looking at this window rather than at a list of what happens to be in it.
+    folders,
+    projectRoot,
+    history: (ask) => require('./history').listSessions(ask),
     devices,
     identity,
     pairing,

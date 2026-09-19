@@ -20,3 +20,8 @@ DerivedData/
 keystore.properties
 *.jks
 *.keystore
+app/screens/
+
+# Pictures of the real app on a real phone, taken by app/tools/screens.js.
+# Useful to look at, not worth keeping: take them again.
+screens/

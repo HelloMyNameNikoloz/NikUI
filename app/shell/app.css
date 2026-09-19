@@ -88,7 +88,9 @@ body.app {
   position: relative;
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: 44px 1fr 44px;
+  /* Not three fixed columns: the fleet screen puts the connection state *and*
+     the way to settings on the right, and 44px fits one of them. */
+  grid-template-columns: minmax(44px, auto) minmax(0, 1fr) minmax(44px, auto);
   align-items: center;
   gap: 4px;
   padding: 6px 8px 8px;
@@ -212,7 +214,12 @@ body.app {
 
 .row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  /* The value column is capped against the *row*, which is what a percentage
+     on a track does. Capping the item instead — `max-width` on .row-value —
+     resolves against the track the item just sized, so a long value grows its
+     own column, then clips itself inside it, and starves the label of what is
+     left. Every truncated line on this screen was that. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: center;
   gap: 12px;
   min-height: var(--app-row);
@@ -221,6 +228,42 @@ body.app {
   color: inherit;
   text-decoration: none;
   font-size: 16px;
+}
+
+/* A row that happens to be a button is still a row. Chromium gives a button a
+   grey background, centred text, its own font, and a box that shrink-wraps its
+   content — which is how half the settings rows ended up as grey stubs with
+   their labels cut in half. */
+button.row {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+}
+
+/* Something long enough that shortening it would destroy it — an address, a
+   key — goes under its label with the full width of the row, rather than
+   fighting the label for a corner of it. */
+.row.stacked {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.row.stacked .row-value {
+  justify-content: flex-start;
+  text-align: left;
+  margin-top: 4px;
+}
+
+.row.stacked .row-value span {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .row + .row::before {
@@ -249,15 +292,28 @@ body.app {
 .row-value {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  min-width: 0;
+  /* Against the viewport rather than against the track this item just sized:
+     a percentage here would be circular, and that circularity is what cut
+     every value on this screen in half. */
+  max-width: 62vw;
   color: var(--app-dim);
   font-size: 15px;
   text-align: right;
-  max-width: 55%;
+}
+
+/* The shortening happens on the text, not on the flex box around it: a flex
+   container with `text-overflow` on it ellipsizes nothing. */
+.row-value > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.row-value > .state-dot { flex: none; }
 
 .row-value.mono { font-family: var(--app-mono); font-size: 13px; letter-spacing: -0.02em; }
 .row.good .row-value { color: var(--app-green); }
@@ -444,12 +500,19 @@ body.app {
    The home screen's rows, in the app's own clothes: the client's browser layer
    styles the same markup for a browser, and this takes precedence here. */
 
+/* The list is not a card: each group inside it is. A card containing headings
+   that separate other cards is one border too many, and it reads as one thing
+   with lines through it rather than as several things. */
 body.app.home .rows {
   display: block;
+  background: transparent;
+  max-width: none;
+}
+
+body.app.home .rows-card {
   background: var(--app-raised);
   border-radius: var(--app-radius);
   overflow: hidden;
-  max-width: none;
 }
 
 body.app.home .rows .row {
@@ -660,3 +723,233 @@ body.app :focus-visible {
   line-height: 1.55;
   color: var(--app-dim);
 }
+
+/* ---- history ----------------------------------------------------------------
+
+   A clock, drawn rather than imported, beside the gear. */
+#to-history::before {
+  content: "";
+  display: block;
+  width: 19px;
+  height: 19px;
+  border: 1.8px solid currentColor;
+  border-radius: 50%;
+  position: relative;
+  opacity: 0.85;
+}
+
+#to-history::after {
+  content: "";
+  position: absolute;
+  width: 1.8px;
+  height: 5.5px;
+  background: currentColor;
+  border-radius: 1px;
+  transform: translate(0, -2px);
+  box-shadow: 2.6px 2.6px 0 -0.9px currentColor;
+  opacity: 0.85;
+}
+
+.search-wrap {
+  flex: 0 0 auto;
+  padding: 8px 16px 4px;
+}
+
+.search-wrap input {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--app-raised);
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: 16px;
+}
+
+.search-wrap input::placeholder { color: var(--app-faint); }
+
+/* One past conversation. Three lines at most, and the third only when there is
+   something on it worth a line. */
+.hrow {
+  display: block;
+  padding: 12px 15px;
+  position: relative;
+}
+
+.hrow + .hrow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 15px;
+  right: 0;
+  height: 0.5px;
+  background: var(--app-hairline);
+}
+
+.hrow-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.hrow-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hrow-when {
+  flex: none;
+  font-size: 13px;
+  color: var(--app-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.hrow-title {
+  margin: 3px 0 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--app-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hrow-feet {
+  display: flex;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 12.5px;
+  color: var(--app-faint);
+  min-width: 0;
+}
+
+.hrow-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--app-mono);
+}
+
+.hrow-branch {
+  /* Shrinks before the path does: which project it was is worth more than
+     which branch, and a branch name can be forty characters of ticket. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--app-raised-2);
+}
+
+.hrow-where { flex: 1 1 auto; }
+
+.more {
+  display: block;
+  width: 100%;
+  margin: 16px 0 8px;
+  padding: 13px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: var(--app-radius);
+  background: var(--app-raised);
+  color: var(--app-accent);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* The groups the fleet and the history both draw. */
+body.app .rows-head {
+  margin: 20px 4px 8px;
+  color: var(--app-faint);
+}
+
+body.app .rows-head:first-child { margin-top: 4px; }
+
+body.app .rows-card {
+  background: var(--app-raised);
+  border-radius: var(--app-radius);
+  overflow: hidden;
+}
+
+/* ---- the three screens that are peers ---------------------------------------
+
+   Instances, History, Settings: none of them is inside another, so none of them
+   is reached by a chevron. A tab bar says that, and puts all three within reach
+   of the thumb that is already holding the phone. */
+.tabs {
+  flex: 0 0 auto;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: stretch;
+  padding-bottom: var(--app-bottom);
+  background: linear-gradient(to top, rgba(15, 15, 17, 0.96), rgba(15, 15, 17, 0.86));
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 0.5px solid var(--app-hairline);
+  z-index: 10;
+}
+
+.tab {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 50px;
+  padding: 7px 4px 5px;
+  border: 0;
+  background: transparent;
+  color: var(--app-faint);
+  font: inherit;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.tab.here { color: var(--app-accent); }
+.tab:active { opacity: 0.6; }
+
+.tab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+}
+
+.tab-icon .ico { display: block; }
+
+.tab-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* With a tab bar at the bottom, the screen stops short of it rather than
+   sliding under it — the inset is the bar's now. */
+body.app.home .screen,
+body.app.history .screen,
+body.app.settings .screen {
+  padding-bottom: 20px;
+}
+
+/* A bar with nothing on the left still needs the column, or the title stops
+   being centred. */
+.bar-left { grid-column: 1; }

@@ -151,8 +151,7 @@
    * laptop to talk to.
    */
   function wireChrome() {
-    const settings = document.getElementById('to-settings');
-    if (settings) settings.addEventListener('click', () => go('settings.html'));
+    tabs();
 
     // The client's own back link points at the server's root; in a bundle the
     // fleet is a page rather than a path.
@@ -161,6 +160,42 @@
 
     const onWayIn = /connect\.html$/.test(window.location.pathname);
     if (!onWayIn && !laptop()) window.location.replace('connect.html');
+  }
+
+  // The three screens that are peers rather than a hierarchy: what is running,
+  // what has run, and how this is set up. A tab bar says that in a way a pair
+  // of icons crowded into a title bar cannot, and puts all three where a thumb
+  // already is.
+  const TABS = [
+    { page: 'index.html', label: 'Instances', icon: 'terminal' },
+    { page: 'history.html', label: 'History', icon: 'history' },
+    { page: 'settings.html', label: 'Settings', icon: 'settings' }
+  ];
+
+  function tabs() {
+    const host = document.getElementById('tabs');
+    if (!host) return;
+    const here = (window.location.pathname.split('/').pop() || 'index.html');
+    for (const tab of TABS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'tab' + (tab.page === here ? ' here' : '');
+      button.setAttribute('aria-label', tab.label);
+      if (tab.page === here) button.setAttribute('aria-current', 'page');
+      // The product's own icon set, so nothing here is a second vocabulary.
+      if (window.icon) {
+        const art = document.createElement('span');
+        art.className = 'tab-icon';
+        art.innerHTML = window.icon(tab.icon, 22);
+        button.appendChild(art);
+      }
+      const words = document.createElement('span');
+      words.className = 'tab-label';
+      words.textContent = tab.label;
+      button.appendChild(words);
+      if (tab.page !== here) button.addEventListener('click', () => go(tab.page));
+      host.appendChild(button);
+    }
   }
 
   function wireNative() {

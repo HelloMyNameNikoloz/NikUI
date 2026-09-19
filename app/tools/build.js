@@ -34,7 +34,7 @@ const CLIENT_FILES = SCRIPTS.concat([
   'panel.css', 'browser.css', 'mobile.js', 'home.js', 'device.js'
 ]);
 
-const SHELL_FILES = ['app.css', 'app.js', 'notify.js', 'connect.js', 'settings.js'];
+const SHELL_FILES = ['app.css', 'app.js', 'notify.js', 'connect.js', 'settings.js', 'history.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -161,14 +161,15 @@ function homePage() {
     <span class="bar-title">Instances</span>
     <div class="bar-right">
       <div class="link" id="link" role="status" aria-live="polite" hidden></div>
-      <button class="bar-button" id="to-settings" aria-label="Settings"></button>
     </div>
   </header>
   <main class="screen">
     <p class="lede" id="lede">Connecting&hellip;</p>
     <div class="rows" id="rows"></div>
-  </main>`,
-    scripts: ['app.js', 'notify.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'media/home.js']
+  </main>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
+    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+      'media/transport.js', 'media/home.js']
   });
 }
 
@@ -228,18 +229,41 @@ function connectPage() {
   });
 }
 
+function historyPage() {
+  page({
+    file: 'history.html',
+    title: 'History',
+    cls: 'history',
+    body: `  <header class="bar">
+    <div class="bar-left"></div>
+    <span class="bar-title">History</span>
+    <div class="bar-right"></div>
+  </header>
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="Search past conversations"
+           autocapitalize="none" autocorrect="off" spellcheck="false">
+  </div>
+  <main class="screen" id="screen"></main>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
+    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+      'media/transport.js', 'history.js']
+  });
+}
+
 function settingsPage() {
   page({
     file: 'settings.html',
     title: 'Settings',
     cls: 'settings',
     body: `  <header class="bar">
-    <button class="bar-button back" id="back" aria-label="Back"></button>
+    <div class="bar-left"></div>
     <span class="bar-title">Settings</span>
     <div class="bar-right"></div>
   </header>
-  <main class="screen" id="screen"></main>`,
-    scripts: ['app.js', 'notify.js', 'media/device.js', 'media/secure.js', 'media/transport.js', 'settings.js']
+  <main class="screen" id="screen"></main>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
+    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+      'media/transport.js', 'settings.js']
   });
 }
 
@@ -253,6 +277,7 @@ function build() {
   const copied = copyClient();
   conversationPage();
   homePage();
+  historyPage();
   connectPage();
   settingsPage();
   manifest(version);

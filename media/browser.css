@@ -297,18 +297,49 @@ body.home .sdot.asleep {
     padding-bottom: calc(6px + env(safe-area-inset-bottom));
   }
 
+  /* On a phone the composer is one thing, not three fighting for a strip.
+     A desk has room for a field and its buttons on one line; 384 points does
+     not — the field ends up narrower than its own placeholder, and the result
+     reads as a broken text app rather than as somewhere to write. So it
+     becomes a card: what you are writing on its own line, and what you can do
+     with it underneath, where a thumb already is. */
   .composer {
-    gap: 6px;
-    align-items: flex-end;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-items: stretch;
+    padding: 10px 12px 10px;
+    border-radius: 20px;
   }
+
+  .composer-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  /* The attach button is the only one that belongs on the left: it is about
+     what goes *into* the message, and the rest are about sending it. */
+  .composer-actions #attach { margin-right: auto; }
 
   /* #input, not .composer textarea: the panel styles it by id, and anything
      under 16px makes iOS zoom the whole page the moment it is focused. */
   #input {
-    font-size: 16px;
-    padding: 11px 12px;
-    max-height: 38vh;
+    font-size: 16.5px;
+    line-height: 1.45;
+    padding: 6px 2px;
+    min-height: 26px;
+    max-height: 34vh;
   }
+
+  /* Room to read, rather than a word and a half. */
+  #input::placeholder { white-space: nowrap; }
+
+  /* Send carries the weight; Stop is only there while there is something to
+     stop, and says so by going away rather than by going grey. */
+  .composer-actions #send { padding-left: 20px; padding-right: 20px; }
+  .composer-actions #stop[disabled] { display: none; }
 
   /* Forty-four points, the size of a thumb, everywhere something is tapped. */
   .composer button,
@@ -376,4 +407,58 @@ button.go-on {
   font: inherit;
   border: 0;
   cursor: pointer;
+}
+
+/* ---- the window, grouped the way the editor groups it ----------------------
+
+   A heading above each card, in the vocabulary of the sidebar: folders
+   somebody made, then projects, then everything else. Quiet, because the
+   instances are the content and these are only how it is filed. */
+.rows-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 18px 4px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+}
+
+.rows-head:first-child { margin-top: 2px; }
+
+.rows-head-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rows-head-count {
+  flex: none;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0.65;
+}
+
+/* A folder somebody made reads differently from one a path implied. */
+.rows-head.folder .rows-head-name::before {
+  content: "";
+  display: inline-block;
+  width: 11px;
+  height: 9px;
+  margin-right: 7px;
+  border-radius: 1.5px 3px 3px 3px;
+  background: currentColor;
+  opacity: 0.55;
+  vertical-align: baseline;
+}
+
+.rows-card {
+  background: var(--vscode-input-background);
+  border-radius: 14px;
+  overflow: hidden;
 }

@@ -41,8 +41,9 @@
    * One row. `value` is what it says on the right; `tap` makes it a control;
    * `tone` colours the value the way the product colours states everywhere.
    */
-  function row(list, { label, hint, value, mono, tone, tap, dot, chevron }) {
-    const node = el(tap ? 'button' : 'div', 'row' + (tap ? ' tappable' : '') + (tone ? ' ' + tone : ''));
+  function row(list, { label, hint, value, mono, tone, tap, dot, chevron, stacked }) {
+    const node = el(tap ? 'button' : 'div',
+      'row' + (tap ? ' tappable' : '') + (stacked ? ' stacked' : '') + (tone ? ' ' + tone : ''));
     if (tap) { node.type = 'button'; node.addEventListener('click', tap); }
 
     const left = el('div', 'row-label');
@@ -129,7 +130,9 @@
       label: 'Laptop',
       hint: state.laptopName && state.laptopName !== state.where.host ? state.laptopName : null,
       value: state.where.host,
-      mono: true
+      mono: true,
+      // An address shortened to fit is an address you cannot check.
+      stacked: true
     });
 
     if (state.health != null) {
@@ -160,8 +163,8 @@
     });
 
     row(safety, {
-      label: 'Check it is really your laptop',
-      hint: state.showing ? null : 'Compare four groups of letters with the ones on your laptop',
+      label: 'Check this is your laptop',
+      hint: state.showing ? null : 'Compare the letters with the ones on your laptop',
       value: state.showing ? null : 'Show',
       tap: () => { state.showing = state.showing ? null : (state.where.fingerprint || ''); draw(); },
       chevron: !state.showing
@@ -598,7 +601,10 @@
 
   // ---- start ---------------------------------------------------------------
 
-  document.getElementById('back').addEventListener('click', () => {
+  // Settings is a tab now, not a pushed screen: there is nothing to go back to
+  // that the tab bar does not already offer.
+  const back = document.getElementById('back');
+  if (back) back.addEventListener('click', () => {
     if (window.history.length > 1) window.history.back();
     else window.location.replace('index.html');
   });

@@ -91,7 +91,15 @@ const record = (name, ok) => {
       fleet: () => [session], env: () => ({ vscode: 'app check' })
     },
     sessions: { list: () => [session], get: (id) => (id === session.id ? session : null) },
-    devices, identity, pairing, localKey: new LocalKey()
+    devices, identity, pairing, localKey: new LocalKey(),
+    // The window as the editor files it, so the phone is checked against the
+    // shape it will actually be sent rather than a flat list.
+    folders: { list: () => [{ id: 'f1', name: 'Phone epic', sessions: [session.id] }] },
+    projectRoot: (cwd) => cwd,
+    history: async () => [{
+      sessionId: 'past-1', label: 'an earlier turn', title: 'what happened before',
+      cwd: REPO, branch: 'main', modified: new Date()
+    }]
   });
   // Deliberately not the version in the bundle: a phone carrying a different
   // copy of the client from the laptop is the case worth seeing said out loud.
@@ -191,6 +199,16 @@ const record = (name, ok) => {
     record('naming the instance', /app check/.test(await phone.evaluate('document.body.textContent')));
     record('and saying it is connected',
       (await phone.evaluate('document.getElementById("link").textContent')) === 'Live');
+    // ---- the window, filed the way the editor files it ----------------------
+    record('the fleet is drawn as cards rather than one long list',
+      await phone.until('document.querySelectorAll(".rows-card").length >= 1', 8000));
+    record('and three peer screens reachable from a tab bar',
+      (await phone.evaluate('document.querySelectorAll(".tabs .tab").length')) === 3);
+    record('the one you are on being the one that is marked',
+      (await phone.evaluate(`document.querySelector('.tab.here .tab-label').textContent`)) === 'Instances');
+    record('each tab drawn with the product\u2019s own icons',
+      (await phone.evaluate('document.querySelectorAll(".tabs .tab .ico").length')) === 3);
+
     record('nothing scrolls sideways',
       (await phone.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')) === true);
 
@@ -210,6 +228,18 @@ const record = (name, ok) => {
       await phone.until('document.getElementById("link").textContent === "Live"', 10000));
     record('showing what was already there',
       /what the app should show/.test(await phone.evaluate('document.getElementById("stream").textContent')));
+
+    // A path long enough that a narrow screen cannot show all of it: what it
+    // keeps has to be the end, because the front is what you already knew.
+    session._upsert({
+      id: 'k1', kind: 'tool', name: 'Edit', status: 'done', isError: false,
+      input: { file_path: '/Users/somebody/Codes/a-project/packages/core/src/auth.js' }
+    });
+    record('a path too long for the screen keeps the end, not the front',
+      await phone.until(`(() => {
+        const t = [...document.querySelectorAll('.summary-text')].map(n => n.textContent).join(' ');
+        return /auth\\.js/.test(t) && /^…\\//.test(t.trim());
+      })()`, 8000));
 
     session._upsert({ id: 'a1', kind: 'text', text: 'streamed into the app' });
     record('and what happens next',
@@ -234,10 +264,10 @@ const record = (name, ok) => {
     record('settings says the connection is sealed',
       await phone.until('/End-to-end encrypted/.test(document.body.textContent)', 10000));
     record('and offers a way to check it really is your laptop',
-      /really your laptop/i.test(await phone.evaluate('document.body.textContent')));
+      /Check this is your laptop/i.test(await phone.evaluate('document.body.textContent')));
     record('which opens the fingerprint up to be read out loud',
       (await phone.evaluate(`(() => {
-        const row = [...document.querySelectorAll('.row')].find(r => /really your laptop/i.test(r.textContent));
+        const row = [...document.querySelectorAll('.row')].find(r => /Check this is your laptop/i.test(r.textContent));
         row.click();
         const proof = document.querySelector('.proof');
         return !!proof && proof.textContent.trim().split(/\\s+/).length >= 3;
@@ -452,6 +482,33 @@ const record = (name, ok) => {
         const pill = document.getElementById('link');
         return !!pill && (pill.getAttribute('aria-live') === 'polite' || pill.getAttribute('role') === 'status');
       })()`)) === true);
+
+    // Nothing on any screen may be cut off without having been told to be: an
+    // ellipsis is a decision, text that simply vanishes is a bug.
+    const CLIPPED = `(() => {
+      const bad = [];
+      for (const node of document.querySelectorAll('body *')) {
+        const style = getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden') continue;
+        if (style.textOverflow === 'ellipsis' && style.overflow !== 'visible') continue;
+        if (style.webkitLineClamp && style.webkitLineClamp !== 'none') continue;
+        if (style.overflowX === 'auto' || style.overflowX === 'scroll') continue;
+        const text = (node.textContent || '').trim();
+        if (!text) continue;
+        if (node.scrollWidth > node.clientWidth + 2) {
+          bad.push((node.id ? '#' + node.id : node.className || node.tagName) + ': ' + text.slice(0, 30));
+        }
+      }
+      return bad.slice(0, 6).join(' | ');
+    })()`;
+    for (const screen of ['index.html', 'history.html', 'settings.html']) {
+      await phone.navigate(appOrigin + '/' + screen);
+      await phone.until('document.querySelectorAll(".tabs .tab").length === 3', 10000);
+      const cut = await phone.evaluate(CLIPPED);
+      record('nothing is cut off on ' + screen + (cut ? ' — ' + cut : ''), cut === '');
+    }
+    await phone.navigate(appOrigin + '/settings.html');
+    await phone.until('document.querySelectorAll(".group").length >= 5', 10000);
 
     record('the app is dark whatever the phone is',
       (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');

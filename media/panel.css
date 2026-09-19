@@ -1323,3 +1323,7 @@ body.dropping::after {
   border-radius: 2px;
   background: var(--red);
 }
+
+/* On a desk the composer is still one line: the actions sit beside the field
+   rather than under it, which is what the grid on a phone rearranges. */
+.composer-actions { display: contents; }

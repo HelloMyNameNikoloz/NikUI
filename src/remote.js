@@ -62,6 +62,9 @@ class RemoteServer {
    * @param {Function} [deps.announce] tell a person something happened
    * @param {() => boolean} [deps.requireSealed] must a device seal the channel
    * @param {() => boolean} [deps.appOnly] serve the app only, never a page
+   * @param {object} [deps.folders] the user's own folders, so a phone sees the same ones
+   * @param {(cwd: string) => string} [deps.projectRoot] which project a directory belongs to
+   * @param {(opts: object) => Promise<Array>} [deps.history] past conversations on this machine
    * @param {(line: string) => void} [deps.log]
    */
   constructor(deps) {
@@ -77,6 +80,12 @@ class RemoteServer {
     // the setting takes effect on the next connection rather than the next
     // window — a security setting you have to restart to apply is a security
     // setting that stays wrong.
+    // A phone should see the window the way the editor shows it — the same
+    // folders, the same projects, the same history — rather than a flat list
+    // that happens to contain the same instances.
+    this.folders = deps.folders || null;
+    this.projectRoot = deps.projectRoot || null;
+    this.history = deps.history || null;
     this.requireSealed = deps.requireSealed || (() => true);
     this.appOnly = deps.appOnly || (() => false);
     this.gate = deps.gate || new Gate({
@@ -839,8 +848,10 @@ ${this.appHead(nonce)}</head>
 
     this.fleetClients.add(client);
     client.bind({
-      receive: (message) => {
-        if (message && message.type === 'ready') client.post(this.fleetMessage());
+      receive: async (message) => {
+        if (!message) return;
+        if (message.type === 'ready') return void client.post(this.fleetMessage());
+        if (message.type === 'history') return void client.post(await this.historyMessage(message));
       },
       device: () => {},
       detach: () => this.fleetClients.delete(client)
@@ -850,17 +861,52 @@ ${this.appHead(nonce)}</head>
   }
 
   fleetMessage() {
-    const instances = this.sessions.list().map((session) => ({
-      id: session.id,
-      label: session.customTitle || session.label,
-      status: session.status,
-      cwd: session.cwd,
-      cost: session.totalCost || 0,
-      queued: (session.queue || []).length,
-      paused: !!session.isPaused,
-      asleep: !!session.isAsleep
-    }));
-    return { type: 'fleet', instances, at: Date.now() };
+    const placed = this.folders ? this.folders.list() : [];
+    const instances = this.sessions.list().map((session) => {
+      const folder = placed.find((f) => (f.sessions || []).includes(session.id)) || null;
+      const root = this.projectRoot ? this.projectRoot(session.cwd) : '';
+      return {
+        id: session.id,
+        label: session.customTitle || session.label,
+        status: session.status,
+        cwd: session.cwd,
+        cost: session.totalCost || 0,
+        queued: (session.queue || []).length,
+        paused: !!session.isPaused,
+        asleep: !!session.isAsleep,
+        // Where the editor files it: a folder somebody made, or the project its
+        // directory belongs to. Sent rather than guessed from the path, because
+        // a worktree belongs to its project and a path does not say so.
+        folder: folder ? { id: folder.id, name: folder.name } : null,
+        project: root ? { path: root, name: root.split(/[\\/]/).filter(Boolean).pop() || root } : null
+      };
+    });
+    return {
+      type: 'fleet',
+      instances,
+      // Folders that exist but have nothing in them are still folders.
+      folders: placed.map((f) => ({ id: f.id, name: f.name })),
+      at: Date.now()
+    };
+  }
+
+  /**
+   * Conversations this machine has had before, which is what the editor's
+   * History view lists. Read-only, and the same information a watching device
+   * already sees the live half of.
+   */
+  async historyMessage(ask) {
+    if (!this.history) return { type: 'history', entries: [], available: false };
+    try {
+      const entries = await this.history({
+        limit: Math.min(Math.max(Number((ask && ask.limit) || 40), 1), 200),
+        cwd: ask && ask.cwd ? String(ask.cwd) : undefined
+      });
+      return { type: 'history', entries: entries || [], available: true };
+    } catch (err) {
+      this.log('history could not be read: ' + (err && err.message));
+      return { type: 'history', entries: [], available: true, trouble: 'could not be read' };
+    }
   }
 
   broadcastFleet() {

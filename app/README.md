@@ -23,6 +23,7 @@ cd app && npm test     # check the bundle is still a copy, not a fork
     app/RELEASE.md              how to get a build onto a phone, and what it costs
     app/tools/build.test.js     proves www/ is a copy of media/, file by file
     app/tools/app.check.js      the app, driven in a browser against a real laptop
+    app/tools/screens.js        the app on a real phone, over adb, as pictures
     app/www/                    generated, git-ignored
     app/android, app/ios        the native projects, committed
     …/ios/App/App/SecureKey/    the Secure Enclave half of the key plugin
@@ -69,7 +70,15 @@ Typing is still there, behind *Type the code instead*, for when that does not
 work. The key is made before either button is pressed, so tapping one does one
 thing and does it now.
 
-**Instances** — the fleet, live, with the connection state in the bar.
+**Instances** — the fleet, live, filed the way the editor files it: folders
+somebody made first, then projects, then everything else. One group draws no
+heading, because a heading over the only thing on screen is noise.
+
+**History** — every conversation this machine has had, grouped by day and
+searchable. The same list the editor's History view shows, read over the socket
+the app is already holding.
+
+The three are peers, so they are tabs rather than screens inside one another.
 
 **Conversation** — the client, unchanged: the same transcript, composer, queue
 and dashboard the panel draws.
@@ -205,6 +214,22 @@ logs.
 
 Opening the app with a link never pairs on sight. It fills everything in and
 asks, because a link that pairs on sight is a link somebody else could send you.
+
+## Looking at it
+
+`app/tools/screens.js` drives the real app on a real phone over adb — the
+WebView through its own debugging socket, so every step is the app's own code —
+and brings back what each screen actually looks like.
+
+It exists because a passing check cannot tell you that a line of text is cut in
+half, and that is the only thing somebody holding the phone will notice. Every
+layout fault on this page was found that way: a value column that clipped its
+own contents, buttons wearing the browser's grey, a composer narrower than its
+own placeholder.
+
+It also measures what is cut off rather than leaving it to the eye —
+deliberately ignoring anything that was *told* to shorten itself, because an
+ellipsis is a decision and text that simply vanishes is a bug.
 
 ## Polish, specifically
 

@@ -110,6 +110,65 @@ module.exports = async function () {
   const port = server.port;
   const cookie = { cookie: 'nikui=' + auth.key };
 
+  suite('a phone is shown the window, not a list of what is in it');
+
+  {
+    // The editor files instances into folders somebody made and projects their
+    // directories belong to. A phone that gets a flat list is looking at the
+    // same instances and a different window.
+    const grouped = new RemoteServer({
+      root: ROOT, host, localKey: auth,
+      sessions: { list: () => [first, second] },
+      folders: { list: () => [
+        { id: 'f1', name: 'Phone epic', sessions: [first.id] },
+        { id: 'f2', name: 'Someday', sessions: [] }
+      ] },
+      projectRoot: (cwd) => '/Users/me/Codes/thing',
+      history: async (ask) => [
+        { sessionId: 'past-1', label: '1327', title: 'the sealed channel',
+          cwd: '/Users/me/Codes/thing', branch: 'main', modified: new Date(), asked: ask }
+      ]
+    });
+
+    const message = grouped.fleetMessage();
+    const alpha = message.instances.find((i) => i.id === first.id);
+    const beta = message.instances.find((i) => i.id === second.id);
+    checkEqual('an instance in a folder says which one', alpha.folder && alpha.folder.name, 'Phone epic');
+    checkEqual('one in no folder says so', beta.folder, null);
+    checkEqual('and both say which project they belong to',
+      [alpha.project.name, beta.project.name], ['thing', 'thing']);
+    checkEqual('a folder with nothing in it is still a folder',
+      message.folders.map((f) => f.name).sort(), ['Phone epic', 'Someday']);
+
+    const empty = new RemoteServer({ root: ROOT, host, localKey: auth, sessions: { list: () => [first] } });
+    const plain = empty.fleetMessage();
+    checkEqual('a window with no folders sends none', plain.folders, []);
+    checkEqual('and its instances are in none', plain.instances[0].folder, null);
+    checkEqual('nor claim a project nobody worked out', plain.instances[0].project, null);
+
+    const past = await grouped.historyMessage({ limit: 5 });
+    checkEqual('history comes back over the same socket', past.type, 'history');
+    check('with what the editor\'s own History view shows',
+      past.entries[0].label === '1327' && past.entries[0].branch === 'main');
+    checkEqual('and the limit is passed on', past.entries[0].asked.limit, 5);
+
+    const capped = await grouped.historyMessage({ limit: 9999 });
+    checkEqual('an absurd limit is brought back to something sane',
+      capped.entries[0].asked.limit, 200);
+
+    const none = await empty.historyMessage({});
+    check('a window that cannot read history says so rather than pretending',
+      none.available === false && none.entries.length === 0);
+
+    const broken = new RemoteServer({
+      root: ROOT, host, localKey: auth, sessions: { list: () => [] },
+      history: async () => { throw new Error('the disk said no'); }
+    });
+    const survived = await broken.historyMessage({});
+    check('and history that will not read does not take the socket with it',
+      survived.type === 'history' && survived.entries.length === 0 && !!survived.trouble);
+  }
+
   suite('what a client is told about the window it reached');
 
   {

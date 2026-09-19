@@ -77,7 +77,22 @@ check('and that the key stays here', /never leaves it/i.test(connect));
 
 const settings = read('settings.html');
 check('settings has somewhere to draw itself', /id="screen"/.test(settings));
-check('and a way back', /id="back"/.test(settings));
+
+// ---- three screens that are peers, and say so --------------------------------
+//
+// Instances, History and Settings are not inside one another, so none of them
+// is reached by a chevron and none of them needs a way back: the tab bar is on
+// all three, and the one you are looking at is the one that is marked.
+
+const history = read('history.html');
+check('history has somewhere to draw itself', /id="screen"/.test(history));
+check('and something to search with', /id="search"/.test(history));
+for (const page of ['index.html', 'history.html', 'settings.html']) {
+  check(page + ' carries the tab bar', /<nav class="tabs" id="tabs"/.test(read(page)));
+  check(page + ' loads the icons it draws them with', read(page).includes('media/icons.js'));
+}
+check('the conversation is a pushed screen, so it has a way back instead',
+  /id="back"/.test(read('conversation.html')) && !/id="tabs"/.test(read('conversation.html')));
 
 // ---- the version it reports --------------------------------------------------
 

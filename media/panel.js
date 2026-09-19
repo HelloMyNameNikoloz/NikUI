@@ -115,9 +115,28 @@
     scrollDown();
   });
 
+  /**
+   * An absolute path, shortened from the front.
+   *
+   * A path is read from its end — which file, then which folder — so cutting
+   * the end off leaves the half you already knew. On a narrow screen that is
+   * every path: "/Users/nikoloz/Codes/NikUI/src/au…" says nothing the row
+   * above it did not. Done here rather than in CSS because the CSS way of
+   * doing it reverses the text direction, and a leading slash then comes out
+   * at the other end.
+   */
+  function shortenPath(text) {
+    if (!/^([/~]|[A-Za-z]:\\)/.test(text)) return text;
+    const parts = text.split(/[/\\]/).filter(Boolean);
+    if (parts.length <= 3) return text;
+    return '…/' + parts.slice(-3).join('/');
+  }
+
   function summarise(inputObj) {
     const i = inputObj || {};
-    const first = i.command || i.file_path || i.path || i.url || i.query || i.pattern || i.description || i.prompt;
+    const path = i.file_path || i.path;
+    if (path && !i.command) return shortenPath(String(path).replace(/\s+/g, ' ')).slice(0, 160);
+    const first = i.command || i.url || i.query || i.pattern || i.description || i.prompt;
     if (first) return String(first).replace(/\s+/g, ' ').slice(0, 160);
     const keys = Object.keys(i);
     return keys.length ? keys.slice(0, 3).map((k) => k + '=' + short(i[k])).join(' ') : '';

@@ -81,9 +81,11 @@ ${head}</head>
       <div class="attachments" id="attachments"></div>
       <div class="composer">
         <textarea id="input" rows="1" placeholder="Message Claude…"></textarea>
-        <button class="icon-only" id="attach" title="Attach an image"></button>
-        <button class="ghost" id="stop" disabled>Stop</button>
-        <button id="send">Send</button>
+        <div class="composer-actions">
+          <button class="icon-only" id="attach" title="Attach an image"></button>
+          <button class="ghost" id="stop" disabled>Stop</button>
+          <button id="send">Send</button>
+        </div>
       </div>
       <div class="hint">
         <span><kbd>Enter</kbd> send</span>
