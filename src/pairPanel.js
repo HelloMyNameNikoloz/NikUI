@@ -42,14 +42,24 @@ class PairPanel {
     // the store does — a trail entry, a last-seen — is not this panel's news,
     // and repainting for it would restart the countdown on screen.
     this.stopWatchingDevices = devices.onChange(() => {
-      if (devices.list().length !== this.before) this.paint();
+      if (this.justPaired()) this.paint();
     });
+
+    // One panel, as many devices as you like: after a phone pairs, the way to
+    // pair the next one is a button here rather than the command palette again.
+    this.panel.webview.onDidReceiveMessage((message) => {
+      if (message && message.type === 'again') this.restart();
+    }, null, this.disposables);
 
     this.restart();
   }
 
   restart() {
-    this.before = this.devices.list().length;
+    // When this window opened, not how many devices there were. A phone that
+    // pairs again — the same key, because the key is the identity — does not
+    // make the list any longer, so counting it left a spent code on the screen
+    // and no sign that anything had happened.
+    this.openedAt = Date.now();
     this.pairing.start({
       host: this.server.publicHost,
       scheme: this.server.publicScheme,
@@ -59,10 +69,16 @@ class PairPanel {
     this.paint();
   }
 
+  /** Whichever device has paired since this panel last offered a code. */
+  justPaired() {
+    return this.devices.list()
+      .filter((device) => (device.pairedAt || 0) >= this.openedAt)
+      .sort((a, b) => (b.pairedAt || 0) - (a.pairedAt || 0))[0] || null;
+  }
+
   paint() {
     const state = this.pairing.state();
-    const paired = this.devices.list().length > this.before ? this.devices.list().slice(-1)[0] : null;
-    this.panel.webview.html = this.html(state, paired);
+    this.panel.webview.html = this.html(state, this.justPaired());
   }
 
   html(state, paired) {
@@ -141,6 +157,10 @@ ${this.qrFor(state.link, 'browser', true)}
     <p class="note">Sending prompts is a separate grant: a prompt from a device runs with the same
     permissions as one typed here. Grant it from the Devices list when you mean to.</p>
     <p class="key">Key ${escapeHtml(device.fingerprint || '')}</p>
+    <p class="note">${escapeHtml(this.devices.list().length === 1
+      ? 'It is the only device paired with this window.'
+      : `${this.devices.list().length} devices are paired with this window. They can all watch at once.`)}</p>
+    <button id="again" class="again" type="button">Pair another device</button>
   </main>`;
   }
 

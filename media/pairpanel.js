@@ -30,6 +30,16 @@
     forBrowser.addEventListener('click', () => choose('browser'));
   }
 
+  // Pairing a second device should not mean finding the command again.
+  const again = document.getElementById('again');
+  if (again && typeof acquireVsCodeApi === 'function') {
+    const editor = acquireVsCodeApi();
+    again.addEventListener('click', () => {
+      again.disabled = true;
+      editor.postMessage({ type: 'again' });
+    });
+  }
+
   const left = document.getElementById('left');
   if (!left) return;
   const until = Number(left.dataset.until || 0);

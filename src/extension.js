@@ -772,6 +772,27 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       return;
     }
 
+    // The address is the machine's, not this window's. Taking it from a window
+    // that is still using it is a legitimate thing to want — it is why this
+    // command exists — but it has to be a thing somebody chose, because the
+    // address does not change when it moves: a phone that was showing that
+    // window simply starts showing this one, with nothing on either screen to
+    // say why.
+    const held = await tailscale.forwardedPort().catch(() => null);
+    if (held !== null && held !== server.port && await answering(held)) {
+      const move = await vscode.window.showWarningMessage(
+        'Another NikUI window is already reachable at this address.',
+        {
+          modal: true,
+          detail: `${state.name} currently forwards to that window (port ${held}). ` +
+            'Moving it here takes every paired phone with it: the address is the same, so a ' +
+            'phone that was watching that window will start watching this one instead.'
+        },
+        'Move it to this window'
+      );
+      if (move !== 'Move it to this window') return false;
+    }
+
     const out = await tailscale.expose(server.port);
     if (!out.ok) {
       vscode.window.showWarningMessage('NikUI could not ask Tailscale to forward to it: ' + out.reason);
@@ -953,7 +974,10 @@ function serveLocally(context, manager, awakeState, folders, deps) {
    */
   const pair = async () => {
     if (!(await start())) return;
-    await adoptTunnel();
+    // Claims the address when it is free or abandoned, and leaves it alone when
+    // another window is really using it — in which case the question below is
+    // the honest one to ask rather than a silent takeover.
+    await becomeReachable();
 
     // A phone is not this machine, and a pairing code for 127.0.0.1 is a code
     // that cannot work from one — it fails as "failed to fetch", which says

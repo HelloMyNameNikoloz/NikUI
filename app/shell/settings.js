@@ -438,10 +438,7 @@
       buzz('heavy');
       // Its own removal ends this device's pairing, so the key goes with it
       // rather than being left pointing at a record the laptop no longer has.
-      if (device.me) {
-        app.forget();
-        window.location.replace('connect.html');
-      }
+      if (device.me) handBack();
       return;
     }
     node.dataset.armed = '1';
@@ -452,6 +449,26 @@
       node.dataset.armed = '';
       name.textContent = device.name;
     }, 4000);
+  }
+
+  /**
+   * Delete this device's key and go back to the way in.
+   *
+   * Not immediately: a message written into a socket is not a message that has
+   * left, and navigating away closes the socket underneath it — so the laptop
+   * would keep a record of a device whose key no longer exists anywhere, which
+   * is the one piece of litter this is supposed to avoid.
+   *
+   * A moment is enough for a round trip on a tailnet, and the key goes either
+   * way. The person asked for it, and a laptop that cannot be reached is not a
+   * reason to leave a key on a phone they are giving away.
+   */
+  function handBack() {
+    flash('Handing this device back\u2026');
+    setTimeout(() => {
+      app.forget();
+      window.location.replace('connect.html');
+    }, 700);
   }
 
   // ---- what the screen checks ----------------------------------------------
@@ -674,14 +691,11 @@
     const node = event.currentTarget;
     if (node.dataset.armed === '1') {
       // Tell the laptop first, so it does not keep a record of a device whose
-      // key no longer exists. Best effort: the key goes either way, because the
-      // person asked for that and an unreachable laptop is not a reason to
-      // leave a key on a phone they are giving away.
+      // key no longer exists.
       if (transport && state.me) {
         try { transport.postMessage({ type: 'forget', id: state.me }); } catch (_) { /* going anyway */ }
       }
-      app.forget();
-      window.location.replace('connect.html');
+      handBack();
       return;
     }
     node.dataset.armed = '1';

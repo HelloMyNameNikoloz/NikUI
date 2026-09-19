@@ -320,10 +320,14 @@ class Cloudflared {
         done({ ok: false, reason: 'cloudflared stopped' + (code == null ? '' : ' with code ' + code) });
       });
 
+      // Not unref'd. This timer is the only thing standing between a caller and
+      // waiting forever, so it has to be allowed to fire: unref'd, a process
+      // with nothing else to do simply exits at the first idle moment and the
+      // promise never settles at all — which is the exact failure the timeout
+      // exists to prevent, arrived at by a different road.
       const timer = setTimeout(() => {
         done({ ok: false, reason: 'cloudflared did not say where it was within ' + Math.round(timeout / 1000) + 's' });
       }, timeout);
-      if (timer.unref) timer.unref();
     });
   }
 

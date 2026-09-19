@@ -1,5 +1,9 @@
 'use strict';
-const { memoryState } = require('./helpers/vscode-stub.js');
+// Installed here rather than relied on: this file reaches into src/pairPanel.js,
+// which requires 'vscode', and it used to work only because some other suite
+// had already put the stub in place. Run on its own it did not.
+const { install, memoryState } = require('./helpers/vscode-stub.js');
+install();
 const { DeviceStore, cleanName, TRAIL_LIMIT } = require('../src/devices.js');
 const { PairingWindow, ALPHABET, LENGTH } = require('../src/pairing.js');
 const { loadIdentity, verifyWith, readPublicKey } = require('../src/identity.js');
@@ -186,6 +190,48 @@ module.exports = async function () {
   check('and says a phone elsewhere can use it', /reachable from your tailnet/i.test(reachable));
 
   check('localhost counts as loopback too', /only works on this machine/i.test(draw('localhost:4517', 'http')));
+
+  suite('the panel knows which device just paired, and offers the next one');
+
+  // It used to count: more devices than when the code went up meant somebody
+  // had paired. A phone pairing *again* is the same key — the key is the
+  // identity — so the list never got longer, and the panel sat there showing a
+  // code that had already been spent with nothing to say it had worked.
+  {
+    const store = new DeviceStore(memoryState());
+    const at = Date.now();
+    const older = await makeDevice('An old phone');
+    store.add({ name: older.name, publicKey: older.publicKey });
+    store.list()[0].pairedAt = at - 60000;
+    store.save(store.list());
+
+    const panel = { devices: store, openedAt: at };
+    const look = () => PairPanel.prototype.justPaired.call(panel);
+    check('a device that paired before the code went up is not news', look() === null);
+
+    const fresh = await makeDevice('A new phone');
+    store.add({ name: fresh.name, publicKey: fresh.publicKey });
+    checkEqual('a device that pairs while it is open is', (look() || {}).name, 'A new phone');
+
+    // The same phone again: same key, same record, no new row.
+    panel.openedAt = Date.now() + 1;
+    check('and a fresh code is waiting for the next one', look() === null);
+    await new Promise((r) => setTimeout(r, 5));
+    store.add({ name: 'A new phone', publicKey: fresh.publicKey });
+    checkEqual('a phone pairing again is noticed, though the list is no longer',
+      (look() || {}).name, 'A new phone');
+    checkEqual('and it is still one device, not two', store.list().length, 2);
+
+    const said = PairPanel.prototype.pairedBody.call(panel, store.list()[1]);
+    check('the panel says how many are paired now', /2 devices are paired/.test(said));
+    check('they can all watch at once', /watch at once/.test(said));
+    check('and offers to pair another without finding the command again',
+      /id="again"/.test(said) && /Pair another device/.test(said));
+
+    const one = { devices: { list: () => [store.list()[0]] }, openedAt: at };
+    check('with one, it says one rather than counting',
+      /only device paired/.test(PairPanel.prototype.pairedBody.call(one, store.list()[0])));
+  }
 
   suite('the whole exchange, as the phone does it');
 
