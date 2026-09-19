@@ -257,14 +257,16 @@
      * somewhere — and thickens optically as it does.
      */
     const paint = () => {
-      const stretch = Math.max(-0.30, Math.min(0.30, v * 0.030));
+      // Subtle. Photos does not fling its capsule across the bar; it gives a
+      // little and springs back, and anything more reads as a bug.
+      const stretch = Math.max(-0.14, Math.min(0.14, v / 5200));
       const pull = Math.abs(stretch);
       pill.style.transform =
         'translate3d(' + x.toFixed(2) + 'px, 0, 0)' +
         ' scaleX(' + (1 + pull).toFixed(4) + ')' +
         ' scaleY(' + (1 - pull * 0.55).toFixed(4) + ')';
       // Which way it is leaning, for the highlight that lags behind it.
-      pill.style.setProperty('--drift', (stretch / 0.30).toFixed(3));
+      pill.style.setProperty('--drift', (stretch / 0.14).toFixed(3));
       // "When glass flexes and morphs to larger sizes, its material
       // characteristics change to simulate a thicker, more substantial
       // material." So it does.
@@ -293,21 +295,38 @@
       }
     }
 
-    /** A spring with a little left in it, so it arrives rather than stopping. */
-    const STIFFNESS = 0.013;
-    const DAMPING = 0.155;
+    /**
+     * A spring, in the units a spring is written in.
+     *
+     * ω is how fast it wants to move and ζ how much it resists — just under 1,
+     * so it arrives with a little left in it rather than stopping dead. The
+     * first version of this used arbitrary constants against milliseconds, and
+     * `damping × dt` came out above 1: every step flipped the velocity's sign
+     * and made it bigger, which is how a spring explodes. It jumped 248 points
+     * in one frame. Seconds, and ω·dt well under 1, is what keeps it stable.
+     */
+    const OMEGA = 17;     // radians per second — settles in about a third of one
+    const ZETA = 0.82;    // just under critical, so it overshoots a little
 
     let last = 0;
     function step(now) {
       frame = null;
-      const dt = Math.min(32, last ? now - last : 16);
+      // A tab that was in the background gets one enormous frame otherwise, and
+      // one enormous frame is a jump.
+      const dt = Math.min(1 / 30, (last ? now - last : 16) / 1000);
       last = now;
 
       if (!dragging) {
         const away = x - target;
-        v += (-STIFFNESS * away - DAMPING * v) * dt;
-        x = clamp(x + v * dt);
-        if (Math.abs(away) < 0.4 && Math.abs(v) < 0.004) {
+        const a = -(OMEGA * OMEGA) * away - 2 * ZETA * OMEGA * v;
+        v += a * dt;
+        x += v * dt;
+        // Only at the very ends, and it takes the velocity with it rather than
+        // leaving it to fight the wall.
+        const limit = (count - 1) * span();
+        if (x < 0) { x = 0; v = 0; }
+        if (x > limit) { x = limit; v = 0; }
+        if (Math.abs(away) < 0.3 && Math.abs(v) < 6) {
           x = target;
           v = 0;
           paint();
@@ -368,9 +387,10 @@
       const next = clamp(event.clientX - box.left - span() / 2);
       const now = event.timeStamp || performance.now();
       const dt = Math.max(1, now - wasAt);
-      // Measured rather than guessed, so a slow drag does not stretch and a
-      // flick does.
-      v = (next - wasX) / dt;
+      // Points per second, the same units the spring works in. Smoothed, or a
+      // single jittery frame becomes a flick.
+      const instant = ((next - wasX) / dt) * 1000;
+      v = v * 0.4 + instant * 0.6;
       wasX = next;
       wasAt = now;
       x = next;
@@ -383,7 +403,7 @@
       pill.classList.remove('held');
       // Thrown, not dropped: where it would come to rest decides which tab it
       // lands on, which is what makes a flick feel like it went somewhere.
-      const projected = x + v * 130;
+      const projected = x + v * 0.13;
       const index = Math.max(0, Math.min(count - 1, Math.round(projected / span())));
       if (index === at) {
         settled(index, true);
@@ -409,7 +429,7 @@
         if (index === at) return;
         // A tap has no throw of its own, so it is given one: the capsule leaves
         // with a push rather than easing away from a standstill.
-        v = (index > at ? 1 : -1) * 0.55;
+        v = (index > at ? 1 : -1) * 620;
         arrive = () => go(TABS[index].page);
         buzz();
         settled(index, true);

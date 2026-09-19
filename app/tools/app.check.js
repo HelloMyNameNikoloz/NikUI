@@ -672,6 +672,60 @@ const record = (name, ok) => {
     await phone.navigate(appOrigin + '/index.html');
     await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
 
+    // The glitch this is here to stop coming back: a spring integrated badly
+    // flips its velocity every step and the capsule teleports. Measured, not
+    // eyeballed — every frame of a real flick, looking for a jump.
+    record('the capsule never jumps, however hard it is thrown',
+      await (async () => {
+        await phone.navigate(appOrigin + '/index.html');
+        await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+        const worst = await phone.evaluate(`(() => new Promise((resolve) => {
+          const pill = document.querySelector('.tab-pill');
+          const tabs = document.getElementById('tabs');
+          const box = tabs.getBoundingClientRect();
+          tabs.setPointerCapture = () => {};
+          const at = (x) => ({ clientX: x, clientY: box.top + box.height / 2, pointerId: 9, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
+          const read = () => {
+            const t = getComputedStyle(pill).transform;
+            const m = t === 'none' ? [1,0,0,1,0,0] : t.replace(/matrix\\(|\\)/g,'').split(',').map(Number);
+            return m[4];
+          };
+          let worst = 0;
+          let was = read();
+          let n = 0;
+          tabs.dispatchEvent(new PointerEvent('pointerdown', at(box.left + box.width * 0.1)));
+          let flick = 0;
+          const push = () => {
+            flick++;
+            const x = box.left + box.width * (0.1 + flick * 0.1);
+            tabs.dispatchEvent(new PointerEvent('pointermove', at(x)));
+            if (flick < 8) requestAnimationFrame(push);
+            else tabs.dispatchEvent(new PointerEvent('pointercancel', at(x)));
+          };
+          const watch = () => {
+            const now = read();
+            worst = Math.max(worst, Math.abs(now - was));
+            was = now;
+            if (++n < 70) requestAnimationFrame(watch); else resolve(worst);
+          };
+          requestAnimationFrame(push);
+          requestAnimationFrame(watch);
+        }))()`);
+        console.log('      worst single-frame movement: ' + Math.round(worst) + 'pt');
+        return worst < 60;
+      })());
+    // DOMMatrix rather than unpicking the string: matrix() has six numbers and
+    // matrix3d() sixteen, scaleY sits in a different place in each, and a
+    // regular expression for it inside a template literal loses its backslash.
+    const shape = await phone.evaluate(`(() => {
+      const m = new DOMMatrix(getComputedStyle(document.querySelector('.tab-pill')).transform);
+      return m.a + ',' + m.d;
+    })()`);
+    const [sx, sy] = String(shape).split(',').map(Number);
+    console.log('      capsule shape: scaleX ' + sx.toFixed(3) + ' scaleY ' + sy.toFixed(3));
+    record('and its stretch stays inside the bar rather than bursting out of it',
+      sx <= 1.2 && sy >= 0.88);
+
     record('the app is dark whatever the phone is',
       (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');
 

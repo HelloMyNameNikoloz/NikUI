@@ -137,7 +137,12 @@ A strip of three things with a shape sitting on one of them invites being
 pushed, and the best control on a phone is the one that does what you tried.
 
 It moves on a spring rather than a transition, because what Apple's glass has is
-momentum and a duration cannot have any. Throw it and it carries; the shape
+momentum and a duration cannot have any. ω = 17 rad/s, ζ = 0.82, integrated in
+seconds — the first version used arbitrary constants against milliseconds and
+`damping × dt` came out above 1, which flips the velocity's sign every step and
+makes it bigger. It jumped 248 points in a single frame. `app/tools/app.check.js`
+now flicks the capsule as hard as it can and fails if any frame moves it more
+than 60 points, so that cannot come back unnoticed. Throw it and it carries; the shape
 stretches along the throw and thins across it, the way a volume of liquid must;
 it thickens optically as it stretches, which is Apple's own rule — *"when glass
 flexes and morphs to larger sizes, its material characteristics change to
