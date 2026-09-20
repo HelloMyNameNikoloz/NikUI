@@ -56,6 +56,21 @@ html.app {
   --vscode-contrastBorder: transparent;
 }
 
+/* `hidden` means hidden.
+   
+   The user agent says `[hidden] { display: none }` with the weight of a user
+   agent rule, which any class in this file outranks. So `.bar-button
+   { display: flex }` quietly put a button back on the screen that the code had
+   just hidden, `.runner { display: flex }` offered a command field before there
+   was anywhere to type, and `display: block` on a table row un-hid the rows a
+   Show-all button was supposed to be folding away. Three separate bugs, one
+   cause, each found on a device rather than here.
+   
+   `hidden` is a statement from the code about whether a thing exists yet. No
+   rule about how it should look is entitled to disagree, which is what makes
+   this the one place `!important` is the honest answer rather than a shortcut. */
+body.app [hidden], html.app [hidden] { display: none !important; }
+
 html.app, body.app {
   margin: 0;
   padding: 0;
@@ -1579,9 +1594,7 @@ body.app.status table.grid tr {
 
 body.app.status table.grid tr:last-child { margin-bottom: 0; }
 
-/* `display: block` above beats the user agent's `[hidden] { display: none }`,
-   so a capped row would stay on the screen and the button would do nothing. */
-body.app.status table.grid tr[hidden] { display: none; }
+
 
 body.app.status table.grid td {
   display: grid;
@@ -1998,12 +2011,6 @@ html.typing body.app.terminal .runner { padding-bottom: 8px; }
 
 /* The place you type one. Above the tab bar, above the keyboard — the visual
    viewport is what moves when a phone keyboard opens, not the window. */
-/* `display: flex` beats the user agent's `[hidden] { display: none }`, so
-   without this the field is on the screen before there is anywhere to type
-   into — which is how it looked on Android: a terminal offering to run
-   something before one had been opened. */
-.runner[hidden] { display: none; }
-
 .runner {
   flex: 0 0 auto;
   display: flex;

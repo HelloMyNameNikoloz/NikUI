@@ -68,6 +68,16 @@ function serveBundle(root) {
 const checks = [];
 // Printed as they happen: a check that throws halfway through should still
 // leave a record of everything that worked up to it.
+/**
+ * Say what went wrong, and fail.
+ *
+ * `x || !console.log(...)` reads as "or complain", and complains — then passes,
+ * because console.log returns undefined and !undefined is true. Five checks
+ * were written that way and none of them could fail. This is the same shape
+ * with the value the shape implied.
+ */
+const shout = (words) => { console.log('  ' + words); return false; };
+
 const record = (name, ok) => {
   checks.push([name, !!ok]);
   console.log((ok ? 'PASS  ' : 'FAIL  ') + name);
@@ -635,6 +645,25 @@ const record = (name, ok) => {
       }
       return bad.slice(0, 6).join(' | ');
     })()`;
+    // Three bugs came from one cause: a class in app.css outranks the user
+    // agent's `[hidden] { display: none }`, so things the code had hidden were
+    // still on the screen — a folder button with no terminal, a command field
+    // with nowhere to type, table rows a Show-all was meant to be folding away.
+    // Each was found on a phone. This asks the question on every screen.
+    for (const screen of ['index.html', 'status.html', 'terminal.html', 'history.html', 'settings.html']) {
+      await phone.navigate(appOrigin + '/' + screen);
+      await phone.settled();
+      await wait(600);
+      const shown = await phone.evaluate(`(() => {
+        return [...document.querySelectorAll('[hidden]')]
+          .filter((el) => el.offsetParent !== null || el.getClientRects().length > 0)
+          .map((el) => el.tagName.toLowerCase() + '#' + (el.id || '') + '.' + (typeof el.className === 'string' ? el.className : ''))
+          .slice(0, 4);
+      })()`);
+      record('nothing marked hidden is on the screen on ' + screen,
+        shown.length === 0 || shout('showing: ' + shown.join(' ')));
+    }
+
     for (const screen of ['index.html', 'status.html', 'terminal.html', 'history.html', 'settings.html']) {
       await phone.navigate(appOrigin + '/' + screen);
       await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
@@ -871,18 +900,18 @@ const record = (name, ok) => {
 
     const worstWide = layout.filter((s) => s.wide);
     record('nothing on any section is wider than the screen',
-      worstWide.length === 0 || !console.log('  wide on: ' +
+      worstWide.length === 0 || shout('wide on: ' +
         worstWide.map((s) => s.id + '×' + s.wide).join(', ')));
     record('and nothing on one is smaller than 12px',
-      layout.every((s) => s.tiny === 0) || !console.log('  small text on: ' +
+      layout.every((s) => s.tiny === 0) || shout('small text on: ' +
         layout.filter((s) => s.tiny).map((s) => s.id).join(', ')));
     // Stacking a table makes each row about seven times taller, so a table that
     // was fine on a panel is two screens on a phone unless it is folded.
     record('no table opens with more than a handful of rows',
-      layout.every((s) => s.rows.every((n) => n <= 6)) || !console.log('  long tables: ' +
+      layout.every((s) => s.rows.every((n) => n <= 6)) || shout('long tables: ' +
         JSON.stringify(layout.map((s) => [s.id, s.rows]))));
     record('and no section is more than about three screens tall',
-      layout.every((s) => s.screens < 3.6) || !console.log('  tall: ' +
+      layout.every((s) => s.screens < 3.6) || shout('tall: ' +
         layout.map((s) => s.id + ' ' + s.screens.toFixed(2)).join(', ')));
     record('a folded table can still be opened in full',
       (await phone.evaluate(`(() => {
