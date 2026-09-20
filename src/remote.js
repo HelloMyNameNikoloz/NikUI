@@ -863,12 +863,25 @@ ${this.appHead(nonce)}</head>
     client.bind({
       receive: async (message) => {
         if (!message) return;
-        if (message.type === 'ready') return void client.post(this.fleetMessage());
-        if (message.type === 'history') return void client.post(await this.historyMessage(message));
-        if (message.type === 'status') return void client.post(this.statusMessage());
-        if (message.type === 'devices') return void client.post(this.devicesMessage(client));
-        if (message.type === 'forget') return void this.forgetFor(client, message.id);
-        if (message.type.indexOf('term:') === 0) return void this.terminalFor(client, message);
+        try {
+          if (message.type === 'ready') return void client.post(this.fleetMessage());
+          if (message.type === 'history') return void client.post(await this.historyMessage(message));
+          if (message.type === 'status') return void client.post(this.statusMessage());
+          if (message.type === 'devices') return void client.post(this.devicesMessage(client));
+          if (message.type === 'forget') return void this.forgetFor(client, message.id);
+          if (message.type.indexOf('term:') === 0) return void this.terminalFor(client, message);
+        } catch (err) {
+          // A handler that throws used to answer nothing at all, and nothing at
+          // all is the one answer a phone cannot act on: it waits, and then it
+          // says the laptop is unreachable, which is a lie about a typo. One
+          // stale variable name in `terminalFor` did exactly that.
+          this.log(`${client.id} asked ${message.type} and it threw: ${(err && err.message) || err}`);
+          client.post({
+            type: message.type.indexOf('term:') === 0 ? 'term:no' : '@refused',
+            what: message.type,
+            reason: 'That went wrong on the laptop: ' + ((err && err.message) || 'unknown error')
+          });
+        }
       },
       device: () => {},
       detach: () => {
@@ -1063,14 +1076,18 @@ ${this.appHead(nonce)}</head>
       // A path is never taken from the device. It says which instance it wants
       // to be beside and the window looks up where that is, so no string from
       // outside ever ends up as a working directory.
+      //
+      // Nothing named means home, not "whichever instance happens to be first".
+      // A terminal that opens somewhere different depending on what the editor
+      // had open is a terminal you have to check the top of before you trust
+      // what you just typed.
       const session = message.session ? this.sessions.get(message.session) : null;
-      const beside = session || this.sessions.list()[0] || null;
       const made = this.terminals.open({
-        cwd: beside ? beside.cwd : this.root,
-        name: beside ? (beside.customTitle || beside.label) : 'Terminal'
+        cwd: session ? session.cwd : null,
+        name: session ? (session.customTitle || session.label) : 'Home'
       });
       watched.add(made.id);
-      this.note(seat, 'opened a terminal', beside ? beside.cwd : '');
+      this.note(seat, 'opened a terminal', made.cwd);
       return void client.post({ type: 'term:opened', terminal: made });
     }
 

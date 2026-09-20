@@ -1927,16 +1927,159 @@ html.locked, html.locked body { overflow: hidden; }
 
 /* ---- the terminal -----------------------------------------------------------
 
-   Each run is a block with a beginning and an end rather than a wall of text:
-   the command it came from at the top, the output in the middle, and whether it
-   worked at the bottom. Scrolling back to find the one that broke is then
-   looking rather than reading. */
+   Read like the conversation, because it is one: you say a thing, the machine
+   answers, and you scroll back through both. So a command wears the same filled
+   card a prompt does, and its output is plain full-width text the way a reply
+   is — rather than a box inside a box inside a list of boxes, which is what a
+   terminal made of cards turns into by the third command.
+
+   What a chat does not have is whether it worked, so that is the one thing
+   added: a quiet line underneath, coloured only when it failed. */
+
+.run { margin: 0 0 22px; }
+.run:last-child { margin-bottom: 8px; }
+
+/* The command, in the same card a prompt is in. */
+.run-head {
+  display: flex;
+  gap: 8px;
+  padding: 11px 14px;
+  border-radius: 14px;
+  background: var(--app-raised);
+  border: 0.5px solid var(--app-hairline);
+  font-family: var(--nik-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.run-prompt { color: var(--green, #30d158); flex: 0 0 auto; }
+.run-command { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* The answer: no card, no border, the full width of the screen — the shape a
+   reply has in the conversation. */
+.run-out {
+  margin: 10px 2px 0;
+  padding: 0;
+  max-height: none;
+  background: none;
+  font-family: var(--nik-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--vscode-foreground);
+}
+
+.run.bad .run-out { color: var(--vscode-foreground); }
+
+.run-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 2px 0;
+  font-size: 13px;
+  color: var(--app-dim);
+}
+
+.run-state { color: var(--app-dim); }
+.run-state.good { color: var(--app-dim); }
+.run-state.bad { color: var(--red, #ff453a); }
+.run-state.going { color: var(--blue, #0a84ff); }
+
+.run-stop, .run-again {
+  margin-left: auto;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--app-raised);
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: 13px;
+}
+
+.run-stop { color: var(--red, #ff453a); }
+
+/* The place you type one, in the shape the composer has in a conversation. */
+.runner {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 8px 14px calc(8px + var(--app-bottom));
+  background: var(--app-bg, #0f0f11);
+  border-top: 0.5px solid var(--app-hairline);
+}
+
+.runner input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--app-raised);
+  color: var(--vscode-foreground);
+  font-family: var(--nik-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  /* 16px or iOS zooms the whole page the moment it is focused. */
+  font-size: 16px;
+}
+
+.runner input::placeholder { color: var(--app-dim); font-family: inherit; }
+
+#go {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--blue, #0a84ff);
+  color: #fff;
+  font: inherit;
+  font-size: 17px;
+}
+
+#go::before { content: '\25b6'; }
+#go:disabled { opacity: 0.4; }
+
+/* The tab bar floats over the content everywhere else; here the input is the
+   thing above it, so the bar sits under both. */
+body.app.terminal .tabs { position: relative; }
+
+body.app.terminal .screen { padding-bottom: 8px; }
+
+/* A folder name rather than a glyph, so it needs room and a way to run out of
+   it — the bar's own column is sized for an icon. */
+body.app.terminal .bar-left { min-width: 0; }
+body.app.terminal #pick {
+  width: auto;
+  max-width: 34vw;
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  line-height: 44px;
+}
 
 /* The visible height, not the page's: a phone keyboard leaves the layout
    viewport alone and only shrinks what you can see. terminal.js keeps
    --app-height up to date; everything below moves because this does. */
 body.app.terminal { height: var(--app-height, 100%); }
 body.app.terminal .screen { padding-bottom: 8px; }
+
+/* A folder name rather than a glyph, so it needs room and a way to run out of
+   it — the bar's own column is sized for an icon. */
+body.app.terminal .bar-left { min-width: 0; }
+body.app.terminal #pick {
+  width: auto;
+  max-width: 34vw;
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  line-height: 44px;
+}
 
 /* While the keyboard is up there is not much room, and what there is should be
    output rather than a tab bar you are not reaching for. */

@@ -252,10 +252,21 @@ module.exports = async function () {
       return reply;
     })();
     check('with control, one opens', !!opened.terminal.id);
-    checkEqual('rooted where the instance is', opened.terminal.cwd, only.cwd);
+    // Nothing named means home. A terminal that opened wherever the editor
+    // happened to have an instance is one you have to read the top of before
+    // you trust what you just typed.
+    checkEqual('rooted at home when nothing is named', opened.terminal.cwd, require('os').homedir());
+    checkEqual('and named so', opened.terminal.name, 'Home');
+
+    const beside = await (async () => {
+      const reply = seat.next('term:opened', 4000);
+      seat.send({ type: 'term:open', session: only.id });
+      return reply;
+    })();
+    checkEqual('naming an instance opens where that instance is', beside.terminal.cwd, only.cwd);
 
     const began = seat.next('term:began', 4000);
-    seat.send({ type: 'term:run', id: opened.terminal.id, command: 'echo hello' });
+    seat.send({ type: 'term:run', id: beside.terminal.id, command: 'echo hello' });
     const started = await began;
     checkEqual('and a command runs in it', started.run.command, 'echo hello');
     check('which is written down with the command',
@@ -276,9 +287,39 @@ module.exports = async function () {
       seat.send({ type: 'term:open', session: '../../etc' });
       return reply;
     })();
-    checkEqual('a session id that is not one falls back to a real folder',
-      elsewhere.terminal.cwd, only.cwd);
+    checkEqual('a session id that is not one is not a path either',
+      elsewhere.terminal.cwd, require('os').homedir());
 
+    seat.close();
+  }
+
+  suite('a question the laptop cannot answer is still answered');
+
+  // Silence is the one reply a phone cannot act on: it waits, gives up, and
+  // says the laptop is unreachable — which is a lie about a mistake in a
+  // handler. One stale variable name in the terminal code did exactly this,
+  // and the screen looked like a network problem.
+  {
+    const phoneAgain2 = await makeDevice('A curious phone');
+    phoneAgain2.id = devices.add({ name: phoneAgain2.name, publicKey: phoneAgain2.publicKey }).id;
+    devices.setControl(phoneAgain2.id, true);
+    const seat = await ws.connect(socket());
+    await signIn(seat, phoneAgain2);
+    seat.send({ type: 'ready' });
+    await seat.waitFor('fleet');
+
+    const boom = new Error('the sky fell in');
+    const wasOpen = terminals.open;
+    terminals.open = () => { throw boom; };
+    const said = await (async () => {
+      const reply = seat.next('term:no', 4000);
+      seat.send({ type: 'term:open' });
+      return reply;
+    })();
+    terminals.open = wasOpen;
+
+    check('it says something rather than nothing', !!said);
+    check('and says what went wrong', /the sky fell in/.test(said.reason || ''));
     seat.close();
   }
 

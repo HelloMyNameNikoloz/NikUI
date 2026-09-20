@@ -37,6 +37,7 @@
     runs: [],           // what has been run in it, oldest first
     trouble: null,
     stale: false,       // the laptop answered the handshake but not this
+    choosing: false,    // the folder list, open over the scrollback
     instances: []       // somewhere to root a new one
   };
 
@@ -82,30 +83,42 @@
       const lede = el('p', 'lede', state.stale
         ? 'Your laptop is connected but does not know about terminals. It is running an older NikUI — reload its VS Code window.'
         : state.connected
-          ? 'Run a command on your laptop. It runs where the instance you pick is, and it can do anything you could type there.'
+          ? 'Opening a terminal…'
           : 'Waiting for your laptop…');
       if (state.stale) lede.classList.add('bad');
       screen.appendChild(lede);
-      if (state.connected && !state.stale) screen.appendChild(opener());
       runner.hidden = true;
       pick.hidden = true;
       return;
     }
 
     pick.hidden = false;
-    pick.textContent = shortPath(state.terminal.cwd);
+    // The name, not the path: the path is what the screen says underneath, and
+    // a bar button is forty-four points wide.
+    pick.textContent = state.terminal.name || shortPath(state.terminal.cwd);
     runner.hidden = false;
 
+    if (state.choosing) {
+      screen.appendChild(opener());
+      return;
+    }
+
     if (!state.runs.length) {
-      screen.appendChild(el('p', 'lede', 'Nothing run yet. The command runs in ' +
-        shortPath(state.terminal.cwd) + '.'));
+      screen.appendChild(el('p', 'lede', 'Commands run in ' + state.terminal.cwd +
+        ' on your laptop, and can do anything you could type there.'));
     }
 
     for (const run of state.runs) screen.appendChild(drawRun(run));
     toBottom();
   }
 
-  /** Where a new one should be rooted: beside an instance, or wherever. */
+  /**
+   * Somewhere else to run, for when home is not where you meant.
+   *
+   * Offered, never required. A terminal you have to choose a folder for before
+   * it will open is a terminal you close again, and the answer is nearly always
+   * the same folder — so that is where it opens.
+   */
   function opener() {
     const list = el('div', 'list');
     const wrap = el('section', 'group');
@@ -119,7 +132,7 @@
       left.appendChild(el('b', null, 'In this window'));
       one.appendChild(left);
       one.appendChild(el('div', 'row-value chevron'));
-      one.addEventListener('click', () => open(null));
+      one.addEventListener('click', () => { state.choosing = false; open(null); });
       list.appendChild(one);
       return wrap;
     }
@@ -132,7 +145,7 @@
       left.appendChild(el('small', null, shortPath(instance.cwd)));
       row.appendChild(left);
       row.appendChild(el('div', 'row-value chevron'));
-      row.addEventListener('click', () => open(instance.id));
+      row.addEventListener('click', () => { state.choosing = false; open(instance.id); });
       list.appendChild(row);
     }
     return wrap;
@@ -211,12 +224,10 @@
     send(field.value);
   });
 
-  // Switching the folder is switching terminals, which is also how you close
-  // the one you are in: a screen with no list is a screen with no way back.
+  // Somewhere else to run. The list opens over the scrollback rather than
+  // replacing the terminal, so there is always one behind it to come back to.
   pick.addEventListener('click', () => {
-    state.terminal = null;
-    state.runs = [];
-    transport.postMessage({ type: 'term:list' });
+    state.choosing = !state.choosing;
     draw();
   });
 
@@ -323,6 +334,10 @@
       if (mine) {
         state.terminal = mine;
         transport.postMessage({ type: 'term:attach', id: mine.id });
+      } else {
+        // Nothing open yet, so open one. Asking which folder first is a
+        // question with the same answer every time.
+        open(null);
       }
       draw();
       return;
@@ -330,6 +345,7 @@
 
     if (message.type === 'term:opened') {
       state.terminal = message.terminal;
+      state.choosing = false;
       state.runs = [];
       try { window.sessionStorage.setItem('nikui.app.terminal', message.terminal.id); } catch (_) { /* fine */ }
       draw();

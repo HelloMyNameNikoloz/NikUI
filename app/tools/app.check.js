@@ -1087,33 +1087,37 @@ const record = (name, ok) => {
 
     devices.setControl(paired.id, true);
     await phone.navigate(appOrigin + '/terminal.html');
-    record('the terminal screen offers somewhere to run',
-      await phone.until('/Open a terminal/.test(document.body.textContent)', 10000));
-    record('rooted beside an instance, named',
-      /app check/.test(await phone.evaluate('document.body.textContent')));
+    // No question first. Choosing a folder before you may type is a question
+    // with the same answer every time, so it opens at home and offers the
+    // folders as somewhere to move to rather than as a gate.
+    record('the terminal opens by itself, with somewhere to type',
+      await phone.until('document.getElementById("runner").offsetParent !== null', 12000));
+    record('and says where the command will run',
+      /Commands run in/.test(await phone.evaluate('document.body.textContent')));
+    record('rooted at home rather than wherever an instance happens to be',
+      (await phone.evaluate('document.getElementById("pick").textContent')) === 'Home');
 
-    // Rendered, not the attribute. `hidden` is a property a stylesheet can
-    // overrule — `display: flex` beats the user agent's `[hidden]` rule — and a
-    // field that is on the screen is on the screen however it is marked.
-    const runnerShown = () => phone.evaluate(
-      '!!document.getElementById("runner") && document.getElementById("runner").offsetParent !== null');
-    record('with nowhere to type until a terminal is open', (await runnerShown()) === false);
-    record('and the rows read as one line each, not a chevron on its own',
-      (await phone.evaluate(`(() => {
-        const rows = [...document.querySelectorAll('.row')];
-        return rows.length > 0 && rows.every((r) => {
-          const value = r.querySelector('.row-value');
-          const label = r.querySelector('.row-label');
-          if (!value || !label) return true;
-          // Side by side: the chevron starts to the right of the words rather
-          // than underneath them.
-          return value.getBoundingClientRect().left >= label.getBoundingClientRect().right - 1;
-        });
-      })()`)) === true);
-
-    await phone.evaluate(`[...document.querySelectorAll('.row')][0].click()`);
-    record('opening one gives you somewhere to type',
-      await phone.until('document.getElementById("runner").offsetParent !== null', 8000));
+    record('the folders are still reachable, over the scrollback',
+      await (async () => {
+        await phone.evaluate(`document.getElementById('pick').click()`);
+        const there = await phone.until('/Open a terminal/.test(document.body.textContent)', 6000);
+        const oneLine = (await phone.evaluate(`(() => {
+          const rows = [...document.querySelectorAll('.row')];
+          return rows.length > 0 && rows.every((r) => {
+            const value = r.querySelector('.row-value');
+            const label = r.querySelector('.row-label');
+            if (!value || !label) return true;
+            // Side by side: the chevron starts to the right of the words rather
+            // than underneath them.
+            return value.getBoundingClientRect().left >= label.getBoundingClientRect().right - 1;
+          });
+        })()`)) === true;
+        // And closing it leaves the terminal that was always there.
+        await phone.evaluate(`document.getElementById('pick').click()`);
+        await wait(400);
+        const back = await phone.evaluate('document.getElementById("runner").offsetParent !== null');
+        return there && oneLine && back === true;
+      })());
 
     await phone.evaluate(`(() => {
       document.getElementById('command').value = 'echo hello';
