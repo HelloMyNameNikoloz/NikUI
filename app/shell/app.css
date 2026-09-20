@@ -1998,6 +1998,12 @@ html.typing body.app.terminal .runner { padding-bottom: 8px; }
 
 /* The place you type one. Above the tab bar, above the keyboard — the visual
    viewport is what moves when a phone keyboard opens, not the window. */
+/* `display: flex` beats the user agent's `[hidden] { display: none }`, so
+   without this the field is on the screen before there is anywhere to type
+   into — which is how it looked on Android: a terminal offering to run
+   something before one had been opened. */
+.runner[hidden] { display: none; }
+
 .runner {
   flex: 0 0 auto;
   display: flex;

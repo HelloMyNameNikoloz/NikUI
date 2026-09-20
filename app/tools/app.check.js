@@ -1063,9 +1063,28 @@ const record = (name, ok) => {
     record('rooted beside an instance, named',
       /app check/.test(await phone.evaluate('document.body.textContent')));
 
+    // Rendered, not the attribute. `hidden` is a property a stylesheet can
+    // overrule — `display: flex` beats the user agent's `[hidden]` rule — and a
+    // field that is on the screen is on the screen however it is marked.
+    const runnerShown = () => phone.evaluate(
+      '!!document.getElementById("runner") && document.getElementById("runner").offsetParent !== null');
+    record('with nowhere to type until a terminal is open', (await runnerShown()) === false);
+    record('and the rows read as one line each, not a chevron on its own',
+      (await phone.evaluate(`(() => {
+        const rows = [...document.querySelectorAll('.row')];
+        return rows.length > 0 && rows.every((r) => {
+          const value = r.querySelector('.row-value');
+          const label = r.querySelector('.row-label');
+          if (!value || !label) return true;
+          // Side by side: the chevron starts to the right of the words rather
+          // than underneath them.
+          return value.getBoundingClientRect().left >= label.getBoundingClientRect().right - 1;
+        });
+      })()`)) === true);
+
     await phone.evaluate(`[...document.querySelectorAll('.row')][0].click()`);
     record('opening one gives you somewhere to type',
-      await phone.until('document.getElementById("runner").hidden === false', 8000));
+      await phone.until('document.getElementById("runner").offsetParent !== null', 8000));
 
     await phone.evaluate(`(() => {
       document.getElementById('command').value = 'echo hello';

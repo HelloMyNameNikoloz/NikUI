@@ -125,7 +125,7 @@
     }
 
     for (const instance of state.instances) {
-      const row = el('button', 'row tappable stacked');
+      const row = el('button', 'row tappable');
       row.type = 'button';
       const left = el('div', 'row-label');
       left.appendChild(el('b', null, instance.label));
