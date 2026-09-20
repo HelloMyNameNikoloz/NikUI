@@ -211,6 +211,41 @@
     draw();
   });
 
+  /**
+   * Keep the field above the keyboard.
+   *
+   * A phone keyboard does not resize the window: it resizes the visual viewport
+   * and leaves the layout viewport where it was, so anything pinned to the
+   * bottom of the page ends up underneath the keys — which is exactly what the
+   * tab bar did, floating across the middle of the screen with the input behind
+   * it. The height that matters is the one the browser will actually show.
+   *
+   * The tab bar goes away while you are typing. There is not much room left by
+   * then, and what there is should be output.
+   */
+  function trackKeyboard() {
+    const viewport = window.visualViewport;
+    const root = document.documentElement;
+    const set = () => {
+      const height = viewport ? viewport.height : window.innerHeight;
+      root.style.setProperty('--app-height', Math.round(height) + 'px');
+      root.classList.toggle('typing', window.innerHeight - height > 80);
+      // iOS scrolls the page itself to reveal the focused field; putting it
+      // back is what stops the bar sliding off the top.
+      if (viewport && viewport.offsetTop === 0) window.scrollTo(0, 0);
+      toBottom();
+    };
+    set();
+    if (viewport) {
+      viewport.addEventListener('resize', set);
+      viewport.addEventListener('scroll', set);
+    }
+    window.addEventListener('orientationchange', () => setTimeout(set, 120));
+    window.addEventListener('resize', set);
+  }
+
+  trackKeyboard();
+
   // ---- where it comes from ----------------------------------------------------
 
   window.NIKUI_REMOTE = app.remote(null);

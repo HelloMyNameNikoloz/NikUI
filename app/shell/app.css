@@ -1919,7 +1919,16 @@ html.locked, html.locked body { overflow: hidden; }
    worked at the bottom. Scrolling back to find the one that broke is then
    looking rather than reading. */
 
+/* The visible height, not the page's: a phone keyboard leaves the layout
+   viewport alone and only shrinks what you can see. terminal.js keeps
+   --app-height up to date; everything below moves because this does. */
+body.app.terminal { height: var(--app-height, 100%); }
 body.app.terminal .screen { padding-bottom: 8px; }
+
+/* While the keyboard is up there is not much room, and what there is should be
+   output rather than a tab bar you are not reaching for. */
+html.typing body.app.terminal .tabs { display: none; }
+html.typing body.app.terminal .runner { padding-bottom: 8px; }
 
 .run {
   margin: 0 0 12px;
