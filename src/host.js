@@ -28,6 +28,7 @@ function createHost(context, manager, extras) {
     fleet: () => (manager ? manager.list : []),
     env: (session) => describeEnv(context, manager, session, devices, awake),
     openFile: (req) => openFile(req),
+    runInTerminal: (req) => runInTerminal(req),
     switchTo: (id, from) => switchTo(context, manager, id, from),
     // What arrived from a device, allowed or not. The editor's own panel has no
     // device and so is never written down: the trail is about what came from
@@ -81,6 +82,25 @@ function describeEnv(context, manager, session, devices, awake) {
 }
 
 /** Open a path the model mentioned, resolved against the instance's folder. */
+/**
+ * Put a command into a real terminal, without running it.
+ *
+ * Typed in and left there, because a command somebody has not read is not a
+ * command they have agreed to run — and in the editor they are right there,
+ * one Return away. The phone is the other case: there is nothing to type into,
+ * nobody watching it, and asking would mean a second trip.
+ */
+async function runInTerminal(req) {
+  const command = String((req && req.command) || '').trim();
+  if (!command) return false;
+  const name = 'NikUI' + (req && req.label ? ' \u00b7 ' + req.label : '');
+  const open = vscode.window.terminals.find((t) => t.name === name);
+  const terminal = open || vscode.window.createTerminal({ name, cwd: (req && req.cwd) || undefined });
+  terminal.show(true);
+  terminal.sendText(command, false);
+  return true;
+}
+
 async function openFile(req) {
   const raw = String((req && req.path) || '').trim();
   if (!raw) return;

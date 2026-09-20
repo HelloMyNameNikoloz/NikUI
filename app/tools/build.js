@@ -35,7 +35,7 @@ const CLIENT_FILES = SCRIPTS.concat([
 ]);
 
 const SHELL_FILES = ['app.css', 'app.js', 'lock.js', 'notify.js', 'connect.js', 'settings.js',
-  'history.js', 'status.js'];
+  'history.js', 'status.js', 'terminal.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -174,6 +174,10 @@ function conversationPage() {
     head: '<link rel="stylesheet" href="media/browser.css">\n' +
       '<link rel="stylesheet" href="app.css">\n' +
       '<script src="capacitor.js"></script>\n' +
+      // The lock covers this page too. It is built by renderPage rather than by
+      // `page()`, so it does not get the script list every other screen gets —
+      // and a locked app with one screen that opens anyway is not locked.
+      '<script src="lock.js"></script>\n' +
       '<script src="app.js"></script>\n' +
       '<script src="notify.js"></script>\n' +
       '<script src="media/mobile.js" defer></script>\n',
@@ -284,6 +288,37 @@ function statusPage() {
   });
 }
 
+/**
+ * A command on the laptop, run from here.
+ *
+ * The input is a `form` so the phone's keyboard offers Go rather than a return
+ * key, which on a one-line field is what somebody is reaching for.
+ */
+function terminalPage() {
+  page({
+    file: 'terminal.html',
+    title: 'Terminal',
+    cls: 'terminal',
+    body: `  <header class="bar">
+    <div class="bar-left"><button class="bar-button" id="pick" hidden>Folder</button></div>
+    <span class="bar-title">Terminal</span>
+    <div class="bar-right">
+      <div class="link" id="link" role="status" aria-live="polite" hidden></div>
+    </div>
+  </header>
+  <main class="screen" id="screen"></main>
+  <form class="runner" id="runner" hidden>
+    <input id="command" type="text" placeholder="Type a command"
+           autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false"
+           enterkeyhint="go" aria-label="Command">
+    <button class="run-go" id="go" type="submit" aria-label="Run"></button>
+  </form>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
+    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+      'media/transport.js', 'media/runnable.js', 'terminal.js']
+  });
+}
+
 function historyPage() {
   page({
     file: 'history.html',
@@ -335,6 +370,7 @@ function build() {
   homePage();
   statusPage();
   historyPage();
+  terminalPage();
   connectPage();
   settingsPage();
   manifest(version);

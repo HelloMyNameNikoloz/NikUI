@@ -16,7 +16,9 @@ const OWN_COMMANDS = ['status'];
  */
 const STEERING = new Set([
   'send', 'interrupt', 'permission', 'unqueue', 'promoteQueued',
-  'editQueued', 'clearQueue', 'openFile', 'switch'
+  // Running a command is steering by any reading of the word: it is the same
+  // machine and the same permissions as a prompt, by a shorter route.
+  'editQueued', 'clearQueue', 'openFile', 'switch', 'runInTerminal'
 ]);
 
 // A sheet that quietly goes stale while a turn runs is worse than no sheet, and
@@ -309,6 +311,16 @@ class SessionHub {
       case 'openFile':
         if (typeof this.host.openFile === 'function') {
           await this.host.openFile({ path: msg.path, line: msg.line, cwd: session.cwd });
+        }
+        break;
+
+      // In the editor there is already a terminal and somebody sitting at it,
+      // so the command goes there rather than into a view of our own — and it
+      // is put in without being sent, because a command you have not read yet
+      // is not a command you have agreed to run.
+      case 'runInTerminal':
+        if (typeof this.host.runInTerminal === 'function') {
+          await this.host.runInTerminal({ command: msg.command, cwd: session.cwd, label: session.label });
         }
         break;
 

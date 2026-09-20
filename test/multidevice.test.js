@@ -22,6 +22,8 @@ const { DeviceStore } = require('../src/devices.js');
 const { PairingWindow } = require('../src/pairing.js');
 const { loadIdentity } = require('../src/identity.js');
 const { buildReport } = require('../src/report.js');
+const { Terminals } = require('../src/terminal.js');
+const { EventEmitter } = require('events');
 const ws = require('./helpers/ws.js');
 const { makeDevice } = require('./helpers/device.js');
 
@@ -67,8 +69,23 @@ module.exports = async function () {
   const auth = new LocalKey('test-key-not-a-secret');
   host.audit = (entry) => devices.record(entry);
 
+  // Nothing is really spawned: what is under test here is who is allowed to ask.
+  let lastChild = null;
+  const terminals = new Terminals({
+    shell: '/bin/testsh',
+    spawn: () => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => true;
+      lastChild = child;
+      return child;
+    },
+    onEvent: (event) => server.terminalSaid(event)
+  });
+
   const server = new RemoteServer({
-    root: ROOT, host, sessions, devices,
+    root: ROOT, host, sessions, devices, terminals,
     identity: loadIdentity(memoryState()),
     pairing: new PairingWindow(), localKey: auth,
     report: () => buildReport({ session: only, fleet: [only], env: { vscode: 'test' } })
@@ -203,6 +220,67 @@ module.exports = async function () {
   two.send({ type: 'forget', id: tablet.id });
   await two.waitClosed();
   checkEqual('the last device may still hand itself back', devices.list().length, 0);
+
+  suite('a terminal is behind the same grant as a prompt');
+
+  // A shell on somebody's machine is not something a read-only seat reaches.
+  // It is not a *new* power for a device that may send prompts — NikUI runs
+  // Claude with permissions bypassed, so a prompt can already do anything a
+  // command can — but a watching device is for reading, and reading is what it
+  // should stay.
+  {
+    const watcher = await makeDevice('A watching phone');
+    watcher.id = devices.add({ name: watcher.name, publicKey: watcher.publicKey }).id;
+    const seat = await ws.connect(socket());
+    await signIn(seat, watcher);
+    seat.send({ type: 'ready' });
+    await seat.waitFor('fleet');
+
+    const no = seat.next('term:no', 4000);
+    seat.send({ type: 'term:open' });
+    const refused = await no;
+    check('a device that only watches is refused', /watch/.test(refused.reason || ''));
+    check('and the attempt is written down',
+      devices.recent(5).some((e) => e.action === 'terminal' && e.allowed === false));
+
+    devices.setControl(watcher.id, true);
+    await seat.waitWhere((m) => m && m.type === '@device' && m.device.control === true, 4000);
+
+    const opened = await (async () => {
+      const reply = seat.next('term:opened', 4000);
+      seat.send({ type: 'term:open' });
+      return reply;
+    })();
+    check('with control, one opens', !!opened.terminal.id);
+    checkEqual('rooted where the instance is', opened.terminal.cwd, only.cwd);
+
+    const began = seat.next('term:began', 4000);
+    seat.send({ type: 'term:run', id: opened.terminal.id, command: 'echo hello' });
+    const started = await began;
+    checkEqual('and a command runs in it', started.run.command, 'echo hello');
+    check('which is written down with the command',
+      devices.recent(5).some((e) => e.action === 'ran a command' && e.detail === 'echo hello'));
+
+    const said = seat.next('term:out', 4000);
+    lastChild.stdout.emit('data', 'hello\n');
+    checkEqual('output comes back as it arrives', (await said).text, 'hello\n');
+
+    const ended = seat.next('term:done', 4000);
+    lastChild.emit('close', 0, null);
+    checkEqual('and so does the exit code', (await ended).run.exit, 0);
+
+    // The path is never taken from the device: it names an instance and the
+    // window looks up where that is.
+    const elsewhere = await (async () => {
+      const reply = seat.next('term:opened', 4000);
+      seat.send({ type: 'term:open', session: '../../etc' });
+      return reply;
+    })();
+    checkEqual('a session id that is not one falls back to a real folder',
+      elsewhere.terminal.cwd, only.cwd);
+
+    seat.close();
+  }
 
   suite('a client that is not a device cannot touch the list');
 

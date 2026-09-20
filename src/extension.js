@@ -16,6 +16,7 @@ const { nextTicket } = require('./ticket');
 const { labelFor } = require('./label');
 const { createHost, installHost, forgetHost } = require('./host');
 const { RemoteServer } = require('./remote');
+const { Terminals } = require('./terminal');
 const { DeviceStore } = require('./devices');
 const { DevicesTree } = require('./devicesTree');
 const { PairingWindow } = require('./pairing');
@@ -549,9 +550,27 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   // the phone's status screen is built from exactly the same facts.
   const served = installHost(createHost(context, manager, { devices, awake: awakeState || null }));
 
+  /**
+   * Somewhere to run a command, when a device is allowed to.
+   *
+   * Made here rather than inside the server so the window owns it: closing the
+   * window has to take the processes with it, and a thing the server made would
+   * outlive the server being restarted.
+   *
+   * Off is a real answer. A terminal is a shell on this machine, and while a
+   * device with control can already cause anything a shell could — NikUI runs
+   * Claude with permissions bypassed — somebody who wants the phone to watch
+   * and only watch should be able to have that.
+   */
+  const terminals = vscode.workspace.getConfiguration('nikui').get('remote.terminal', true)
+    ? new Terminals({ onEvent: (event) => server.terminalSaid(event) })
+    : null;
+  context.subscriptions.push({ dispose: () => { if (terminals) terminals.closeAll(); } });
+
   const server = new RemoteServer({
     root: context.extensionUri.fsPath,
     host: served,
+    terminals,
     sessions: { list: () => manager.list, get: (id) => manager.get(id) },
     // The same folders, projects and history the editor shows, so a phone is
     // looking at this window rather than at a list of what happens to be in it.

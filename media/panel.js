@@ -439,10 +439,39 @@
     setTimeout(function () { btn.classList.remove('ok'); }, 1200);
   }
 
-  // Any code block is worth copying; add the affordance after each render.
+  /**
+   * Any code block is worth copying, and some are worth running.
+   *
+   * The run button only appears where the block is shell — either because it
+   * said so or because it looks like nothing else — since a run button on a
+   * block of Python is a trap and one on a diff is worse. `looksRunnable` makes
+   * that call in one place, shared with the laptop that would have to run it.
+   *
+   * What the button does depends on where the page is. In the editor it hands
+   * the command to a real terminal, because there is one and you are sitting at
+   * it. On a phone there is no terminal to hand it to, so it opens the one this
+   * app has and runs it there.
+   */
   function decorateCode(el) {
     el.querySelectorAll('pre').forEach(function (pre) {
       if (pre.querySelector('.copy')) return;
+      const code = pre.querySelector('code');
+      const text = (code || pre).textContent;
+
+      if (window.looksRunnable && window.looksRunnable(pre.dataset.lang, text)) {
+        const run = document.createElement('button');
+        run.className = 'run-it';
+        run.title = 'Run in a terminal';
+        run.setAttribute('aria-label', 'Run in a terminal');
+        run.innerHTML = icon('terminal', 12);
+        run.addEventListener('click', function (ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          runCommand(window.cleanCommand ? window.cleanCommand(text) : text.trim());
+        });
+        pre.appendChild(run);
+      }
+
       const btn = document.createElement('button');
       btn.className = 'copy';
       btn.title = 'Copy';
@@ -450,11 +479,24 @@
       btn.addEventListener('click', function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
-        const code = pre.querySelector('code');
-        copyText((code || pre).textContent, btn);
+        copyText(text, btn);
       });
       pre.appendChild(btn);
     });
+  }
+
+  function runCommand(command) {
+    if (!command) return;
+    const remote = window.NIKUI_REMOTE;
+    if (remote && remote.app) {
+      // The app's own terminal, opened where this instance is and handed the
+      // command on arrival.
+      const query = new URLSearchParams({ run: command });
+      if (remote.session) query.set('session', remote.session);
+      window.location.assign('terminal.html?' + query.toString());
+      return;
+    }
+    vscode.postMessage({ type: 'runInTerminal', command: command });
   }
 
   /**

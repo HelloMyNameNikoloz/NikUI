@@ -1327,3 +1327,29 @@ body.dropping::after {
 /* On a desk the composer is still one line: the actions sit beside the field
    rather than under it, which is what the grid on a phone rearranges. */
 .composer-actions { display: contents; }
+
+/* The other thing a code block is worth: running it. Sits beside Copy, only on
+   blocks that are actually commands — see media/runnable.js for what counts. */
+.run-it {
+  position: absolute; top: 6px; right: 37px;
+  width: 24px; height: 24px; padding: 0;
+  display: grid; place-items: center;
+  border-radius: 6px;
+  border: 0.5px solid var(--hairline);
+  background: var(--fill-2);
+  color: var(--vscode-descriptionForeground);
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+pre:hover .run-it, .run-it:focus-visible { opacity: 1; }
+.run-it:hover { background: var(--fill-3); color: var(--m1); filter: none; }
+
+/* On a phone nothing hovers, so both stay visible — and they have to be big
+   enough to hit with a thumb. */
+body.app .run-it, body.app .copy {
+  opacity: 1;
+  width: 32px; height: 32px;
+  top: 4px;
+}
+body.app .run-it { right: 42px; }
+body.app .copy { right: 6px; }

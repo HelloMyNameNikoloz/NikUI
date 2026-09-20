@@ -655,6 +655,11 @@
           "default": true,
           "description": "Put this window on your tailnet when it starts serving, so a phone elsewhere can reach it. Requires Tailscale with HTTPS certificates; does nothing without it. Only one window at a time can hold the tailnet address."
         },
+        "nikui.remote.terminal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let a device that may send prompts run commands on this machine. A terminal is a shell: it can do anything you could type here."
+        },
         "nikui.remote.requireEncryption": {
           "type": "boolean",
           "default": true,

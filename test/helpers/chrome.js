@@ -102,6 +102,27 @@ async function launch(binary) {
     },
     evaluate: (expression) => evaluate(call, expression),
     /**
+     * Wait for the document to have finished loading.
+     *
+     * `navigate` does this already; a navigation the *page* started — a link, a
+     * button that assigns to location — has nobody waiting on it, so anything
+     * asked in the moment after it is asked of a document that has run one
+     * script out of ten. That reads as a feature being broken rather than as a
+     * question asked too early.
+     */
+    settled: async (ms) => {
+      const deadline = Date.now() + (ms || 10000);
+      for (;;) {
+        try {
+          if (await evaluate(call, 'document.readyState === "complete"')) return true;
+        } catch (err) {
+          if (!/navigated or closed|Execution context was destroyed/.test((err && err.message) || '')) throw err;
+        }
+        if (Date.now() > deadline) return false;
+        await wait(50);
+      }
+    },
+    /**
      * Run something in every page this browser loads, before its own scripts.
      *
      * The only way to stand in for something the page expects to already be
@@ -113,11 +134,22 @@ async function launch(binary) {
       await call('Page.enable');
       await call('Page.addScriptToEvaluateOnNewDocument', { source });
     },
-    /** Poll until an expression is true, or give up and say what it was. */
+    /**
+     * Poll until an expression is true, or give up and say what it was.
+     *
+     * A page navigating underneath a poll is not a failure — it is the thing
+     * most of these are waiting *for*. The evaluation that was in flight when
+     * it happened is lost, and the answer is to ask again rather than to throw:
+     * anything else makes every check that waits for a navigation a coin toss.
+     */
     until: async (expression, ms) => {
       const deadline = Date.now() + (ms || 5000);
       for (;;) {
-        if (await evaluate(call, expression)) return true;
+        try {
+          if (await evaluate(call, expression)) return true;
+        } catch (err) {
+          if (!/navigated or closed|Execution context was destroyed/.test((err && err.message) || '')) throw err;
+        }
         if (Date.now() > deadline) return false;
         await wait(60);
       }

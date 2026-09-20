@@ -167,9 +167,13 @@
   // what has run, and how this is set up. A tab bar says that in a way a pair
   // of icons crowded into a title bar cannot, and puts all three where a thumb
   // already is.
+  // Instances gives up the >_ now that there is a real terminal to wear it: a
+  // chip is what a fleet of them looks like, and two tabs with the same glyph
+  // is a tab bar you have to read rather than glance at.
   const TABS = [
-    { page: 'index.html', label: 'Instances', icon: 'terminal' },
+    { page: 'index.html', label: 'Instances', icon: 'cpu' },
     { page: 'status.html', label: 'Status', icon: 'activity' },
+    { page: 'terminal.html', label: 'Terminal', icon: 'terminal' },
     { page: 'history.html', label: 'History', icon: 'history' },
     { page: 'settings.html', label: 'Settings', icon: 'settings' }
   ];

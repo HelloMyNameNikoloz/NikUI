@@ -85,6 +85,9 @@ class RemoteServer {
     // folders, the same projects, the same history — rather than a flat list
     // that happens to contain the same instances.
     this.folders = deps.folders || null;
+    // Running a command on this machine, when a device is allowed to. Null when
+    // the window has not been given one, which is how the feature is turned off.
+    this.terminals = deps.terminals || null;
     this.projectRoot = deps.projectRoot || null;
     this.history = deps.history || null;
     this.report = deps.report || null;
@@ -865,6 +868,7 @@ ${this.appHead(nonce)}</head>
         if (message.type === 'status') return void client.post(this.statusMessage());
         if (message.type === 'devices') return void client.post(this.devicesMessage(client));
         if (message.type === 'forget') return void this.forgetFor(client, message.id);
+        if (message.type.indexOf('term:') === 0) return void this.terminalFor(client, message);
       },
       device: () => {},
       detach: () => {
@@ -1020,6 +1024,101 @@ ${this.appHead(nonce)}</head>
     // The store's own change fires `reconcile`, which closes whatever socket
     // the removed device was holding — including this one, when it is its own.
     this.devices.forget(target.id);
+  }
+
+  /**
+   * A command on this machine, asked for from somewhere else.
+   *
+   * Behind `control`, and it has to be: this is a shell, and NikUI already runs
+   * Claude with permissions bypassed, so a device that may send prompts can
+   * already cause anything a terminal could. What it must never be is something
+   * a *watching* device can reach — that seat is for reading, and reading is
+   * what it should stay.
+   *
+   * Every refusal is written down with the rest, and so is every command, so
+   * "what did that phone do" has one answer in one place.
+   */
+  terminalFor(client, message) {
+    const seat = client.device;
+    const say = (extra) => client.post(Object.assign({ type: 'term:no' }, extra));
+
+    if (!this.terminals) {
+      return say({ reason: 'this window is not offering a terminal' });
+    }
+    // The editor's own browser on loopback holds the key and is this machine;
+    // a paired device needs the grant.
+    const isDevice = !!(seat && seat.kind === 'device');
+    if (isDevice && !seat.control) {
+      this.note(seat, 'terminal', String(message.command || message.type).slice(0, 80), false);
+      return say({ reason: 'This device can watch but not run commands. Grant it control in the editor.' });
+    }
+
+    const watched = client.terminals || (client.terminals = new Set());
+
+    if (message.type === 'term:list') {
+      return void client.post({ type: 'term:list', terminals: this.terminals.list() });
+    }
+
+    if (message.type === 'term:open') {
+      // A path is never taken from the device. It says which instance it wants
+      // to be beside and the window looks up where that is, so no string from
+      // outside ever ends up as a working directory.
+      const session = message.session ? this.sessions.get(message.session) : null;
+      const beside = session || this.sessions.list()[0] || null;
+      const made = this.terminals.open({
+        cwd: beside ? beside.cwd : this.root,
+        name: beside ? (beside.customTitle || beside.label) : 'Terminal'
+      });
+      watched.add(made.id);
+      this.note(seat, 'opened a terminal', beside ? beside.cwd : '');
+      return void client.post({ type: 'term:opened', terminal: made });
+    }
+
+    const id = String(message.id || '');
+    const there = this.terminals.get(id);
+    if (!there) return say({ id, reason: 'that terminal is not open any more' });
+
+    if (message.type === 'term:attach') {
+      watched.add(id);
+      return void client.post(Object.assign({ type: 'term:scrollback' }, this.terminals.scrollback(id)));
+    }
+    if (message.type === 'term:detach') { watched.delete(id); return; }
+    if (message.type === 'term:close') {
+      watched.delete(id);
+      this.terminals.close(id);
+      this.note(seat, 'closed a terminal', '');
+      return void client.post({ type: 'term:closed', id });
+    }
+    if (message.type === 'term:stop') {
+      this.note(seat, 'stopped a command', there.running ? there.running.command : '');
+      this.terminals.stop(id);
+      return;
+    }
+    if (message.type === 'term:run') {
+      watched.add(id);
+      const out = this.terminals.run(id, message.command);
+      this.note(seat, 'ran a command', String(message.command || '').slice(0, 80), out.ok);
+      if (!out.ok) return say({ id, reason: out.reason });
+      return;
+    }
+  }
+
+  /** One line in the same trail everything else a device does goes into. */
+  note(seat, action, detail, allowed) {
+    if (!this.devices || !seat || seat.kind !== 'device') return;
+    this.devices.record({
+      device: { id: seat.id, name: seat.name },
+      action, detail, allowed: allowed !== false
+    });
+  }
+
+  /** Whatever a terminal says, to whoever is watching that terminal. */
+  terminalSaid(event) {
+    const which = event.terminal && event.terminal.id ? event.terminal.id : event.terminal;
+    for (const client of this.fleetClients) {
+      if (!client.open || !client.terminals || !client.terminals.has(which)) continue;
+      client.post(event);
+    }
   }
 
   /**

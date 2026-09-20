@@ -14,7 +14,7 @@ const crypto = require('crypto');
 // Order matters: every module registers itself on `window` before panel.js
 // wires them together, and transport.js must exist before panel.js asks for it.
 const SCRIPTS = [
-  'icons.js', 'markdown.js', 'prompts.js', 'snippets.js',
+  'icons.js', 'markdown.js', 'runnable.js', 'prompts.js', 'snippets.js',
   'charts.js', 'status.js', 'device.js', 'secure.js', 'transport.js', 'boot.js', 'panel.js'
 ];
 

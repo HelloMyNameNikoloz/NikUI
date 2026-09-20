@@ -22,6 +22,8 @@ const { SOURCE: CHIP } = require(path.join(REPO, 'test', 'helpers', 'chip.js'));
 const { SOURCE: PHONE } = require(path.join(REPO, 'test', 'helpers', 'phone.js'));
 const { Notifier } = require(path.join(REPO, 'src', 'notify.js'));
 const { makeDevice } = require(path.join(REPO, 'test', 'helpers', 'device.js'));
+const { Terminals } = require(path.join(REPO, 'src', 'terminal.js'));
+const { EventEmitter } = require('events');
 
 const chrome = findChrome();
 if (!chrome) skipped('No Chrome found — the app check did not run. Set CHROME=/path/to/chrome.');
@@ -84,8 +86,26 @@ const record = (name, ok) => {
   const devices = new DeviceStore(memoryState());
   const identity = loadIdentity(memoryState());
   const pairing = new PairingWindow();
+  // A shell that never runs anything: what is under test on this side is the
+  // screen, and a real `npm test` inside a test is a way to wait four minutes.
+  let shell = null;
+  const terminals = new Terminals({
+    shell: '/bin/testsh',
+    spawn: (bin, args) => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => true;
+      child.ran = args[1];
+      shell = child;
+      return child;
+    },
+    onEvent: (event) => laptop.terminalSaid(event)
+  });
+
   const laptop = new RemoteServer({
     root: REPO,
+    terminals,
     host: {
       config: () => ({ showThinking: true, promptSnippets: {} }),
       home: '/home', knownCommands: () => ['status'],
@@ -122,6 +142,15 @@ const record = (name, ok) => {
     await phone.asPhone(390, 844);
     // The native bits of a phone, from the first screen onward.
     await phone.beforeEachPage(PHONE);
+    // Anything a screen throws, kept. A check that asks "did anything throw"
+    // and reads an array nobody fills is a check that always passes.
+    await phone.beforeEachPage(`
+      window.__errors = [];
+      window.addEventListener('error', (e) => window.__errors.push(
+        String((e && e.message) || e) + ' @ ' + String((e && e.filename) || '') + ':' + ((e && e.lineno) || 0)));
+      window.addEventListener('unhandledrejection', (e) => window.__errors.push(
+        'unhandled: ' + String((e && e.reason && e.reason.message) || (e && e.reason) || e)));
+    `);
 
     // ---- the way in --------------------------------------------------------
     await phone.navigate(appOrigin + '/index.html');
@@ -227,15 +256,19 @@ const record = (name, ok) => {
     // ---- the window, filed the way the editor files it ----------------------
     record('the fleet is drawn as cards rather than one long list',
       await phone.until('document.querySelectorAll(".rows-card").length >= 1', 8000));
-    record('and four peer screens reachable from a tab bar',
-      (await phone.evaluate('document.querySelectorAll(".tabs .tab").length')) === 4);
-    record('with Status between Instances and History',
+    record('every peer screen is reachable from a tab bar',
       (await phone.evaluate(`[...document.querySelectorAll('.tab-label')].map(n => n.textContent).join(',')`))
-        === 'Instances,Status,History,Settings');
+        === 'Instances,Status,Terminal,History,Settings');
     record('the one you are on being the one that is marked',
       (await phone.evaluate(`document.querySelector('.tab.here .tab-label').textContent`)) === 'Instances');
     record('each tab drawn with the product\u2019s own icons',
-      (await phone.evaluate('document.querySelectorAll(".tabs .tab .ico").length')) === 4);
+      (await phone.evaluate('document.querySelectorAll(".tabs .tab .ico").length')) ===
+      (await phone.evaluate('document.querySelectorAll(".tabs .tab").length')));
+    record('and none of them wearing the same glyph as another',
+      (await phone.evaluate(`(() => {
+        const seen = [...document.querySelectorAll('.tabs .tab .ico svg')].map(s => s.innerHTML);
+        return new Set(seen).size === seen.length;
+      })()`)) === true);
 
     record('nothing scrolls sideways',
       (await phone.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')) === true);
@@ -602,9 +635,9 @@ const record = (name, ok) => {
       }
       return bad.slice(0, 6).join(' | ');
     })()`;
-    for (const screen of ['index.html', 'status.html', 'history.html', 'settings.html']) {
+    for (const screen of ['index.html', 'status.html', 'terminal.html', 'history.html', 'settings.html']) {
       await phone.navigate(appOrigin + '/' + screen);
-      await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+      await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
       const cut = await phone.evaluate(CLIPPED);
       record('nothing is cut off on ' + screen + (cut ? ' — ' + cut : ''), cut === '');
     }
@@ -664,16 +697,19 @@ const record = (name, ok) => {
     })()`)) === true);
     record('and letting go over another tab goes there',
       await phone.until('location.pathname.endsWith("settings.html")', 8000));
-    await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+    await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
     record('with the capsule already under the new tab when it lands',
       (await phone.evaluate(`(() => {
         const pill = document.querySelector('.tab-pill').getBoundingClientRect();
-        const tab = document.querySelectorAll('.tabs .tab')[3].getBoundingClientRect();
+        // The tab this landed on, found by name rather than by counting: a new
+        // tab should not move an index that was never about the index.
+        const tab = [...document.querySelectorAll('.tabs .tab')]
+          .find((t) => /Settings/.test(t.textContent)).getBoundingClientRect();
         return Math.abs(pill.left - tab.left) < 6;
       })()`)) === true);
     await phone.evaluate(`document.documentElement.classList.remove('plat-ios')`);
     await phone.navigate(appOrigin + '/index.html');
-    await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+    await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
 
     // The tint travels with the capsule rather than switching at a threshold:
     // halfway across, two tabs are half lit.
@@ -698,7 +734,7 @@ const record = (name, ok) => {
     record('swiping the content sideways changes tab',
       await (async () => {
         await phone.navigate(appOrigin + '/index.html');
-        await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+        await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
         await phone.evaluate(`(() => {
           const screen = document.querySelector('.screen');
           const box = screen.getBoundingClientRect();
@@ -713,7 +749,7 @@ const record = (name, ok) => {
       })());
     record('and a vertical drag does not',
       await (async () => {
-        await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+        await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
         await phone.evaluate(`(() => {
           const screen = document.querySelector('.screen');
           const box = screen.getBoundingClientRect();
@@ -823,7 +859,7 @@ const record = (name, ok) => {
       })()`)) !== false);
 
     await phone.navigate(appOrigin + '/index.html');
-    await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+    await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
 
     // The glitch this is here to stop coming back: a spring integrated badly
     // flips its velocity every step and the capsule teleports. Measured, not
@@ -831,7 +867,7 @@ const record = (name, ok) => {
     record('the capsule never jumps, however hard it is thrown',
       await (async () => {
         await phone.navigate(appOrigin + '/index.html');
-        await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+        await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
         const worst = await phone.evaluate(`(() => new Promise((resolve) => {
           const pill = document.querySelector('.tab-pill');
           const tabs = document.getElementById('tabs');
@@ -906,7 +942,7 @@ const record = (name, ok) => {
       })());
 
     await phone.navigate(appOrigin + '/index.html');
-    await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 10000);
+    await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
 
     record('the app is dark whatever the phone is',
       (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');
@@ -973,6 +1009,98 @@ const record = (name, ok) => {
       await phone.until('document.getElementById("link").textContent === "Live"', 12000));
     record('which the laptop verified as the new key, not the old one',
       devices.get(paired.id).fingerprint === movedTo.fingerprint);
+
+    // ---- a command on the laptop, from the phone -----------------------------
+    //
+    // Behind the same grant as a prompt, because it is a shell on somebody's
+    // machine. What it is not is a terminal emulator: each run is a block with
+    // a command, its output and how it ended, which is the thing a phone can
+    // actually show.
+
+    devices.setControl(paired.id, true);
+    await phone.navigate(appOrigin + '/terminal.html');
+    record('the terminal screen offers somewhere to run',
+      await phone.until('/Open a terminal/.test(document.body.textContent)', 10000));
+    record('rooted beside an instance, named',
+      /app check/.test(await phone.evaluate('document.body.textContent')));
+
+    await phone.evaluate(`[...document.querySelectorAll('.row')][0].click()`);
+    record('opening one gives you somewhere to type',
+      await phone.until('document.getElementById("runner").hidden === false', 8000));
+
+    await phone.evaluate(`(() => {
+      document.getElementById('command').value = 'echo hello';
+      document.getElementById('runner').dispatchEvent(new Event('submit', { cancelable: true }));
+    })()`);
+    record('a command runs on the laptop',
+      await phone.until('/echo hello/.test(document.body.textContent)', 8000));
+    record('and the laptop is the thing that ran it', shell && shell.ran === 'echo hello');
+
+    shell.stdout.emit('data', 'hello\n');
+    record('output arrives as it is printed',
+      await phone.until('/hello/.test(document.querySelector(".run-out").textContent)', 6000));
+    record('with a way to stop it while it is going',
+      /Stop/.test(await phone.evaluate('document.querySelector(".run-foot").textContent')));
+
+    shell.emit('close', 0, null);
+    record('and how it ended when it is done',
+      await phone.until('/Done/.test(document.querySelector(".run-foot").textContent)', 6000));
+
+    const failing = shell;
+    await phone.evaluate(`(() => {
+      document.getElementById('command').value = 'false';
+      document.getElementById('runner').dispatchEvent(new Event('submit', { cancelable: true }));
+    })()`);
+    await phone.until('document.querySelectorAll(".run").length === 2', 8000);
+    void failing;
+    shell.emit('close', 1, null);
+    record('one that failed is marked as failed',
+      await phone.until('document.querySelectorAll(".run.bad").length === 1', 6000));
+    record('with the exit code on it',
+      /Exit 1/.test(await phone.evaluate('document.body.textContent')));
+
+    // ---- and the button that got you here ------------------------------------
+    //
+    // Claude says "run this"; the block it says it in is the place to say yes.
+
+    session._upsert({
+      id: 'cmd1', kind: 'text', streaming: false,
+      text: 'Run this when you get a moment:\n\n```bash\nnpm run build\n```\n\nAnd this is not one:\n\n```python\nprint(1)\n```',
+      images: []
+    });
+    await phone.navigate(appOrigin + '/conversation.html?session=' + session.id);
+    record('a shell block in the conversation gets a run button',
+      await phone.until('document.querySelectorAll("pre .run-it").length === 1', 12000));
+    record('and a block that is not shell does not',
+      (await phone.evaluate(`(() => {
+        const python = [...document.querySelectorAll('pre')].find(p => p.dataset.lang === 'python');
+        return !!python && !python.querySelector('.run-it');
+      })()`)) === true);
+    record('every code block still offers a copy, runnable or not',
+      (await phone.evaluate(`(() => {
+        const all = [...document.querySelectorAll('pre')];
+        return all.length >= 2 && all.every(p => !!p.querySelector('.copy'));
+      })()`)) === true);
+
+    await phone.evaluate(`document.querySelector('pre .run-it').click()`);
+    record('tapping it opens the terminal',
+      await phone.until('location.pathname.endsWith("terminal.html")', 8000));
+    await phone.settled();
+    record('and runs what the block said, without being typed',
+      await phone.until('document.querySelectorAll(".run").length >= 1', 10000) &&
+      /npm run build/.test(await phone.evaluate('document.body.textContent')));
+    record('on the laptop, in that instance\u2019s folder', shell && shell.ran === 'npm run build');
+    shell.emit('close', 0, null);
+
+    // ---- and it is not something a watching device can reach -----------------
+
+    devices.setControl(paired.id, false);
+    await phone.navigate(appOrigin + '/terminal.html');
+    record('a device that only watches is told it cannot',
+      await phone.until('/watch, but not run commands/.test(document.body.textContent)', 10000));
+    record('and is given nowhere to type',
+      (await phone.evaluate('document.getElementById("runner").hidden')) === true);
+    devices.setControl(paired.id, true);
 
     // ---- the chip loses the key the record points at -------------------------
     //
@@ -1116,7 +1244,7 @@ const record = (name, ok) => {
         return phone.until('document.querySelector(".lock") === null', 6000);
       })());
     record('and the app is there underneath',
-      await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 8000));
+      await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 8000));
 
     record('moving between screens does not ask again',
       await (async () => {
@@ -1176,7 +1304,7 @@ const record = (name, ok) => {
     record('so the app opens straight away again',
       await (async () => {
         await phone.navigate(appOrigin + '/index.html');
-        await phone.until('document.querySelectorAll(".tabs .tab").length === 4', 8000);
+        await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 8000);
         return (await phone.evaluate('document.querySelector(".lock") === null')) === true;
       })());
 

@@ -1911,3 +1911,124 @@ html.locked, html.locked body { overflow: hidden; }
 }
 
 .lock-face:disabled { opacity: 0.4; }
+
+/* ---- the terminal -----------------------------------------------------------
+
+   Each run is a block with a beginning and an end rather than a wall of text:
+   the command it came from at the top, the output in the middle, and whether it
+   worked at the bottom. Scrolling back to find the one that broke is then
+   looking rather than reading. */
+
+body.app.terminal .screen { padding-bottom: 8px; }
+
+.run {
+  margin: 0 0 12px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--app-raised);
+  border: 0.5px solid transparent;
+}
+
+.run.bad { border-color: color-mix(in srgb, var(--red, #ff453a) 40%, transparent); }
+.run.going { border-color: color-mix(in srgb, var(--blue, #0a84ff) 40%, transparent); }
+
+.run-head {
+  display: flex;
+  gap: 8px;
+  padding: 11px 13px;
+  font-family: var(--nik-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13.5px;
+  line-height: 1.45;
+  border-bottom: 0.5px solid var(--app-hairline);
+}
+
+.run-prompt { color: var(--green, #30d158); flex: 0 0 auto; }
+.run-command { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.run-out {
+  margin: 0;
+  padding: 11px 13px;
+  max-height: 55vh;
+  overflow: auto;
+  font-family: var(--nik-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--app-dim);
+  -webkit-overflow-scrolling: touch;
+}
+
+.run-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  font-size: 13px;
+  border-top: 0.5px solid var(--app-hairline);
+}
+
+.run-state { color: var(--app-dim); }
+.run-state.good { color: var(--green, #30d158); }
+.run-state.bad { color: var(--red, #ff453a); }
+.run-state.going { color: var(--blue, #0a84ff); }
+
+.run-stop, .run-again {
+  margin-left: auto;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--app-raised-2);
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: 13px;
+}
+
+.run-stop { color: var(--red, #ff453a); }
+
+/* The place you type one. Above the tab bar, above the keyboard — the visual
+   viewport is what moves when a phone keyboard opens, not the window. */
+.runner {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 8px 14px calc(8px + var(--app-bottom));
+  background: var(--app-bg, #0f0f11);
+  border-top: 0.5px solid var(--app-hairline);
+}
+
+.runner input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--app-raised);
+  color: var(--vscode-foreground);
+  font-family: var(--nik-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  /* 16px or iOS zooms the whole page the moment it is focused. */
+  font-size: 16px;
+}
+
+.runner input::placeholder { color: var(--app-dim); font-family: inherit; }
+
+#go {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--blue, #0a84ff);
+  color: #fff;
+  font: inherit;
+  font-size: 17px;
+}
+
+#go::before { content: '\25b6'; }
+#go:disabled { opacity: 0.4; }
+
+/* The tab bar floats over the content everywhere else; here the input is the
+   thing above it, so the bar sits under both. */
+body.app.terminal .tabs { position: relative; }

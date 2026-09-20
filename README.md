@@ -346,6 +346,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.statusEmoji` | see below | Emoji per status in tab titles |
 | `nikui.remote.port` | `4517` | Port for the local server, on `127.0.0.1` only; `0` picks a free one. A second window takes the next free port rather than refusing |
 | `nikui.remote.autoStart` | `true` | Start that server when the window opens, so a phone that tries to connect can |
+| `nikui.remote.terminal` | `true` | Let a device that may send prompts run commands on this machine |
 | `nikui.remote.tailnet` | `true` | Put this window on your tailnet when it starts serving. Needs Tailscale with HTTPS certificates; does nothing without it, and only one window at a time holds the address |
 | `nikui.remote.requireEncryption` | `true` | Refuse a device that will not seal the channel end to end |
 | `nikui.remote.appOnly` | `false` | Serve the app and nothing else outside this machine |
@@ -394,6 +395,36 @@ two windows and run it in the second, and the phone follows to the second.
 | `NikUI: Open a public address for this window` | A public tunnel, after a dialog that says what that means |
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
+
+### A command on this machine, from the phone
+
+Claude says "run `npm run build`". The block it says it in has a run button on
+it, and that is the whole feature: in the editor the command goes into a real
+terminal, typed but **not** sent, because a command you have not read is not a
+command you have agreed to run. On a phone there is no terminal to type into, so
+the app has one of its own and runs it there.
+
+It is not a terminal emulator and does not pretend to be. There is no PTY — this
+project has no dependencies and will not grow one for this — so there is no job
+control, nothing interactive, and `vim` has nothing to draw on. What there is
+instead is the thing a terminal is usually a clumsy way of getting: a command,
+its output, and whether it worked. Each run is a block with an exit code on it,
+which is what makes it readable on a phone at all; scrolling back to "which one
+broke" is looking rather than reading.
+
+`cd` persists, because that is what a person means by "where I am". Everything
+else is its own process, so one command falling over cannot take the session
+with it, and nothing runs for more than fifteen minutes.
+
+Which blocks get the button is decided in `media/runnable.js`, shared by the
+laptop and the client so the two cannot come to different conclusions. It errs
+towards not offering: a run button on a block of Python is a trap.
+
+It is behind `control`, the same grant as sending a prompt. That is not a new
+power — NikUI runs Claude with permissions bypassed, so a prompt can already do
+anything a command can — but a watching device is for reading, and reading is
+what it should stay. Every command and every refusal goes in the device trail.
+`nikui.remote.terminal` turns the whole thing off.
 
 ### More than one device, and taking one off from the other
 
