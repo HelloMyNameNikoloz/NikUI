@@ -682,6 +682,45 @@ const record = (name, ok) => {
       (await phone.evaluate(`getComputedStyle(document.querySelector('.tab-pill')).backdropFilter`))
         .indexOf('blur(12px)') >= 0);
 
+    // The bug this is here to stop coming back: every touch was treated as a
+    // drag, so the first move measured the distance from wherever the capsule
+    // was to wherever the finger landed, divided it by two milliseconds, and
+    // called that velocity. Tapping the third tab from the first was two tabs
+    // of "movement" in no time at all, and the throw sailed past it — Terminal
+    // landed on Settings, Status landed on Instances.
+    record('tapping a tab goes to that tab, and not past it', await (async () => {
+      await phone.navigate(appOrigin + '/index.html');
+      await phone.until('document.querySelectorAll(".tabs .tab").length >= 5', 10000);
+      await phone.evaluate(`(() => {
+        const tabs = document.getElementById('tabs');
+        const button = [...tabs.querySelectorAll('.tab')].find((t) => /Terminal/.test(t.textContent));
+        const box = button.getBoundingClientRect();
+        const x = box.left + box.width / 2;
+        const y = box.top + box.height / 2;
+        const at = (dx) => ({ clientX: x + dx, clientY: y, pointerId: 3, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
+        tabs.setPointerCapture = () => {};
+        tabs.dispatchEvent(new PointerEvent('pointerdown', at(0)));
+        // The jitter a real finger makes. It used to be read as a flick.
+        tabs.dispatchEvent(new PointerEvent('pointermove', at(2)));
+        tabs.dispatchEvent(new PointerEvent('pointerup', at(2)));
+        button.click();
+      })()`);
+      return phone.until('location.pathname.endsWith("terminal.html")', 8000);
+    })());
+
+    record('and a tap on the one you are already on stays put', await (async () => {
+      await phone.until('document.querySelectorAll(".tabs .tab").length >= 5', 10000);
+      await phone.evaluate(`(() => {
+        const button = [...document.querySelectorAll('.tabs .tab')].find((t) => /Terminal/.test(t.textContent));
+        button.click();
+      })()`);
+      await wait(600);
+      return (await phone.evaluate('location.pathname')).endsWith('terminal.html');
+    })());
+
+    await phone.navigate(appOrigin + '/index.html');
+    await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
+
     record('a finger dragged across the strip carries it', (await phone.evaluate(`(() => {
       const tabs = document.getElementById('tabs');
       const box = tabs.getBoundingClientRect();
@@ -1109,6 +1148,43 @@ const record = (name, ok) => {
       /npm run build/.test(await phone.evaluate('document.body.textContent')));
     record('on the laptop, in that instance\u2019s folder', shell && shell.ran === 'npm run build');
     shell.emit('close', 0, null);
+
+    // A laptop that answers the handshake and then ignores this is one running a
+    // NikUI from before there were terminals. Silence is the one thing this
+    // screen must not do about that: a button that does nothing at all sends
+    // somebody looking at their network.
+    record('a laptop too old to know about terminals says so', await (async () => {
+      await phone.evaluate(`window.sessionStorage.removeItem('nikui.app.terminal')`);
+      // Swallow the question on its way out, which is what an older laptop looks
+      // like from here: connected, and never answering this one. Wrapped as
+      // transport.js assigns it rather than afterwards — the page's own scripts
+      // run before DOMContentLoaded, so anything that waits for that is too
+      // late to be the transport the screen picked up.
+      await phone.beforeEachPage(`
+        let real = null;
+        Object.defineProperty(window, 'nikTransport', {
+          configurable: true,
+          set: (fn) => { real = fn; },
+          get: () => function () {
+            const it = real.apply(this, arguments);
+            const post = it.postMessage.bind(it);
+            it.postMessage = (m) => {
+              let eat = false;
+              try { eat = sessionStorage.getItem('eat-term') === '1'; } catch (_) { eat = false; }
+              if (eat && m && String(m.type).indexOf('term:') === 0) return;
+              post(m);
+            };
+            return it;
+          }
+        });
+      `);
+      await phone.evaluate(`sessionStorage.setItem('eat-term', '1')`);
+      await phone.navigate(appOrigin + '/terminal.html');
+      const said = await phone.until('/running an older NikUI/.test(document.body.textContent)', 12000);
+      const noButton = (await phone.evaluate(`!document.body.textContent.match(/Open a terminal/)`)) === true;
+      await phone.evaluate(`sessionStorage.removeItem('eat-term')`);
+      return said && noButton;
+    })());
 
     // ---- and it is not something a watching device can reach -----------------
 

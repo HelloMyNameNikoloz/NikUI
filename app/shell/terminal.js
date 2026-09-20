@@ -36,6 +36,7 @@
     terminals: [],      // every one this window has open
     runs: [],           // what has been run in it, oldest first
     trouble: null,
+    stale: false,       // the laptop answered the handshake but not this
     instances: []       // somewhere to root a new one
   };
 
@@ -73,11 +74,19 @@
     }
 
     if (!state.terminal) {
-      const lede = el('p', 'lede', state.connected
-        ? 'Run a command on your laptop. It runs where the instance you pick is, and it can do anything you could type there.'
-        : 'Waiting for your laptop…');
+      // Three silences that look alike and mean different things. One that was
+      // never reached is a network; one that answered the handshake and then
+      // ignored this is a NikUI older than terminals; and a button that does
+      // nothing at all is the worst of them, because it sends you looking at
+      // the first when it was the second.
+      const lede = el('p', 'lede', state.stale
+        ? 'Your laptop is connected but does not know about terminals. It is running an older NikUI — reload its VS Code window.'
+        : state.connected
+          ? 'Run a command on your laptop. It runs where the instance you pick is, and it can do anything you could type there.'
+          : 'Waiting for your laptop…');
+      if (state.stale) lede.classList.add('bad');
       screen.appendChild(lede);
-      if (state.connected) screen.appendChild(opener());
+      if (state.connected && !state.stale) screen.appendChild(opener());
       runner.hidden = true;
       pick.hidden = true;
       return;
@@ -246,6 +255,30 @@
 
   trackKeyboard();
 
+  /**
+   * Whether the laptop has ever answered a question about terminals.
+   *
+   * Asked once, on connecting. A laptop that says nothing back is not broken
+   * and not unreachable — it is older than this screen, which is a thing the
+   * screen can say and a button that silently does nothing cannot.
+   */
+  let listened = null;
+  function heard() {
+    if (listened) { clearTimeout(listened); listened = null; }
+    if (state.stale) { state.stale = false; draw(); }
+  }
+
+  function askAndWait() {
+    transport.postMessage({ type: 'term:list' });
+    if (listened) clearTimeout(listened);
+    listened = setTimeout(() => {
+      listened = null;
+      if (state.terminal) return;
+      state.stale = true;
+      draw();
+    }, 5000);
+  }
+
   // ---- where it comes from ----------------------------------------------------
 
   window.NIKUI_REMOTE = app.remote(null);
@@ -266,7 +299,7 @@
       state.control = message.device ? message.device.control !== false : true;
       if (link) { link.hidden = false; link.className = 'link'; link.textContent = 'Live'; }
       transport.postMessage({ type: 'ready' });
-      if (state.control) transport.postMessage({ type: 'term:list' });
+      if (state.control) askAndWait();
       draw();
       return;
     }
@@ -278,6 +311,8 @@
       if (!state.terminal) draw();
       return;
     }
+
+    if (String(message.type).indexOf('term:') === 0) heard();
 
     if (message.type === 'term:list') {
       state.terminals = message.terminals || [];

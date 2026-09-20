@@ -2041,3 +2041,79 @@ html.typing body.app.terminal .runner { padding-bottom: 8px; }
 /* The tab bar floats over the content everywhere else; here the input is the
    thing above it, so the bar sits under both. */
 body.app.terminal .tabs { position: relative; }
+
+/* ---- Android is not an iPhone ------------------------------------------------
+
+   Liquid Glass is Apple's material. It is theirs, it is tuned to their
+   compositor, and on Android it reads as smeared translucency over whatever
+   happens to be behind it — blur that costs a frame and buys nothing. Material
+   is flat, opaque and layered by elevation, and that is what this should look
+   like on a phone that is not an iPhone.
+
+   Done by redefining the material rather than by chasing the rules that use it.
+   panel.css builds every card, hero and tile out of these variables, so making
+   them flat here makes all of them flat at once — and a card added tomorrow is
+   flat without anybody remembering this file exists.
+
+   `html:not(.plat-ios)`, not `.plat-android`: a browser on a laptop, a tablet,
+   anything that is not the platform this material belongs to. */
+
+html:not(.plat-ios) body.app {
+  /* Opaque surfaces, one step apart, instead of tinted panes. */
+  --lg-tint: var(--app-raised);
+  --lg-tint-deep: var(--app-raised-2);
+  --lg-film: none;
+  --lg-spec: none;
+  --lg-sheen: transparent;
+  --lg-under: transparent;
+  --lg-rim: var(--app-hairline);
+  --lg-edge: var(--app-hairline);
+  /* Nothing to see through, so nothing to blur. */
+  --lg-blur: none;
+  --lg-blur-deep: none;
+  /* Elevation, the way this platform says it: a shadow, not a highlight. */
+  --lg-lift: 0 1px 2px rgba(0, 0, 0, 0.30), 0 2px 6px rgba(0, 0, 0, 0.15);
+  --lg-lift-soft: 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+/* The app's own chrome says it in its own rules rather than through the
+   variables, so it is said again here. */
+html:not(.plat-ios) body.app .bar,
+html:not(.plat-ios) body.app .tabs,
+html:not(.plat-ios) body.app .tab-pill,
+html:not(.plat-ios) body.app .card,
+html:not(.plat-ios) body.app .hero,
+html:not(.plat-ios) body.app .tile,
+html:not(.plat-ios) body.app .row,
+html:not(.plat-ios) body.app .lock {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Opaque, because there is no blur behind them to make translucency read as
+   depth — without one it is just a bar you can see the text through. */
+html:not(.plat-ios) body.app .bar {
+  background: var(--app-bg);
+  border-bottom: 0.5px solid var(--app-hairline);
+}
+
+html:not(.plat-ios) body.app .tabs {
+  background: var(--app-bg);
+  border-top: 0.5px solid var(--app-hairline);
+}
+
+/* The capsule is a selection, not a pane of glass: a filled shape, flat, with
+   no rim light and nothing showing through it. */
+html:not(.plat-ios) body.app .tab-pill {
+  background: var(--app-raised-2);
+  border: 0;
+  box-shadow: none;
+}
+
+html:not(.plat-ios) body.app .card,
+html:not(.plat-ios) body.app .hero,
+html:not(.plat-ios) body.app .tile {
+  background: var(--app-raised);
+  border: 0.5px solid var(--app-hairline);
+  box-shadow: none;
+}

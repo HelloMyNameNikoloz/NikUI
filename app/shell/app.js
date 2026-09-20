@@ -370,26 +370,56 @@
 
     let wasX = 0;
     let wasAt = 0;
+    let downX = 0;
+    // Whether a finger is down at all. Tracked here rather than asked of
+    // pointer capture: capture is a request a browser may not grant, and a
+    // gesture that only works when it does is a gesture that sometimes does not.
+    let down = false;
+
+    // How far a finger has to travel before it is a drag rather than a tap.
+    // Below this it is somebody pressing a button, and a button should do what
+    // it says rather than what the physics makes of it.
+    const SLOP = 8;
 
     host.addEventListener('pointerdown', (event) => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
-      dragging = true;
+      // Not dragging yet. Treating every touch as a drag is what made tapping a
+      // tab unreliable: the first move then measured the distance from wherever
+      // the capsule happened to be to wherever the finger landed, divided it by
+      // a couple of milliseconds, and called the result velocity. Tapping
+      // Terminal from Instances is two tabs of "movement" in no time at all —
+      // the throw that produced sailed past and landed on Settings.
+      dragging = false;
       moved = false;
+      down = true;
       arrive = null;
-      pill.classList.add('held');
-      host.setPointerCapture(event.pointerId);
-      wasX = x;
+      downX = event.clientX;
+      try { host.setPointerCapture(event.pointerId); } catch (_) { /* not granted */ }
       wasAt = event.timeStamp || performance.now();
-      run();
     });
 
     host.addEventListener('pointermove', (event) => {
-      if (!dragging) return;
-      moved = true;
-      event.preventDefault();
       const box = host.getBoundingClientRect();
       const next = clamp(event.clientX - box.left - span() / 2);
       const now = event.timeStamp || performance.now();
+
+      if (!dragging) {
+        if (!down || Math.abs(event.clientX - downX) < SLOP) return;
+        // It is a drag now. The capsule jumps to the finger, and that jump is
+        // not a movement anybody made: it starts from rest.
+        dragging = true;
+        moved = true;
+        pill.classList.add('held');
+        v = 0;
+        wasX = next;
+        wasAt = now;
+        x = next;
+        paint();
+        run();
+        return;
+      }
+
+      event.preventDefault();
       const dt = Math.max(1, now - wasAt);
       // Points per second, the same units the spring works in. Smoothed, or a
       // single jittery frame becomes a flick.
@@ -401,7 +431,11 @@
       paint();
     });
 
-    const release = (event) => {
+    const release = () => {
+      down = false;
+      // A tap never gets here: the button's own click handler takes it, which
+      // is the only place that should decide where a tap goes. This is only
+      // ever the end of a drag.
       if (!dragging) return;
       dragging = false;
       pill.classList.remove('held');
@@ -421,6 +455,7 @@
 
     host.addEventListener('pointerup', release);
     host.addEventListener('pointercancel', () => {
+      down = false;
       if (!dragging) return;
       dragging = false;
       pill.classList.remove('held');
