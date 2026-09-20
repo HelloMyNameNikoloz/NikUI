@@ -1059,6 +1059,24 @@ const record = (name, ok) => {
     record('with the exit code on it',
       /Exit 1/.test(await phone.evaluate('document.body.textContent')));
 
+    // The keyboard is the whole reason this screen needed thinking about: a phone
+    // keyboard does not resize the window, so anything pinned to the bottom ends
+    // up underneath it. Emulating one is not something CDP offers, so what is
+    // checked is the wiring — the height is tracked, and the class it sets takes
+    // the tab bar out of the way.
+    record('the screen is sized by what can actually be seen',
+      (await phone.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim()`))
+        .endsWith('px'));
+    record('and the tab bar gets out of the way while typing',
+      (await phone.evaluate(`(() => {
+        const tabs = document.querySelector('.tabs');
+        const before = getComputedStyle(tabs).display;
+        document.documentElement.classList.add('typing');
+        const during = getComputedStyle(tabs).display;
+        document.documentElement.classList.remove('typing');
+        return before !== 'none' && during === 'none';
+      })()`)) === true);
+
     // ---- and the button that got you here ------------------------------------
     //
     // Claude says "run this"; the block it says it in is the place to say yes.
