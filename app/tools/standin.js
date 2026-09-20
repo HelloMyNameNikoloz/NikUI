@@ -32,6 +32,8 @@ const { PairingWindow } = require(path.join(REPO, 'src', 'pairing.js'));
 const { loadIdentity } = require(path.join(REPO, 'src', 'identity.js'));
 const { LocalKey } = require(path.join(REPO, 'src', 'auth.js'));
 const { Terminals } = require(path.join(REPO, 'src', 'terminal.js'));
+const { Audience } = require(path.join(REPO, 'src', 'audience.js'));
+const { Notifier } = require(path.join(REPO, 'src', 'notify.js'));
 
 const PORT = Number(process.env.PORT || 4599);
 
@@ -53,6 +55,11 @@ const host = {
 let server;
 const terminals = new Terminals({ onEvent: (event) => server.terminalSaid(event) });
 
+// The clock is ours, so ninety minutes takes as long as typing `skip 90`.
+let offset = 0;
+const now = () => Date.now() + offset;
+const audience = new Audience({ now });
+
 server = new RemoteServer({
   root: REPO,
   host,
@@ -62,7 +69,43 @@ server = new RemoteServer({
   identity: loadIdentity(memoryState()),
   pairing,
   localKey: new LocalKey(),
+  audience,
   log: (line) => console.log('  ' + line)
+});
+
+const notifier = new Notifier({
+  devices,
+  vapid: null,
+  audience,
+  now,
+  settings: () => ({ needsYou: true, quota: true, failed: true, turnFinished: true }),
+  toSockets: (message) => server.notifyDevices(message),
+  log: (line) => console.log('  ' + line)
+});
+
+/**
+ * Driven by hand, because what is being checked is which phone buzzes and when.
+ *
+ * `steer` is a phone sending a prompt; `skip` is time passing without it being
+ * touched; `fire` is the work finishing. Between them every rule this exists to
+ * enforce can be walked through on a real phone in under a minute.
+ */
+require('readline').createInterface({ input: process.stdin }).on('line', async (line) => {
+  const [word, rest] = String(line).trim().split(/\s+/);
+  const phone = devices.list()[0];
+  if (word === 'steer') {
+    if (!phone) return console.log('  nothing paired yet');
+    audience.steered('demo', phone.id);
+    console.log('  ' + phone.name + ' now owns demo');
+  } else if (word === 'skip') {
+    offset += Number(rest || 90) * 60 * 1000;
+    console.log('  ' + Math.round(offset / 60000) + ' minutes have passed');
+  } else if (word === 'fire') {
+    const out = await notifier.finished({ id: 'demo', customTitle: rest || 'A long job' });
+    console.log('  fired: ' + JSON.stringify(out));
+  } else if (word === 'state') {
+    console.log('  ' + JSON.stringify(audience.state()));
+  }
 });
 
 // Every device that pairs here may run commands. On a real laptop that is a

@@ -396,6 +396,28 @@ two windows and run it in the second, and the phone follows to the second.
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
 
+### Which phone gets told
+
+A notification has an owner: the device that sent the prompt. Only the owner
+hears about what came of it, and last writer wins — start something on the
+tablet, push it along from your phone, and the phone in your hand is the one
+that buzzes. Work nobody steered from a phone goes to whichever phone was most
+recently in a hand, because most instances are started at the laptop and the
+alternative is silence for nearly everything.
+
+The hour is not a mute. The case this exists for is the ninety-minute job: you
+sent it, went away, and the answer is what you left to wait for. So the rule is
+about what a phone asked for rather than only about the clock:
+
+- It hears about work it steered, **however long that took**.
+- Delivering to one that has since gone quiet is **the last thing it hears** —
+  after that it is dormant and is told nothing at all.
+- Using the app wakes it, and it hears everything again.
+
+Forty minutes: a notification, phone still awake. Ninety: still a notification,
+and then silence until you pick it up. `src/audience.js` is the whole rule, and
+`test/audience.test.js` walks every case above with the clock in its hand.
+
 ### A command on this machine, from the phone
 
 Claude says "run `npm run build`". The block it says it in has a run button on

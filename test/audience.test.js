@@ -119,6 +119,36 @@ module.exports = async function () {
     checkEqual('without taking the first instance away', who.who('alpha'), 'in-my-hand');
   }
 
+  suite('work started at the laptop still reaches a phone in a hand');
+
+  // Most instances are started at the laptop. Without this a phone would only
+  // ever hear about work it had sent itself, which is silence for nearly
+  // everything worth being told about.
+  {
+    const time = clock();
+    const who = new Audience({ now: time.now });
+
+    who.active('in-my-hand');
+    checkEqual('nobody steered it, so the phone being used is told', who.who('alpha'), 'in-my-hand');
+
+    time.tick(10 * MINUTE);
+    who.active('the-other-one');
+    checkEqual('and it is the one most recently held', who.who('alpha'), 'the-other-one');
+
+    // A phone that asked for something still beats one merely being held.
+    who.steered('alpha', 'in-my-hand');
+    time.tick(MINUTE);
+    who.active('the-other-one');
+    checkEqual('asking still beats holding', who.who('alpha'), 'in-my-hand');
+
+    // And a phone nobody has touched for an hour is not a phone in a hand.
+    const cold = new Audience({ now: time.now });
+    cold.active('put-down');
+    time.tick(90 * MINUTE);
+    checkEqual('a phone put down an hour ago is not the one to tell',
+      cold.who('alpha'), null);
+  }
+
   suite('a device that is gone owns nothing');
 
   {

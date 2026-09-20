@@ -116,12 +116,27 @@ class Audience {
    */
   who(instanceId) {
     const owner = instanceId ? this.owners.get(String(instanceId)) : null;
-    const id = owner ? owner.device : this.latest;
+    // Whoever steered this, else whoever steered anything last, else whoever is
+    // simply holding a phone. The last of those matters more than it looks:
+    // most instances are started at the laptop, and without it a phone would
+    // only ever hear about work it had sent itself — which is silence for
+    // nearly everything somebody would want to be told about.
+    const id = (owner && owner.device) || this.latest || this.nearest();
     if (!id) return null;
     // Dormant is the end of it until somebody picks the phone up. Everything
     // else — awake, or merely owed because it asked for this — is told.
     if (this.dormant(id)) return null;
     return id;
+  }
+
+  /** The phone most recently in somebody's hand, if any of them still is. */
+  nearest() {
+    let best = null;
+    for (const [id, seat] of this.devices) {
+      if (seat.dormant || !this.awake(id)) continue;
+      if (!best || seat.lastActiveAt > best.at) best = { id, at: seat.lastActiveAt };
+    }
+    return best ? best.id : null;
   }
 
   /**
