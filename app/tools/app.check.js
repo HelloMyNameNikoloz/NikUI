@@ -509,6 +509,82 @@ const record = (name, ok) => {
     record('there is a way to check it works, and it does',
       await phone.until('window.__buzz.shown().length === 1', 6000));
 
+    // ---- and it goes to the phone that asked, for as long as that means ------
+    //
+    // Broadcasting is fine with one phone and wrong with two: you send a prompt
+    // from the phone in your hand and the tablet on the table buzzes about it.
+    // And a phone that has been in a drawer for an hour is not somebody waiting
+    // — except for the thing it asked for before it went in the drawer, which
+    // is the entire reason to send work from a phone at all.
+    {
+      let at = Date.now();
+      const time = { now: () => at, on: (ms) => { at += ms; } };
+      const { Audience } = require(path.join(REPO, 'src', 'audience.js'));
+      const who = new Audience({ now: time.now });
+      const aimed = new Notifier({
+        devices, vapid: null, audience: who, now: time.now,
+        settings: () => ({ needsYou: true, quota: true, failed: true, turnFinished: true }),
+        toSockets: (message) => laptop.notifyDevices(message)
+      });
+
+      // Turn-finished is the one this phone switched on and off again above.
+      await flip();
+      await phone.evaluate('window.__buzz.clear()');
+
+      await aimed.finished({ id: 'nobody', customTitle: 'unasked for' });
+      await wait(400);
+      record('work no phone asked for wakes no phone',
+        (await phone.evaluate('window.__buzz.shown().length')) === 0);
+
+      who.steered(session.id, paired.id);
+      await phone.evaluate('window.__buzz.clear()');
+      await aimed.finished({ id: session.id, customTitle: 'app check' });
+      record('the phone that sent the prompt is told',
+        await phone.until('window.__buzz.shown().length === 1', 6000));
+
+      // Forty minutes: still somebody holding a phone.
+      who.steered(session.id, paired.id);
+      time.on(40 * 60 * 1000);
+      await phone.evaluate('window.__buzz.clear()');
+      await aimed.finished({ id: session.id, customTitle: 'app check' });
+      record('forty minutes later it is still told',
+        await phone.until('window.__buzz.shown().length === 1', 6000));
+
+      // Ninety: past the hour, and still owed, because it asked.
+      who.steered(session.id, paired.id);
+      time.on(90 * 60 * 1000);
+      await phone.evaluate('window.__buzz.clear()');
+      await aimed.finished({ id: session.id, customTitle: 'app check' });
+      record('ninety minutes later it is told anyway, because it asked',
+        await phone.until('window.__buzz.shown().length === 1', 6000));
+
+      // And that was the last of it.
+      await phone.evaluate('window.__buzz.clear()');
+      await aimed.finished({ id: session.id, customTitle: 'app check' });
+      await wait(500);
+      record('and after that it hears nothing, because it is in a drawer',
+        (await phone.evaluate('window.__buzz.shown().length')) === 0);
+
+      // Until somebody picks it up.
+      who.active(paired.id);
+      await phone.evaluate('window.__buzz.clear()');
+      await aimed.finished({ id: session.id, customTitle: 'app check' });
+      record('picking the phone up brings it back',
+        await phone.until('window.__buzz.shown().length === 1', 6000));
+
+      // A second phone that never asked for this hears none of it.
+      const other = devices.add({ name: 'A phone on the table', publicKey: (await makeDevice('t')).publicKey });
+      who.active(other.id);
+      await phone.evaluate('window.__buzz.clear()');
+      await aimed.finished({ id: session.id, customTitle: 'app check' });
+      await wait(400);
+      record('and the message names the phone it is for, not the room',
+        (await phone.evaluate('window.__buzz.shown().length')) === 1);
+      devices.forget(other.id);
+
+      await flip();
+    }
+
     record('a phone that can keep watching is offered it',
       await phone.until(`[...document.querySelectorAll('.row')]
         .some(r => /Keep watching in the background/.test(r.textContent))`, 6000));

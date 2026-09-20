@@ -247,6 +247,12 @@ class SessionHub {
         return;
       }
       this.note(entry, msg.type, true);
+      // A prompt is what makes a phone the owner of what follows. Anything else
+      // a device does is only it being awake — steering is what says "tell me
+      // when this is done", and the last phone to steer is the one holding it.
+      if (msg.type === 'send' && this.host.audience && entry.device && entry.device.id) {
+        this.host.audience.steered(session.id, entry.device.id);
+      }
     }
 
     switch (msg.type) {

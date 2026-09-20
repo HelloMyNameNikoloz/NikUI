@@ -73,6 +73,9 @@ class RemoteServer {
     this.host = deps.host;
     this.sessions = deps.sessions;
     this.devices = deps.devices || null;
+    // Who is using the app, and who asked for what. Notifications are sent to
+    // one phone rather than all of them, and this is what knows which.
+    this.audience = deps.audience || null;
     this.identity = deps.identity || null;
     this.pairing = deps.pairing || null;
     this.vapid = deps.vapid || null;
@@ -163,9 +166,14 @@ class RemoteServer {
    * @returns {number} how many were told
    */
   notifyDevices(message) {
+    // `to` names the one device this is for. Everything about a notification —
+    // which phone asked for the work, whether it has been put down — is decided
+    // before it gets here; this only has to not undo that by shouting.
+    const only = message && message.to;
     let told = 0;
     for (const client of this.clients) {
       if (!client.device || client.device.kind !== 'device') continue;
+      if (only && client.device.id !== only) continue;
       client.post(Object.assign({ type: '@notify' }, message));
       told++;
     }
@@ -863,6 +871,11 @@ ${this.appHead(nonce)}</head>
     client.bind({
       receive: async (message) => {
         if (!message) return;
+        // Anything at all from a device is somebody using the app, which is
+        // what wakes it back up if it had gone quiet.
+        if (this.audience && client.device && client.device.kind === 'device') {
+          this.audience.active(client.device.id);
+        }
         try {
           if (message.type === 'ready') return void client.post(this.fleetMessage());
           if (message.type === 'history') return void client.post(await this.historyMessage(message));
@@ -1037,6 +1050,7 @@ ${this.appHead(nonce)}</head>
     // The store's own change fires `reconcile`, which closes whatever socket
     // the removed device was holding — including this one, when it is its own.
     this.devices.forget(target.id);
+    if (this.audience) this.audience.forget(target.id);
   }
 
   /**

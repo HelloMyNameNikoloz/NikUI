@@ -46,6 +46,10 @@ class Notifier {
     // Apple's, for an iPhone that is not running. Inert until configured.
     this.apns = deps.apns || null;
     this.toApple = deps.sendApple || require('./apns').send;
+    // Who should hear this, if anybody. Without one, everything is broadcast —
+    // which is right for one phone and wrong for two: you send a prompt from
+    // the phone in your hand and the tablet on the table buzzes about it.
+    this.audience = deps.audience || null;
     // What each instance was last announced for, so the same state is not sent
     // twice as it flickers.
     this.told = new Map();
@@ -67,7 +71,20 @@ class Notifier {
    */
   async announce(kind, message) {
     if (!this.wants(kind)) return { sent: 0, failed: 0, attached: 0, skipped: true };
-    const body = Object.assign({ kind, at: this.now() }, message);
+
+    // One phone, not all of them. A device that has gone quiet for an hour is
+    // not somebody waiting for an answer — unless this is the answer it asked
+    // for, which is exactly the case `who` is written around.
+    const to = this.audience ? this.audience.who(message.session) : null;
+    if (this.audience && !to) {
+      this.log(`"${message.title}" not sent: nobody is waiting for it`);
+      return { sent: 0, failed: 0, attached: 0, skipped: true };
+    }
+
+    const body = Object.assign({ kind, at: this.now() }, message, to ? { to } : null);
+    // Only the device this is for. Without an audience this is every device,
+    // which is the old behaviour and what a window with no phones paired does.
+    const mine = (device) => !to || device.id === to;
 
     // Down the sockets first, because that path needs nothing outside this
     // machine — no tunnel, no push service, no account anywhere.
@@ -86,7 +103,7 @@ class Notifier {
     // entirely, and silently, until somebody has set that up — there is nothing
     // to warn about in a door that was never fitted.
     if (this.apns && this.apns.state().configured) {
-      for (const device of this.devices.appleSubscribers()) {
+      for (const device of this.devices.appleSubscribers().filter(mine)) {
         const outcome = await this.toApple(device.apns.token, body,
           { apns: this.apns, now: this.now() });
         if (outcome.ok) { sent++; continue; }
@@ -100,8 +117,15 @@ class Notifier {
       }
     }
 
-    const subscribers = this.devices.subscribers();
-    if (!subscribers.length) return { sent, failed, attached, skipped: !attached && !sent && !failed };
+    const subscribers = this.devices.subscribers().filter(mine);
+    if (!subscribers.length) {
+      // Delivery over the socket alone is the ordinary case, not an edge: the
+      // app is open, nothing is subscribed to a push service, and this used to
+      // return here without recording that anything had been said. A phone that
+      // had gone quiet then never went dormant, and kept being buzzed forever.
+      this.spent(to, message.session, attached || sent);
+      return { sent, failed, attached, skipped: !attached && !sent && !failed };
+    }
 
     for (const device of subscribers) {
       const outcome = await this.sender(device.push, body, {
@@ -128,7 +152,22 @@ class Notifier {
     }
     this.log(`"${message.title}" → ${sent} device${sent === 1 ? '' : 's'}` +
       (attached ? `, ${attached} already here` : '') + (failed ? `, ${failed} failed` : ''));
+    this.spent(to, message.session, sent || attached);
     return { sent, failed, attached, skipped: false };
+  }
+
+  /**
+   * Said, and what saying it cost.
+   *
+   * Telling a phone that had gone quiet is the last thing it hears: it asked
+   * for this, and it is in a drawer again now. One place, because there are two
+   * ways out of `announce` and the first one used to forget.
+   */
+  spent(to, instance, reached) {
+    if (!this.audience || !to || !reached) return;
+    if (this.audience.delivered(to, instance)) {
+      this.log(`${to} had been quiet for an hour; that was the last it hears until it is used again`);
+    }
   }
 
   // ---- the three things ----------------------------------------------------

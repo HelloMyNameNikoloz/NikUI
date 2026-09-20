@@ -17,6 +17,7 @@ const { labelFor } = require('./label');
 const { createHost, installHost, forgetHost } = require('./host');
 const { RemoteServer } = require('./remote');
 const { Terminals } = require('./terminal');
+const { Audience } = require('./audience');
 const { DeviceStore } = require('./devices');
 const { DevicesTree } = require('./devicesTree');
 const { PairingWindow } = require('./pairing');
@@ -548,7 +549,17 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   // Installed, not just built: the panel asks for this same object, so a hub
   // opened from the editor knows about devices and the trail as well — and so
   // the phone's status screen is built from exactly the same facts.
+  /**
+   * Who is using the app, and who asked for what.
+   *
+   * One per window, and handed to three places: the hub records which phone
+   * sent a prompt, the server records any phone doing anything at all, and the
+   * notifier asks which of them — if any — should be told.
+   */
+  const audience = new Audience();
+
   const served = installHost(createHost(context, manager, { devices, awake: awakeState || null }));
+  served.audience = audience;
 
   /**
    * Somewhere to run a command, when a device is allowed to.
@@ -571,6 +582,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     root: context.extensionUri.fsPath,
     host: served,
     terminals,
+    audience,
     sessions: { list: () => manager.list, get: (id) => manager.get(id) },
     // The same folders, projects and history the editor shows, so a phone is
     // looking at this window rather than at a list of what happens to be in it.
@@ -661,6 +673,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     devices,
     vapid,
     apns,
+    audience,
     // A notification whose instance cannot be opened is a notification that
     // teaches you to ignore them.
     reachable: () => server.listening,
