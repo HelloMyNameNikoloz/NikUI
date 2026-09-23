@@ -173,6 +173,12 @@ function activate(context) {
       { placeHolder: `Restart ${session.label}` }
     );
     if (!choice) return;
+    // Restarting means "start it again the way I have things set now". Without
+    // this it meant "start it again the way things were when I first opened
+    // it": the model, the effort and the rest were captured at creation and
+    // never looked at again, so changing a setting and restarting — the obvious
+    // way to apply one — did nothing at all.
+    reconfigure(session);
     if (!choice.keep && session.hasHistory) {
       const go = await vscode.window.showWarningMessage(
         `Start ${session.label} over?`,
@@ -182,6 +188,56 @@ function activate(context) {
       if (go !== 'Start over') return;
     }
     session.restart({ keepContext: choice.keep });
+  });
+
+  /**
+   * Bring an instance back in line with the settings as they are now.
+   *
+   * Only the things a restart can actually change: every one of these is read
+   * when the process is spawned, so they take effect on the next start and not
+   * before. Anything that is part of the conversation rather than the process —
+   * its title, its folder, what it has said — is left alone.
+   */
+  function reconfigure(session) {
+    const cfg = readConfig();
+    session.claudePath = cfg.claudePath;
+    session.model = cfg.model;
+    session.permissionMode = cfg.permissionMode;
+    session.effort = cfg.effort;
+    session.outputStyle = cfg.outputStyle;
+    session.extraArgs = cfg.extraArgs;
+    return session;
+  }
+
+  /**
+   * Every instance, on whatever the settings say now.
+   *
+   * The model an instance runs is fixed when its process starts, so changing it
+   * is restarting them — which is a thing worth having one button for rather
+   * than doing one at a time down the list.
+   */
+  register('nikui.restartAll', async () => {
+    const open = manager.list.filter((s) => s.everStarted);
+    if (!open.length) return void vscode.window.showInformationMessage('Nothing is running.');
+    const cfg = readConfig();
+    const go = await vscode.window.showWarningMessage(
+      `Restart ${open.length} instance${open.length === 1 ? '' : 's'} on ${cfg.model || 'your Claude Code default'}?`,
+      {
+        modal: true,
+        detail: 'Each one is resumed, so the conversations continue — but whatever any of them is ' +
+          'doing right now stops. The model an instance runs is decided when its process starts, ' +
+          'which is why this is the way to change it.'
+      },
+      'Restart them'
+    );
+    if (go !== 'Restart them') return;
+    for (const session of open) {
+      reconfigure(session);
+      session.restart({ keepContext: true });
+    }
+    vscode.window.setStatusBarMessage(
+      `NikUI: restarted ${open.length} instance${open.length === 1 ? '' : 's'}` +
+      (cfg.model ? ` on ${cfg.model}` : ''), 6000);
   });
 
   register('nikui.status', async (arg) => {

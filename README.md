@@ -326,7 +326,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `nikui.claudePath` | `claude` | Path to the executable |
-| `nikui.model` | *(empty)* | Passed to `--model`; empty uses your default |
+| `nikui.model` | *(empty)* | Passed to `--model`; empty uses your default. Changing it applies to new instances, and to existing ones when they are restarted |
 | `nikui.permissionMode` | `bypassPermissions` | Passed to `--permission-mode` |
 | `nikui.effort` | `max` | Passed to `--effort` (low/medium/high/xhigh/max) |
 | `nikui.outputStyle` | `Concise` | Passed inline via `--settings` |

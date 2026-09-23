@@ -104,6 +104,10 @@
         "icon": "$(debug-restart)"
       },
       {
+        "command": "nikui.restartAll",
+        "title": "NikUI: Restart Every Instance On The Current Model"
+      },
+      {
         "command": "nikui.status",
         "title": "NikUI: Instance Status",
         "icon": "$(pulse)"

@@ -16,6 +16,7 @@ function makeStub(overrides) {
     __registered: registered,
     version: '1.100.0',
     __config: config,
+    __answers: [],
     EventEmitter: class {
       constructor() { this._e = new EventEmitter(); this.event = (fn) => { this._e.on('x', fn); return { dispose() {} }; }; }
       fire(v) { this._e.emit('x', v); }
@@ -77,10 +78,20 @@ function makeStub(overrides) {
         return panel;
       },
       registerWebviewPanelSerializer: (type, s) => { registered.serializers.push(type); return { dispose() {} }; },
-      showQuickPick: async () => undefined,
+      // Answerable, so a command that asks something can be driven to the end
+      // of what it does rather than only to the question. `__answer` is a queue:
+      // each dialog takes the next reply, and an empty queue is somebody
+      // pressing Escape, which is the default a test should get for free.
+      showQuickPick: async (items) => {
+        const want = stub.__answers.shift();
+        if (want === undefined) return undefined;
+        const list = Array.isArray(items) ? items : await items;
+        if (typeof want === 'number') return list[want];
+        return list.find((i) => (i && i.label ? i.label : i) === want) || want;
+      },
       showOpenDialog: async () => undefined,
       showInputBox: async () => undefined,
-      showWarningMessage: async () => undefined,
+      showWarningMessage: async () => stub.__answers.shift(),
       showTextDocument: async () => ({}),
       showInformationMessage: async () => undefined,
       setStatusBarMessage: () => {},

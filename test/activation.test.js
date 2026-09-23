@@ -68,6 +68,43 @@ module.exports = async function () {
   check('and does so through a context key',
     scoped.every((w) => /nikui\.historyScope/.test(w.when || '')));
 
+  suite('restarting an instance means restarting it the way things are set now');
+
+  // The model an instance runs is fixed when its process starts, so changing
+  // the setting and restarting is the only way to move one. That did nothing:
+  // the model, the effort and the rest were captured when the instance was
+  // first created and never looked at again, so the obvious way to apply a
+  // setting was also the way to discover it had not been applied.
+  {
+    const vscode = require('vscode');
+    const manager = extension.__manager || null;
+    // The command picks a session; without a manager to pick from, this drives
+    // the same path the command does by handing it one directly.
+    const session = {
+      id: 's1', label: 'an instance', hasHistory: false, everStarted: true,
+      claudePath: 'old-path', model: 'claude-opus-5', permissionMode: 'ask',
+      effort: 'low', outputStyle: '', extraArgs: [],
+      restarted: null,
+      restart(opts) { this.restarted = opts; }
+    };
+    void manager;
+
+    vscode.__config['model'] = 'claude-opus-5-5[1m]';
+    vscode.__config['effort'] = 'max';
+    vscode.__answers.push('Restart and keep context');
+    await commands['nikui.restart'](session);
+
+    checkEqual('the instance comes back on the model that is set now',
+      session.model, 'claude-opus-5-5[1m]');
+    checkEqual('and with everything else the process is started with',
+      session.effort, 'max');
+    check('and it really did restart', !!session.restarted);
+    checkEqual('keeping the conversation it was having', session.restarted.keepContext, true);
+
+    delete vscode.__config['model'];
+    delete vscode.__config['effort'];
+  }
+
   suite('a window that was serving comes back serving');
 
   // Reloading the editor used to drop every phone: the server did not restart
