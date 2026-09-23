@@ -12,7 +12,7 @@ function report(extra) {
     status: 'working', isBusy: true, isRunning: true,
     cwd: path.join(__dirname, '..'), claudeSessionId: 'abc-123', proc: { pid: 99 },
     startedAt: NOW - 3600000, processStartedAt: NOW - 600000, lastError: null,
-    meta: { model: 'claude-opus-5' }, model: '', effort: 'max',
+    meta: { model: 'claude-opus-5-5' }, model: '', effort: 'max',
     permissionMode: 'bypassPermissions', outputStyle: 'Concise', claudePath: 'claude',
     autoTitle: true, extraArgs: [], queueDelayMs: 5000,
     totalCost: 0.55, turns: 3,
@@ -22,7 +22,7 @@ function report(extra) {
     turnLog: [1, 2, 3].map((n) => ({
       n, at: NOW - (4 - n) * 600000, durationMs: 5000 * n, costUsd: 0.1 * n,
       input: 50, output: 600, cacheRead: 26000, cacheCreate: 0,
-      contextTokens: 50000 * n, tools: ['Bash'], model: 'claude-opus-5',
+      contextTokens: 50000 * n, tools: ['Bash'], model: 'claude-opus-5-5',
       interrupted: false, isError: false
     })),
     items: [

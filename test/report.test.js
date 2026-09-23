@@ -16,7 +16,7 @@ function turn(n, extra) {
     cacheCreate: n === 1 ? 1200 : 0,
     contextTokens: 30000 + n * 5000,
     tools: ['Bash', 'Read'].slice(0, (n % 2) + 1),
-    model: 'claude-opus-5',
+    model: 'claude-opus-5-5',
     interrupted: false,
     isError: false
   }, extra || {});
@@ -28,7 +28,7 @@ function fakeSession(extra) {
     status: 'done', isBusy: false, isRunning: true,
     cwd: path.join(__dirname, '..'), claudeSessionId: 'abc-123', proc: { pid: 4242 },
     startedAt: NOW - 3600000, processStartedAt: NOW - 1800000, lastError: null,
-    meta: { model: 'claude-opus-5' }, model: '', effort: 'max',
+    meta: { model: 'claude-opus-5-5' }, model: '', effort: 'max',
     permissionMode: 'bypassPermissions', outputStyle: 'Concise', claudePath: 'claude',
     autoTitle: true, extraArgs: [], queueDelayMs: 5000,
     totalCost: 0.55, turns: 4,

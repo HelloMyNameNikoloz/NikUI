@@ -61,6 +61,9 @@
   let slashIndex = 0;
   let slashMode = 'cmd';
   let slashCmd = '';
+  // What sits before the "/" being completed. Empty when the token starts the
+  // prompt; otherwise the text to put back when a suggestion is accepted.
+  let slashPrefix = '';
   let commandArgs = {};
   let ownCommands = [];
   let snippetText = {};
@@ -786,20 +789,29 @@
   function refreshSlash() {
     const value = input.value;
 
-    const cmdMatch = value.match(/^\/([\w:.-]*)$/);
+    // A command being typed at the start of the prompt, or a snippet at the end
+    // of one: "/decisions" and "review the refund code /decisions" both offer
+    // the palette, because snippets read naturally in either place and people
+    // type both. Anchored to a word boundary so a URL's "https://host" and a
+    // path's "a/b" never open it.
+    const cmdMatch = value.match(/(?:^|\s)\/([\w:.-]*)$/);
     if (cmdMatch) {
       const q = cmdMatch[1].toLowerCase();
       slashMode = 'cmd';
       slashCmd = '';
+      slashPrefix = value.slice(0, value.length - (cmdMatch[1].length + 1));
       slashMatches = commands.filter((c) => c.toLowerCase().includes(q)).slice(0, 40);
     } else {
-      // "/effort ma" — the command is settled, now offer its values.
+      // "/effort ma" — the command is settled, now offer its values. Start-anchored
+      // on purpose: a command that takes values is the whole prompt, never a suffix,
+      // and matching one mid-sentence would offer values for a word someone wrote.
       const argMatch = value.match(/^\/([\w:.-]+)[ \t]+([^\s]*)$/);
       const options = argMatch ? commandArgs[argMatch[1]] : null;
       if (!argMatch || !options) { slashBox.hidden = true; return; }
       const q = argMatch[2].toLowerCase();
       slashMode = 'arg';
       slashCmd = argMatch[1];
+      slashPrefix = '';
       slashMatches = options.filter((v) => v.toLowerCase().startsWith(q));
     }
 
@@ -837,7 +849,7 @@
     if (slashBox.hidden || !slashMatches.length) return null;
     const picked = slashMatches[slashIndex];
     if (slashMode === 'cmd') {
-      input.value = '/' + picked + ' ';
+      input.value = slashPrefix + '/' + picked + ' ';
       autoGrow();
       refreshSlash(); // a command with values shows them straight away
       return slashBox.hidden ? 'ready' : 'filled';

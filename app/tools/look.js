@@ -67,7 +67,7 @@ function report() {
 
   session.startedAt = Date.now() - 1000 * 60 * 87;
   session.usage = { input: 412_300, output: 88_140, cacheRead: 2_904_551, cacheCreate: 311_002 };
-  session.model = 'claude-opus-5';
+  session.model = 'claude-opus-5-5';
   session.contextTokens = 158_400;
   session.contextWindow = 200_000;
 
@@ -88,7 +88,7 @@ function report() {
       cacheRead: 120000 + i * 4000,
       cacheCreate: 8000,
       contextTokens: 40000 + i * 9000,
-      model: 'claude-opus-5',
+      model: 'claude-opus-5-5',
       interrupted: i === 6,
       isError: i === 11,
       tools: TOOLS.slice(0, 3 + (i % 9))

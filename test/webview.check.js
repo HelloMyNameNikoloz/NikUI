@@ -140,6 +140,28 @@ const drive = `
     input.value = '';
     input.dispatchEvent(new Event('input', { bubbles: true }));
 
+    // A snippet reads naturally at the end of a prompt, so the palette has to
+    // offer it there too -- not only when the slash starts the line.
+    input.value = 'fix the rollback /tab';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    out.trailingPaletteOpen = !document.getElementById('slash').hidden;
+    const tailRow = Array.from(document.querySelectorAll('#slash .row')).find((r) => /table/.test(r.textContent));
+    out.trailingPaletteOffers = !!tailRow;
+    if (tailRow) tailRow.click();
+    // Accepting must put back what came before the slash, not replace the line.
+    out.trailingPaletteKeepsPrefix = input.value;
+
+    // A URL and a path both contain a slash and neither is a command.
+    input.value = 'see https://example.com/';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    out.urlOpensPalette = !document.getElementById('slash').hidden;
+    input.value = 'open docs/validation/file.md';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    out.pathOpensPalette = !document.getElementById('slash').hidden;
+
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
     const sendsBeforeStatus = window.__posted.filter((m) => m.type === 'send').length;
     input.value = '/status';
     key(input, 'Enter');
@@ -359,6 +381,11 @@ const checks = [
   ['the prompt is marked with it', out.snippetChip === '+table'],
   ['and hovering the mark shows the instruction', /TABLE INSTRUCTION/.test(out.snippetChipExplains || '')],
   ['the palette offers it as ours', /table/.test(out.snippetInPalette || '') && /NikUI/.test(out.snippetInPalette || '')],
+  ['a slash at the end of a prompt opens the palette', out.trailingPaletteOpen === true],
+  ['and it offers the snippet there', out.trailingPaletteOffers === true],
+  ['accepting one keeps what came before it', out.trailingPaletteKeepsPrefix === 'fix the rollback /table '],
+  ['a URL does not open the palette', out.urlOpensPalette === false],
+  ['nor does a path', out.pathOpensPalette === false],
   ['cmd+F opens find', out.findOpened === true],
   ['it finds every match', out.findMatches === 2],
   ['and counts them', out.findCount === '1 of 2'],
