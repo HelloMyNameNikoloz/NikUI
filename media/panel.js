@@ -57,16 +57,14 @@
   let escTimer = null;
   let attachments = [];
   let commands = [];
-  let slashMatches = [];
+  // What the palette is offering: media/palette.js works out the list and what
+  // picking one writes, so this file only draws it and moves the highlight.
+  let slashPlan = null;
   let slashIndex = 0;
-  let slashMode = 'cmd';
-  let slashCmd = '';
-  // What sits before the "/" being completed. Empty when the token starts the
-  // prompt; otherwise the text to put back when a suggestion is accepted.
-  let slashPrefix = '';
   let commandArgs = {};
   let ownCommands = [];
   let snippetText = {};
+  let meta = {};
   let showThinking = true;
   let statsBase = { elapsedMs: 0, running: false, at: Date.now(), total: 0, cost: 0, turns: 0 };
   let attachSeq = 0;
@@ -278,8 +276,9 @@
     }, 6000);
   }
 
-  function setMeta(meta) {
-    $('title').textContent = meta.label;
+  function setMeta(next) {
+    meta = next || {};
+    $('title').textContent = meta.label || '';
     const bits = [];
     if (meta.ticket) bits.push('#' + meta.ticket);
     if (meta.cwd) bits.push(meta.cwd.replace(meta.home, '~'));
@@ -786,38 +785,28 @@
 
   // ── slash palette ────────────────────────────────────────────
 
-  function refreshSlash() {
-    const value = input.value;
+  /** Everything the palette chooses from, as it stands right now. */
+  function slashSources() {
+    return {
+      commands: commands,
+      args: commandArgs,
+      own: ownCommands,
+      snippets: snippetText,
+      // So a list of values can say which one is already in force.
+      now: { model: meta.model || '', effort: meta.effort || '' }
+    };
+  }
 
-    // A command being typed at the start of the prompt, or a snippet at the end
-    // of one: "/decisions" and "review the refund code /decisions" both offer
-    // the palette, because snippets read naturally in either place and people
-    // type both. Anchored to a word boundary so a URL's "https://host" and a
-    // path's "a/b" never open it.
-    const cmdMatch = value.match(/(?:^|\s)\/([\w:.-]*)$/);
-    if (cmdMatch) {
-      const q = cmdMatch[1].toLowerCase();
-      slashMode = 'cmd';
-      slashCmd = '';
-      slashPrefix = value.slice(0, value.length - (cmdMatch[1].length + 1));
-      slashMatches = commands.filter((c) => c.toLowerCase().includes(q)).slice(0, 40);
-    } else {
-      // "/effort ma" — the command is settled, now offer its values. Start-anchored
-      // on purpose: a command that takes values is the whole prompt, never a suffix,
-      // and matching one mid-sentence would offer values for a word someone wrote.
-      const argMatch = value.match(/^\/([\w:.-]+)[ \t]+([^\s]*)$/);
-      const options = argMatch ? commandArgs[argMatch[1]] : null;
-      if (!argMatch || !options) { slashBox.hidden = true; return; }
-      const q = argMatch[2].toLowerCase();
-      slashMode = 'arg';
-      slashCmd = argMatch[1];
-      slashPrefix = '';
-      slashMatches = options.filter((v) => v.toLowerCase().startsWith(q));
-    }
+  function refreshSlash() {
+    slashPlan = window.palette.plan(input.value, slashSources());
+    if (!slashPlan) { slashBox.hidden = true; return; }
 
     slashIndex = 0;
-    if (!slashMatches.length) {
-      slashBox.innerHTML = '<div class="none">' + (slashMode === 'cmd' && !commands.length ? 'Commands appear once the instance is running' : 'No match') + '</div>';
+    if (!slashPlan.matches.length) {
+      slashBox.innerHTML = '<div class="none">' +
+        (slashPlan.mode === 'cmd' && !commands.length
+          ? 'Commands appear once the instance is running'
+          : 'No match') + '</div>';
       slashBox.hidden = false;
       return;
     }
@@ -826,44 +815,36 @@
   }
 
   function paintSlash() {
-    const rows = slashMatches.map(function (c, i) {
-      const parts = String(c).split(':');
-      const ns = slashMode === 'cmd' && parts.length > 1 ? parts[0] :
-        (slashMode === 'cmd' && ownCommands.indexOf(c) >= 0 ? 'NikUI' : '');
-      const label = slashMode === 'cmd' ? parts[parts.length - 1] : c;
-      return '<div class="row' + (i === slashIndex ? ' on' : '') + '" data-val="' + esc(c) + '">' +
-        icon(slashMode === 'cmd' ? 'slash' : 'chevron', 12) +
-        '<span class="cmd">' + esc(label) + '</span>' +
-        (ns ? '<span class="ns">' + esc(ns) + '</span>' : '') + '</div>';
+    const rows = slashPlan.matches.map(function (row, i) {
+      return '<div class="row' + (i === slashIndex ? ' on' : '') + '" data-at="' + i + '">' +
+        icon(slashPlan.mode === 'cmd' ? 'slash' : 'chevron', 12) +
+        '<span class="cmd">' + esc(row.label) + '</span>' +
+        (row.note ? '<span class="ns">' + esc(row.note) + '</span>' : '') + '</div>';
     }).join('');
-    const hint = slashMode === 'arg'
-      ? '<div class="palette-hint"><span>/' + esc(slashCmd) + '</span><span>Tab fills · Enter runs</span></div>'
-      : '<div class="palette-hint"><span>Commands</span><span>Tab or Enter selects</span></div>';
-    slashBox.innerHTML = hint + rows;
+    slashBox.innerHTML = '<div class="palette-hint"><span>' + esc(slashPlan.hint) +
+      '</span><span>' + esc(slashPlan.keys) + '</span></div>' + rows;
     const on = slashBox.querySelector('.row.on');
     if (on) on.scrollIntoView({ block: 'nearest' });
   }
 
   // Returns 'filled' when more input is expected, 'ready' when the line is complete.
   function acceptSlash() {
-    if (slashBox.hidden || !slashMatches.length) return null;
-    const picked = slashMatches[slashIndex];
-    if (slashMode === 'cmd') {
-      input.value = slashPrefix + '/' + picked + ' ';
-      autoGrow();
-      refreshSlash(); // a command with values shows them straight away
-      return slashBox.hidden ? 'ready' : 'filled';
-    }
-    input.value = '/' + slashCmd + ' ' + picked;
-    slashBox.hidden = true;
+    if (slashBox.hidden || !slashPlan || !slashPlan.matches.length) return null;
+    const taken = window.palette.apply(slashPlan, slashIndex, slashSources());
+    if (!taken) return null;
+    input.value = taken.value;
     autoGrow();
-    return 'ready';
+    // A command that takes values shows them straight away; anything else
+    // closes, leaving a trailing space so another "/" opens the palette again.
+    if (taken.more) refreshSlash();
+    else slashBox.hidden = true;
+    return taken.more ? 'filled' : 'ready';
   }
 
   slashBox.addEventListener('click', function (e) {
-    const row = e.target.closest('[data-val]');
+    const row = e.target.closest('[data-at]');
     if (!row) return;
-    slashIndex = slashMatches.indexOf(row.dataset.val);
+    slashIndex = Number(row.dataset.at);
     acceptSlash();
     input.focus();
   });
@@ -931,14 +912,18 @@
   }
 
   input.addEventListener('keydown', function (e) {
-    if (!slashBox.hidden && slashMatches.length) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); slashIndex = (slashIndex + 1) % slashMatches.length; paintSlash(); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); slashIndex = (slashIndex - 1 + slashMatches.length) % slashMatches.length; paintSlash(); return; }
+    if (!slashBox.hidden && slashPlan && slashPlan.matches.length) {
+      const count = slashPlan.matches.length;
+      if (e.key === 'ArrowDown') { e.preventDefault(); slashIndex = (slashIndex + 1) % count; paintSlash(); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); slashIndex = (slashIndex - 1 + count) % count; paintSlash(); return; }
       if (e.key === 'Tab') { if (acceptSlash()) { e.preventDefault(); return; } }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        const outcome = acceptSlash();
-        if (outcome === 'ready' && slashMode === 'arg') send();
+        // Choosing a value finishes the line — "/model claude-opus-5-5" is the
+        // whole prompt — so it goes. A command or a snippet leaves the cursor
+        // where more can be typed, including another slash.
+        const finished = slashPlan.mode === 'value';
+        if (acceptSlash() && finished) send();
         return;
       }
       if (e.key === 'Escape') { e.preventDefault(); slashBox.hidden = true; return; }

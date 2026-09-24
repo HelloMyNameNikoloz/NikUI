@@ -38,6 +38,36 @@ module.exports = function () {
   checkEqual('in the order they were written', two.sent,
     'do the thing\n\nTABLE INSTRUCTION\n\nREVIEW INSTRUCTION');
 
+  suite('as many as you want, at either end');
+
+  // The instructions stack — one says how to answer, another what to include —
+  // so stopping at one would be choosing between them for no reason anybody
+  // could see.
+  const run = expand('do the thing /table /review', SNIPPETS);
+  checkEqual('a run at the end is a run', run.used, ['table', 'review']);
+  checkEqual('still in the order they were written', run.sent,
+    'do the thing\n\nTABLE INSTRUCTION\n\nREVIEW INSTRUCTION');
+  checkEqual('and the prompt is still your words', run.text, 'do the thing');
+
+  const front = expand('/review /table do the thing', SNIPPETS);
+  checkEqual('a run at the start too', front.used, ['review', 'table']);
+
+  // A run is a run: it stops at the first word that is not a snippet, so a
+  // disabled one at the very end keeps everything before it in the prompt
+  // rather than reaching over it for the next.
+  const ends = expand('/review do the thing /table /off', SNIPPETS);
+  checkEqual('an ordinary word ends the run', ends.used, ['review']);
+  checkEqual('and what it shielded stays written', ends.text, 'do the thing /table /off');
+
+  const repeated = expand('/table do it /review /table', SNIPPETS);
+  checkEqual('the same one twice over is still one instruction', repeated.used,
+    ['table', 'review']);
+
+  const only = expand('/table /review', SNIPPETS);
+  checkEqual('nothing but snippets leaves nothing of your own', only.text, '');
+  checkEqual('and sends both instructions', only.sent,
+    'TABLE INSTRUCTION\n\nREVIEW INSTRUCTION');
+
   suite('everything else is left alone');
 
   checkEqual('an ordinary prompt is untouched', expand('just do it', SNIPPETS).sent, 'just do it');

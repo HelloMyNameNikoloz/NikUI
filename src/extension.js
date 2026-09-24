@@ -523,6 +523,35 @@ function activate(context) {
 }
 
 /**
+ * Put this CLI's models in the composer's palette.
+ *
+ * Typing "/model " should offer what is actually installed. The CLI's own reply
+ * names the aliases and then says "or a full model ID", which is true and is not
+ * a list — so the identifiers are read out of the binary instead, the same way
+ * the settings picker reads them, and handed to the composer.
+ *
+ * Failing is allowed and quiet: without this the palette still has whatever the
+ * CLI printed, which is what it had before.
+ */
+function offerModelsToComposer(store) {
+  const { discover } = require('./models');
+  const { offerCommandArgs } = require('./session');
+  let claudePath = 'claude';
+  try { claudePath = vscode.workspace.getConfiguration('nikui').get('claudePath', 'claude'); } catch (_) { /* a stub */ }
+  return discover({ claudePath, cache: store }).then((found) => {
+    // The aliases are what the CLI names itself, so there is nothing to add.
+    if (found.from === 'aliases') return false;
+    const values = found.models
+      .filter((model) => !model.alias)
+      .map((model) => ({ value: model.id, label: model.label, detail: model.detail }));
+    if (!offerCommandArgs('model', values)) return false;
+    // Pages that are already open asked for this list when they loaded.
+    eachHub((hub) => hub.broadcast(hub.metaMessage()));
+    return true;
+  }).catch(() => false);
+}
+
+/**
  * Keep the machine awake while there is something worth staying awake for.
  *
  * Off unless asked, because keeping somebody's laptop awake is not a decision
@@ -615,6 +644,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   // The model list is read out of the CLI and only changes when the CLI does,
   // so it is kept across openings rather than rebuilt for every menu.
   rememberModelsIn(context.globalState);
+  offerModelsToComposer(context.globalState);
 
   const audience = new Audience();
 

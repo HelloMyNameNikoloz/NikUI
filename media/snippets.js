@@ -7,7 +7,7 @@
 
   // A snippet is invoked at the start or the end of the prompt, on its own:
   // "/table fix the rollback" and "fix the rollback /table" both read naturally,
-  // and people type both.
+  // and people type both. As many as you like at either end.
   const TOKEN = /^\/([a-z][\w-]*)$/i;
 
   const nameOf = (word) => {
@@ -40,18 +40,24 @@
     const words = raw.split(/\s+/).filter(Boolean);
     if (!words.length) return { text: raw, sent: raw, used: [] };
 
-    const used = [];
-    // Naming a snippet always takes the word out of the prompt; naming the same
-    // one twice still only adds its instruction once.
-    const take = (index) => {
-      const name = nameOf(words[index]);
-      if (!name || !table[name]) return false;
-      if (used.indexOf(name) < 0) used.push(name);
-      return true;
+    const known = (word) => {
+      const name = nameOf(word);
+      return name && table[name] ? name : null;
     };
 
-    if (take(0)) words.shift();
-    if (words.length && take(words.length - 1)) words.pop();
+    // A run, not a single word: "fix the refund path /decisions /table" names
+    // both, and both apply. They stack because the instructions do — one says
+    // how to answer, another what to include — and stopping at one would mean
+    // choosing between them for no reason anybody could see.
+    const lead = [];
+    while (words.length && known(words[0])) lead.push(known(words.shift()));
+    const tail = [];
+    while (words.length && known(words[words.length - 1])) tail.unshift(known(words.pop()));
+
+    // In the order they were written, which is the order they are read in.
+    // Naming the same one twice still only adds its instruction once.
+    const used = [];
+    for (const name of lead.concat(tail)) if (used.indexOf(name) < 0) used.push(name);
     if (!used.length) return { text: raw, sent: raw, used: [] };
 
     const rest = words.join(' ').trim();

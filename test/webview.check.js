@@ -74,6 +74,9 @@ const harness = `
   window.__posted = [];
 </script>`;
 
+// Careful: this is a template literal, so a backslash in it is eaten before the
+// browser ever sees it — a regex written /\s+/ here arrives as /s+/ and quietly
+// matches the letter s. Double every backslash.
 const drive = `
 <script>
   const REPORT = ${JSON.stringify(report)};
@@ -94,8 +97,14 @@ const drive = `
       meta: { label: 'x', cwd: '/tmp', home: '/tmp', model: 'claude-x', permissionMode: 'bypassPermissions' },
       status: 'idle',
       stats: { input: 1, output: 2, cacheRead: 3, cacheCreate: 4, total: 10, cost: 0.42, turns: 2, elapsedMs: 0, running: false, contextTokens: 60000, contextWindow: 200000 },
-      queue: [], slashCommands: ['status', 'table'], commandArgs: {}, showThinking: true,
-      ownCommands: ['status', 'table'], snippets: { table: 'TABLE INSTRUCTION' }
+      queue: [], slashCommands: ['status', 'table', 'decisions', 'model'], showThinking: true,
+      commandArgs: { model: [
+        { value: 'claude-opus-5-5', label: 'Opus 5.5', detail: '' },
+        { value: 'claude-opus-5-5[1m]', label: 'Opus 5.5', detail: '1M context' },
+        { value: 'opus' }
+      ] },
+      ownCommands: ['status', 'table', 'decisions'],
+      snippets: { table: 'TABLE INSTRUCTION', decisions: 'DECISIONS INSTRUCTION' }
     });
 
     const mark = document.querySelector('.dropped');
@@ -136,7 +145,7 @@ const drive = `
     input.value = '/tab';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     const row = Array.from(document.querySelectorAll('#slash .row')).find((r) => /table/.test(r.textContent));
-    out.snippetInPalette = row ? row.textContent.replace(/\s+/g, ' ').trim() : null;
+    out.snippetInPalette = row ? row.textContent.replace(/\\s+/g, ' ').trim() : null;
     input.value = '';
     input.dispatchEvent(new Event('input', { bubbles: true }));
 
@@ -150,6 +159,42 @@ const drive = `
     if (tailRow) tailRow.click();
     // Accepting must put back what came before the slash, not replace the line.
     out.trailingPaletteKeepsPrefix = input.value;
+
+    // As many snippets as you like: accepting one leaves the palette ready for
+    // the next, and both instructions go with the prompt.
+    input.value = 'fix the rollback /tab';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    key(input, 'Enter');
+    input.value = input.value + '/dec';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    out.secondPaletteOpen = !document.getElementById('slash').hidden;
+    key(input, 'Enter');
+    out.chainedLine = input.value;
+    key(input, 'Enter');
+    const chained = window.__posted.filter((m) => m.type === 'send').pop() || {};
+    out.chainedUsed = (chained.snippets || []).join(',');
+    out.chainedSent = chained.sent;
+
+    // A command that takes values: its own list, arrow navigable, and choosing
+    // one finishes the line -- "/model claude-opus-5-5" is the whole prompt.
+    input.value = '/model ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    out.valueRows = Array.from(document.querySelectorAll('#slash .row'))
+      .map((r) => r.textContent.replace(/\\s+/g, ' ').trim());
+    key(input, 'ArrowDown');
+    const on = document.querySelector('#slash .row.on');
+    out.valueHighlight = on ? on.textContent.replace(/\\s+/g, ' ').trim() : null;
+    key(input, 'Enter');
+    const modelSend = window.__posted.filter((m) => m.type === 'send').pop() || {};
+    out.valueSent = modelSend.text;
+    out.valueCleared = input.value === '';
+
+    // Typing part of the identifier narrows it, from anywhere in the word.
+    input.value = '/model opus';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    out.valueNarrowed = document.querySelectorAll('#slash .row').length;
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
 
     // A URL and a path both contain a slash and neither is a command.
     input.value = 'see https://example.com/';
@@ -384,6 +429,22 @@ const checks = [
   ['a slash at the end of a prompt opens the palette', out.trailingPaletteOpen === true],
   ['and it offers the snippet there', out.trailingPaletteOffers === true],
   ['accepting one keeps what came before it', out.trailingPaletteKeepsPrefix === 'fix the rollback /table '],
+  ['a second slash opens the palette again', out.secondPaletteOpen === true],
+  ['and both snippets end up on the prompt',
+    out.chainedLine === 'fix the rollback /table /decisions '],
+  ['both instructions are sent', out.chainedUsed === 'table,decisions'],
+  ['with the words that were typed',
+    out.chainedSent === 'fix the rollback\n\nTABLE INSTRUCTION\n\nDECISIONS INSTRUCTION'],
+  ['a command with values offers them', (out.valueRows || []).length === 3],
+  ['each row reads as a person would say it', /Opus 5.5/.test((out.valueRows || [])[0] || '')],
+  ['with the identifier beside it',
+    /claude-opus-5-5/.test((out.valueRows || [])[0] || '')],
+  ['and the wide one says what is wide about it',
+    /1M context/.test((out.valueRows || [])[1] || '')],
+  ['an arrow moves the highlight', /1M context/.test(out.valueHighlight || '')],
+  ['choosing one sends the whole line', out.valueSent === '/model claude-opus-5-5[1m]'],
+  ['and clears the composer', out.valueCleared === true],
+  ['typing part of an identifier narrows the list', out.valueNarrowed === 3],
   ['a URL does not open the palette', out.urlOpensPalette === false],
   ['nor does a path', out.pathOpensPalette === false],
   ['cmd+F opens find', out.findOpened === true],

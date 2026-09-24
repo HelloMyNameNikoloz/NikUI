@@ -46,8 +46,17 @@ owns the whole surface.
   never started, never opened. `nikui.notifyOnAttention` turns it off.
 - **Two-stage command palette.** `/` lists the session's own commands; pick one
   that takes a fixed set of values and its options appear immediately, arrow
-  navigable. Options are seeded for `/effort` and learned at runtime by reading
-  `Usage: /cmd <a|b|c>` out of the CLI's own replies.
+  navigable, with the one already in force marked *current*. Options are seeded
+  for `/effort` and learned at runtime out of the CLI's own replies, in both
+  shapes it writes them: `Usage: /cmd <a|b|c>`, and the prose list `/model`
+  answers with.
+
+  `/model` gets one more thing, because its reply names the aliases and then
+  says "or a full model ID" — true, and not a list. The identifiers themselves
+  are read out of the installed CLI (the same catalog the settings picker uses),
+  so `/model ` offers **Opus 5.5** and its 1M variant by name, above the
+  aliases, the day Claude Code ships them. Typing matches anywhere in an
+  identifier, since every one of them starts `claude-`.
 - **A real `/status`.** It is offered as soon as you type `/` (tagged NikUI, so
   you can tell it from the CLI's own), and NikUI answers it itself with a
   full-screen sheet in six sections you can click or key through (`1`–`6`,
@@ -99,7 +108,9 @@ owns the whole surface.
 - **Prompt snippets.** A word like `/table` adds a standing instruction to the
   prompt you just wrote: `/table fix the rollback` and `fix the rollback /table`
   both send your text with the instruction appended, and the word itself never
-  reaches the CLI. The panel keeps showing your words, with a `+table` chip you
+  reaches the CLI. As many as you like at either end — `fix the rollback
+  /decisions /table` applies both, in the order written, once each — and after
+  one is picked the palette is ready for the next. The panel keeps showing your words, with a `+table` chip you
   can hover to read what was added, so a long standing instruction is not
   reprinted on every turn. They appear in the `/` palette tagged *NikUI*, and
   they are yours to write: `nikui.promptSnippets` maps a word to its text, your
@@ -268,7 +279,7 @@ owns the whole surface.
 | `↑` | Previous prompt, from an empty composer; `↑` again goes further back |
 | `↓` | Forward again, and past the newest one, back to what you were typing |
 | `/` | Command palette — the CLI's commands plus NikUI's own, tagged *NikUI* |
-| `/table` | Append the standing "plan as a table" instruction to this prompt |
+| `/table` | Append the standing "plan as a table" instruction — and `/decisions` after it, as many as you want |
 | `Tab` | Fill in the highlighted command; again for its values |
 | `⌘F` / `Ctrl+F` | Find in this conversation |
 | `Enter` / `Shift`+`Enter` *(in find)* | Next / previous match |
@@ -954,6 +965,7 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     media/charts.js    the SVG chart set the sheet draws with
     media/prompts.js   the composer's prompt recall ring
     media/snippets.js  /table and friends: what you typed, plus a standing instruction
+    media/palette.js   what a slash offers, and what picking one writes
     media/panel.css    all the styling
     media/panel.js     webview front end
     media/transport.js the one seam: the editor's API, or the same over a socket
