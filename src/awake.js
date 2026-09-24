@@ -7,8 +7,15 @@ const { spawn } = require('child_process');
  *
  * A laptop that goes to sleep takes every instance with it, and the phone finds
  * a dead socket at three in the morning. So while an instance is working — or
- * running with a device able to reach it — this holds an assertion against idle
- * sleep, and lets go the moment there is nothing left to hold it for.
+ * while a phone could reach this window at all — this holds an assertion
+ * against idle sleep, and lets go the moment there is nothing left to hold it
+ * for.
+ *
+ * What it cannot do is stop the lid. A MacBook with its lid closed sleeps
+ * whatever any process asks, unless it is plugged in with a display attached;
+ * the only thing that overrides that is a system setting that needs an
+ * administrator and outlives this process, which is not a thing to change on
+ * somebody's behalf. So every place this is offered says so.
  *
  * Two things it deliberately does not do: it never keeps the display awake, and
  * it is off unless asked. Keeping somebody's laptop awake is not a decision to
@@ -111,9 +118,12 @@ class Awake {
  * The rule for when it is held, in one place so the status sheet and the thing
  * doing the holding cannot disagree.
  *
- * Working means working: a turn is in flight. Running-and-reachable is the
- * overnight case — an idle instance is worth keeping alive only if something
- * could actually reach it, which means the server is listening.
+ * Working means working: a turn is in flight, and a laptop that sleeps halfway
+ * through one loses it. Listening is the other reason, and it is enough on its
+ * own — the switch exists so a phone can always reach this laptop, and the time
+ * that matters most is when nothing is running and you want to start
+ * something. An earlier rule held only while an instance was running, which let
+ * the laptop sleep at exactly that moment.
  *
  * @returns {{hold: boolean, reason: string|null}}
  */
@@ -129,16 +139,84 @@ function shouldHold({ enabled, sessions, serving }) {
         : `${busy.length} instances are working`
     };
   }
-  if (serving) {
-    const running = list.filter((s) => s.isRunning);
-    if (running.length) {
-      return {
-        hold: true,
-        reason: `${running.length} instance${running.length === 1 ? '' : 's'} running and reachable`
-      };
-    }
-  }
+  if (serving) return { hold: true, reason: 'listening for your phone' };
   return { hold: false, reason: null };
 }
 
-module.exports = { Awake, shouldHold };
+/**
+ * The switch, as opposed to the thing it switches.
+ *
+ * One setting, changed from two places — the editor, and a phone that may be in
+ * another country — and one rule applied to it. Both talk to this, so neither
+ * has to know how the other changed it, and whoever is watching is told either
+ * way: a phone that turned it off sees it off, and so does the other phone.
+ */
+class KeepAwake {
+  /**
+   * @param {object} deps
+   * @param {Awake} deps.awake                       what does the holding
+   * @param {() => boolean} deps.enabled             the setting, read fresh
+   * @param {(on: boolean) => Promise} deps.write    the setting, written
+   * @param {() => object[]} [deps.sessions]
+   * @param {() => boolean} [deps.serving]
+   */
+  constructor(deps) {
+    this.awake = deps.awake;
+    this.enabled = deps.enabled;
+    this.write = deps.write;
+    this.sessions = deps.sessions || (() => []);
+    this.serving = deps.serving || (() => false);
+    this.listeners = new Set();
+    this.said = null;
+  }
+
+  /** Apply the rule, and tell whoever is watching if what they would see changed. */
+  reconsider() {
+    const verdict = shouldHold({
+      enabled: this.enabled(),
+      sessions: this.sessions(),
+      serving: this.serving()
+    });
+    if (verdict.hold) this.awake.hold(verdict.reason);
+    else this.awake.release();
+
+    const now = this.state();
+    const shape = JSON.stringify(now);
+    if (shape === this.said) return now;
+    this.said = shape;
+    for (const fn of this.listeners) {
+      try { fn(now); } catch (_) { /* one listener's problem */ }
+    }
+    return now;
+  }
+
+  /** Whether it is on, and — a different question — whether it is holding. */
+  state() {
+    const held = this.awake.state();
+    return {
+      on: !!this.enabled(),
+      held: held.held,
+      since: held.since,
+      reason: held.reason,
+      supported: held.supported
+    };
+  }
+
+  /** Turn it on or off, and answer with what is true afterwards. */
+  async set(on) {
+    await this.write(!!on);
+    return this.reconsider();
+  }
+
+  onChange(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  dispose() {
+    this.listeners.clear();
+    this.awake.dispose();
+  }
+}
+
+module.exports = { Awake, KeepAwake, shouldHold };

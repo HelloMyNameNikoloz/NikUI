@@ -24,7 +24,7 @@ const { PairingWindow } = require('./pairing');
 const { PairPanel } = require('./pairPanel');
 const { loadIdentity } = require('./identity');
 const { Tailscale, Cloudflared } = require('./tunnel');
-const { Awake, shouldHold } = require('./awake');
+const { Awake, KeepAwake } = require('./awake');
 const { loadVapid } = require('./push');
 const { Notifier } = require('./notify');
 const { openSettings, schemaFrom, rememberModelsIn } = require('./settingsMenu');
@@ -500,13 +500,21 @@ function activate(context) {
     }
   }));
 
-  // The sheet should be able to say whether the machine is being held awake,
-  // and the thing holding it needs to know whether the server is listening, so
-  // each is handed a way to ask the other rather than a reference to it.
+  // The sheet should be able to say whether the machine is being held awake, a
+  // phone should be able to switch it, and the thing holding it needs to know
+  // whether the server is listening — so each is handed a way to ask the other
+  // rather than a reference to it.
   let awake = null;
-  const server = serveLocally(context, manager,
-    { state: () => (awake ? awake.state() : null) }, folders);
+  const told = new Set();
+  const server = serveLocally(context, manager, {
+    state: () => (awake ? awake.state() : null),
+    set: (on) => (awake ? awake.set(on) : Promise.reject(new Error('not ready yet'))),
+    // The server is made first, so what it wants to hear is kept until there
+    // is something to hear it from.
+    onChange: (fn) => { told.add(fn); return () => told.delete(fn); }
+  }, folders);
   awake = keepAwake(context, manager, server);
+  awake.onChange((now) => { for (const fn of told) fn(now); });
 
   // Settings that change how a conversation is drawn reach the pages that are
   // already open. They used to be sent once, in the first message a client got,
@@ -557,6 +565,10 @@ function offerModelsToComposer(store) {
  * Off unless asked, because keeping somebody's laptop awake is not a decision
  * to make for them; released the moment nothing needs it, because a machine
  * that never sleeps through a forgotten flag is its own bug.
+ *
+ * The setting is written for the whole machine rather than this workspace: it
+ * is a question about the laptop, and a phone switching it off should not leave
+ * another window holding it on.
  */
 function keepAwake(context, manager, server) {
   // A keep-awake that cannot hold anything says so once, rather than looking
@@ -570,18 +582,18 @@ function keepAwake(context, manager, server) {
     }
   });
 
-  const reconsider = () => {
-    let enabled = false;
-    try { enabled = vscode.workspace.getConfiguration('nikui').get('keepAwake', false); } catch (_) { enabled = false; }
-    const verdict = shouldHold({
-      enabled,
-      sessions: manager.list,
-      serving: !!(server && server.listening)
-    });
-    if (verdict.hold) awake.hold(verdict.reason);
-    else awake.release();
-  };
+  const keeping = new KeepAwake({
+    awake,
+    enabled: () => {
+      try { return vscode.workspace.getConfiguration('nikui').get('keepAwake', false); } catch (_) { return false; }
+    },
+    write: (on) => vscode.workspace.getConfiguration('nikui')
+      .update('keepAwake', on, vscode.ConfigurationTarget.Global),
+    sessions: () => manager.list,
+    serving: () => !!(server && server.listening)
+  });
 
+  const reconsider = () => keeping.reconsider();
   manager.on('changed', reconsider);
   manager.on('session-changed', reconsider);
   manager.on('paused', reconsider);
@@ -594,9 +606,9 @@ function keepAwake(context, manager, server) {
   }
   // Quitting the editor lets go of it, rather than leaving the machine awake
   // on the strength of a process that is no longer there.
-  context.subscriptions.push({ dispose: () => awake.dispose() });
+  context.subscriptions.push({ dispose: () => keeping.dispose() });
   reconsider();
-  return awake;
+  return keeping;
 }
 
 /**
@@ -673,6 +685,9 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     host: served,
     terminals,
     audience,
+    // Whether this laptop may sleep, readable by any paired device and
+    // switchable by one that may send prompts.
+    keepAwake: awakeState || null,
     sessions: { list: () => manager.list, get: (id) => manager.get(id) },
     // The same folders, projects and history the editor shows, so a phone is
     // looking at this window rather than at a list of what happens to be in it.
@@ -798,11 +813,18 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     const paired = devices.list().length;
     // Reachable from elsewhere is a different state from listening, and the
     // status bar is where you should be able to tell them apart at a glance.
-    bar.text = server.exposed ? `$(radio-tower) NikUI · ${server.publicHost}` : `$(broadcast) NikUI :${server.port}`;
+    // A laptop that will not sleep should say so where you would look when
+    // wondering why it did not: a machine awake because of a flag somebody
+    // forgot is a bug with no symptom but a flat battery.
+    const awake = awakeState && awakeState.state ? awakeState.state() : null;
+    const held = !!(awake && awake.held);
+    bar.text = (server.exposed ? `$(radio-tower) NikUI · ${server.publicHost}` : `$(broadcast) NikUI :${server.port}`) +
+      (held ? ' $(coffee)' : '');
     bar.tooltip = (server.exposed
       ? `NikUI is reachable on the tailnet at ${server.publicScheme}://${server.publicHost}`
       : `NikUI is serving this window on 127.0.0.1:${server.port}, and nowhere else`) +
       (paired ? ` · ${paired} paired device${paired === 1 ? '' : 's'}` : '') +
+      (held ? ' · keeping this laptop awake' : '') +
       // Only said when it is the unusual answer. A tooltip that lists every
       // setting at its default is a tooltip nobody reads to the end.
       (exposure().sealed ? '' : ' · not requiring encryption') +
@@ -812,6 +834,11 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     bar.show();
   };
   context.subscriptions.push({ dispose: devices.onChange(paint) });
+  // Switched here or from a phone, everyone who can see the switch is told:
+  // the phones over their sockets, and this window in its status bar.
+  if (awakeState && awakeState.onChange) {
+    context.subscriptions.push({ dispose: awakeState.onChange(() => { server.broadcastAwake(); paint(); }) });
+  }
 
   const start = async () => {
     if (server.listening) return server;
@@ -1132,6 +1159,28 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     paint();
   };
 
+  /** The keep-awake switch as a line in the menu, saying what it is now. */
+  const awakeItem = () => {
+    const now = awakeState && awakeState.state ? awakeState.state() : null;
+    if (!now || now.supported === false) return null;
+    return now.on
+      ? { label: '$(debug-pause) Let this laptop sleep again', id: 'sleep',
+          description: now.held ? 'currently: kept awake' : 'currently: on' }
+      : { label: '$(coffee) Keep this laptop awake', id: 'awake',
+          description: 'so your phone can always reach it' };
+  };
+
+  const switchAwake = async (on) => {
+    try {
+      await awakeState.set(on);
+      vscode.window.setStatusBarMessage(on
+        ? 'NikUI: keeping this laptop awake. Closing the lid still puts it to sleep.'
+        : 'NikUI: this laptop can sleep again', 5000);
+    } catch (err) {
+      vscode.window.showWarningMessage('NikUI could not change that: ' + ((err && err.message) || 'unknown error'));
+    }
+  };
+
   const menu = async () => {
     const how = exposure();
     const choice = await vscode.window.showQuickPick([
@@ -1144,6 +1193,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
         ? null
         : { label: '$(globe) Open a public address (read this first)', id: 'public' },
       { label: '$(clippy) Copy the link', id: 'copy' },
+      awakeItem(),
       // The two switches that decide what a phone can reach, phrased as what
       // they do rather than as the words in the settings file.
       how.sealed
@@ -1169,6 +1219,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     if (choice.id === 'public') return reachPublicly();
     if (choice.id === 'unreach') return unreach();
     if (choice.id === 'stop') return stop();
+    if (choice.id === 'awake') return switchAwake(true);
+    if (choice.id === 'sleep') return switchAwake(false);
     if (choice.id === 'seal') {
       return setExposure('requireEncryption', true, 'every device must now encrypt end to end');
     }

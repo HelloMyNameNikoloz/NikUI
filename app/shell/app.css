@@ -600,6 +600,9 @@ body.app-conversation footer {
   to { opacity: 1; transform: none; }
 }
 
+/* A screen that redraws itself whole arrives once, not on every redraw. */
+.screen.steady > * { animation: none; }
+
 /* Nothing is selectable except the things worth copying. */
 body.app { user-select: none; -webkit-user-select: none; }
 body.app input,

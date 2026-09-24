@@ -362,7 +362,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.remote.requireEncryption` | `true` | Refuse a device that will not seal the channel end to end |
 | `nikui.remote.appOnly` | `false` | Serve the app and nothing else outside this machine |
 | `nikui.apns.*` | empty | Apple team ID, key ID, `.p8` path and topic, for telling an iPhone something while the app is closed |
-| `nikui.keepAwake` | `false` | Hold this machine awake while an instance needs it |
+| `nikui.keepAwake` | `false` | Keep this laptop awake while NikUI listens for your phone — also switchable from the phone |
 | `nikui.notifyDevices` | needs-you, quota, failed | Which things are worth sending to a paired phone |
 
 ### One place for all of it
@@ -788,16 +788,34 @@ DevTools protocol is told, so a notification actually appearing is unproven.
 ### Keeping the laptop awake
 
 A laptop that sleeps takes every instance with it, and the phone finds a dead
-socket at three in the morning. `nikui.keepAwake` holds an assertion against
-idle sleep while an instance is **working** — or, while the server is listening,
-while one is merely **running**, since an idle instance is worth keeping alive
-only if something could reach it.
+socket at three in the morning. **Keep awake** stops that: while it is on, the
+laptop does not go to sleep on its own for as long as NikUI is listening for a
+phone — including when nothing is running, which is exactly when you want to
+start something from far away — and while any instance is working.
 
-Off by default, because keeping somebody's laptop awake is not a decision to
-make for them. The display is never kept on. The assertion is released the
-moment nothing needs it, and the helper it spawns is told to exit with the
-extension host, so a crash cannot leave a machine awake forever. The status
-sheet says whether it is held, and why.
+It is one switch with three places to flip it, all of them the same setting:
+
+- **On the phone:** Settings → *Your laptop* → **Keep awake**. On is one tap.
+  Off is two, and the second says why: once the laptop sleeps, a phone in
+  another country cannot wake it. Needs the same grant as sending prompts; a
+  watching-only device can see it and not change it. Every switch is written
+  into the trail with the device that did it.
+- **In the editor:** the NikUI status bar item → *Keep this laptop awake* /
+  *Let this laptop sleep again*, or `NikUI: Settings` → *This machine*.
+- **Anywhere:** `nikui.keepAwake`, which is a machine-wide setting — a phone
+  turning it off does not leave another window holding it on.
+
+Whichever end changes it, every connected phone is told at once, and the status
+bar shows a ☕ while the laptop is being held.
+
+What it cannot do is stop the lid. A closed MacBook sleeps whatever any process
+asks, unless it is plugged in with a display attached; the only override is a
+system setting that needs an administrator and outlives NikUI, which is not a
+thing to change on somebody's behalf. The phone says so under the switch. The
+display is never kept on, the assertion is released the moment nothing needs
+it, and the `caffeinate` it spawns exits with the extension host, so a crash
+cannot leave a machine awake forever. Off by default: keeping somebody's
+laptop awake is not a decision to make for them.
 
 ### Going public, and why it is the second choice
 

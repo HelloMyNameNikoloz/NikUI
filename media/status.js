@@ -668,7 +668,11 @@
   function awakeLine(awake) {
     if (!awake) return 'as the system decides';
     if (!awake.supported) return 'as the system decides';
-    if (!awake.held) return 'allowed — nothing is holding this machine awake';
+    if (!awake.held) {
+      return awake.on === false
+        ? 'allowed — keep awake is off'
+        : 'allowed — nothing is holding this machine awake';
+    }
     return 'held awake · ' + (awake.reason || 'an instance is running') +
       (awake.since ? ' · since ' + fmt.when(awake.since) : '');
   }

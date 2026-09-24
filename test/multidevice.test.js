@@ -330,7 +330,12 @@ module.exports = async function () {
   browser.send({ type: '@auth', device: null, nonce: 'this-machine-has-the-key' });
   await browser.waitFor('@welcome');
   void hello;
-  const barred = await asks(browser, { type: 'forget', id: 'anything' });
+  // Waiting for the refusal itself, not the next list: the device socket closed
+  // just above is still being taken down, and its leaving is a list of its own
+  // that can land first on a busy machine.
+  const refusal = browser.waitWhere((m) => m && m.type === 'devices' && !!m.refused, 4000);
+  browser.send({ type: 'forget', id: 'anything' });
+  const barred = await refusal;
   check('it is told only a paired device may', /only a paired device/.test(barred.refused || ''));
 
   browser.close();

@@ -91,6 +91,9 @@ class RemoteServer {
     // Running a command on this machine, when a device is allowed to. Null when
     // the window has not been given one, which is how the feature is turned off.
     this.terminals = deps.terminals || null;
+    // Whether this laptop may go to sleep: `state()` and `set(on)`. Null when the
+    // window has not offered it, which a phone reads as "nothing to show".
+    this.keepAwake = deps.keepAwake || null;
     this.projectRoot = deps.projectRoot || null;
     this.history = deps.history || null;
     this.report = deps.report || null;
@@ -128,6 +131,9 @@ class RemoteServer {
       this.stopWatchingDevices = this.devices.onChange(() => {
         this.reconcile();
         this.broadcastDevices();
+        // Who may flip the keep-awake switch is a grant, so a grant changing is
+        // news to that row as well.
+        this.broadcastAwake();
       });
     }
     if (typeof deps.watchFleet === 'function') {
@@ -882,6 +888,8 @@ ${this.appHead(nonce)}</head>
           if (message.type === 'status') return void client.post(this.statusMessage());
           if (message.type === 'devices') return void client.post(this.devicesMessage(client));
           if (message.type === 'forget') return void this.forgetFor(client, message.id);
+          if (message.type === 'awake') return void this.tellAwake(client);
+          if (message.type === 'awake:set') return void (await this.setAwakeFor(client, message.on));
           if (message.type.indexOf('term:') === 0) return void this.terminalFor(client, message);
         } catch (err) {
           // A handler that throws used to answer nothing at all, and nothing at
@@ -1051,6 +1059,95 @@ ${this.appHead(nonce)}</head>
     // the removed device was holding — including this one, when it is its own.
     this.devices.forget(target.id);
     if (this.audience) this.audience.forget(target.id);
+  }
+
+  /**
+   * Whether this laptop will stay awake, as one device sees it.
+   *
+   * Anybody paired may know — "will I still be able to reach it tonight" is a
+   * question about reading, not changing. Only a device that may send prompts
+   * may flip it, and `mayChange` is how the phone knows which it is.
+   */
+  awakeMessage(client) {
+    if (!this.keepAwake) return { type: 'awake', available: false };
+    const seat = client && client.device;
+    const now = this.keepAwake.state() || {};
+    return {
+      type: 'awake',
+      available: true,
+      on: !!now.on,
+      held: !!now.held,
+      since: now.since || null,
+      reason: now.reason || null,
+      supported: now.supported !== false,
+      mayChange: this.mayKeepAwake(seat)
+    };
+  }
+
+  /**
+   * The same grant as sending a prompt, for the same reason as removing another
+   * device: it changes what this machine does, rather than showing what it is
+   * doing. A watching seat that could keep a laptop awake all week, or let it
+   * sleep in the middle of somebody else's job, would not be watching.
+   *
+   * The editor's own browser on loopback is this machine, as it is for the
+   * terminal, and may.
+   */
+  mayKeepAwake(seat) {
+    if (!seat) return false;
+    return seat.kind === 'device' ? !!seat.control : true;
+  }
+
+  /** Answer one device, and remember that it has been told. */
+  tellAwake(client) {
+    const message = this.awakeMessage(client);
+    client.awakeSaid = JSON.stringify(message);
+    client.post(message);
+  }
+
+  /** A phone switching it: on, off, and what is true afterwards. */
+  async setAwakeFor(client, on) {
+    const seat = client && client.device;
+    const wanted = !!on;
+    if (!this.keepAwake) return void client.post(this.awakeMessage(client));
+
+    if (!this.mayKeepAwake(seat)) {
+      this.note(seat, wanted ? 'tried to keep the laptop awake' : 'tried to let the laptop sleep', '', false);
+      return void client.post(Object.assign(this.awakeMessage(client), {
+        refused: 'This device can watch but not change that. Grant it control in the editor.'
+      }));
+    }
+
+    try {
+      await this.keepAwake.set(wanted);
+    } catch (err) {
+      return void client.post(Object.assign(this.awakeMessage(client), {
+        refused: 'The laptop would not change it: ' + ((err && err.message) || 'unknown error')
+      }));
+    }
+    this.note(seat, wanted ? 'kept the laptop awake' : 'let the laptop sleep', '');
+    // Answered directly as well as broadcast: switching it to what it already
+    // was changes nothing, so nothing would be broadcast, and a phone waiting
+    // on an answer that never comes says the laptop is unreachable.
+    this.tellAwake(client);
+  }
+
+  /**
+   * Every watching device, told what the switch says now — each in its own
+   * terms, and only when those changed. This is called whenever the device list
+   * moves, which includes a device merely being seen again; saying the same
+   * thing to four sockets every time a phone is looked at is noise.
+   */
+  broadcastAwake() {
+    if (!this.keepAwake || !this.fleetClients.size) return;
+    for (const client of this.fleetClients) {
+      if (!client.open) continue;
+      const message = this.awakeMessage(client);
+      const said = JSON.stringify(message);
+      if (said === client.awakeSaid) continue;
+      client.awakeSaid = said;
+      client.post(message);
+    }
   }
 
   /**

@@ -61,7 +61,7 @@ const NAMES = {
   'nikui.remote.autoStart': 'Start the server when this window opens',
   'nikui.remote.requireEncryption': 'Require devices to encrypt end to end',
   'nikui.remote.appOnly': 'Serve the app only, no browser page',
-  'nikui.keepAwake': 'Hold this machine awake while an instance needs it',
+  'nikui.keepAwake': 'Keep this laptop awake, so your phone can always reach it',
   'nikui.notifyDevices': 'What is worth sending to a paired phone',
   'nikui.apns.teamId': 'Apple team ID',
   'nikui.apns.keyId': 'APNs key ID',

@@ -78,6 +78,13 @@ const checks = [];
  */
 const shout = (words) => { console.log('  ' + words); return false; };
 
+// SHOTS=1 keeps a picture of the screens a check has just changed, for looking
+// at rather than asserting about: app/screens/, which is never committed.
+const shoot = async (phone, name) => {
+  if (!process.env.SHOTS) return;
+  await phone.shot(path.join(APP, 'screens', 'check-' + name + '.png'));
+};
+
 const record = (name, ok) => {
   checks.push([name, !!ok]);
   console.log((ok ? 'PASS  ' : 'FAIL  ') + name);
@@ -113,9 +120,31 @@ const record = (name, ok) => {
     onEvent: (event) => laptop.terminalSaid(event)
   });
 
+  // The keep-awake switch the editor uses, over a caffeinate that holds nothing.
+  const { Awake, KeepAwake } = require(path.join(REPO, 'src', 'awake.js'));
+  let awakeSetting = false;
+  const caffeinated = [];
+  const keeping = new KeepAwake({
+    awake: new Awake({
+      platform: 'darwin',
+      spawn: () => {
+        const proc = new EventEmitter();
+        proc.kill = () => { proc.killed = true; proc.emit('exit', 0); };
+        proc.unref = () => {};
+        caffeinated.push(proc);
+        return proc;
+      }
+    }),
+    enabled: () => awakeSetting,
+    write: async (on) => { awakeSetting = on; },
+    serving: () => !!(laptop && laptop.listening)
+  });
+  const heldAwake = () => caffeinated.filter((p) => !p.killed).length;
+
   const laptop = new RemoteServer({
     root: REPO,
     terminals,
+    keepAwake: keeping,
     host: {
       config: () => ({ showThinking: true, promptSnippets: {} }),
       home: '/home', knownCommands: () => ['status'],
@@ -139,6 +168,8 @@ const record = (name, ok) => {
   // copy of the client from the laptop is the case worth seeing said out loud.
   laptop.version = '99.99.99';
   await laptop.start(0);
+  keeping.onChange(() => laptop.broadcastAwake());
+  keeping.reconsider();
 
   const bundle = await serveBundle(path.join(APP, 'www'));
   const appOrigin = `http://127.0.0.1:${bundle.address().port}`;
@@ -332,6 +363,24 @@ const record = (name, ok) => {
       new RegExp(`127.0.0.1:${laptop.port}`).test(await phone.evaluate('document.body.textContent')));
     record('and that the key is pinned',
       /pinned/i.test(await phone.evaluate('document.body.textContent')));
+
+    // ---- keeping the laptop awake --------------------------------------------
+    //
+    // Right under the connection: that says whether the laptop is there now,
+    // this says whether it will still be there tonight.
+    const awakeRow = `[...document.querySelectorAll('.row')].find(r => /Keep awake|let it sleep/.test(r.textContent))`;
+    record('settings says whether the laptop will stay awake',
+      await phone.until(`!!(${awakeRow})`, 8000));
+    record('in its own group, straight after the connection',
+      (await phone.evaluate(`[...document.querySelectorAll('.group-title')].map(t => t.textContent).slice(0, 2).join('|')`))
+        === 'Connection|Your laptop');
+    record('and says plainly what it cannot do',
+      /Closing the lid still puts it to sleep/.test(await phone.evaluate('document.body.textContent')));
+    record('a watching-only device is shown it, not handed it',
+      (await phone.evaluate(`(${awakeRow}).tagName`)) !== 'BUTTON');
+    record('and is told why',
+      /Only a device that may send prompts can change this/.test(await phone.evaluate(`(${awakeRow}).textContent`)));
+    await shoot(phone, 'awake-watching');
     // ---- the other devices, from this one ------------------------------------
     //
     // Losing a phone is the moment you are not at the laptop, and the laptop was
@@ -399,6 +448,37 @@ const record = (name, ok) => {
       await phone.until('!/The other phone/.test(document.body.textContent)', 8000));
     record('written down as one device removing another',
       devices.recent(8).some((e) => /removed another device/.test(e.action)));
+
+    record('with control, keep awake becomes a switch',
+      await phone.until(`(${awakeRow}).tagName === 'BUTTON'`, 8000));
+    await phone.evaluate(`(${awakeRow}).click()`);
+    record('one tap turns it on',
+      await phone.until(`/On/.test((${awakeRow}).querySelector('.row-value').textContent)`, 8000));
+    record('on the laptop, not just on the screen', awakeSetting === true && heldAwake() === 1);
+    record('and the row says since when',
+      /Awake since/.test(await phone.evaluate(`(${awakeRow}).textContent`)));
+    await shoot(phone, 'awake-on');
+    record('written down as this phone keeping it awake',
+      devices.recent(8).some((e) => e.action === 'kept the laptop awake' && e.device === 'Check phone'));
+
+    // Off is the one switch here that cannot be undone from far away, so the
+    // first tap only says what the second one will do.
+    await phone.evaluate(`(${awakeRow}).click()`);
+    record('turning it off asks first',
+      /Tap again to let it sleep/.test(await phone.evaluate(`(${awakeRow}).textContent`)) && awakeSetting === true);
+    record('and says why it asks',
+      /cannot wake it/.test(await phone.evaluate(`(${awakeRow}).textContent`)));
+    await shoot(phone, 'awake-armed');
+    await phone.evaluate(`(${awakeRow}).click()`);
+    record('the second tap lets it sleep',
+      await phone.until(`/Off/.test((${awakeRow}).querySelector('.row-value').textContent)`, 8000));
+    record('and the laptop lets go', awakeSetting === false && heldAwake() === 0);
+
+    await keeping.set(true);
+    record('switched at the laptop, the phone follows without a reload',
+      await phone.until(`/On/.test((${awakeRow}).querySelector('.row-value').textContent)`, 8000));
+    await keeping.set(false);
+    await phone.until(`/Off/.test((${awakeRow}).querySelector('.row-value').textContent)`, 8000);
 
     devices.setControl(paired.id, false);
     await phone.until('/Watching only/.test(document.body.textContent)', 8000);

@@ -30,6 +30,8 @@
     apple: null,            // whether this iPhone can be reached while closed
     lock: null,             // whether this app asks for a passcode, and what it may use
     biometrics: null,       // what this phone can check, and what to call it
+    awake: null,            // whether the laptop may sleep, and whether this device may say
+    switching: null,        // 'on' or 'off' while the laptop is being asked to change it
     devices: null,          // everything paired with this laptop, as this device sees it
     mayManage: false,       // whether this device may take another one off
     me: null                // which of them is this one
@@ -85,6 +87,16 @@
     return Math.round(ms / 86400000) + 'd ago';
   };
 
+  /** A time of day, or a day and a time when it was not today. */
+  const clock = (at) => {
+    if (!at) return 'now';
+    const when = new Date(at);
+    const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return when.toDateString() === new Date().toDateString()
+      ? time
+      : when.toLocaleDateString([], { weekday: 'short' }) + ' ' + time;
+  };
+
   const shortKey = (key) => (key ? String(key).slice(0, 8) + '…' : 'none');
 
   /** A small physical confirmation that a tap did something. */
@@ -114,6 +126,11 @@
   // ---- what the screen says ------------------------------------------------
 
   function draw() {
+    // The first drawing arrives; every one after it is the same screen saying
+    // one thing differently. Rebuilt children would each fade back in from
+    // nothing, so a switch flipped on the other phone read as the whole screen
+    // blinking — the flash Status had, arrived at by another road.
+    if (screen.firstElementChild) screen.classList.add('steady');
     screen.textContent = '';
 
     const connection = group('Connection', state.connection === 'live'
@@ -150,6 +167,8 @@
       tap: () => { state.connection = 'checking'; state.health = null; draw(); probe(); },
       chevron: true
     });
+
+    drawAwake();
 
     // ---- what protects this connection ------------------------------------
     //
@@ -391,6 +410,90 @@
   }
 
   /**
+   * Whether the laptop may go to sleep — which is whether this phone will be
+   * able to reach it later.
+   *
+   * Next to the connection because it is the same question asked about the
+   * future: that one says whether the laptop is there now, this one whether it
+   * will still be there tonight.
+   *
+   * Turning it off takes two taps, and the second says why. From the other side
+   * of a country it is the one switch here that cannot be undone from here: a
+   * laptop that has gone to sleep is not listening for a phone to wake it.
+   */
+  function drawAwake() {
+    const now = state.awake;
+    if (!now || !now.available) return;
+
+    if (now.supported === false) {
+      row(group('Your laptop'), {
+        label: 'Keep awake',
+        hint: 'Only a Mac can be kept awake from here.',
+        value: 'Not on this laptop'
+      });
+      return;
+    }
+
+    const list = group('Your laptop',
+      'Stops it sleeping on its own while NikUI is open, so this phone can always reach it. ' +
+      'The screen still turns off. Closing the lid still puts it to sleep.');
+
+    const on = !!now.on;
+    let hint;
+    if (state.switching) hint = state.switching === 'on' ? 'Turning it on…' : 'Turning it off…';
+    else if (!now.mayChange) hint = 'Only a device that may send prompts can change this.';
+    else if (on && now.held) hint = 'Awake since ' + clock(now.since) + (now.reason ? ' · ' + now.reason : '');
+    else if (on) hint = 'On, but your laptop could not hold itself awake.';
+    else hint = 'Off. It sleeps when idle, and this phone cannot reach it until it wakes.';
+
+    row(list, {
+      label: 'Keep awake',
+      hint,
+      value: on ? 'On' : 'Off',
+      tone: on ? (now.held ? 'good' : 'warn') : '',
+      tap: now.mayChange && !state.switching
+        ? (event) => (on ? armSleep(event) : setAwake(true))
+        : null
+    });
+  }
+
+  /** Ask the laptop to change it, and say so if it never answers. */
+  function setAwake(on) {
+    if (!transport || state.switching) return;
+    state.switching = on ? 'on' : 'off';
+    draw();
+    transport.postMessage({ type: 'awake:set', on: on });
+    buzz('medium');
+    if (state.switchTimer) clearTimeout(state.switchTimer);
+    state.switchTimer = setTimeout(() => {
+      state.switchTimer = null;
+      if (!state.switching) return;
+      state.switching = null;
+      draw();
+      flash('Your laptop did not answer.');
+    }, 10000);
+  }
+
+  /** The first tap says what the second one does, in the row itself. */
+  function armSleep(event) {
+    const node = event.currentTarget;
+    if (node.dataset.armed === '1') return setAwake(false);
+    const name = node.querySelector('b');
+    const note = node.querySelector('small');
+    const was = [name.textContent, note ? note.textContent : null];
+    node.dataset.armed = '1';
+    name.textContent = 'Tap again to let it sleep';
+    if (note) note.textContent = 'Once it sleeps, this phone cannot wake it.';
+    buzz('heavy');
+    setTimeout(() => {
+      if (!node.isConnected || node.dataset.armed !== '1') return;
+      node.dataset.armed = '';
+      name.textContent = was[0];
+      if (note) note.textContent = was[1];
+    }, 4000);
+  }
+
+  /**
    * The lock on this app's own front door.
    *
    * Worth being exact about what it is for, because the wrong idea about it
@@ -592,6 +695,17 @@
         state.control = message.device ? message.device.control !== false : null;
         state.sealed = !!(transport && transport.sealed && transport.sealed());
         transport.postMessage({ type: 'devices' });
+        transport.postMessage({ type: 'awake' });
+        draw();
+      } else if (message.type === 'awake') {
+        // Changed here, on the other phone, or at the laptop: all three arrive
+        // the same way, so the row cannot disagree with the machine.
+        const asked = state.switching;
+        if (state.switchTimer) { clearTimeout(state.switchTimer); state.switchTimer = null; }
+        state.switching = null;
+        state.awake = message;
+        if (message.refused) flash(message.refused);
+        else if (asked) flash(message.on ? 'It will stay awake.' : 'It can sleep now.');
         draw();
       } else if (message.type === 'devices') {
         if (message.refused) flash(message.refused);
@@ -748,6 +862,9 @@
       'background: ' + JSON.stringify(state.watching),
       'while closed: ' + JSON.stringify(state.apple),
       'permission: ' + (state.control === null ? 'unknown' : state.control ? 'can steer' : 'watching only'),
+      'keep awake: ' + (state.awake && state.awake.available
+        ? (state.awake.on ? 'on' : 'off') + (state.awake.held ? ', held since ' + new Date(state.awake.since).toISOString() : '')
+        : 'not offered'),
       'device id: ' + ((state.device && state.device.id) || 'not paired'),
       'key kept in: ' + ((state.device && state.device.protection) || 'software') +
         (state.device && state.device.biometric ? ' (behind a biometric check)' : ''),

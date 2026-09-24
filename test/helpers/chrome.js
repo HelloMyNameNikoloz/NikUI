@@ -101,6 +101,13 @@ async function launch(binary) {
       throw new Error('the page never finished loading: ' + url);
     },
     evaluate: (expression) => evaluate(call, expression),
+    /** What the screen looks like right now, as a PNG on disk. */
+    shot: async (file) => {
+      const out = await call('Page.captureScreenshot', { format: 'png' });
+      fs.mkdirSync(require('path').dirname(file), { recursive: true });
+      fs.writeFileSync(file, Buffer.from(out.data, 'base64'));
+      return file;
+    },
     /**
      * Wait for the document to have finished loading.
      *

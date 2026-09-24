@@ -1,5 +1,5 @@
 'use strict';
-const { Awake, shouldHold } = require('../src/awake.js');
+const { Awake, KeepAwake, shouldHold } = require('../src/awake.js');
 
 /** caffeinate, without a machine to keep awake. */
 function fakeSpawn() {
@@ -88,12 +88,82 @@ module.exports = async function () {
 
   checkEqual('an idle instance on its own is not worth a sleepless laptop',
     shouldHold({ enabled: true, sessions: [idle], serving: false }).hold, false);
-  checkEqual('but an idle instance something can reach is',
+  // The switch exists so a phone can always reach the laptop — and the moment
+  // that matters most is when nothing is running and you want to start
+  // something. The rule used to let it sleep at exactly that moment.
+  checkEqual('listening for a phone is reason enough',
     shouldHold({ enabled: true, sessions: [idle], serving: true }).hold, true);
-  check('and says why',
-    /running and reachable/.test(shouldHold({ enabled: true, sessions: [idle], serving: true }).reason));
-  checkEqual('an instance that is not running keeps nothing awake',
-    shouldHold({ enabled: true, sessions: [asleep], serving: true }).hold, false);
-  checkEqual('nor does an empty window',
-    shouldHold({ enabled: true, sessions: [], serving: true }).hold, false);
+  checkEqual('even with nothing running at all',
+    shouldHold({ enabled: true, sessions: [], serving: true }).hold, true);
+  checkEqual('or nothing but instances that are asleep',
+    shouldHold({ enabled: true, sessions: [asleep], serving: true }).hold, true);
+  checkEqual('and it says why',
+    shouldHold({ enabled: true, sessions: [], serving: true }).reason, 'listening for your phone');
+  checkEqual('work in flight is the better reason, so it is the one given',
+    shouldHold({ enabled: true, sessions: [working], serving: true }).reason, '1327 is working');
+  checkEqual('with nothing listening and nothing working, it sleeps',
+    shouldHold({ enabled: true, sessions: [asleep], serving: false }).hold, false);
+
+  suite('the switch, from whichever end');
+
+  {
+    const spawns = fakeSpawn();
+    let setting = false;
+    let serving = true;
+    const keeping = new KeepAwake({
+      awake: new Awake({ spawn: spawns.spawn, platform: 'darwin', pid: 7 }),
+      enabled: () => setting,
+      write: async (on) => { setting = on; },
+      serving: () => serving
+    });
+    const heard = [];
+    keeping.onChange((now) => heard.push(now));
+
+    keeping.reconsider();
+    checkEqual('off, nothing is held', keeping.state().held, false);
+    checkEqual('and it says it is off', keeping.state().on, false);
+
+    const on = await keeping.set(true);
+    checkEqual('switching it on writes the setting', setting, true);
+    checkEqual('and holds the laptop straight away', on.held, true);
+    checkEqual('with the same assertion as ever', spawns.calls[0], 'caffeinate -i -s -w 7');
+    check('whoever is watching is told', heard.length >= 1 && heard[heard.length - 1].on === true);
+
+    const before = heard.length;
+    keeping.reconsider();
+    keeping.reconsider();
+    checkEqual('asking again changes nothing and tells nobody', heard.length, before);
+    await keeping.set(true);
+    checkEqual('nor does switching it to what it already is', heard.length, before);
+    checkEqual('and it is still one assertion, not two', spawns.calls.length, 1);
+
+    serving = false;
+    keeping.reconsider();
+    checkEqual('with nothing to listen for and nothing working, it lets go',
+      keeping.state().held, false);
+    checkEqual('though the switch itself is still on', keeping.state().on, true);
+    serving = true;
+    keeping.reconsider();
+
+    const off = await keeping.set(false);
+    checkEqual('switching it off writes that too', setting, false);
+    checkEqual('and lets the laptop sleep', off.held, false);
+    check('by ending what it started', spawns.spawned.every((p) => p.killed));
+    checkEqual('and says so', heard[heard.length - 1].on, false);
+
+    keeping.set(true).then(() => keeping.dispose());
+    await new Promise((r) => setTimeout(r, 0));
+    checkEqual('closing the window lets go as well', keeping.state().held, false);
+
+    const refusing = new KeepAwake({
+      awake: new Awake({ spawn: fakeSpawn().spawn, platform: 'darwin' }),
+      enabled: () => false,
+      write: async () => { throw new Error('settings are read-only here'); }
+    });
+    let reason = null;
+    await refusing.set(true).catch((err) => { reason = err.message; });
+    checkEqual('a setting that will not be written is an error, not a silence',
+      reason, 'settings are read-only here');
+    checkEqual('and nothing is held on the strength of it', refusing.state().held, false);
+  }
 };
