@@ -365,6 +365,6 @@ function schemaFrom(extensionPath) {
 }
 
 module.exports = {
-  openSettings, buildItems, settingRows, schemaFrom, pickModel, rememberModelsIn, useSwitch,
+  openSettings, buildItems, settingRows, schemaFrom, pickModel, rememberModelsIn, useSwitch, write,
   nameFor, groupFor, shown, summarise, GROUPS, NAMES, OTHER
 };

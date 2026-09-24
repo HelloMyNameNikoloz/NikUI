@@ -10,7 +10,7 @@
    pages were made empty in the first place — a stale transcript shown as if it
    were live is worse than no transcript at all. */
 
-const VERSION = 'nikui-shell-v2';
+const VERSION = 'nikui-shell-v3';
 
 // Everything needed to draw the app before a socket exists. Deliberately not
 // the pages themselves: those come from the network first, so a client that has
@@ -25,6 +25,7 @@ const SHELL = [
   '/media/palette.js',
   '/media/charts.js',
   '/media/status.js',
+  '/media/prefs.js',
   '/media/device.js',
   '/media/transport.js',
   '/media/boot.js',

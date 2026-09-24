@@ -141,6 +141,16 @@ const record = (name, ok) => {
   });
   const heldAwake = () => caffeinated.filter((p) => !p.killed).length;
 
+  // What /settings reads and writes: the real list, over settings kept here.
+  const prefs = require(path.join(REPO, 'src', 'prefs.js'));
+  const saved = {
+    model: '', effort: 'max', permissionMode: 'bypassPermissions', showThinking: true,
+    pauseWhenQuotaRuns: true, lidClosed: false,
+    notifyDevices: { needsYou: true, quota: true, failed: true, turnFinished: false },
+    fontSize: 13, interruptOnSingleEscape: false, notifyOnAttention: true, autoTitleFromTicket: true
+  };
+  const setting = (key) => (key === 'keepAwake' ? awakeSetting : saved[key]);
+
   const laptop = new RemoteServer({
     root: REPO,
     terminals,
@@ -148,7 +158,17 @@ const record = (name, ok) => {
     host: {
       config: () => ({ showThinking: true, promptSnippets: {} }),
       home: '/home', knownCommands: () => ['status'],
-      fleet: () => [session], env: () => ({ vscode: 'app check' })
+      fleet: () => [session], env: () => ({ vscode: 'app check' }),
+      settings: () => prefs.read(setting, {
+        awake: keeping.state(),
+        models: [{ value: 'claude-opus-5-5', label: 'Opus 5.5' },
+          { value: 'claude-opus-5-5[1m]', label: 'Opus 5.5', detail: '1M context' }]
+      }),
+      setSetting: (id, value) => prefs.write(id, value, {
+        get: setting,
+        set: async (key, v) => { saved[key] = v; },
+        special: { awake: (on) => keeping.set(on) }
+      })
     },
     sessions: { list: () => [session], get: (id) => (id === session.id ? session : null) },
     devices, identity, pairing, localKey: new LocalKey(),
@@ -1356,6 +1376,70 @@ const record = (name, ok) => {
       /npm run build/.test(await phone.evaluate('document.body.textContent')));
     record('on the laptop, in that instance\u2019s folder', shell && shell.ran === 'npm run build');
     shell.emit('close', 0, null);
+
+    // ---- /settings, typed on the phone ------------------------------------------
+    //
+    // The same sheet as the editor's, over the socket, into the same list: a
+    // switch flipped here is a setting changed on the laptop.
+    await phone.navigate(appOrigin + '/conversation.html?session=' + session.id);
+    await phone.until('!!document.getElementById("input")', 10000);
+    await phone.evaluate(`(() => {
+      const box = document.getElementById('input');
+      box.value = '/settings';
+      box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    })()`);
+    record('/settings on the phone opens the settings',
+      await phone.until('document.querySelectorAll(".prefs .prefs-group").length === 4', 10000));
+    record('said in words, in four groups',
+      (await phone.evaluate(`[...document.querySelectorAll('.prefs-group h3')].map(h => h.textContent).join('|')`))
+        === 'Claude|Your laptop|Notifications on your phone|In the editor');
+    record('with this CLI\u2019s models to choose from',
+      /Opus 5\.5/.test(await phone.evaluate(`document.querySelector('[data-choose="model"]').textContent`)));
+    await shoot(phone, 'settings-sheet');
+
+    await phone.evaluate(`document.querySelector('[data-toggle="thinking"]').click()`);
+    let flipped = false;
+    for (let i = 0; i < 100 && !flipped; i++) { flipped = saved.showThinking === false; if (!flipped) await wait(50); }
+    record('a switch flipped on the phone is changed on the laptop', flipped);
+    record('and the sheet shows what the laptop now says',
+      await phone.until(`document.querySelector('[data-toggle="thinking"]').getAttribute('aria-checked') === 'false' &&
+        !document.querySelector('[data-pref="thinking"]').classList.contains('pending')`, 8000));
+
+    await phone.evaluate(`(() => {
+      const pick = document.querySelector('[data-choose="effort"]');
+      pick.value = 'high';
+      pick.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    let chose = false;
+    for (let i = 0; i < 100 && !chose; i++) { chose = saved.effort === 'high'; if (!chose) await wait(50); }
+    record('a choice made on the phone is made on the laptop', chose);
+
+    await phone.evaluate(`document.querySelector('[data-toggle="awake"]').click()`);
+    let kept = false;
+    for (let i = 0; i < 100 && !kept; i++) { kept = awakeSetting === true && heldAwake() === 1; if (!kept) await wait(50); }
+    record('keep awake from /settings is the same switch as everywhere else', kept);
+    record('and the row says it is holding',
+      await phone.until(`/Awake now/.test(document.querySelector('[data-pref="awake"]').textContent)`, 8000));
+    await shoot(phone, 'settings-changed');
+    if (process.env.SHOTS) {
+      await phone.evaluate(`document.querySelector('.prefs').scrollTop = 1e6`);
+      await wait(150);
+      await shoot(phone, 'settings-lower');
+      // The editor's width, where most of this will be read.
+      await phone.asScreen(1100, 760);
+      await phone.evaluate(`document.querySelector('.prefs').scrollTop = 0`);
+      await wait(300);
+      await shoot(phone, 'settings-desktop');
+      await phone.asPhone(390, 844);
+    }
+    await keeping.set(false);
+
+    record('the phone is not offered the editor\u2019s full list',
+      (await phone.evaluate(`!document.querySelector('[data-act="all-settings"]')`)) === true);
+    await phone.evaluate(`document.querySelector('.prefs').closest('.sheet').querySelector('[data-act="close"]').click()`);
+    record('and it closes', (await phone.evaluate(`document.getElementById('status').hidden`)) === true);
+    saved.showThinking = true;
+    saved.effort = 'max';
 
     // A laptop that answers the handshake and then ignores this is one running a
     // NikUI from before there were terminals. Silence is the one thing this

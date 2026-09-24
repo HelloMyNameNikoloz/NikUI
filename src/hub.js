@@ -4,7 +4,7 @@ const { commandArgs } = require('./session');
 const { buildReport } = require('./report');
 
 // Commands NikUI answers itself rather than passing to the CLI.
-const OWN_COMMANDS = ['status'];
+const OWN_COMMANDS = ['status', 'settings'];
 
 /**
  * The messages that change something, as opposed to the ones that only watch.
@@ -18,7 +18,10 @@ const STEERING = new Set([
   'send', 'interrupt', 'permission', 'unqueue', 'promoteQueued',
   // Running a command is steering by any reading of the word: it is the same
   // machine and the same permissions as a prompt, by a shorter route.
-  'editQueued', 'clearQueue', 'openFile', 'switch', 'runInTerminal'
+  'editQueued', 'clearQueue', 'openFile', 'switch', 'runInTerminal',
+  // A setting changes what every instance does next, and whether the laptop
+  // sleeps. Reading them is watching; changing one is not.
+  'setSetting'
 ]);
 
 // A sheet that quietly goes stale while a turn runs is worse than no sheet, and
@@ -128,6 +131,33 @@ class SessionHub {
     return !entry || !entry.device || entry.device.control !== false;
   }
 
+  /** The editor's own panel, or a browser on this machine: somebody at this screen. */
+  isLocal(entry) {
+    return !entry || !entry.device || entry.device.kind !== 'device';
+  }
+
+  /** What the settings sheet draws, in this client's terms. */
+  settingsMessage(entry) {
+    let settings = null;
+    try { settings = typeof this.host.settings === 'function' ? this.host.settings() : null; }
+    catch (_) { settings = null; }
+    return {
+      type: 'settings',
+      settings,
+      mayChange: this.mayControl(entry),
+      // The full list of settings is the editor's, so only the editor is
+      // offered the way to it.
+      local: this.isLocal(entry)
+    };
+  }
+
+  /** Everyone with the sheet open, told what it says now. */
+  broadcastSettings() {
+    for (const [id, entry] of this.clients) {
+      if (entry.settingsOpen) this.send(id, this.settingsMessage(entry));
+    }
+  }
+
   detach(clientId) {
     const entry = this.clients.get(clientId);
     if (!entry) return false;
@@ -235,10 +265,13 @@ class SessionHub {
     const session = this.session;
 
     if (STEERING.has(msg.type)) {
+      // Which setting, not only that one was changed: "a phone changed a
+      // setting" is not an answer to "who turned the lid switch on".
+      const what = msg.type === 'setSetting' ? String(msg.id) + ' → ' + JSON.stringify(msg.value) : null;
       if (!this.mayControl(entry)) {
         // Refused, said so, and written down: a refused attempt is the entry
         // you would most want to find afterwards.
-        this.note(entry, msg.type, false);
+        this.note(entry, msg.type, false, what);
         this.send(clientId, {
           type: '@refused',
           what: msg.type,
@@ -246,7 +279,7 @@ class SessionHub {
         });
         return;
       }
-      this.note(entry, msg.type, true);
+      this.note(entry, msg.type, true, what);
       // A prompt is what makes a phone the owner of what follows. Anything else
       // a device does is only it being awake — steering is what says "tell me
       // when this is done", and the last phone to steer is the one holding it.
@@ -314,6 +347,36 @@ class SessionHub {
         }
         break;
 
+      // `/settings`: asked for, kept fresh while it is open, and changed one row
+      // at a time. The answer to a change goes to whoever made it — refused or
+      // not — and everybody else with the sheet open hears it from the setting
+      // itself changing, whichever window or phone changed it.
+      case 'settings':
+        entry.settingsOpen = true;
+        this.send(clientId, this.settingsMessage(entry));
+        break;
+
+      case 'settingsOpen':
+        entry.settingsOpen = !!msg.open;
+        break;
+
+      case 'setSetting': {
+        let refused = null;
+        try {
+          if (typeof this.host.setSetting !== 'function') throw new Error('This window does not offer settings.');
+          await this.host.setSetting(msg.id, msg.value, { local: this.isLocal(entry) });
+        } catch (err) {
+          refused = (err && err.message) || 'That could not be changed.';
+        }
+        this.send(clientId, Object.assign(this.settingsMessage(entry), refused ? { refused, id: msg.id } : {}));
+        break;
+      }
+
+      case 'allSettings':
+        // Only the editor has the full list, and only on this machine.
+        if (this.isLocal(entry) && typeof this.host.openAllSettings === 'function') this.host.openAllSettings();
+        break;
+
       case 'openFile':
         if (typeof this.host.openFile === 'function') {
           await this.host.openFile({ path: msg.path, line: msg.line, cwd: session.cwd });
@@ -347,13 +410,14 @@ class SessionHub {
    * What a device did, for the trail in /status. The editor's own panel is not
    * written down — the audit is about what arrived from somewhere else.
    */
-  note(entry, action, allowed) {
+  note(entry, action, allowed, detail) {
     if (!entry || !entry.device) return;
     if (typeof this.host.audit !== 'function') return;
     this.host.audit({
       device: entry.device,
       action,
       allowed,
+      detail: detail || null,
       instance: this.session.label,
       sessionId: this.session.id
     });

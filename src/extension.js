@@ -517,7 +517,7 @@ function activate(context) {
   if (vscode.workspace.onDidChangeConfiguration) {
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
       if (event && event.affectsConfiguration && !event.affectsConfiguration('nikui')) return;
-      eachHub((hub) => hub.broadcast(hub.metaMessage()));
+      eachHub((hub) => { hub.broadcast(hub.metaMessage()); hub.broadcastSettings(); });
       tree.refresh();
     }));
   }
@@ -893,7 +893,12 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   // Switched here or from a phone, everyone who can see the switch is told:
   // the phones over their sockets, and this window in its status bar.
   if (awakeState && awakeState.onChange) {
-    context.subscriptions.push({ dispose: awakeState.onChange(() => { server.broadcastAwake(); paint(); }) });
+    context.subscriptions.push({ dispose: awakeState.onChange(() => {
+      server.broadcastAwake();
+      paint();
+      // An open /settings sheet says whether the laptop is holding right now.
+      eachHub((hub) => hub.broadcastSettings());
+    }) });
   }
 
   const start = async () => {

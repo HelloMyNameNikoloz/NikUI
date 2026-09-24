@@ -389,6 +389,17 @@ body.home .sdot.asleep {
   /* Two columns of numbers on a phone is one column of numbers. */
   .tiles { grid-template-columns: 1fr; }
 
+  /* /settings with a thumb: rows a thumb can hit, a switch the size of the
+     system's, and pickers at 16px so iOS does not zoom the page to open them. */
+  .prefs { padding: 12px; }
+  .pref { min-height: 44px; }
+  .switch { width: 51px; height: 31px; border-radius: 16px; }
+  .switch .knob { width: 27px; height: 27px; }
+  .switch[aria-checked="true"] .knob { transform: translateX(20px); }
+  .pref select { font-size: 16px; max-width: 46vw; min-height: 36px; }
+  .stepper button { width: 40px; height: 40px; }
+  .prefs-foot button { min-height: 44px; }
+
   /* Nothing scrolls sideways except the fleet table, which says so itself. */
   body { overflow-x: hidden; }
   .msg-text pre { max-width: 100%; }

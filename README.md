@@ -57,6 +57,16 @@ owns the whole surface.
   so `/model ` offers **Opus 5.5** and its 1M variant by name, above the
   aliases, the day Claude Code ships them. Typing matches anywhere in an
   identifier, since every one of them starts `claude-`.
+- **`/settings`.** The settings people actually change, as switches and pickers
+  in one sheet, said the way you would say them: the model (from this CLI's own
+  list), effort, permissions, thinking, waiting out the usage limit; keeping
+  the laptop awake and working with the lid closed; which things buzz your
+  phone; text size and the Escape rule. Four groups, one column, nothing to
+  look up. It works the same on the phone — a phone that may send prompts may
+  flip any of them, a watching one sees them locked and is told why, and
+  neither can reach anything that is not on the list. Everything else is one
+  click away under *All settings…* in the editor. `/settings anything` still
+  goes to the CLI.
 - **A real `/status`.** It is offered as soon as you type `/` (tagged NikUI, so
   you can tell it from the CLI's own), and NikUI answers it itself with a
   full-screen sheet in six sections you can click or key through (`1`–`6`,
@@ -363,6 +373,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.remote.appOnly` | `false` | Serve the app and nothing else outside this machine |
 | `nikui.apns.*` | empty | Apple team ID, key ID, `.p8` path and topic, for telling an iPhone something while the app is closed |
 | `nikui.keepAwake` | `false` | Keep this laptop awake while NikUI listens for your phone — also switchable from the phone |
+| `nikui.lidClosed` | `false` | Keep working with the lid closed while Claude works, then sleep — needs your password once |
 | `nikui.notifyDevices` | needs-you, quota, failed | Which things are worth sending to a paired phone |
 
 ### One place for all of it
@@ -785,6 +796,37 @@ checks — but a delivery through Apple's or Google's push service needs a real
 device, and headless Chrome here refuses notification permission whatever the
 DevTools protocol is told, so a notification actually appearing is unproven.
 
+### Working with the lid closed
+
+**Keep working with the lid closed** does what the name says: while an instance
+is working — or waiting on your answer — closing the lid does not put the Mac
+to sleep. Two minutes after the last job is done it sleeps, the way a closed
+laptop should; the two minutes are for the reply you send from the
+notification, and a queue draining between turns.
+
+A closed MacBook sleeps whatever a process asks, so this is the one thing in
+NikUI that needs your admin password — once, in macOS's own dialog, the first
+time you switch it on at the laptop. What that installs is a single sudo rule,
+`/etc/sudoers.d/nikui-lid`, allowing exactly three commands without a password:
+`pmset -a disablesleep 1`, `pmset -a disablesleep 0` and `pmset sleepnow`.
+Nothing else. It is checked by `visudo` before it is moved into place. Undo it
+from the NikUI status bar item, or delete the file.
+
+Turning sleep off is a machine-wide flag that outlives any process, so every
+way out puts it back: the work finishing; the switch turned off (from anywhere);
+the battery reaching 20% on battery power, with your phone told first ("Your
+laptop is going to sleep"); the window closing or crashing — a small watchdog
+outside the extension waits for it to go and puts the flag back itself; and
+the next start, which clears anything a crash of the whole machine left. Two
+windows share it properly: the flag goes back when the last one lets go. And
+it only ever clears what it set — a Mac you told never to sleep yourself is
+left that way.
+
+From a phone it is the same switch (Settings → *Your laptop*, or `/settings`),
+with one thing it will not do: raise the password dialog, because that would
+put it on a screen nobody is looking at. Before the one-time approval, the phone
+says where to give it. Keep the laptop out of a bag while it works.
+
 ### Keeping the laptop awake
 
 A laptop that sleeps takes every instance with it, and the phone finds a dead
@@ -809,14 +851,13 @@ It is one switch with three places to flip it, all of them the same setting:
 Whichever end changes it, every connected phone is told at once, and the status
 bar shows a ☕ while the laptop is being held.
 
-What it cannot do is stop the lid. A closed MacBook sleeps whatever any process
-asks, unless it is plugged in with a display attached; the only override is a
-system setting that needs an administrator and outlives NikUI, which is not a
-thing to change on somebody's behalf. The phone says so under the switch. The
-display is never kept on, the assertion is released the moment nothing needs
-it, and the `caffeinate` it spawns exits with the extension host, so a crash
-cannot leave a machine awake forever. Off by default: keeping somebody's
-laptop awake is not a decision to make for them.
+On its own it cannot stop the lid: a closed MacBook sleeps whatever any process
+asks, unless it is plugged in with a display attached. That is the other
+switch, *Keep working with the lid closed*, above. The display is never kept
+on, the assertion is released the moment nothing needs it, and the `caffeinate`
+it spawns exits with the extension host, so a crash cannot leave a machine
+awake forever. Off by default: keeping somebody's laptop awake is not a
+decision to make for them.
 
 ### Going public, and why it is the second choice
 
@@ -975,6 +1016,8 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     src/push.js        Web Push: encrypted to the device, signed by this window
     src/notify.js      what is worth waking a phone for, and what is not
     src/awake.js       holding the machine awake while something needs it
+    src/lid.js         working with the lid closed, and every way it lets go
+    src/prefs.js       what /settings shows, and what a change may be
     src/wire.js        RFC 6455, server side, no dependencies
     src/ticket.js      PR/issue extraction and the switch rule
     src/label.js       the one naming rule, shared by instances and history
@@ -985,6 +1028,7 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     media/prompts.js   the composer's prompt recall ring
     media/snippets.js  /table and friends: what you typed, plus a standing instruction
     media/palette.js   what a slash offers, and what picking one writes
+    media/prefs.js     the /settings sheet, drawn from the laptop's list
     media/panel.css    all the styling
     media/panel.js     webview front end
     media/transport.js the one seam: the editor's API, or the same over a socket

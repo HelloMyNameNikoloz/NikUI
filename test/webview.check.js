@@ -196,6 +196,70 @@ const drive = `
     input.value = '';
     input.dispatchEvent(new Event('input', { bubbles: true }));
 
+    // /settings: answered here, like /status — a sheet of switches.
+    const SETTINGS = (thinking) => ({ groups: ['Claude', 'Your laptop'], rows: [
+      { id: 'thinking', group: 'Claude', kind: 'toggle', label: 'Show thinking', value: thinking },
+      { id: 'effort', group: 'Claude', kind: 'choice', label: 'Effort', value: 'max',
+        choices: [{ value: 'high', label: 'High' }, { value: 'max', label: 'Max' }] },
+      { id: 'fontSize', group: 'Claude', kind: 'number', label: 'Text size', value: 13, min: 10, max: 24 },
+      { id: 'lid', group: 'Your laptop', kind: 'toggle', label: 'Keep working with the lid closed', value: false,
+        note: 'Asks for your password once, on the laptop.' }
+    ] });
+    const setSent = () => window.__posted.filter((m) => m.type === 'setSetting').pop() || {};
+    const pane = document.getElementById('status');
+
+    const beforeSettings = window.__posted.length;
+    input.value = '/settings';
+    key(input, 'Enter');
+    out.settingsAsked = window.__posted.slice(beforeSettings).some((m) => m.type === 'settings');
+    out.settingsNotSent = !window.__posted.slice(beforeSettings).some((m) => m.type === 'send');
+    post({ type: 'settings', mayChange: true, local: true, settings: SETTINGS(true) });
+    out.settingsOpen = !pane.hidden && !!pane.querySelector('.prefs');
+    out.settingsGroups = Array.from(pane.querySelectorAll('.prefs-group h3')).map((h) => h.textContent).join('|');
+    out.settingsNote = (pane.querySelector('[data-pref="lid"] .pref-note') || {}).textContent || '';
+    out.allSettingsOffered = !!pane.querySelector('[data-act="all-settings"]');
+
+    pane.querySelector('[data-toggle="thinking"]').click();
+    out.toggleSent = setSent().id + '=' + setSent().value;
+    out.toggleShownAtOnce = pane.querySelector('[data-toggle="thinking"]').getAttribute('aria-checked');
+    out.togglePending = pane.querySelector('[data-pref="thinking"]').classList.contains('pending');
+
+    const pick = pane.querySelector('[data-choose="effort"]');
+    pick.value = 'high';
+    pick.dispatchEvent(new Event('change', { bubbles: true }));
+    out.choiceSent = setSent().id + '=' + setSent().value;
+
+    pane.querySelector('[data-step="fontSize"][data-by="1"]').click();
+    out.stepSent = setSent().id + '=' + setSent().value;
+
+    // The laptop said no: the switch goes back, and the sheet says why.
+    post({ type: 'settings', mayChange: true, local: true, refused: 'Approve it once on the laptop first.',
+      settings: SETTINGS(true) });
+    out.refusedShown = /Approve it once on the laptop first/.test(pane.textContent);
+    out.switchBack = pane.querySelector('[data-toggle="thinking"]').getAttribute('aria-checked');
+
+    // The arrows belong to /status's sections, and there are none here.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    out.arrowsLeaveIt = !!pane.querySelector('.prefs');
+
+    const beforeClose = window.__posted.length;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    out.settingsClosed = pane.hidden;
+    out.settingsCloseSaid = window.__posted.slice(beforeClose).some((m) => m.type === 'settingsOpen' && m.open === false);
+
+    // A change made somewhere else, while nobody here asked, opens nothing.
+    post({ type: 'settings', mayChange: true, local: true, settings: SETTINGS(false) });
+    out.unaskedOpensNothing = pane.hidden;
+
+    // A phone that may only watch sees the settings and cannot touch them.
+    input.value = '/settings';
+    key(input, 'Enter');
+    post({ type: 'settings', mayChange: false, local: false, settings: SETTINGS(true) });
+    out.watchLocked = Array.from(pane.querySelectorAll('[data-toggle], [data-choose], [data-step]')).every((c) => c.disabled);
+    out.watchToldWhy = /can watch but not change settings/.test(pane.textContent);
+    out.watchNoFullList = !pane.querySelector('[data-act="all-settings"]');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
     // A URL and a path both contain a slash and neither is a command.
     input.value = 'see https://example.com/';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -445,6 +509,25 @@ const checks = [
   ['choosing one sends the whole line', out.valueSent === '/model claude-opus-5-5[1m]'],
   ['and clears the composer', out.valueCleared === true],
   ['typing part of an identifier narrows the list', out.valueNarrowed === 3],
+  ['/settings opens the sheet rather than going to the CLI', out.settingsAsked === true && out.settingsNotSent === true],
+  ['it opens when the laptop answers', out.settingsOpen === true],
+  ['in groups, in order', out.settingsGroups === 'Claude|Your laptop'],
+  ['a row says what the laptop is doing', /password once/.test(out.settingsNote || '')],
+  ['the editor is offered the full list', out.allSettingsOffered === true],
+  ['a switch flips with one click', out.toggleSent === 'thinking=false'],
+  ['and shows it at once', out.toggleShownAtOnce === 'false'],
+  ['while the laptop confirms it', out.togglePending === true],
+  ['a choice is sent as its value', out.choiceSent === 'effort=high'],
+  ['a number steps by one', out.stepSent === 'fontSize=14'],
+  ['a refused change says why', out.refusedShown === true],
+  ['and the switch goes back to the truth', out.switchBack === 'true'],
+  ['the arrows do not treat it as /status', out.arrowsLeaveIt === true],
+  ['escape closes it', out.settingsClosed === true],
+  ['and tells the laptop to stop sending it', out.settingsCloseSaid === true],
+  ['a change from elsewhere opens nothing nobody asked for', out.unaskedOpensNothing === true],
+  ['a watching device cannot change anything', out.watchLocked === true],
+  ['and is told why', out.watchToldWhy === true],
+  ['and is not offered the editor\u2019s full list', out.watchNoFullList === true],
   ['a URL does not open the palette', out.urlOpensPalette === false],
   ['nor does a path', out.pathOpensPalette === false],
   ['cmd+F opens find', out.findOpened === true],

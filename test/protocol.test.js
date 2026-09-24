@@ -19,12 +19,15 @@ const TO_HOST = [
   'status', 'statusOpen', 'unqueue', 'clearQueue', 'promoteQueued', 'editQueued',
   // A command from a code block, handed to a real terminal in the editor. Only
   // the editor's route: the app has a terminal of its own and goes there.
-  'runInTerminal'
+  'runInTerminal',
+  // `/settings`: asked for, kept fresh while it is open, changed one row at a
+  // time, and — from the editor only — the way to the full list.
+  'settings', 'settingsOpen', 'setSetting', 'allSettings'
 ];
 
 const TO_CLIENT = [
   'init', 'items', 'status', 'stats', 'meta', 'queue', 'reset',
-  'statusReport', 'openStatus', 'editPrompt', 'focus', 'presence'
+  'statusReport', 'openStatus', 'editPrompt', 'focus', 'presence', 'settings'
 ];
 
 /**
@@ -206,6 +209,12 @@ module.exports = async function () {
   check('so is a nudge to the composer', sawType('focus'));
   hubUnderTest.openStatus('anything');
   check('and opening the sheet', sawType('openStatus'));
+
+  await say({ type: 'settings' });
+  check('/settings is answered', sawType('settings'));
+  check('and the sheet is kept fresh while it is open', hubUnderTest.clients.get('anything').settingsOpen === true);
+  await say({ type: 'settingsOpen', open: false });
+  check('until it is closed', hubUnderTest.clients.get('anything').settingsOpen === false);
 
   checkEqual('so every message the host can send has been seen',
     TO_CLIENT.filter((t) => !sawType(t)), []);

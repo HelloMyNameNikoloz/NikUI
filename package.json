@@ -704,7 +704,7 @@
           "type": "boolean",
           "default": false,
           "scope": "application",
-          "markdownDescription": "Keep this laptop from going to sleep on its own while NikUI is listening for your phone, and while an instance is working, so the phone can always reach it. Also switchable from the phone, in Settings \u2192 Your laptop. The display still turns off, and closing the lid still puts a MacBook to sleep \u2014 nothing short of an administrator setting can stop that. Off by default: keeping your laptop awake is not a decision to make for you."
+          "markdownDescription": "Keep this laptop from going to sleep on its own while NikUI is listening for your phone, and while an instance is working, so the phone can always reach it. Also switchable from the phone, in Settings \u2192 Your laptop. The display still turns off. Closing the lid still puts a MacBook to sleep; `nikui.lidClosed` is the switch for that. Off by default: keeping your laptop awake is not a decision to make for you."
         },
         "nikui.lidClosed": {
           "type": "boolean",

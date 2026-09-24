@@ -33,8 +33,43 @@ function createHost(context, manager, extras) {
     // What arrived from a device, allowed or not. The editor's own panel has no
     // device and so is never written down: the trail is about what came from
     // somewhere else.
-    audit: devices ? (entry) => devices.record(entry) : undefined
+    audit: devices ? (entry) => devices.record(entry) : undefined,
+    // What `/settings` shows, and the one way it changes anything.
+    settings: () => readPrefs(awake),
+    setSetting: (id, value, from) => writePref(id, value, from, awake),
+    openAllSettings: () => vscode.commands.executeCommand('nikui.settings')
   };
+}
+
+const setting = (key) => vscode.workspace.getConfiguration('nikui').get(key);
+
+function readPrefs(awake) {
+  const prefs = require('./prefs');
+  const { commandArgs } = require('./session');
+  return prefs.read(setting, {
+    awake: awake && awake.state ? awake.state() : null,
+    models: (commandArgs().model || []).filter((m) => /^claude-/.test(m.value || m))
+  });
+}
+
+/**
+ * A change from the sheet. The laptop switches go through the switch itself,
+ * so a phone flipping one is the same act as the status bar flipping it — and
+ * the lid's one-time approval is asked for only where somebody can see the
+ * dialog: the editor on this machine, never a phone.
+ */
+function writePref(id, value, from, awake) {
+  const prefs = require('./prefs');
+  const { write } = require('./settingsMenu');
+  const local = !!(from && from.local);
+  return prefs.write(id, value, {
+    get: setting,
+    set: (key, v) => write('nikui.' + key, v),
+    special: awake ? {
+      awake: (on) => awake.set(on),
+      lid: (on) => (local && awake.switchLid ? awake.switchLid(on) : awake.setLid(on))
+    } : {}
+  });
 }
 
 /** What the status report can only learn from the editor and the machine. */

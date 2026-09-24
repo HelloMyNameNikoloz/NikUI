@@ -345,8 +345,14 @@ class LidGuard {
    * On start: whatever a crash left behind — ours, and nobody still holding it
    * — is put back.
    */
-  async recover() {
-    if (!this.supported) return;
+  recover() {
+    // In the same line as everything else, so a job starting the moment the
+    // window opens cannot have its hold cleared by the tidy-up running beside it.
+    return this.enqueue(() => this.tidy());
+  }
+
+  async tidy() {
+    if (!this.supported || this.held) return;
     if (this.owned() && !this.others().length && await this.flag()) {
       const out = await this.sudo('-a', 'disablesleep', '0');
       if (out.code === 0) {

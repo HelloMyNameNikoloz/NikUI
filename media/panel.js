@@ -862,13 +862,16 @@
     // /status is answered here, from what the host measured, rather than being
     // passed to the CLI — the sheet knows things the CLI cannot see.
     // Only the bare command is ours; "/status something" belongs to the CLI.
-    if (!attachments.length && /^\/status$/i.test(text)) {
+    // /settings the same way: the few settings people change, as switches.
+    const own = !attachments.length && /^\/(status|settings)$/i.exec(text);
+    if (own) {
       prompts.remember(text);
       prompts.reset();
       input.value = '';
       slashBox.hidden = true;
       autoGrow();
-      askForStatus();
+      if (own[1].toLowerCase() === 'status') askForStatus();
+      else askForSettings();
       return;
     }
     // A snippet adds a standing instruction to what you typed. The panel keeps
@@ -1133,6 +1136,8 @@
   const sheetApi = window.statusSheet;
   let report = null;
   let section = 'overview';
+  // One sheet on screen at a time, and it is either /status or /settings.
+  let sheetKind = null;
 
   function askForStatus() { vscode.postMessage({ type: 'status' }); }
 
@@ -1165,8 +1170,11 @@
   }
 
   function showSheet(next) {
+    // A report for a sheet that has since become /settings is not wanted.
+    if (!sheet.hidden && sheetKind !== 'status') return;
     const opening = sheet.hidden;
     if (opening) {
+      sheetKind = 'status';
       section = sheetApi.SECTIONS[0].id; // a fresh open always starts at the top
       focusBeforeSheet = document.activeElement;
       setBackgroundInert(true);
@@ -1184,7 +1192,10 @@
   }
 
   function closeSheet() {
-    if (!sheet.hidden) vscode.postMessage({ type: 'statusOpen', open: false });
+    if (!sheet.hidden && sheetKind === 'settings') vscode.postMessage({ type: 'settingsOpen', open: false });
+    else if (!sheet.hidden) vscode.postMessage({ type: 'statusOpen', open: false });
+    sheetKind = null;
+    prefsWaiting = false;
     sheet.hidden = true;
     sheet.innerHTML = '';
     tip.hidden = true;
@@ -1202,7 +1213,7 @@
    */
   function trapTab(e) {
     if (sheet.hidden || e.key !== 'Tab') return;
-    const stops = sheet.querySelectorAll('button, [tabindex]:not([tabindex="-1"]), input, a[href]');
+    const stops = sheet.querySelectorAll('button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"]), input, a[href]');
     if (!stops.length) return;
     const first = stops[0];
     const last = stops[stops.length - 1];
@@ -1218,7 +1229,112 @@
     paintSheet();
   }
 
+  // ── settings sheet ───────────────────────────────────────────
+
+  const prefsApi = window.prefsSheet;
+  let prefsNow = null;
+  // Asked for and not yet drawn: the first answer opens the sheet, and an
+  // answer nobody asked for — a change somewhere else — opens nothing.
+  let prefsAsked = false;
+  // A redraw while a picker is open would close it under somebody's thumb.
+  let prefsWaiting = false;
+
+  function askForSettings() { prefsAsked = true; vscode.postMessage({ type: 'settings' }); }
+
+  function onSettings(message) {
+    const open = !sheet.hidden && sheetKind === 'settings';
+    if (!open && !prefsAsked) return;
+    prefsAsked = false;
+    prefsNow = message;
+    if (!open) {
+      sheetKind = 'settings';
+      focusBeforeSheet = document.activeElement;
+      setBackgroundInert(true);
+    }
+    paintSettings(!open);
+  }
+
+  /** Which control had focus, so the same one has it after a redraw. */
+  function focusKey() {
+    const on = document.activeElement;
+    if (!on || !sheet.contains(on)) return null;
+    for (const attr of ['data-toggle', 'data-choose', 'data-step', 'data-act']) {
+      if (on.hasAttribute(attr)) {
+        const by = on.getAttribute('data-by');
+        return '[' + attr + '="' + on.getAttribute(attr) + '"]' + (by ? '[data-by="' + by + '"]' : '');
+      }
+    }
+    return null;
+  }
+
+  function paintSettings(opening) {
+    if (!prefsNow) return;
+    const picking = document.activeElement && document.activeElement.tagName === 'SELECT' &&
+      sheet.contains(document.activeElement);
+    if (!opening && picking) { prefsWaiting = true; return; }
+    prefsWaiting = false;
+    const list = sheet.querySelector('.prefs');
+    const where = opening || !list ? 0 : list.scrollTop;
+    const keep = opening ? null : focusKey();
+    sheet.innerHTML = prefsApi.render(prefsNow);
+    sheet.hidden = false;
+    const now = sheet.querySelector('.prefs');
+    if (now) now.scrollTop = where;
+    const back = keep ? sheet.querySelector(keep) : null;
+    if (back && !back.disabled) back.focus();
+    else if (opening && now) now.focus();
+  }
+
+  /**
+   * Shown changed at once, and then shown as it really is: the answer from the
+   * laptop replaces this, refused or not, so a switch that could not flip
+   * flips back and says why.
+   */
+  function changeSetting(id, value) {
+    const row = prefsApi.valueOf(prefsNow, id);
+    if (!row || row.unavailable || prefsNow.mayChange === false) return;
+    row.value = value;
+    prefsNow.refused = null;
+    paintSettings(false);
+    const node = sheet.querySelector('[data-pref="' + id + '"]');
+    if (node) node.classList.add('pending');
+    vscode.postMessage({ type: 'setSetting', id: id, value: value });
+  }
+
+  function settingsClick(e) {
+    const act = e.target.closest('[data-act]');
+    if (act) {
+      if (act.dataset.act === 'close') closeSheet();
+      else if (act.dataset.act === 'all-settings') { closeSheet(); vscode.postMessage({ type: 'allSettings' }); }
+      return;
+    }
+    const toggle = e.target.closest('[data-toggle]');
+    if (toggle && !toggle.disabled) {
+      const row = prefsApi.valueOf(prefsNow, toggle.dataset.toggle);
+      changeSetting(toggle.dataset.toggle, !(row && row.value));
+      return;
+    }
+    const step = e.target.closest('[data-step]');
+    if (step && !step.disabled) {
+      const row = prefsApi.valueOf(prefsNow, step.dataset.step);
+      if (row) changeSetting(step.dataset.step, Number(row.value) + Number(step.dataset.by));
+    }
+  }
+
+  sheet.addEventListener('change', function (e) {
+    if (sheetKind !== 'settings') return;
+    const pick = e.target.closest('[data-choose]');
+    if (pick) changeSetting(pick.dataset.choose, pick.value);
+  });
+  // A picker that closed without a change still owes the redraw it held back.
+  sheet.addEventListener('focusout', function (e) {
+    if (sheetKind === 'settings' && prefsWaiting && e.target.tagName === 'SELECT') {
+      setTimeout(function () { if (prefsWaiting) paintSettings(false); }, 0);
+    }
+  });
+
   sheet.addEventListener('click', function (e) {
+    if (sheetKind === 'settings') { settingsClick(e); return; }
     const nav = e.target.closest('[data-section]');
     if (nav) { section = nav.dataset.section; paintSheet(); return; }
 
@@ -1347,6 +1463,7 @@
       // what they are typing is theirs and is never sent anywhere.
       case 'presence': setPresence(msg.clients); break;
       case 'statusReport': showSheet(msg.report); break;
+      case 'settings': onSettings(msg); break;
       case 'editPrompt': {
         // Nothing typed is thrown away: a draft already in the box keeps its
         // place underneath the prompt that came back out of the queue.
@@ -1373,6 +1490,9 @@
     if (e.key === 'Escape' && !lightbox.hidden) { closeLightbox(); return; }
     if (sheet.hidden) return;
     if (e.key === 'Escape') { e.preventDefault(); closeSheet(); return; }
+    // Arrows and numbers move through /status's sections; /settings has none,
+    // and its pickers want the arrows for themselves.
+    if (sheetKind !== 'status') return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); moveSection(1); return; }
     if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); moveSection(-1); return; }
     const pick = Number(e.key);
