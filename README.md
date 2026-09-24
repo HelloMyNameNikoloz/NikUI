@@ -326,7 +326,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `nikui.claudePath` | `claude` | Path to the executable |
-| `nikui.model` | *(empty)* | Passed to `--model`; empty uses your default. Changing it applies to new instances, and to existing ones when they are restarted |
+| `nikui.model` | *(empty)* | Passed to `--model`; empty uses your default. Picked from a list read out of your installed CLI, so a new model appears the day you update Claude Code. Changing it applies to new instances, and to existing ones when they are restarted |
 | `nikui.permissionMode` | `bypassPermissions` | Passed to `--permission-mode` |
 | `nikui.effort` | `max` | Passed to `--effort` (low/medium/high/xhigh/max) |
 | `nikui.outputStyle` | `Concise` | Passed inline via `--settings` |
@@ -395,6 +395,27 @@ two windows and run it in the second, and the phone follows to the second.
 | `NikUI: Open a public address for this window` | A public tunnel, after a dialog that says what that means |
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
+
+### Models, and never having to type one
+
+`NikUI: Settings → Model` lists what your installed CLI actually knows, newest
+first, with "Your Claude Code default" at the top. The list is read out of the
+CLI itself rather than written down here, because a list written down here is
+wrong the day a model ships — which is how this setting came to be free text,
+where picking a new model meant knowing its exact identifier and typing it
+correctly. Update Claude Code and the new model is simply there.
+
+It is read once per CLI version and remembered, and when the binary cannot be
+read at all the aliases — `opus`, `sonnet`, `haiku`, `fable` — are offered
+instead. Those each mean "the newest of that family", so they cannot go stale:
+a worse list, and never a wrong one.
+
+Cost is not in that list, and there is no price table anywhere in this project.
+Every figure comes from the CLI's own `total_cost_usd`, which Anthropic has
+already priced per token type — cache reads at a tenth of input, cache writes
+above it. `test/pricing.test.js` fails the build if a rate ever appears in the
+source, because a table here would be wrong the same day and would do it
+silently.
 
 ### Which phone gets told
 

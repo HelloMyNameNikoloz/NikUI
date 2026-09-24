@@ -197,6 +197,53 @@ async function buildItems(deps) {
   return items;
 }
 
+/**
+ * Somewhere to keep the model list between openings.
+ *
+ * Reading two hundred megabytes is quick but not free, and the answer only
+ * changes when the CLI does — so it is kept, keyed on the binary itself. The
+ * window hands this in; without one the list is simply rebuilt each time, which
+ * is correct and slower.
+ */
+let remembered = null;
+const rememberModelsIn = (store) => { remembered = store || null; };
+
+/**
+ * The models this CLI knows, newest first, with a way out at the top.
+ *
+ * "Your Claude Code default" is first because it is the right answer for most
+ * people most of the time: it follows whatever they have set globally, and it
+ * never goes stale.
+ */
+async function pickModel(current) {
+  const { discover } = require('./models');
+  const cfg = vscode.workspace.getConfiguration('nikui');
+  const found = await discover({
+    claudePath: cfg.get('claudePath', 'claude'),
+    cache: remembered
+  });
+
+  const rows = [{
+    label: 'Your Claude Code default',
+    description: current === '' ? 'current' : '',
+    detail: 'Whatever `claude` would use on its own',
+    option: ''
+  }].concat(found.models.map((model) => ({
+    label: model.label,
+    description: model.id === current ? 'current' : model.id,
+    detail: model.detail,
+    option: model.id
+  })));
+
+  const picked = await vscode.window.showQuickPick(rows, {
+    placeHolder: 'Model for every instance',
+    title: found.from === 'aliases'
+      ? 'Model — the CLI could not be read, so these are the aliases'
+      : 'Model'
+  });
+  return picked ? picked.option : undefined;
+}
+
 /** Change one, in whichever way its type is changed. */
 async function edit(row) {
   const { key, definition } = row;
@@ -204,6 +251,17 @@ async function edit(row) {
 
   if (definition.type === 'boolean') {
     await write(key, !value);
+    return true;
+  }
+
+  // The model is a list, but not one that can be written down: it comes from
+  // whichever CLI is installed, so updating Claude Code is what adds a model
+  // here. A fixed enum in package.json would be wrong the day one ships, which
+  // is exactly how this setting came to be free text in the first place.
+  if (key === 'nikui.model') {
+    const picked = await pickModel(value);
+    if (picked === undefined) return false;
+    await write(key, picked);
     return true;
   }
 
@@ -292,6 +350,6 @@ function schemaFrom(extensionPath) {
 }
 
 module.exports = {
-  openSettings, buildItems, settingRows, schemaFrom,
+  openSettings, buildItems, settingRows, schemaFrom, pickModel, rememberModelsIn,
   nameFor, groupFor, shown, summarise, GROUPS, NAMES, OTHER
 };

@@ -27,7 +27,7 @@ const { Tailscale, Cloudflared } = require('./tunnel');
 const { Awake, shouldHold } = require('./awake');
 const { loadVapid } = require('./push');
 const { Notifier } = require('./notify');
-const { openSettings, schemaFrom } = require('./settingsMenu');
+const { openSettings, schemaFrom, rememberModelsIn } = require('./settingsMenu');
 const { loadApns } = require('./apns');
 
 let manager;
@@ -612,6 +612,10 @@ function serveLocally(context, manager, awakeState, folders, deps) {
    * sent a prompt, the server records any phone doing anything at all, and the
    * notifier asks which of them — if any — should be told.
    */
+  // The model list is read out of the CLI and only changes when the CLI does,
+  // so it is kept across openings rather than rebuilt for every menu.
+  rememberModelsIn(context.globalState);
+
   const audience = new Audience();
 
   const served = installHost(createHost(context, manager, { devices, awake: awakeState || null }));
