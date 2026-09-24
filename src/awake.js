@@ -166,20 +166,44 @@ class KeepAwake {
     this.write = deps.write;
     this.sessions = deps.sessions || (() => []);
     this.serving = deps.serving || (() => false);
+    // The lid is the other half of the same question — may this laptop sleep —
+    // so it is answered here too, and anybody watching hears about both.
+    this.lid = deps.lid || null;
+    this.lidEnabled = deps.lidEnabled || (() => false);
+    this.writeLid = deps.writeLid || null;
     this.listeners = new Set();
     this.said = null;
+    if (this.lid) this.stopLid = this.lid.onChange(() => this.announce());
   }
 
   /** Apply the rule, and tell whoever is watching if what they would see changed. */
   reconsider() {
+    const sessions = this.sessions();
     const verdict = shouldHold({
       enabled: this.enabled(),
-      sessions: this.sessions(),
+      sessions,
       serving: this.serving()
     });
     if (verdict.hold) this.awake.hold(verdict.reason);
     else this.awake.release();
 
+    // With the lid closed, only work keeps it going: a laptop shut in a bag
+    // should not stay awake just in case a phone calls.
+    if (this.lid) {
+      if (this.lidEnabled()) {
+        const busy = sessions.filter((s) => s.isBusy);
+        this.lid.want(busy.length > 0, busy.length === 1
+          ? `${busy[0].label} is working`
+          : `${busy.length} instances are working`);
+      } else {
+        this.lid.stop();
+      }
+    }
+    return this.announce();
+  }
+
+  /** Tell whoever is watching, if what they would see has changed. */
+  announce() {
     const now = this.state();
     const shape = JSON.stringify(now);
     if (shape === this.said) return now;
@@ -198,13 +222,30 @@ class KeepAwake {
       held: held.held,
       since: held.since,
       reason: held.reason,
-      supported: held.supported
+      supported: held.supported,
+      lid: this.lid ? Object.assign({ on: !!this.lidEnabled() }, this.lid.state()) : null
     };
   }
 
   /** Turn it on or off, and answer with what is true afterwards. */
   async set(on) {
     await this.write(!!on);
+    return this.reconsider();
+  }
+
+  /**
+   * The lid switch. Turning it on needs the one-time approval to be in place
+   * already: that is asked for at the laptop, where the password dialog is,
+   * and never from a phone that cannot see it.
+   */
+  async setLid(on) {
+    if (!this.lid || !this.writeLid) throw new Error('This laptop does not offer that.');
+    if (on && !(await this.lid.ready())) {
+      const err = new Error('Approve it once on the laptop first.');
+      err.code = 'NEEDS_APPROVAL';
+      throw err;
+    }
+    await this.writeLid(!!on);
     return this.reconsider();
   }
 
@@ -215,6 +256,8 @@ class KeepAwake {
 
   dispose() {
     this.listeners.clear();
+    if (this.stopLid) this.stopLid();
+    if (this.lid) this.lid.dispose();
     this.awake.dispose();
   }
 }

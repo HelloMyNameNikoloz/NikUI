@@ -31,6 +31,7 @@ const GROUPS = [
   ['nikui.resumePrompt', 'Instances'],
   ['nikui.autoTitleFromTicket', 'Instances'],
   ['nikui.keepAwake', 'This machine'],
+  ['nikui.lidClosed', 'This machine'],
   ['nikui.notifyDevices', 'This window, and the phone that reaches it'],
   ['nikui.notifyOnAttention', 'This machine']
 ];
@@ -62,6 +63,7 @@ const NAMES = {
   'nikui.remote.requireEncryption': 'Require devices to encrypt end to end',
   'nikui.remote.appOnly': 'Serve the app only, no browser page',
   'nikui.keepAwake': 'Keep this laptop awake, so your phone can always reach it',
+  'nikui.lidClosed': 'Keep working with the lid closed, then sleep',
   'nikui.notifyDevices': 'What is worth sending to a paired phone',
   'nikui.apns.teamId': 'Apple team ID',
   'nikui.apns.keyId': 'APNs key ID',
@@ -244,10 +246,23 @@ async function pickModel(current) {
   return picked ? picked.option : undefined;
 }
 
+/**
+ * Settings that are more than a value. Turning the lid switch on needs an
+ * approval before it means anything, so it is switched the way the rest of the
+ * window switches it rather than written straight into the file.
+ */
+const switchers = new Map();
+const useSwitch = (key, fn) => { if (fn) switchers.set(key, fn); else switchers.delete(key); };
+
 /** Change one, in whichever way its type is changed. */
 async function edit(row) {
   const { key, definition } = row;
   const value = read(key, definition.default);
+
+  if (switchers.has(key)) {
+    await switchers.get(key)(!value);
+    return true;
+  }
 
   if (definition.type === 'boolean') {
     await write(key, !value);
@@ -350,6 +365,6 @@ function schemaFrom(extensionPath) {
 }
 
 module.exports = {
-  openSettings, buildItems, settingRows, schemaFrom, pickModel, rememberModelsIn,
+  openSettings, buildItems, settingRows, schemaFrom, pickModel, rememberModelsIn, useSwitch,
   nameFor, groupFor, shown, summarise, GROUPS, NAMES, OTHER
 };

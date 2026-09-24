@@ -706,6 +706,12 @@
           "scope": "application",
           "markdownDescription": "Keep this laptop from going to sleep on its own while NikUI is listening for your phone, and while an instance is working, so the phone can always reach it. Also switchable from the phone, in Settings \u2192 Your laptop. The display still turns off, and closing the lid still puts a MacBook to sleep \u2014 nothing short of an administrator setting can stop that. Off by default: keeping your laptop awake is not a decision to make for you."
         },
+        "nikui.lidClosed": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "markdownDescription": "Keep working with the lid closed. While an instance is working, closing the lid will not put this Mac to sleep; two minutes after the last job is done it sleeps, the way a closed laptop should. On battery it gives up at 20% and tells your phone first. Needs your admin password once, to let NikUI run `pmset` to turn sleep off and back on \u2014 nothing else; undo it from the NikUI status bar item. Keep the laptop out of a bag while it works."
+        },
         "nikui.notifyDevices": {
           "type": "object",
           "default": {

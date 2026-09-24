@@ -434,13 +434,19 @@
       return;
     }
 
-    const list = group('Your laptop',
-      'Stops it sleeping on its own while NikUI is open, so this phone can always reach it. ' +
-      'The screen still turns off. Closing the lid still puts it to sleep.');
+    const lid = now.lid && now.lid.supported ? now.lid : null;
+    const list = group('Your laptop', lid && lid.on
+      ? 'Keep awake stops it sleeping on its own while NikUI is open. With the lid closed it keeps going ' +
+        'only while work is running, then sleeps. The screen still turns off.'
+      : 'Stops it sleeping on its own while NikUI is open, so this phone can always reach it. ' +
+        'The screen still turns off. Closing the lid still puts it to sleep.');
+
+    const busy = (what) => state.switching && state.switching.what === what;
+    const saying = (what) => (state.switching.on ? 'Turning it on…' : 'Turning it off…');
 
     const on = !!now.on;
     let hint;
-    if (state.switching) hint = state.switching === 'on' ? 'Turning it on…' : 'Turning it off…';
+    if (busy('awake')) hint = saying('awake');
     else if (!now.mayChange) hint = 'Only a device that may send prompts can change this.';
     else if (on && now.held) hint = 'Awake since ' + clock(now.since) + (now.reason ? ' · ' + now.reason : '');
     else if (on) hint = 'On, but your laptop could not hold itself awake.';
@@ -452,17 +458,56 @@
       value: on ? 'On' : 'Off',
       tone: on ? (now.held ? 'good' : 'warn') : '',
       tap: now.mayChange && !state.switching
-        ? (event) => (on ? armSleep(event) : setAwake(true))
+        ? (event) => (on
+          ? arm(event, 'Tap again to let it sleep', 'Once it sleeps, this phone cannot wake it.',
+            () => ask('awake', false))
+          : ask('awake', true))
+        : null
+    });
+
+    if (!lid) return;
+
+    // The approval is a password dialog on the laptop's own screen, so it is
+    // the one thing this switch cannot do from here — and says where to go.
+    const unapproved = !lid.approved;
+    let lidHint;
+    if (busy('lid')) lidHint = saying('lid');
+    else if (!now.mayChange) lidHint = 'Only a device that may send prompts can change this.';
+    else if (unapproved) lidHint = 'Approve it once on your laptop: click NikUI in the status bar, then Keep working with the lid closed.';
+    else if (lid.on && lid.lowBattery) lidHint = 'Battery at ' + lid.battery.percent + '%, so the lid will put it to sleep.';
+    else if (lid.on && lid.held) lidHint = (lid.reason || 'Working') + ' · it sleeps when the work is done';
+    else if (lid.on && lid.finishing) lidHint = 'The work is done. With the lid closed it sleeps in a moment.';
+    else if (lid.on) lidHint = 'Closing the lid will not stop work that is running.';
+    else lidHint = 'Off. Closing the lid stops everything.';
+
+    row(list, {
+      label: 'Keep working with the lid closed',
+      hint: lidHint,
+      value: lid.on ? 'On' : 'Off',
+      tone: lid.on ? (unapproved || lid.lowBattery ? 'warn' : 'good') : '',
+      tap: now.mayChange && !state.switching && !(unapproved && !lid.on)
+        ? (event) => (lid.on
+          // Off, with work running, is a laptop that sleeps now if it is shut.
+          ? (lid.held
+            ? arm(event, 'Tap again to turn it off', 'If the lid is closed, it goes to sleep now.',
+              () => ask('lid', false))
+            : ask('lid', false))
+          : ask('lid', true))
         : null
     });
   }
 
-  /** Ask the laptop to change it, and say so if it never answers. */
-  function setAwake(on) {
+  const ASKED = {
+    awake: ['awake:set', 'It will stay awake.', 'It can sleep now.'],
+    lid: ['lid:set', 'It will keep working with the lid closed.', 'Closing the lid puts it to sleep again.']
+  };
+
+  /** Ask the laptop to change one of them, and say so if it never answers. */
+  function ask(what, on) {
     if (!transport || state.switching) return;
-    state.switching = on ? 'on' : 'off';
+    state.switching = { what, on };
     draw();
-    transport.postMessage({ type: 'awake:set', on: on });
+    transport.postMessage({ type: ASKED[what][0], on: on });
     buzz('medium');
     if (state.switchTimer) clearTimeout(state.switchTimer);
     state.switchTimer = setTimeout(() => {
@@ -475,21 +520,21 @@
   }
 
   /** The first tap says what the second one does, in the row itself. */
-  function armSleep(event) {
+  function arm(event, label, note, then) {
     const node = event.currentTarget;
-    if (node.dataset.armed === '1') return setAwake(false);
+    if (node.dataset.armed === '1') return then();
     const name = node.querySelector('b');
-    const note = node.querySelector('small');
-    const was = [name.textContent, note ? note.textContent : null];
+    const small = node.querySelector('small');
+    const was = [name.textContent, small ? small.textContent : null];
     node.dataset.armed = '1';
-    name.textContent = 'Tap again to let it sleep';
-    if (note) note.textContent = 'Once it sleeps, this phone cannot wake it.';
+    name.textContent = label;
+    if (small) small.textContent = note;
     buzz('heavy');
     setTimeout(() => {
       if (!node.isConnected || node.dataset.armed !== '1') return;
       node.dataset.armed = '';
       name.textContent = was[0];
-      if (note) note.textContent = was[1];
+      if (small) small.textContent = was[1];
     }, 4000);
   }
 
@@ -705,7 +750,10 @@
         state.switching = null;
         state.awake = message;
         if (message.refused) flash(message.refused);
-        else if (asked) flash(message.on ? 'It will stay awake.' : 'It can sleep now.');
+        else if (asked) {
+          const now = asked.what === 'lid' ? !!(message.lid && message.lid.on) : !!message.on;
+          flash(now ? ASKED[asked.what][1] : ASKED[asked.what][2]);
+        }
         draw();
       } else if (message.type === 'devices') {
         if (message.refused) flash(message.refused);
@@ -864,6 +912,10 @@
       'permission: ' + (state.control === null ? 'unknown' : state.control ? 'can steer' : 'watching only'),
       'keep awake: ' + (state.awake && state.awake.available
         ? (state.awake.on ? 'on' : 'off') + (state.awake.held ? ', held since ' + new Date(state.awake.since).toISOString() : '')
+        : 'not offered'),
+      'lid closed: ' + (state.awake && state.awake.lid
+        ? (state.awake.lid.on ? 'on' : 'off') + (state.awake.lid.approved ? '' : ', not approved') +
+          (state.awake.lid.held ? ', holding' : '')
         : 'not offered'),
       'device id: ' + ((state.device && state.device.id) || 'not paired'),
       'key kept in: ' + ((state.device && state.device.protection) || 'software') +

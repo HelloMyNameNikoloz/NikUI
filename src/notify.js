@@ -232,6 +232,25 @@ class Notifier {
     });
   }
 
+  /**
+   * The lid is shut, the battery has reached its floor, and work was running.
+   *
+   * Sent under "failed" — the work is about to stop without finishing, which is
+   * what that switch is for — and before the laptop goes, since afterwards
+   * nothing on it can say anything.
+   */
+  sleeping(why) {
+    const w = why || {};
+    return this.announce('failed', {
+      title: 'Your laptop is going to sleep',
+      body: `Battery at ${w.percent}% with the lid closed` +
+        (w.reason ? ` — ${w.reason}, and stops until it wakes.` : '.'),
+      tag: 'laptop-sleeping',
+      renotify: true,
+      url: '/'
+    });
+  }
+
   /** An instance that is no longer waiting can announce itself again later. */
   settled(session) {
     if (session.status === 'waiting' || session.status === 'error') return;

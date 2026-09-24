@@ -19,6 +19,10 @@ const { DeviceStore } = require('../src/devices.js');
 const { PairingWindow } = require('../src/pairing.js');
 const { loadIdentity } = require('../src/identity.js');
 const { Awake, KeepAwake } = require('../src/awake.js');
+const { LidGuard } = require('../src/lid.js');
+const { fakeMac, fakeTimers, watchdogs } = require('./helpers/mac.js');
+const fs = require('fs');
+const os = require('os');
 const ws = require('./helpers/ws.js');
 const { makeDevice } = require('./helpers/device.js');
 
@@ -94,10 +98,24 @@ module.exports = async function () {
   let setting = false;
   let refuse = null;
   let server = null;
+
+  // The lid, on a Mac that has not been approved yet.
+  const mac = fakeMac({ lidClosed: false });
+  const lid = new LidGuard({
+    platform: 'darwin', run: mac.run, spawn: watchdogs().spawn, timers: fakeTimers(),
+    dir: fs.mkdtempSync(path.join(os.tmpdir(), 'nikui-lid-')), pid: 4242, isAlive: () => true
+  });
+  let lidSetting = false;
+  let working = [];
+
   const keeping = new KeepAwake({
     awake,
     enabled: () => setting,
     write: async (on) => { if (refuse) throw new Error(refuse); setting = on; },
+    lid,
+    lidEnabled: () => lidSetting,
+    writeLid: async (on) => { lidSetting = on; },
+    sessions: () => working,
     serving: () => !!(server && server.listening)
   });
 
@@ -216,6 +234,61 @@ module.exports = async function () {
     checkEqual('and what is still true', failed.on, false);
     checkEqual('nothing was held on the strength of it', holding(), 0);
     refuse = null;
+
+    suite('the lid, from a phone');
+
+    const askLid = (client, on) => {
+      const reply = hears(client, (m) => m && m.type === 'awake' && (!!m.refused || (m.lid && m.lid.on === on)));
+      client.send({ type: 'lid:set', on });
+      return reply;
+    };
+
+    const seenLid = await asks(one, { type: 'awake' });
+    check('the lid switch is offered too', !!seenLid.lid && seenLid.lid.supported);
+    checkEqual('off to begin with', seenLid.lid && seenLid.lid.on, false);
+
+    const unapproved = await askLid(one, true);
+    check('before the one-time approval, a phone is told to approve it on the laptop',
+      /Approve it once on your laptop/.test(unapproved.refused || ''));
+    checkEqual('the setting is untouched', lidSetting, false);
+    checkEqual('and no password dialog was raised for a screen nobody is looking at', mac.scripts.length, 0);
+
+    // Approved at the laptop, which is the only place that can.
+    mac.approved = true;
+    const approvedSeen = hears(two, (m) => m && m.type === 'awake' && m.lid && m.lid.approved === true);
+    await lid.ready();
+    check('the approval reaches the phones without being asked', !(await approvedSeen).nothing);
+
+    const lidOn = await askLid(one, true);
+    checkEqual('now it switches on', lidOn.lid && lidOn.lid.on, true);
+    checkEqual('the setting says so', lidSetting, true);
+    check('written down as that phone letting it work with the lid closed',
+      devices.recent(10).some((e) => e.action === 'let the laptop work with the lid closed' && e.device === 'A phone'));
+
+    // Work starts, and the lid is shut on it.
+    const holdingSeen = hears(two, (m) => m && m.type === 'awake' && m.lid && m.lid.held === true);
+    working = [{ label: '1327', isBusy: true, isRunning: true }];
+    keeping.reconsider();
+    await lid.queue;
+    checkEqual('with work running, sleep is turned off', mac.flag, 1);
+    const lidHolding = await holdingSeen;
+    check('and the other phone sees it holding', !lidHolding.nothing);
+    checkEqual('for the work that is running', lidHolding.lid && lidHolding.lid.reason, '1327 is working');
+
+    const watcher = hears(one, (m) => m && m.type === 'awake' && !!m.refused);
+    const tabletTries = hears(two, (m) => m && m.type === 'awake' && !!m.refused);
+    two.send({ type: 'lid:set', on: false });
+    check('a watching-only device cannot turn it off', /watch but not change/.test((await tabletTries).refused || ''));
+    checkEqual('so the work keeps going', mac.flag, 1);
+    void watcher;
+
+    mac.lidClosed = true;
+    const lidOff = await askLid(one, false);
+    checkEqual('turned off from the phone', lidOff.lid && lidOff.lid.on, false);
+    await lid.queue;
+    checkEqual('sleep is back on at once', mac.flag, 0);
+    checkEqual('and a shut laptop goes to sleep, as asked', mac.slept, 1);
+    working = [];
   } finally {
     one.close();
     two.close();

@@ -25,9 +25,10 @@ const { PairPanel } = require('./pairPanel');
 const { loadIdentity } = require('./identity');
 const { Tailscale, Cloudflared } = require('./tunnel');
 const { Awake, KeepAwake } = require('./awake');
+const { LidGuard } = require('./lid');
 const { loadVapid } = require('./push');
 const { Notifier } = require('./notify');
-const { openSettings, schemaFrom, rememberModelsIn } = require('./settingsMenu');
+const { openSettings, schemaFrom, rememberModelsIn, useSwitch } = require('./settingsMenu');
 const { loadApns } = require('./apns');
 
 let manager;
@@ -500,21 +501,15 @@ function activate(context) {
     }
   }));
 
-  // The sheet should be able to say whether the machine is being held awake, a
-  // phone should be able to switch it, and the thing holding it needs to know
-  // whether the server is listening — so each is handed a way to ask the other
-  // rather than a reference to it.
-  let awake = null;
-  const told = new Set();
-  const server = serveLocally(context, manager, {
-    state: () => (awake ? awake.state() : null),
-    set: (on) => (awake ? awake.set(on) : Promise.reject(new Error('not ready yet'))),
-    // The server is made first, so what it wants to hear is kept until there
-    // is something to hear it from.
-    onChange: (fn) => { told.add(fn); return () => told.delete(fn); }
-  }, folders);
-  awake = keepAwake(context, manager, server);
-  awake.onChange((now) => { for (const fn of told) fn(now); });
+  // Whether this laptop may sleep — on its own, and with the lid closed. Made
+  // before the server, which reads it and lets phones switch it; the server
+  // is asked whether it is listening only once there is one to ask.
+  let server = null;
+  const awake = keepAwake(context, manager, () => server);
+  server = serveLocally(context, manager, awake, folders);
+  useSwitch('nikui.lidClosed', (on) => awake.switchLid(on));
+  if (server.onState) context.subscriptions.push({ dispose: server.onState(() => awake.reconsider()) });
+  awake.reconsider();
 
   // Settings that change how a conversation is drawn reach the pages that are
   // already open. They used to be sent once, in the first message a client got,
@@ -566,11 +561,13 @@ function offerModelsToComposer(store) {
  * to make for them; released the moment nothing needs it, because a machine
  * that never sleeps through a forgotten flag is its own bug.
  *
- * The setting is written for the whole machine rather than this workspace: it
- * is a question about the laptop, and a phone switching it off should not leave
- * another window holding it on.
+ * Both settings are written for the whole machine rather than this workspace:
+ * they are questions about the laptop, and a phone switching one off should not
+ * leave another window holding it on.
+ *
+ * @param {() => object|null} serverOf  the server, once there is one
  */
-function keepAwake(context, manager, server) {
+function keepAwake(context, manager, serverOf) {
   // A keep-awake that cannot hold anything says so once, rather than looking
   // like a machine that simply had nothing to hold.
   const awake = new Awake({
@@ -582,32 +579,84 @@ function keepAwake(context, manager, server) {
     }
   });
 
+  const cfg = () => vscode.workspace.getConfiguration('nikui');
+  const flag = (key) => { try { return cfg().get(key, false); } catch (_) { return false; } };
+  const lid = new LidGuard({ log: (line) => console.log('NikUI ' + line) });
+
   const keeping = new KeepAwake({
     awake,
-    enabled: () => {
-      try { return vscode.workspace.getConfiguration('nikui').get('keepAwake', false); } catch (_) { return false; }
-    },
-    write: (on) => vscode.workspace.getConfiguration('nikui')
-      .update('keepAwake', on, vscode.ConfigurationTarget.Global),
+    enabled: () => flag('keepAwake'),
+    write: (on) => cfg().update('keepAwake', on, vscode.ConfigurationTarget.Global),
+    lid,
+    lidEnabled: () => flag('lidClosed'),
+    writeLid: (on) => cfg().update('lidClosed', on, vscode.ConfigurationTarget.Global),
     sessions: () => manager.list,
-    serving: () => !!(server && server.listening)
+    serving: () => { const s = serverOf(); return !!(s && s.listening); }
   });
+
+  /**
+   * The lid switch, from the laptop — where the one-time approval can be asked
+   * for, because the password dialog is here. From a phone the same switch
+   * says "approve it on the laptop" instead, and never raises a dialog on a
+   * screen nobody is looking at.
+   */
+  keeping.switchLid = async (on) => {
+    if (!on) return keeping.setLid(false);
+    if (!(await lid.ready())) {
+      const go = await vscode.window.showInformationMessage(
+        'Keep working with the lid closed?',
+        {
+          modal: true,
+          detail: 'While Claude is working, closing the lid will not put this Mac to sleep; it sleeps once the ' +
+            'work is done. macOS will ask for your password once, to let NikUI turn sleep off and back on — ' +
+            'nothing else. Undo it any time from the NikUI status bar item. Keep it out of a bag while it works.'
+        },
+        'Continue'
+      );
+      if (go !== 'Continue') return null;
+      const done = await lid.setUp();
+      if (!done.ok) {
+        if (!done.cancelled) vscode.window.showWarningMessage('NikUI could not set that up: ' + done.reason);
+        return null;
+      }
+    }
+    return keeping.setLid(true);
+  };
+
+  keeping.removeLidApproval = async () => {
+    await cfg().update('lidClosed', false, vscode.ConfigurationTarget.Global);
+    const out = await lid.takeDown();
+    if (out.ok) vscode.window.setStatusBarMessage('NikUI: closing the lid puts this Mac to sleep again, always', 5000);
+    keeping.reconsider();
+    return out;
+  };
 
   const reconsider = () => keeping.reconsider();
   manager.on('changed', reconsider);
   manager.on('session-changed', reconsider);
   manager.on('paused', reconsider);
   manager.on('resumed', reconsider);
-  if (server && server.onState) context.subscriptions.push({ dispose: server.onState(reconsider) });
   if (vscode.workspace.onDidChangeConfiguration) {
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
-      if (!event || !event.affectsConfiguration || event.affectsConfiguration('nikui.keepAwake')) reconsider();
+      const touches = (key) => !event || !event.affectsConfiguration || event.affectsConfiguration(key);
+      if (touches('nikui.keepAwake') || touches('nikui.lidClosed')) reconsider();
+      // Switched on somewhere that could not ask — settings.json, say — so it
+      // is asked here, once, rather than left silently doing nothing.
+      if (touches('nikui.lidClosed') && flag('lidClosed')) {
+        lid.ready().then((ok) => {
+          if (ok) return;
+          vscode.window.showWarningMessage(
+            'NikUI needs a one-time approval before the lid can be closed while Claude works.', 'Approve'
+          ).then((choice) => { if (choice) keeping.switchLid(true); });
+        });
+      }
     }));
   }
+  // Whatever a crash left behind is cleared before anything is held again.
+  lid.recover().catch(() => {});
   // Quitting the editor lets go of it, rather than leaving the machine awake
   // on the strength of a process that is no longer there.
   context.subscriptions.push({ dispose: () => keeping.dispose() });
-  reconsider();
   return keeping;
 }
 
@@ -793,6 +842,11 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  push: ' + line); }
   });
   context.subscriptions.push({ dispose: notifier.watch(manager) });
+  // The lid is shut, the battery is at its floor and work is still running:
+  // the one sleep a phone should hear about before it happens.
+  if (awakeState && awakeState.lid && awakeState.lid.onGiveUp) {
+    context.subscriptions.push({ dispose: awakeState.lid.onGiveUp((why) => notifier.sleeping(why)) });
+  }
 
   const tree = new DevicesTree(devices, server);
   const view = vscode.window.createTreeView('nikui.devices', { treeDataProvider: tree });
@@ -817,7 +871,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // wondering why it did not: a machine awake because of a flag somebody
     // forgot is a bug with no symptom but a flat battery.
     const awake = awakeState && awakeState.state ? awakeState.state() : null;
-    const held = !!(awake && awake.held);
+    const lidHeld = !!(awake && awake.lid && awake.lid.held);
+    const held = !!(awake && awake.held) || lidHeld;
     bar.text = (server.exposed ? `$(radio-tower) NikUI · ${server.publicHost}` : `$(broadcast) NikUI :${server.port}`) +
       (held ? ' $(coffee)' : '');
     bar.tooltip = (server.exposed
@@ -825,6 +880,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       : `NikUI is serving this window on 127.0.0.1:${server.port}, and nowhere else`) +
       (paired ? ` · ${paired} paired device${paired === 1 ? '' : 's'}` : '') +
       (held ? ' · keeping this laptop awake' : '') +
+      (lidHeld ? ', even with the lid closed, while ' + (awake.lid.reason || 'the work runs') : '') +
       // Only said when it is the unusual answer. A tooltip that lists every
       // setting at its default is a tooltip nobody reads to the end.
       (exposure().sealed ? '' : ' · not requiring encryption') +
@@ -1170,11 +1226,36 @@ function serveLocally(context, manager, awakeState, folders, deps) {
           description: 'so your phone can always reach it' };
   };
 
+  /** The lid switch, the same way: what it would do, and what it is now. */
+  const lidItem = () => {
+    const now = awakeState && awakeState.state ? awakeState.state() : null;
+    const lid = now && now.lid;
+    if (!lid || !lid.supported) return null;
+    return lid.on
+      ? { label: '$(debug-pause) Let the lid put this laptop to sleep again', id: 'lid-off',
+          description: lid.held ? 'currently: working with the lid closed' : 'currently: on' }
+      : { label: '$(screen-normal) Keep working with the lid closed', id: 'lid-on',
+          description: lid.approved ? 'while Claude works, then sleep' : 'asks for your password once' };
+  };
+
+  const switchLid = async (on) => {
+    try {
+      const now = await awakeState.switchLid(on);
+      if (!now) return;
+      vscode.window.setStatusBarMessage(on
+        ? 'NikUI: closing the lid will not stop work that is running. It sleeps when the work is done.'
+        : 'NikUI: closing the lid puts this laptop to sleep again', 6000);
+    } catch (err) {
+      vscode.window.showWarningMessage('NikUI could not change that: ' + ((err && err.message) || 'unknown error'));
+    }
+  };
+
   const switchAwake = async (on) => {
     try {
       await awakeState.set(on);
+      const lidOn = !!(awakeState.state() && awakeState.state().lid && awakeState.state().lid.on);
       vscode.window.setStatusBarMessage(on
-        ? 'NikUI: keeping this laptop awake. Closing the lid still puts it to sleep.'
+        ? 'NikUI: keeping this laptop awake.' + (lidOn ? '' : ' Closing the lid still puts it to sleep.')
         : 'NikUI: this laptop can sleep again', 5000);
     } catch (err) {
       vscode.window.showWarningMessage('NikUI could not change that: ' + ((err && err.message) || 'unknown error'));
@@ -1194,6 +1275,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
         : { label: '$(globe) Open a public address (read this first)', id: 'public' },
       { label: '$(clippy) Copy the link', id: 'copy' },
       awakeItem(),
+      lidItem(),
       // The two switches that decide what a phone can reach, phrased as what
       // they do rather than as the words in the settings file.
       how.sealed
@@ -1221,6 +1303,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     if (choice.id === 'stop') return stop();
     if (choice.id === 'awake') return switchAwake(true);
     if (choice.id === 'sleep') return switchAwake(false);
+    if (choice.id === 'lid-on') return switchLid(true);
+    if (choice.id === 'lid-off') return switchLid(false);
     if (choice.id === 'seal') {
       return setExposure('requireEncryption', true, 'every device must now encrypt end to end');
     }

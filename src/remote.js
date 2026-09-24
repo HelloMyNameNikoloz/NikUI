@@ -890,6 +890,7 @@ ${this.appHead(nonce)}</head>
           if (message.type === 'forget') return void this.forgetFor(client, message.id);
           if (message.type === 'awake') return void this.tellAwake(client);
           if (message.type === 'awake:set') return void (await this.setAwakeFor(client, message.on));
+          if (message.type === 'lid:set') return void (await this.setLidFor(client, message.on));
           if (message.type.indexOf('term:') === 0) return void this.terminalFor(client, message);
         } catch (err) {
           // A handler that throws used to answer nothing at all, and nothing at
@@ -1080,7 +1081,19 @@ ${this.appHead(nonce)}</head>
       since: now.since || null,
       reason: now.reason || null,
       supported: now.supported !== false,
-      mayChange: this.mayKeepAwake(seat)
+      mayChange: this.mayKeepAwake(seat),
+      // The lid: the other way this laptop goes to sleep, and the one that
+      // matters most when you are not at it.
+      lid: now.lid ? {
+        on: !!now.lid.on,
+        supported: !!now.lid.supported,
+        approved: now.lid.approved === true,
+        held: !!now.lid.held,
+        reason: now.lid.reason || null,
+        finishing: !!now.lid.finishing,
+        lowBattery: !!now.lid.lowBattery,
+        battery: now.lid.battery || null
+      } : null
     };
   }
 
@@ -1129,6 +1142,38 @@ ${this.appHead(nonce)}</head>
     // Answered directly as well as broadcast: switching it to what it already
     // was changes nothing, so nothing would be broadcast, and a phone waiting
     // on an answer that never comes says the laptop is unreachable.
+    this.tellAwake(client);
+  }
+
+  /**
+   * The lid switch, from a phone. The same grant as the other one, and one
+   * thing it will not do: raise the one-time approval. That is a password
+   * dialog on the laptop's screen, and a phone asking for one would put it in
+   * front of nobody — so a phone is told where to approve it instead.
+   */
+  async setLidFor(client, on) {
+    const seat = client && client.device;
+    const wanted = !!on;
+    if (!this.keepAwake || !this.keepAwake.setLid) return void this.tellAwake(client);
+
+    if (!this.mayKeepAwake(seat)) {
+      this.note(seat, wanted ? 'tried to keep the laptop working with the lid closed'
+        : 'tried to let the lid put the laptop to sleep', '', false);
+      return void client.post(Object.assign(this.awakeMessage(client), {
+        refused: 'This device can watch but not change that. Grant it control in the editor.'
+      }));
+    }
+
+    try {
+      await this.keepAwake.setLid(wanted);
+    } catch (err) {
+      return void client.post(Object.assign(this.awakeMessage(client), {
+        refused: err && err.code === 'NEEDS_APPROVAL'
+          ? 'Approve it once on your laptop first: click NikUI in the status bar, then Keep working with the lid closed.'
+          : 'The laptop would not change it: ' + ((err && err.message) || 'unknown error')
+      }));
+    }
+    this.note(seat, wanted ? 'let the laptop work with the lid closed' : 'let the lid put the laptop to sleep', '');
     this.tellAwake(client);
   }
 
