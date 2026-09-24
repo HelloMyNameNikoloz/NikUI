@@ -791,7 +791,8 @@ A laptop that sleeps takes every instance with it, and the phone finds a dead
 socket at three in the morning. **Keep awake** stops that: while it is on, the
 laptop does not go to sleep on its own for as long as NikUI is listening for a
 phone — including when nothing is running, which is exactly when you want to
-start something from far away — and while any instance is working.
+wake a stopped instance or run a command from far away — and while any instance
+is working.
 
 It is one switch with three places to flip it, all of them the same setting:
 
