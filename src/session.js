@@ -101,6 +101,13 @@ class Session extends EventEmitter {
     // Whether the pause caught it in the middle of something, which is what
     // decides who gets nudged when the quota comes back.
     this.interruptedByPause = false;
+    // Whether its last turn was cut off by the account's limit. Not the same
+    // question as the one above: an instance can fail on the limit a moment
+    // before anything pauses — its own failure is what nobody recognised — and
+    // this one is remembered across a reload, because a flag that lives only
+    // in memory is exactly how instances were left red after a reset.
+    this.cutByLimit = !!opts.cutByLimit;
+    this._limitThisTurn = false;
     this._turnTools = [];
 
     this.proc = null;
@@ -357,6 +364,7 @@ class Session extends EventEmitter {
     }
 
     this._interrupted = false;
+    this._limitThisTurn = false;
     this._turnTools = [];
     this.turnStartedAt = Date.now();
     this._setStatus(STATUS.WORKING);
@@ -556,22 +564,44 @@ class Session extends EventEmitter {
    * queue itself is never touched either way.
    */
   resume({ nudge } = {}) {
-    if (!this.pausedUntil) return false;
-    const interrupted = this.interruptedByPause;
+    // Owed a nudge either way it was cut off: caught mid-turn by the pause, or
+    // failed on the limit itself — before the pause, or in a window since
+    // reloaded. Either is work somebody asked for that did not finish.
+    const owed = this.interruptedByPause || this.cutByLimit;
+    if (!this.pausedUntil && !owed) return false;
     this.pausedUntil = 0;
     this.pauseReason = null;
     this.interruptedByPause = false;
-    this._notice('The quota reset. Picking up where this left off.', 'info');
+    this.cutByLimit = false;
+    this._notice(owed ? 'The quota reset. Picking up where this left off.' : 'The quota reset.', 'info');
     this.emit('meta');
 
     // Sent, not submitted: submitting would put the nudge at the back of the
     // queue, which is both the wrong order — the interrupted work came first —
     // and a change to a queue that is supposed to come through untouched. The
     // queue drains after this turn, exactly as it would have done.
-    if (interrupted && nudge) this.send(nudge, [], { resumed: true });
+    if (owed && nudge) this.send(nudge, [], { resumed: true });
     else if (this.queue.length) this._scheduleDrain(0);
     else this.emit('queue');
     return true;
+  }
+
+  /**
+   * The account's limit, seen in this instance's own stream. Said to the
+   * window once per turn — it pauses everything — with the reset time if the
+   * words carry one, which the CLI's do: "resets 9:30am (Asia/Riyadh)".
+   */
+  _limitHit(text, quota) {
+    if (this._limitThisTurn) return;
+    this._limitThisTurn = true;
+    const q = quota || {};
+    this.emit('exhausted', {
+      status: 'rejected', type: q.rateLimitType || q.rate_limit_type || null, used: 1,
+      // The CLI's own number when it sends one, the words when it does not.
+      resetsAt: seconds(q.resetsAt !== undefined ? q.resetsAt : q.resets_at) || resetFromText(text, Date.now()),
+      windows: { fiveHour: null, week: null, weekOverage: null },
+      at: Date.now(), fromMessage: true
+    });
   }
 
   rename(title) {
@@ -832,6 +862,13 @@ class Session extends EventEmitter {
   _handleAssistant(event) {
     const msg = event.message;
     if (!msg || !Array.isArray(msg.content)) return;
+    // The CLI marks the message that says the limit is spent: `error:
+    // "rate_limit"`. That is the signal to trust — the words change between
+    // versions, and the old wording is exactly what stopped being recognised.
+    if (event.error === 'rate_limit' || msg.error === 'rate_limit') {
+      this._limitHit(msg.content.map((c) => (c && c.type === 'text' ? c.text : '')).join(' '),
+        event.quotaLimits || event.quota_limits || null);
+    }
     // Every model call reports the prompt it was given; the newest one is the
     // live context size. Summing them would multiply it by the number of calls.
     if (msg.usage) {
@@ -964,14 +1001,18 @@ class Session extends EventEmitter {
       costUsd: turnCost
     });
     this._logTurn(turnUsage, turnCost, event, interrupted);
-    // Belt and braces: if the rate limit event never arrives, the turn itself
-    // says so in words.
-    if (event.is_error && !interrupted && looksRateLimited(event.result)) {
-      this.emit('exhausted', {
-        status: 'rejected', type: null, used: 1, resetsAt: null,
-        windows: { fiveHour: null, week: null, weekOverage: null },
-        at: Date.now(), fromMessage: true
-      });
+    // Belt and braces: if neither the rate limit event nor the marked message
+    // arrived, the turn itself says so in words.
+    const limited = !!event.is_error && !interrupted &&
+      (this._limitThisTurn || looksRateLimited(event.result));
+    if (limited) this._limitHit(event.result);
+    this._limitThisTurn = false;
+    if (limited) {
+      this.cutByLimit = true;
+    } else if (!event.is_error || interrupted) {
+      // Finished, or stopped by somebody on purpose: nothing is owed.
+      this.cutByLimit = false;
+      this.interruptedByPause = false;
     }
     if (event.is_error && !interrupted) {
       this.errors += 1;
@@ -1124,9 +1165,84 @@ function window5(w) {
 
 const LIMIT_WORD = { five_hour: 'five-hour', seven_day: 'weekly', overage: 'overage' };
 
-/** The CLI's own wording, for when the structured event does not arrive. */
-const RATE_LIMITED = /usage limit reached|rate limit|quota (?:exceeded|reached)/i;
+/**
+ * The CLI's own wording, for when the structured signals do not arrive.
+ *
+ * It has said "Claude AI usage limit reached" and it now says "You've hit your
+ * session limit · resets 9:30am (Asia/Riyadh)" — the second of which the first
+ * version of this did not match, and instances that failed that way were left
+ * red when the reset came. Both are here, and "weekly" or "Opus" in place of
+ * "session" too.
+ */
+const RATE_LIMITED = /usage limit reached|rate limit|quota (?:exceeded|reached)|hit your (?:[\w-]+ )?limit|\blimit reached\b/i;
 const looksRateLimited = (text) => RATE_LIMITED.test(String(text || ''));
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/** How far a time zone is from UTC at a given moment, in milliseconds. */
+function zoneOffset(at, zone) {
+  const parts = {};
+  for (const p of new Intl.DateTimeFormat('en-US', {
+    timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric'
+  }).formatToParts(new Date(at))) parts[p.type] = p.value;
+  const wall = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour % 24, +parts.minute, +parts.second);
+  return wall - Math.floor(at / 1000) * 1000;
+}
+
+/**
+ * When the words say the limit resets: "resets 9:30am (Asia/Riyadh)",
+ * "resets 3am", "resets Sep 30, 10am (Europe/Berlin)".
+ *
+ * A wall-clock time in a named zone, turned into a moment — the next such
+ * moment if no date is given, because a limit always resets in the future.
+ * Anything it cannot read confidently is null, and the window falls back to
+ * looking again in a while, which is slower and never wrong.
+ */
+function resetFromText(text, now) {
+  const m = /resets\s+(?:at\s+|on\s+)?(?:([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b(?:\s*\(([^)]+)\))?/i
+    .exec(String(text || ''));
+  if (!m) return null;
+  const from = typeof now === 'number' ? now : Date.now();
+  let zone = m[6] ? m[6].trim() : null;
+  try { if (zone) new Intl.DateTimeFormat('en-US', { timeZone: zone }); }
+  catch (_) { zone = null; }
+  zone = zone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  let hour = Number(m[3]) % 12;
+  if (m[5].toLowerCase() === 'pm') hour += 12;
+  const minute = m[4] ? Number(m[4]) : 0;
+  if (hour > 23 || minute > 59) return null;
+
+  // Today's date where the reset is, so "9:30am" means 9:30 there.
+  const today = {};
+  for (const p of new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: 'numeric', day: 'numeric' })
+    .formatToParts(new Date(from))) today[p.type] = p.value;
+  let year = +today.year;
+  let month = +today.month - 1;
+  let day = +today.day;
+  const named = m[1] ? MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()) : -1;
+  if (m[1] && named < 0) return null;
+  if (named >= 0) { month = named; day = Number(m[2]); }
+
+  const at = (y, mo, d) => {
+    const guess = Date.UTC(y, mo, d, hour, minute);
+    const first = guess - zoneOffset(guess, zone);
+    // Once more at the answer, for the day the clocks change.
+    return guess - zoneOffset(first, zone);
+  };
+  let when = at(year, month, day);
+  if (named >= 0) {
+    if (when <= from) when = at(year + 1, month, day);
+  } else {
+    for (let i = 0; i < 2 && when <= from; i++) {
+      const next = new Date(Date.UTC(year, month, day + 1));
+      year = next.getUTCFullYear(); month = next.getUTCMonth(); day = next.getUTCDate();
+      when = at(year, month, day);
+    }
+  }
+  return when > from ? when : null;
+}
 
 function pauseMessage(reason, until) {
   const when = until ? ' It should be back ' + new Date(until).toLocaleString() + '.' : '';
@@ -1146,6 +1262,62 @@ function describeLimit(limits) {
   }
   const pct = limits.used === null ? '' : ` (${Math.round(limits.used * 100)}% used)`;
   return `Approaching your ${which} limit${pct}${when}.`;
+}
+
+// A limit is owed its nudge for a day after it resets. A conversation left on
+// the limit for longer than that is one somebody chose not to pick up again,
+// and spending the quota on it unasked would be the wrong kind of helpful.
+const OWED_FOR_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a conversation's transcript ends on the account's limit — the CLI
+ * writes that message down, marked `error: "rate_limit"`, with the reset time
+ * beside it — and so is owed a nudge when the quota comes back.
+ *
+ * This is what lets an instance recover whatever the window remembered about
+ * it: the ones left red by the bug this was written for had nothing saved, and
+ * their transcripts still ended on "You've hit your session limit".
+ *
+ * Only the end of the file is read; transcripts run to hundreds of megabytes.
+ *
+ * @returns {{at: number, resetsAt: number|null}|null}
+ */
+function endedOnLimit(file, now) {
+  if (!file) return null;
+  let tail = '';
+  try {
+    const size = fs.statSync(file).size;
+    const want = Math.min(size, 256 * 1024);
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(want);
+      fs.readSync(fd, buf, 0, want, size - want);
+      tail = buf.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch (_) { return null; }
+
+  const lines = tail.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let entry;
+    try { entry = JSON.parse(lines[i]); } catch (_) { continue; }
+    if (!entry || entry.isSidechain) continue;
+    if (entry.type !== 'user' && entry.type !== 'assistant') continue;
+    // The last word in the conversation, whoever said it.
+    if (entry.type !== 'assistant') return null;
+    const content = (entry.message && entry.message.content) || [];
+    const text = Array.isArray(content)
+      ? content.map((c) => (c && c.type === 'text' ? c.text : '')).join(' ')
+      : String(content || '');
+    const marked = entry.error === 'rate_limit' || (entry.isApiErrorMessage && looksRateLimited(text));
+    if (!marked) return null;
+    const at = Date.parse(entry.timestamp) || 0;
+    const q = entry.quotaLimits || {};
+    const resetsAt = seconds(q.resetsAt) || resetFromText(text, at || Date.now());
+    const from = typeof now === 'number' ? now : Date.now();
+    if ((resetsAt || at) + OWED_FOR_MS < from) return null;
+    return { at, resetsAt: resetsAt || null };
+  }
+  return null;
 }
 
 /** The state an instance may come back in, after a reload or a restart. */
@@ -1295,5 +1467,5 @@ function flattenContent(content) {
 
 module.exports = {
   Session, STATUS, commandArgs, learnCommandArgs, offerCommandArgs, clip, restoredStatus,
-  describeLimit, looksRateLimited, seconds, TOOL_RESULT_MAX, DEFAULT_MAX_ITEMS
+  describeLimit, looksRateLimited, resetFromText, endedOnLimit, seconds, TOOL_RESULT_MAX, DEFAULT_MAX_ITEMS
 };

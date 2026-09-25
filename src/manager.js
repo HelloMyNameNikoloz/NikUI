@@ -3,7 +3,8 @@
 const vscode = require('vscode');
 const path = require('path');
 const { EventEmitter } = require('events');
-const { Session } = require('./session');
+const { Session, endedOnLimit } = require('./session');
+const { transcriptPath } = require('./history');
 
 const STORAGE_KEY = 'nikui.sessions.v1';
 // The plan's limits belong to the account, not to a window or a folder.
@@ -180,7 +181,7 @@ class SessionManager extends EventEmitter {
   }
 
   create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage, turnLog, startedAt,
-    turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt, queue }) {
+    turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt, queue, cutByLimit }) {
     const cfg = this.config;
     const session = new Session({
       id,
@@ -212,7 +213,10 @@ class SessionManager extends EventEmitter {
       status,
       finishedAt,
       compactions,
-      lastCompactedAt
+      lastCompactedAt,
+      // Whether the limit cut off its last turn: owed a nudge when the quota
+      // comes back, reload or no reload.
+      cutByLimit
     });
 
     session.on('status', () => { this._changed(session); });
@@ -297,7 +301,10 @@ class SessionManager extends EventEmitter {
 
     const resetsAt = pickReset(limits);
     const until = resetsAt ? resetsAt + RESUME_GRACE_MS : Date.now() + BLIND_RETRY_MS;
-    if (this.pause && this.pause.until >= until) return false; // already waiting on this
+    // Already waiting on this — unless the wait was a guess and this is a time.
+    // "Look again in fifteen minutes" is not a reason to ignore "resets at 9:30".
+    const sharper = this.pause && this.pause.blind && resetsAt;
+    if (this.pause && !sharper && this.pause.until >= until) return false;
 
     this.pause = {
       since: Date.now(),
@@ -351,9 +358,35 @@ class SessionManager extends EventEmitter {
     if (this._resumeTimer.unref) this._resumeTimer.unref();
   }
 
-  /** Called once the window has its instances back, so a pause survives a reload. */
+  /**
+   * Called once the window has its instances back, so a pause survives a
+   * reload — and so does the work it cut off.
+   *
+   * The second case is the one that went wrong. Instances the limit cut off
+   * come back owing a nudge; if nothing is waiting on the reset any more —
+   * another window already resumed and cleared it, or this one was closed
+   * straight through it — they used to be left red for good. Now they get a
+   * pause of their own: until the reset the window last heard of, or a few
+   * seconds if that has passed. If the quota is still spent, the nudge meets
+   * the limit again and the window pauses properly, knowing the time this time.
+   */
   restorePause() {
-    if (!this.pause) return false;
+    if (!this.pause) {
+      const owed = this.list.filter((s) => s.cutByLimit);
+      if (!owed.length) return false;
+      // Somebody who switched waiting off did not ask for anything to carry on.
+      if (this.config.pauseOnLimit === false) return false;
+      const resetsAt = Math.max(pickReset(this.limits) || 0, this.knownReset || 0) || null;
+      const soon = Date.now() + 5000;
+      this.pause = {
+        since: Date.now(),
+        until: resetsAt && resetsAt + RESUME_GRACE_MS > soon ? resetsAt + RESUME_GRACE_MS : soon,
+        blind: !resetsAt,
+        limitType: (this.limits && this.limits.type) || null,
+        restored: true
+      };
+      this.context.globalState.update(PAUSE_KEY, this.pause);
+    }
     for (const session of this.list) session.pause({ until: this.pause.until, reason: 'limit' });
     this._armResume();
     return true;
@@ -397,7 +430,10 @@ class SessionManager extends EventEmitter {
         // Prompts waiting in a queue are typed work — and a quota pause, which
         // is the whole reason a queue gets long, is itself remembered across a
         // reload. Losing one while keeping the other would be the worst pair.
-        queue: (s.queue || []).slice(0, KEEP_QUEUED).map(slimQueued)
+        queue: (s.queue || []).slice(0, KEEP_QUEUED).map(slimQueued),
+        // Work the limit cut off. It was only ever held in memory, so a reload
+        // during a pause forgot who to nudge, and those instances stayed red.
+        cutByLimit: !!(s.cutByLimit || s.interruptedByPause)
       }));
     this.context.workspaceState.update(STORAGE_KEY, data.slice(-KEEP));
   }
@@ -415,6 +451,11 @@ class SessionManager extends EventEmitter {
     const saved = this.restorable().filter((s) => s.claudeSessionId && s.cwd);
     for (const entry of saved.slice(-KEEP)) {
       if (this.sessions.has(entry.id)) continue;
+      // What the CLI wrote down outranks what this window remembered: an
+      // instance cut off before NikUI kept track of that still ends, on disk,
+      // on the limit — and so is still owed its nudge.
+      const onDisk = entry.cutByLimit ? null : endedOnLimit(transcriptPath(entry.cwd, entry.claudeSessionId));
+      if (onDisk && onDisk.resetsAt) this.knownReset = Math.max(this.knownReset || 0, onDisk.resetsAt);
       this.create({
         id: entry.id,
         cwd: entry.cwd,
@@ -434,6 +475,7 @@ class SessionManager extends EventEmitter {
         compactions: entry.compactions,
         lastCompactedAt: entry.lastCompactedAt,
         queue: entry.queue,
+        cutByLimit: !!(entry.cutByLimit || onDisk),
         autoStart: false
       });
     }
