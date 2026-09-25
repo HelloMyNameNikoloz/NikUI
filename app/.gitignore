@@ -25,3 +25,6 @@ app/screens/
 # Pictures of the real app on a real phone, taken by app/tools/screens.js.
 # Useful to look at, not worth keeping: take them again.
 screens/
+
+# Builds to install by hand. Made from the repo, never part of it.
+dist/
