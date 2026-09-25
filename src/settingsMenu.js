@@ -124,9 +124,71 @@ function targetFor(key) {
 const read = (key, fallback) =>
   vscode.workspace.getConfiguration('nikui').get(key.replace(/^nikui\./, ''), fallback);
 
-const write = (key, value) =>
-  vscode.workspace.getConfiguration('nikui')
-    .update(key.replace(/^nikui\./, ''), value, targetFor(key));
+/**
+ * Whether VS Code has loaded this setting yet.
+ *
+ * It learns an extension's settings from its package.json when a window
+ * starts — and an extension installed as a link to its own source can start
+ * from a copy VS Code kept of an older one, noticing the difference only a
+ * moment later. A setting added since then cannot be written until the window
+ * reloads once more, and VS Code's own words for that, "is not a registered
+ * configuration", do not say so. This happened to `nikui.lidClosed` the
+ * morning after it was added.
+ *
+ * Every setting NikUI declares has a default, so a setting with none is one
+ * VS Code has not heard of. A host with no way to ask is taken at its word.
+ */
+function registered(key) {
+  const cfg = vscode.workspace.getConfiguration('nikui');
+  if (typeof cfg.inspect !== 'function') return true;
+  try {
+    const seen = cfg.inspect(key.replace(/^nikui\./, ''));
+    return !!seen && seen.defaultValue !== undefined;
+  } catch (_) { return true; }
+}
+
+/** Declared in package.json and not loaded by this window: it started from an old copy. */
+function unloaded(schema) {
+  return Object.keys(schema || {}).filter((key) => !registered(key));
+}
+
+function notLoaded(key) {
+  const err = new Error('VS Code on the laptop has not loaded this setting yet. Reload its window once and it will work.');
+  err.code = 'NOT_LOADED';
+  err.key = key;
+  return err;
+}
+
+/**
+ * Said once, with the one thing that fixes it as the button. From a phone this
+ * is what whoever is at the laptop sees; the phone is told in words of its own.
+ */
+let offering = false;
+function offerReload() {
+  if (offering) return;
+  offering = true;
+  Promise.resolve(vscode.window.showWarningMessage(
+    'NikUI was updated, and VS Code is still using its old list of NikUI\u2019s settings. Reload the window to finish.',
+    'Reload Window'
+  )).then((choice) => {
+    offering = false;
+    if (choice) vscode.commands.executeCommand('workbench.action.reloadWindow');
+  }, () => { offering = false; });
+}
+
+/**
+ * Write one. Refused before VS Code is asked, when VS Code would refuse it: a
+ * change that cannot land should say why, and should not be preceded by a
+ * password dialog for nothing.
+ */
+const write = (key, value, target) => {
+  if (!registered(key)) {
+    offerReload();
+    return Promise.reject(notLoaded(key));
+  }
+  return vscode.workspace.getConfiguration('nikui')
+    .update(key.replace(/^nikui\./, ''), value, target || targetFor(key));
+};
 
 /** Every setting this extension contributes, as the rows of a list. */
 function settingRows(schema) {
@@ -354,7 +416,16 @@ async function openSettings(deps) {
       if (!picked.action.stayOpen) return;
       continue;
     }
-    if (picked.row) await edit(picked.row);
+    if (picked.row) {
+      try {
+        await edit(picked.row);
+      } catch (err) {
+        // Not loaded yet has already said so, with its button.
+        if (!err || err.code !== 'NOT_LOADED') {
+          vscode.window.showWarningMessage('NikUI could not change that: ' + ((err && err.message) || 'unknown error'));
+        }
+      }
+    }
   }
 }
 
@@ -366,5 +437,6 @@ function schemaFrom(extensionPath) {
 
 module.exports = {
   openSettings, buildItems, settingRows, schemaFrom, pickModel, rememberModelsIn, useSwitch, write,
+  registered, unloaded, offerReload, notLoaded,
   nameFor, groupFor, shown, summarise, GROUPS, NAMES, OTHER
 };

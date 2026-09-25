@@ -13,7 +13,54 @@ install();
 const menu = require('../src/settingsMenu.js');
 const manifest = require('../package.json');
 
+const settle = () => new Promise((r) => setImmediate(r));
+
 module.exports = async function () {
+  suite('a setting this window has not loaded yet');
+
+  {
+    // What happened to nikui.lidClosed: the window started from VS Code's copy
+    // of an older package.json, so the setting was declared on disk and missing
+    // from the registry, and every write of it failed in VS Code's words.
+    const stub = install();
+    const writes = stub.__registered.writes;
+    // Its own ear for the warning, because other checks in this process answer
+    // VS Code's dialogs their own way and do not all put the stub back.
+    const warned = [];
+    const realWarning = stub.window.showWarningMessage;
+    stub.window.showWarningMessage = async (text) => { warned.push(String(text)); return stub.__answers.shift(); };
+    stub.__unloaded.add('lidClosed');
+
+    const onDisk = menu.schemaFrom(require('path').join(__dirname, '..'));
+    checkEqual('it is found by comparing the file with what VS Code loaded',
+      menu.unloaded(onDisk), ['nikui.lidClosed']);
+    check('the rest are loaded', menu.registered('nikui.keepAwake'));
+
+    const before = writes.length;
+    let err = null;
+    await menu.write('nikui.lidClosed', true).catch((e) => { err = e; });
+    check('writing it is refused before VS Code is asked', !!err && err.code === 'NOT_LOADED');
+    checkEqual('so nothing half-happens', writes.length, before);
+    check('the reason says what fixes it', /Reload its window once/.test((err && err.message) || ''));
+    check('rather than VS Code\u2019s own words', !/registered configuration/.test((err && err.message) || ''));
+    check('and whoever is at the laptop is offered the reload',
+      warned.some((w) => /Reload the window to finish/.test(w)));
+
+    await settle();
+    stub.__answers.push('Reload Window');
+    menu.offerReload();
+    await settle();
+    await settle();
+    check('whose button reloads the window', stub.__registered.executed.includes('workbench.action.reloadWindow'));
+
+    stub.__unloaded.delete('lidClosed');
+    await menu.write('nikui.lidClosed', true);
+    check('once the window has it, it writes', writes.some(([k, v]) => k === 'lidClosed' && v === true));
+    checkEqual('and nothing is left unloaded', menu.unloaded(onDisk), []);
+    delete stub.__config.lidClosed;
+    stub.window.showWarningMessage = realWarning;
+  }
+
   suite('every setting is in the menu, because the menu is the settings');
 
   const schema = menu.schemaFrom(require('path').join(__dirname, '..'));

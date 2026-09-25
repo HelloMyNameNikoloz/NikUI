@@ -333,6 +333,14 @@ To use it permanently without F5, symlink it into your extensions folder:
 
 and reload the window.
 
+Installed this way, a change to `package.json` — a new setting or command —
+can take **two** reloads: VS Code starts the first from its cached copy of the
+old manifest and only notices the new one a moment later. Code changes need
+one. NikUI checks for exactly this when it starts, and if VS Code has not loaded
+one of its settings it says so with a **Reload Window** button, rather than
+leaving you to meet VS Code's "is not a registered configuration" at the first
+switch you flip.
+
 ## Design
 
 Apple HIG, adapted to a webview: SF Pro throughout, an 8pt spacing rhythm, a

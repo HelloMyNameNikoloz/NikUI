@@ -8,8 +8,11 @@ const { EventEmitter } = require('events');
 function makeStub(overrides) {
   const registered = {
     commands: {}, views: [], serializers: [], treeViews: {}, panels: [],
-    statusBars: [], opened: [], copied: []
+    statusBars: [], opened: [], copied: [], warnings: [], executed: [], writes: []
   };
+  // Settings VS Code "has not loaded": declared in package.json, missing from
+  // the window's registry, the way a window started from a stale copy is.
+  const unloadedKeys = new Set();
   const config = Object.assign({ groupByProject: 'auto' }, (overrides && overrides.config) || {});
 
   const stub = {
@@ -17,6 +20,8 @@ function makeStub(overrides) {
     version: '1.100.0',
     __config: config,
     __answers: [],
+    __unloaded: unloadedKeys,
+    ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
     EventEmitter: class {
       constructor() { this._e = new EventEmitter(); this.event = (fn) => { this._e.on('x', fn); return { dispose() {} }; }; }
       fire(v) { this._e.emit('x', v); }
@@ -91,7 +96,7 @@ function makeStub(overrides) {
       },
       showOpenDialog: async () => undefined,
       showInputBox: async () => undefined,
-      showWarningMessage: async () => stub.__answers.shift(),
+      showWarningMessage: async (text) => { registered.warnings.push(String(text)); return stub.__answers.shift(); },
       showTextDocument: async () => ({}),
       showInformationMessage: async () => undefined,
       setStatusBarMessage: () => {},
@@ -110,12 +115,22 @@ function makeStub(overrides) {
     },
     commands: {
       registerCommand: (id, fn) => { registered.commands[id] = fn; return { dispose() {} }; },
-      executeCommand: async () => {}
+      executeCommand: async (id) => { registered.executed.push(id); }
     },
     workspace: {
       workspaceFolders: (overrides && overrides.workspaceFolders) ||
         [{ name: 'Peuka', uri: { fsPath: '/Users/nikoloz/Codes/Peuka' } }],
-      getConfiguration: () => ({ get: (key, fallback) => (key in config ? config[key] : fallback) }),
+      getConfiguration: () => ({
+        get: (key, fallback) => (key in config ? config[key] : fallback),
+        inspect: (key) => ({ key, defaultValue: unloadedKeys.has(key) ? undefined : (key in config ? config[key] : null) }),
+        update: async (key, value) => {
+          if (unloadedKeys.has(key)) {
+            throw new Error('Unable to write to User Settings because nikui.' + key + ' is not a registered configuration.');
+          }
+          registered.writes.push([key, value]);
+          config[key] = value;
+        }
+      }),
       openTextDocument: async () => ({})
     }
   };

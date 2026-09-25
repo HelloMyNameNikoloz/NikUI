@@ -282,6 +282,24 @@ module.exports = async function () {
     checkEqual('so the work keeps going', mac.flag, 1);
     void watcher;
 
+    // A window started from VS Code's old copy of the settings cannot store
+    // the switch. The phone is told what fixes it, not VS Code's words for it.
+    const storing = keeping.writeLid;
+    keeping.writeLid = async () => {
+      const err = new Error('VS Code on the laptop has not loaded this setting yet.');
+      err.code = 'NOT_LOADED';
+      throw err;
+    };
+    lidSetting = false;
+    const stale = await askLid(one, true);
+    check('a laptop that has not loaded the setting says it needs reloading',
+      /needs reloading once/.test(stale.refused || ''));
+    check('in words, not VS Code\u2019s', !/registered configuration/.test(stale.refused || ''));
+    keeping.writeLid = storing;
+    await askLid(one, true);
+    keeping.reconsider();
+    await lid.queue;
+
     mac.lidClosed = true;
     const lidOff = await askLid(one, false);
     checkEqual('turned off from the phone', lidOff.lid && lidOff.lid.on, false);

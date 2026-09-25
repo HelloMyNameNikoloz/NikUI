@@ -28,7 +28,8 @@ const { Awake, KeepAwake } = require('./awake');
 const { LidGuard } = require('./lid');
 const { loadVapid } = require('./push');
 const { Notifier } = require('./notify');
-const { openSettings, schemaFrom, rememberModelsIn, useSwitch } = require('./settingsMenu');
+const { openSettings, schemaFrom, rememberModelsIn, useSwitch, write: writeSetting, registered,
+  unloaded, offerReload, notLoaded } = require('./settingsMenu');
 const { loadApns } = require('./apns');
 
 let manager;
@@ -583,13 +584,15 @@ function keepAwake(context, manager, serverOf) {
   const flag = (key) => { try { return cfg().get(key, false); } catch (_) { return false; } };
   const lid = new LidGuard({ log: (line) => console.log('NikUI ' + line) });
 
+  // Written the one way every NikUI setting is written, so a setting this
+  // window has not loaded yet is refused with a reason rather than by VS Code.
   const keeping = new KeepAwake({
     awake,
     enabled: () => flag('keepAwake'),
-    write: (on) => cfg().update('keepAwake', on, vscode.ConfigurationTarget.Global),
+    write: (on) => writeSetting('nikui.keepAwake', on, vscode.ConfigurationTarget.Global),
     lid,
     lidEnabled: () => flag('lidClosed'),
-    writeLid: (on) => cfg().update('lidClosed', on, vscode.ConfigurationTarget.Global),
+    writeLid: (on) => writeSetting('nikui.lidClosed', on, vscode.ConfigurationTarget.Global),
     sessions: () => manager.list,
     serving: () => { const s = serverOf(); return !!(s && s.listening); }
   });
@@ -601,6 +604,12 @@ function keepAwake(context, manager, serverOf) {
    * screen nobody is looking at.
    */
   keeping.switchLid = async (on) => {
+    // Before anything else: a switch VS Code cannot store is not worth your
+    // password. Refused with the reason, so wherever it was flipped says why.
+    if (!registered('nikui.lidClosed')) {
+      offerReload();
+      throw notLoaded('nikui.lidClosed');
+    }
     if (!on) return keeping.setLid(false);
     if (!(await lid.ready())) {
       const go = await vscode.window.showInformationMessage(
@@ -624,7 +633,7 @@ function keepAwake(context, manager, serverOf) {
   };
 
   keeping.removeLidApproval = async () => {
-    await cfg().update('lidClosed', false, vscode.ConfigurationTarget.Global);
+    if (registered('nikui.lidClosed')) await writeSetting('nikui.lidClosed', false, vscode.ConfigurationTarget.Global);
     const out = await lid.takeDown();
     if (out.ok) vscode.window.setStatusBarMessage('NikUI: closing the lid puts this Mac to sleep again, always', 5000);
     keeping.reconsider();
@@ -647,7 +656,7 @@ function keepAwake(context, manager, serverOf) {
           if (ok) return;
           vscode.window.showWarningMessage(
             'NikUI needs a one-time approval before the lid can be closed while Claude works.', 'Approve'
-          ).then((choice) => { if (choice) keeping.switchLid(true); });
+          ).then((choice) => { if (choice) keeping.switchLid(true).catch(() => {}); });
         });
       }
     }));
@@ -706,6 +715,11 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   // so it is kept across openings rather than rebuilt for every menu.
   rememberModelsIn(context.globalState);
   offerModelsToComposer(context.globalState);
+  // A window that started from VS Code's old copy of NikUI's settings says so
+  // now, while the fix is one click, rather than at the first switch that fails.
+  try {
+    if (unloaded(schemaFrom(context.extensionUri.fsPath)).length) offerReload();
+  } catch (_) { /* nothing to compare against */ }
 
   const audience = new Audience();
 
@@ -1251,6 +1265,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
         ? 'NikUI: closing the lid will not stop work that is running. It sleeps when the work is done.'
         : 'NikUI: closing the lid puts this laptop to sleep again', 6000);
     } catch (err) {
+      if (err && err.code === 'NOT_LOADED') return;
       vscode.window.showWarningMessage('NikUI could not change that: ' + ((err && err.message) || 'unknown error'));
     }
   };
@@ -1263,6 +1278,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
         ? 'NikUI: keeping this laptop awake.' + (lidOn ? '' : ' Closing the lid still puts it to sleep.')
         : 'NikUI: this laptop can sleep again', 5000);
     } catch (err) {
+      if (err && err.code === 'NOT_LOADED') return;
       vscode.window.showWarningMessage('NikUI could not change that: ' + ((err && err.message) || 'unknown error'));
     }
   };

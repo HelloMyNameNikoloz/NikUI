@@ -1135,7 +1135,9 @@ ${this.appHead(nonce)}</head>
       await this.keepAwake.set(wanted);
     } catch (err) {
       return void client.post(Object.assign(this.awakeMessage(client), {
-        refused: 'The laptop would not change it: ' + ((err && err.message) || 'unknown error')
+        refused: err && err.code === 'NOT_LOADED'
+          ? 'VS Code on your laptop needs reloading once before this works: NikUI was updated and it has not loaded the new settings yet.'
+          : 'The laptop would not change it: ' + ((err && err.message) || 'unknown error')
       }));
     }
     this.note(seat, wanted ? 'kept the laptop awake' : 'let the laptop sleep', '');
@@ -1170,7 +1172,9 @@ ${this.appHead(nonce)}</head>
       return void client.post(Object.assign(this.awakeMessage(client), {
         refused: err && err.code === 'NEEDS_APPROVAL'
           ? 'Approve it once on your laptop first: click NikUI in the status bar, then Keep working with the lid closed.'
-          : 'The laptop would not change it: ' + ((err && err.message) || 'unknown error')
+          : err && err.code === 'NOT_LOADED'
+            ? 'VS Code on your laptop needs reloading once before this works: NikUI was updated and it has not loaded the new settings yet.'
+            : 'The laptop would not change it: ' + ((err && err.message) || 'unknown error')
       }));
     }
     this.note(seat, wanted ? 'let the laptop work with the lid closed' : 'let the lid put the laptop to sleep', '');
