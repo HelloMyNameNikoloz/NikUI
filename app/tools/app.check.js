@@ -232,8 +232,13 @@ const record = (name, ok) => {
     await phone.evaluate('document.getElementById("type-instead").click()');
     record('typing it is still there for when that does not work',
       (await phone.evaluate('document.querySelectorAll(".field input").length')) === 3);
+    // Waited for rather than measured at once: the fields were hidden a moment
+    // ago, and a height read before the first layout is a coin toss.
     record('with the code field sized for a thumb',
-      (await phone.evaluate('Math.round(document.getElementById("code").getBoundingClientRect().height)')) >= 44);
+      await phone.until(`(() => {
+        const field = document.getElementById('code');
+        return !!field && Math.round(field.getBoundingClientRect().height) >= 44;
+      })()`, 3000));
     record('and 17px text, so iOS will not zoom it',
       (await phone.evaluate('parseFloat(getComputedStyle(document.getElementById("code")).fontSize)')) >= 16);
     record('it says what pairing grants before anybody taps',

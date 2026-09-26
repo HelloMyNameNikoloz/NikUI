@@ -180,13 +180,22 @@ function conversationPage() {
       '<script src="lock.js"></script>\n' +
       '<script src="app.js"></script>\n' +
       '<script src="notify.js"></script>\n' +
-      '<script src="media/mobile.js" defer></script>\n',
-    boot: 'document.body.classList.add(\'app\', \'app-conversation\');'
+      '<script src="media/mobile.js" defer></script>\n'
   })
     // The app has no nonces to hand out and no use for them: nothing here is
     // fetched over a network, and the policy already says 'self'.
     .replace(/ nonce="app"/g, '')
+    // Written into the markup, not added by a script. It used to be an inline
+    // `document.body.classList.add(...)` — which this page's own policy,
+    // `script-src 'self'`, refuses to run. So the conversation never had the
+    // classes its app styling hangs on: no room for the status bar above the
+    // header, none for the gesture bar below the composer. Nothing said so but
+    // a line in the WebView's console.
+    .replace('<body>', '<body class="app app-conversation">')
     .replace(/<meta name="viewport"[^>]*>/, '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">');
+  if (!html.includes('<body class="app app-conversation">')) {
+    throw new Error('the conversation page lost its app classes: the template no longer starts <body>');
+  }
   fs.writeFileSync(path.join(OUT, 'conversation.html'), html);
 }
 

@@ -57,6 +57,16 @@ check('and there is something to load', loads.length > 5);
 
 // ---- every screen is sealed the same way ------------------------------------
 
+// A script written into the page is a script the page's own policy will not
+// run — silently, apart from a line in the WebView console. The conversation's
+// app classes were lost that way for a week.
+for (const page of fs.readdirSync(OUT).filter((f) => f.endsWith('.html'))) {
+  const inline = (read(page).match(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/g) || []);
+  equal(page + ' has no inline script its policy would refuse', inline, []);
+}
+check('the conversation carries the classes the app styles it by',
+  /<body class="app app-conversation">/.test(read('conversation.html')));
+
 for (const page of ['index.html', 'connect.html', 'settings.html', 'conversation.html']) {
   const html = read(page);
   check(page + ' carries a policy', /Content-Security-Policy/.test(html));
