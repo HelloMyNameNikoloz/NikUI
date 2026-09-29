@@ -124,9 +124,13 @@ owns the whole surface.
   can hover to read what was added, so a long standing instruction is not
   reprinted on every turn. They appear in the `/` palette tagged *NikUI*, and
   they are yours to write: `nikui.promptSnippets` maps a word to its text, your
-  entries merged over the built-in one, and an empty string switches one off.
-  The one that ships asks for the current plan as a table — 🟢 done, 🟡 in
-  progress, 🔴 not started — scoped to the task in hand rather than the project.
+  entries merged over the built-in ones, and an empty string switches one off.
+  `/table` asks for the current plan as a table — 🟢 done, 🟡 in progress,
+  🔴 not started — scoped to the task in hand rather than the project. `/lean`
+  asks for the task in few, wide steps: one batched look, small edits, one
+  verification pass, and a subagent only for a big sweep or web research. Every
+  step re-reads the whole conversation, so fewer steps is fewer tokens; the
+  checks stay the same.
 - **Prompt recall.** Up from an empty composer brings back the last prompt, and
   again the one before it; Down walks forward and, past the newest, hands back
   whatever was half-typed before recall started. Editing a recalled prompt ends
@@ -357,7 +361,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.claudePath` | `claude` | Path to the executable |
 | `nikui.model` | *(empty)* | Passed to `--model`; empty uses your default. Picked from a list read out of your installed CLI, so a new model appears the day you update Claude Code. Changing it applies to new instances, and to existing ones when they are restarted |
 | `nikui.permissionMode` | `bypassPermissions` | Passed to `--permission-mode` |
-| `nikui.effort` | `max` | Passed to `--effort` (low/medium/high/xhigh/max) |
+| `nikui.effort` | *(empty)* | Passed to `--effort` (low/medium/high/xhigh/max); empty passes nothing, so your Claude Code default applies |
 | `nikui.outputStyle` | `Concise` | Passed inline via `--settings` |
 | `nikui.extraArgs` | `[]` | Extra CLI arguments |
 | `nikui.autoTitleFromTicket` | `true` | Name instances from PR/issue numbers |
@@ -365,7 +369,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.fontSize` | `13` | Conversation font size |
 | `nikui.showThinking` | `true` | Show thinking blocks, collapsed |
 | `nikui.groupByProject` | `auto` | Nest instances under their project folder |
-| `nikui.promptSnippets` | `/table` | Words that append a standing instruction to your prompt |
+| `nikui.promptSnippets` | `/table`, `/decisions`, `/lean` | Words that append a standing instruction to your prompt |
 | `nikui.pauseWhenQuotaRuns` | `true` | Hold every instance when the usage limit is spent, and start them again when it resets |
 | `nikui.resumePrompt` | see below | What to send an instance that was cut off mid-turn, once the quota is back |
 | `nikui.maxTranscriptItems` | `400` | Messages an instance keeps in memory; 0 keeps everything |

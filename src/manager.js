@@ -98,7 +98,7 @@ function readConfig() {
     claudePath: cfg.get('claudePath', 'claude'),
     model: cfg.get('model', ''),
     permissionMode: cfg.get('permissionMode', 'bypassPermissions'),
-    effort: cfg.get('effort', 'max'),
+    effort: cfg.get('effort', ''),
     outputStyle: cfg.get('outputStyle', 'Concise'),
     extraArgs: cfg.get('extraArgs', []),
     autoTitle: cfg.get('autoTitleFromTicket', true),
