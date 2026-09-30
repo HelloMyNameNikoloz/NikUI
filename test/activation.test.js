@@ -213,17 +213,31 @@ module.exports = async function () {
   suite('a click on a done notification');
 
   {
-    const handler = stub.__registered.uriHandler;
-    check('NikUI answers its own links', !!handler && typeof handler.handleUri === 'function');
-    const link = (p, q) => ({ path: p, query: q });
+    const fs = require('fs');
+    const os = require('os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nikui-inbox-'));
+    const heard = [];
+    const inbox = extension.watchInbox(dir, (id) => heard.push(id));
+    check('each window has an inbox of its own', !!inbox.path && inbox.path.startsWith(path.join(dir, 'clicks')));
+    const other = extension.watchInbox(dir, () => heard.push('wrong window'));
+    check('and no two share one', other.path !== inbox.path);
+    // What the notifier app does on a click: write aside, then move into place.
+    fs.writeFileSync(inbox.path + '.tmp', 's-42');
+    fs.renameSync(inbox.path + '.tmp', inbox.path);
+    await new Promise((r) => setTimeout(r, 300));
+    checkEqual('the click reaches the window it was for, and only that one', heard, ['s-42']);
+    check('and the note is taken away once read', !fs.existsSync(inbox.path));
+    inbox.dispose(); other.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+
+    const manager = { get: () => null };
     const before = (stub.__registered.executedWith || []).length;
-    await handler.handleUri(link('/elsewhere', 'session=x'));
-    await handler.handleUri(link('/open', 'session=nobody-we-told'));
-    checkEqual('a link to anything else, or to an instance it never announced, starts nothing',
+    await extension.openClicked('nobody-we-told', manager, context);
+    checkEqual('an instance it never announced starts nothing',
       (stub.__registered.executedWith || []).length, before);
     context.globalState.update('nikui.notified',
       [{ id: 'gone-1', claude: 'c0ffee', cwd: '/Users/nikoloz/Codes/Peuka', label: 'PR 12' }]);
-    await handler.handleUri(link('/open', 'session=gone-1'));
+    await extension.openClicked('gone-1', manager, context);
     checkEqual('one it announced and that has since closed is resumed',
       (stub.__registered.executedWith || []).pop(),
       ['nikui.resumeHistory', { sessionId: 'c0ffee', cwd: '/Users/nikoloz/Codes/Peuka', label: 'PR 12', title: 'PR 12' }]);

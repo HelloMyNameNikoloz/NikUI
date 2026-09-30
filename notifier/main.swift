@@ -5,14 +5,15 @@
 // bundle of its own. osascript's come from Script Editor, and a click opens
 // Script Editor.
 //
-//   nikui-notify --post <id> <title> <subtitle> <body> <url> <app> <folder>
+//   nikui-notify --post <id> <title> <subtitle> <body> <inbox> <session> <app> <folder>
 //
 // posts one and exits. A click later launches it again with no arguments, and
-// macOS hands it the notification that was clicked: it brings the VS Code
-// window with that folder to the front, then opens the NikUI link, which lands
-// in the window now in front.
+// macOS hands it the notification that was clicked: it writes the instance's
+// id into that window's inbox, a file the window is watching, and brings the
+// window with that folder to the front. No link: VS Code asks before letting
+// anything outside it open one, and a click should not need a second one.
 //
-//   nikui-notify --click <url> <app> <folder>
+//   nikui-notify --click <inbox> <session> <app> <folder>
 //
 // does what a click does, for checking it without a mouse.
 
@@ -30,11 +31,11 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = Array(CommandLine.arguments.dropFirst())
-        if args.first == "--post", args.count >= 8 {
+        if args.first == "--post", args.count >= 9 {
             post(id: args[1], title: args[2], subtitle: args[3], body: args[4],
-                 info: ["url": args[5], "app": args[6], "folder": args[7]])
-        } else if args.first == "--click", args.count >= 4 {
-            open(url: args[1], app: args[2], folder: args[3]) { exit(0) }
+                 info: ["inbox": args[5], "session": args[6], "app": args[7], "folder": args[8]])
+        } else if args.first == "--click", args.count >= 5 {
+            open(inbox: args[1], session: args[2], app: args[3], folder: args[4]) { exit(0) }
         } else {
             // Launched by a click, which arrives in a moment, or by hand.
             DispatchQueue.main.asyncAfter(deadline: .now() + 10) { exit(0) }
@@ -70,7 +71,7 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
                                 withCompletionHandler done: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
         let text = { (key: String) in info[key] as? String ?? "" }
-        open(url: text("url"), app: text("app"), folder: text("folder")) {
+        open(inbox: text("inbox"), session: text("session"), app: text("app"), folder: text("folder")) {
             done()
             exit(0)
         }
@@ -84,20 +85,21 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
     }
 
     /**
-     * The window first, then the link. VS Code gives a link to the window that
-     * was last in front, and opening a folder that is already open brings its
-     * window forward rather than opening another.
+     * Tell the window, then bring it forward. Opening a folder that is already
+     * open brings its window to the front rather than opening another; a
+     * window with no single folder can only be had by bringing VS Code up.
      */
-    func open(url: String, app: String, folder: String, then: @escaping () -> Void) {
-        var wait = 0.0
-        if !folder.isEmpty {
-            run(app.isEmpty ? ["-b", "com.microsoft.VSCode", folder] : ["-a", app, folder])
-            wait = 0.7
+    func open(inbox: String, session: String, app: String, folder: String, then: @escaping () -> Void) {
+        if !inbox.isEmpty, !session.isEmpty {
+            let written = inbox + ".tmp"
+            if (try? session.write(toFile: written, atomically: false, encoding: .utf8)) != nil {
+                _ = try? FileManager.default.removeItem(atPath: inbox)
+                try? FileManager.default.moveItem(atPath: written, toPath: inbox)
+            }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
-            if !url.isEmpty { self.run(app.isEmpty ? [url] : ["-a", app, url]) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: then)
-        }
+        let target = app.isEmpty ? ["-b", "com.microsoft.VSCode"] : ["-a", app]
+        run(folder.isEmpty ? target : target + [folder])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: then)
     }
 
     func run(_ args: [String]) {

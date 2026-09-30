@@ -83,7 +83,6 @@ function makeStub(overrides) {
         return panel;
       },
       registerWebviewPanelSerializer: (type, s) => { registered.serializers.push(type); return { dispose() {} }; },
-      registerUriHandler: (handler) => { registered.uriHandler = handler; return { dispose() {} }; },
       state: { focused: true },
       // Answerable, so a command that asks something can be driven to the end
       // of what it does rather than only to the question. `__answer` is a queue:

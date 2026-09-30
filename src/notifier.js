@@ -140,14 +140,14 @@ class MacNotifier {
    * Post one. Resolves with whether it was shown; `false` means use something
    * else this time.
    *
-   * @param {object} n  { id, title, subtitle, body, url, app, folder }
+   * @param {object} n  { id, title, subtitle, body, inbox, session, app, folder }
    */
   async post(n) {
     if (!(await this.ensure())) return false;
     // Through `open`, so it runs as the app it is and macOS knows whose
     // notification this is. `-n`, because one may still be waiting on a click.
     const posted = await this.run('/usr/bin/open', ['-n', '-g', '-W', this.app, '--args', '--post',
-      n.id, n.title, n.subtitle || '', n.body || '', n.url || '', n.app || '', n.folder || ''], { timeout: 60000 });
+      n.id, n.title, n.subtitle || '', n.body || '', n.inbox || '', n.session || '', n.app || '', n.folder || ''], { timeout: 60000 });
     if (!posted.ok) this.log('notifier: could not post' + (posted.stderr ? ': ' + posted.stderr.trim() : ''));
     return posted.ok;
   }

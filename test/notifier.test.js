@@ -38,10 +38,10 @@ module.exports = async function () {
     checkEqual('once built, it is not built again', calls.length, 0);
 
     await n.post({ id: 'done-s1', title: 'PR 12 is done', subtitle: 'Peuka', body: 'Tests pass.',
-      url: 'vscode://nikoloz.nikui/open?session=s1', app: '/Applications/Visual Studio Code.app', folder: '/p' });
+      inbox: '/s/clicks/ab', session: 's1', app: '/Applications/Visual Studio Code.app', folder: '/p' });
     checkEqual('posting runs it as an app, with the words as arguments', calls.pop(),
       ['/usr/bin/open', '-n', '-g', '-W', n.app, '--args', '--post', 'done-s1', 'PR 12 is done', 'Peuka',
-        'Tests pass.', 'vscode://nikoloz.nikui/open?session=s1', '/Applications/Visual Studio Code.app', '/p']);
+        'Tests pass.', '/s/clicks/ab', 's1', '/Applications/Visual Studio Code.app', '/p']);
 
     fs.writeFileSync(path.join(n.app, 'Contents', 'stamp'), 'older');
     check('a change to its source means a rebuild', !n.isBuilt());
