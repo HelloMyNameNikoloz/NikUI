@@ -46,7 +46,7 @@ const NAMES = {
   'nikui.effort': 'Reasoning effort',
   'nikui.outputStyle': 'Output style',
   'nikui.extraArgs': 'Extra arguments to claude',
-  'nikui.autoTitleFromTicket': 'Name instances after the ticket in the folder',
+  'nikui.autoTitleFromTicket': 'Name instances automatically',
   'nikui.fontFamily': 'Font',
   'nikui.fontSize': 'Font size',
   'nikui.promptSnippets': 'Prompt snippets',

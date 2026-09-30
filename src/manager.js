@@ -101,7 +101,7 @@ function readConfig() {
     effort: cfg.get('effort', ''),
     outputStyle: cfg.get('outputStyle', 'Concise'),
     extraArgs: cfg.get('extraArgs', []),
-    autoTitle: cfg.get('autoTitleFromTicket', true),
+    autoTitle: cfg.get('autoTitleFromTicket', false),
     fontFamily: cfg.get('fontFamily', ''),
     fontSize: cfg.get('fontSize', 13),
     showThinking: cfg.get('showThinking', true),
@@ -116,6 +116,16 @@ function readConfig() {
     keepPanelsWarm: cfg.get('keepHiddenPanelsWarm', false),
     statusEmoji: cfg.get('statusEmoji', {})
   };
+}
+
+/**
+ * An instance saved while NikUI still took the CLI's word for its folder may
+ * have been saved in one of Claude's own worktrees. It belongs to the project
+ * that worktree is in.
+ */
+function outsideWorktree(cwd) {
+  const m = /^(.+?)[\\/]\.claude[\\/]worktrees[\\/][^\\/]+/.exec(cwd || '');
+  return m ? m[1] : cwd;
 }
 
 class SessionManager extends EventEmitter {
@@ -460,7 +470,7 @@ class SessionManager extends EventEmitter {
       if (onDisk && onDisk.resetsAt) this.knownReset = Math.max(this.knownReset || 0, onDisk.resetsAt);
       this.create({
         id: entry.id,
-        cwd: entry.cwd,
+        cwd: outsideWorktree(entry.cwd),
         title: entry.customTitle,
         ticket: entry.ticket,
         autoLabel: entry.autoLabel,
@@ -485,4 +495,4 @@ class SessionManager extends EventEmitter {
   }
 }
 
-module.exports = { SessionManager, readConfig, readSnippets, pickReset, RESUME_GRACE_MS, BLIND_RETRY_MS };
+module.exports = { SessionManager, readConfig, readSnippets, pickReset, outsideWorktree, RESUME_GRACE_MS, BLIND_RETRY_MS };

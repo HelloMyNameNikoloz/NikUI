@@ -39,7 +39,8 @@ module.exports = async function () {
   checkEqual('the shipped snippets are /table, /decisions, /lean and /delegate',
     Object.keys(props['nikui.promptSnippets'].default).join(' '), 'table decisions lean delegate');
   checkEqual('output style is Concise by default', props['nikui.outputStyle'].default, 'Concise');
-  checkEqual('instances group automatically', props['nikui.groupByProject'].default, 'auto');
+  checkEqual('instances are not grouped unless asked', props['nikui.groupByProject'].default, 'never');
+  checkEqual('nor named automatically', props['nikui.autoTitleFromTicket'].default, false);
 
   suite('the keyboard reaches the extension');
 

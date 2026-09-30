@@ -169,7 +169,9 @@ class Session extends EventEmitter {
   }
 
   get label() {
-    return this.customTitle || this.ticket || this.autoLabel || path.basename(this.cwd || '') || 'claude';
+    // With automatic naming off, only a name somebody gave it, or its folder.
+    const auto = this.autoTitle ? (this.ticket || this.autoLabel) : null;
+    return this.customTitle || auto || path.basename(this.cwd || '') || 'claude';
   }
 
   get isRunning() {
@@ -706,7 +708,7 @@ class Session extends EventEmitter {
         const t = nextTicket(this.ticket, text);
         if (t !== this.ticket) this.ticket = t;
       }
-      if (!this.autoLabel) this.autoLabel = shortLabel(text);
+      if (this.autoTitle && !this.autoLabel) this.autoLabel = shortLabel(text);
     }
 
     // Nothing replayed from a file is in flight, whatever the file ended on.
@@ -843,7 +845,10 @@ class Session extends EventEmitter {
       tools: event.tools || [],
       slashCommands: event.slash_commands || []
     };
-    if (event.cwd) this.cwd = event.cwd;
+    // Not `event.cwd`. The CLI reports wherever it is working now, which after
+    // it enters a git worktree is `.claude/worktrees/agent-…`, and taking that
+    // as the instance's folder renamed it and filed it under a project of that
+    // name. An instance stays in the folder it was started in.
     // Every turn opens with an init. One nobody here sent is the CLI starting
     // a turn by itself: to hand over what a background agent found, or
     // because a wakeup came due.

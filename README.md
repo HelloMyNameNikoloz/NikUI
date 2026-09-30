@@ -198,10 +198,12 @@ owns the whole surface.
 - **The sidebar follows the tab.** Switching instances from the editor tabs
   selects the same row in the sidebar, not just the other way round; a collapsed
   project or folder expands to show it, and a hidden sidebar is left alone.
-- **Grouped by project.** Instances nest under their project folder — a git
-  worktree groups with the repo it belongs to — with a per-group count, working
-  count and summed cost. `nikui.groupByProject` is `auto` (nest only once more
-  than one project is open), `always` or `never`.
+- **Filed by you.** The sidebar holds only the folders you make and the
+  instances you put in them; nothing is renamed or filed for you. An instance is
+  named after the folder it was started in until you rename it, and stays in
+  that folder even when Claude moves into a git worktree. Grouping by project
+  (`nikui.groupByProject`: `auto` or `always`) and naming from PR/issue numbers
+  (`nikui.autoTitleFromTicket`) are there if you want them, and off by default.
 - **Close, or just stop.** The × on a row closes the instance: the process is
   killed (SIGTERM, then SIGKILL if it lingers) and the row disappears, while the
   conversation stays in History to reopen later. Anything with a conversation
@@ -371,11 +373,11 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.effort` | *(empty)* | Passed to `--effort` (low/medium/high/xhigh/max); empty passes nothing, so your Claude Code default applies |
 | `nikui.outputStyle` | `Concise` | Passed inline via `--settings` |
 | `nikui.extraArgs` | `[]` | Extra CLI arguments |
-| `nikui.autoTitleFromTicket` | `true` | Name instances from PR/issue numbers |
+| `nikui.autoTitleFromTicket` | `false` | Name instances automatically, from PR/issue numbers or the first prompt |
 | `nikui.fontFamily` | *(empty)* | Conversation font; empty uses the UI font |
 | `nikui.fontSize` | `13` | Conversation font size |
 | `nikui.showThinking` | `true` | Show thinking blocks, collapsed |
-| `nikui.groupByProject` | `auto` | Nest instances under their project folder |
+| `nikui.groupByProject` | `never` | Nest instances under their project folder |
 | `nikui.promptSnippets` | `/table`, `/decisions`, `/lean`, `/delegate` | Words that append a standing instruction to your prompt |
 | `nikui.pauseWhenQuotaRuns` | `true` | Hold every instance when the usage limit is spent, and start them again when it resets |
 | `nikui.resumePrompt` | see below | What to send an instance that was cut off mid-turn, once the quota is back |

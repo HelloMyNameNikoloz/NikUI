@@ -542,8 +542,8 @@
         },
         "nikui.autoTitleFromTicket": {
           "type": "boolean",
-          "default": true,
-          "description": "Name instances from a PR/issue number found in your prompts."
+          "default": false,
+          "description": "Name instances automatically, from a PR/issue number in your prompts or from the first prompt. Off by default: an instance is named after its folder until you rename it."
         },
         "nikui.fontFamily": {
           "type": "string",
@@ -651,8 +651,8 @@
             "always",
             "never"
           ],
-          "default": "auto",
-          "description": "Group instances by project folder in the sidebar. \"auto\" nests them only once more than one project is open."
+          "default": "never",
+          "description": "Group instances by project folder in the sidebar. Off by default, so the sidebar holds only the folders you make; \"auto\" nests them once more than one project is open."
         },
         "nikui.remote.port": {
           "type": "number",

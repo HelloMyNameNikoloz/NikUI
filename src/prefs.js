@@ -73,7 +73,7 @@ const PREFS = [
   { id: 'attention', group: 'In the editor', key: 'notifyOnAttention', kind: 'toggle',
     label: 'Tell me when an instance needs me' },
   { id: 'ticket', group: 'In the editor', key: 'autoTitleFromTicket', kind: 'toggle',
-    label: 'Name instances after the ticket they are on' }
+    label: 'Name instances automatically', hint: 'Off: an instance keeps its folder name until you rename it.' }
 ];
 
 const byId = new Map(PREFS.map((p) => [p.id, p]));
