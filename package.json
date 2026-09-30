@@ -542,8 +542,8 @@
         },
         "nikui.autoTitleFromTicket": {
           "type": "boolean",
-          "default": false,
-          "description": "Name instances automatically, from a PR/issue number in your prompts or from the first prompt. Off by default: an instance is named after its folder until you rename it."
+          "default": true,
+          "description": "Name instances automatically, from a PR/issue number in your prompts or from the first prompt. A name you give an instance yourself always wins."
         },
         "nikui.fontFamily": {
           "type": "string",

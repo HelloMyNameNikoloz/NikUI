@@ -1,6 +1,6 @@
 'use strict';
 const { install, memoryState } = require('./helpers/vscode-stub.js');
-const stub = install();
+install();
 const { Session, restoredStatus } = require('../src/session.js');
 const { SessionManager } = require('../src/manager.js');
 
@@ -141,8 +141,6 @@ module.exports = function () {
 
   suite('two instances with the same name');
 
-  // Names from tickets are opt-in now; this is about telling two apart.
-  stub.__config.autoTitleFromTicket = true;
   const named = new SessionManager({ workspaceState: memoryState(), globalState: memoryState() });
   const only = named.create({ cwd: '/Users/x/Codes/Peuka', autoStart: false, ticket: '1327' });
   checkEqual('one of a name needs no explaining', named.displayName(only), '1327');

@@ -24,6 +24,16 @@ module.exports = function () {
     checkEqual('with automatic naming asked for, it still names', s.label, 'PR 7');
   }
 
+  {
+    const s = new Session({ cwd: '/Users/nikoloz/Codes/NikUI' });
+    s.proc = { exitCode: null, killed: false, kill() {}, stdin: { writable: true, write() {}, end() {} } };
+    s.send('review PR #1327');
+    checkEqual('by default it is named after its PR', s.label, '1327');
+    s.rename('Mine');
+    s.send('now look at PR #1400');
+    checkEqual('until you rename it, and then never again', s.label, 'Mine');
+  }
+
   checkEqual('one saved inside a worktree comes back in its project',
     outsideWorktree('/Users/nikoloz/Codes/NikUI/.claude/worktrees/agent-a8q39238e'), '/Users/nikoloz/Codes/NikUI');
   checkEqual('and deeper inside one too',

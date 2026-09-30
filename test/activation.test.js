@@ -40,7 +40,7 @@ module.exports = async function () {
     Object.keys(props['nikui.promptSnippets'].default).join(' '), 'table decisions lean delegate');
   checkEqual('output style is Concise by default', props['nikui.outputStyle'].default, 'Concise');
   checkEqual('instances are not grouped unless asked', props['nikui.groupByProject'].default, 'never');
-  checkEqual('nor named automatically', props['nikui.autoTitleFromTicket'].default, false);
+  checkEqual('but named after their PR or issue', props['nikui.autoTitleFromTicket'].default, true);
 
   suite('the keyboard reaches the extension');
 
@@ -225,7 +225,7 @@ module.exports = async function () {
     // What the notifier app does on a click: write aside, then move into place.
     fs.writeFileSync(inbox.path + '.tmp', 's-42');
     fs.renameSync(inbox.path + '.tmp', inbox.path);
-    await new Promise((r) => setTimeout(r, 300));
+    for (let i = 0; i < 40 && !heard.length; i++) await new Promise((r) => setTimeout(r, 50));
     checkEqual('the click reaches the window it was for, and only that one', heard, ['s-42']);
     check('and the note is taken away once read', !fs.existsSync(inbox.path));
     inbox.dispose(); other.dispose();

@@ -101,7 +101,7 @@ function readConfig() {
     effort: cfg.get('effort', ''),
     outputStyle: cfg.get('outputStyle', 'Concise'),
     extraArgs: cfg.get('extraArgs', []),
-    autoTitle: cfg.get('autoTitleFromTicket', false),
+    autoTitle: cfg.get('autoTitleFromTicket', true),
     fontFamily: cfg.get('fontFamily', ''),
     fontSize: cfg.get('fontSize', 13),
     showThinking: cfg.get('showThinking', true),
