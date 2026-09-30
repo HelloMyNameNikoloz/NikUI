@@ -18,7 +18,7 @@
  * rules are checked without an editor.
  */
 
-const GROUPS = ['Claude', 'Your laptop', 'Notifications on your phone', 'In the editor'];
+const GROUPS = ['Claude', 'Your laptop', 'Notifications on your laptop', 'Notifications on your phone', 'In the editor'];
 
 const EFFORT = [
   ['', 'Claude Code default'], ['low', 'Low'], ['medium', 'Medium'],
@@ -49,6 +49,11 @@ const PREFS = [
     hint: 'It does not sleep on its own, so your phone can always reach it.' },
   { id: 'lid', group: 'Your laptop', key: 'lidClosed', kind: 'toggle',
     label: 'Keep working with the lid closed', hint: 'While Claude works. When the work is done, it sleeps.' },
+
+  { id: 'done.popup', group: 'Notifications on your laptop', key: 'notifyWhenDone', kind: 'toggle',
+    label: 'When an instance is done', hint: 'A notification from the system, even with VS Code behind other windows.' },
+  { id: 'done.sound', group: 'Notifications on your laptop', key: 'notifyWhenDoneSound', kind: 'toggle',
+    label: 'With a chime', hint: 'Three soft notes rising.' },
 
   // The same defaults the notifier applies when a key is missing: three on,
   // the one that would buzz all night off.

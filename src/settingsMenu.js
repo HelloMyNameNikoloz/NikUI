@@ -33,7 +33,8 @@ const GROUPS = [
   ['nikui.keepAwake', 'This machine'],
   ['nikui.lidClosed', 'This machine'],
   ['nikui.notifyDevices', 'This window, and the phone that reaches it'],
-  ['nikui.notifyOnAttention', 'This machine']
+  ['nikui.notifyOnAttention', 'This machine'],
+  ['nikui.notifyWhenDone', 'This machine']
 ];
 const OTHER = 'The panel';
 
@@ -52,6 +53,8 @@ const NAMES = {
   'nikui.pauseWhenQuotaRuns': 'Pause everything when the quota runs out',
   'nikui.resumePrompt': 'What to say when an instance is resumed',
   'nikui.notifyOnAttention': 'Notify in the editor when something needs you',
+  'nikui.notifyWhenDone': 'Notify on this laptop when an instance is done',
+  'nikui.notifyWhenDoneSound': 'Play a chime with that notification',
   'nikui.interruptOnSingleEscape': 'One Escape interrupts, rather than two',
   'nikui.maxTranscriptItems': 'How much transcript to keep on screen',
   'nikui.keepHiddenPanelsWarm': 'Keep hidden panels loaded',

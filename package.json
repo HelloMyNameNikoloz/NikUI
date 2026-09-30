@@ -583,6 +583,16 @@
           "default": true,
           "description": "Tell you when an instance you cannot see is waiting for an answer, or could not start at all."
         },
+        "nikui.notifyWhenDone": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pop up a notification on this laptop when an instance finishes its turn. Not for a turn you stopped yourself, and not while you are looking at that instance."
+        },
+        "nikui.notifyWhenDoneSound": {
+          "type": "boolean",
+          "default": true,
+          "description": "With that notification, play a soft chime: three notes rising. Plays even when you are looking at the instance."
+        },
         "nikui.interruptOnSingleEscape": {
           "type": "boolean",
           "default": false,

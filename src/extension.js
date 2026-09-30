@@ -9,6 +9,7 @@ const { projectRoot } = require('./tree');
 const { SessionTree } = require('./tree');
 const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
+const { DoneNotifier } = require('./done');
 const { closeHub, closeAllHubs, eachHub } = require('./hub');
 const { HistoryTree } = require('./historyTree');
 const { projectsRoot } = require('./history');
@@ -88,6 +89,7 @@ function activate(context) {
 
   followFocus(view, manager);
   watchForTrouble(manager, (session) => SessionPanel.show(session, context, manager));
+  watchForDone(manager, context);
   watchForCrowding(manager);
   watchForQuota(manager);
 
@@ -1602,6 +1604,18 @@ function watchForCrowding(manager, deps) {
       if (choice === 'Show me') vscode.commands.executeCommand('nikui.sessions.focus');
     }, () => { /* dismissed */ });
   });
+}
+
+/** A banner, and if wanted a chime, when an instance finishes. See done.js. */
+function watchForDone(manager, context) {
+  const notifier = new DoneNotifier({
+    settings: () => {
+      const cfg = vscode.workspace.getConfiguration('nikui');
+      return { popup: cfg.get('notifyWhenDone', false), sound: cfg.get('notifyWhenDoneSound', true) };
+    },
+    isLookingAt: (id) => !!(vscode.window.state && vscode.window.state.focused) && SessionPanel.isVisible(id)
+  });
+  context.subscriptions.push({ dispose: notifier.watch(manager) });
 }
 
 /**
