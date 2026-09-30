@@ -209,4 +209,23 @@ module.exports = async function () {
   check('the flag is per window rather than shared between them',
     /workspaceState/.test(require('fs').readFileSync(
       path.join(__dirname, '..', 'src', 'extension.js'), 'utf8')));
+
+  suite('a click on a done notification');
+
+  {
+    const handler = stub.__registered.uriHandler;
+    check('NikUI answers its own links', !!handler && typeof handler.handleUri === 'function');
+    const link = (p, q) => ({ path: p, query: q });
+    const before = (stub.__registered.executedWith || []).length;
+    await handler.handleUri(link('/elsewhere', 'session=x'));
+    await handler.handleUri(link('/open', 'session=nobody-we-told'));
+    checkEqual('a link to anything else, or to an instance it never announced, starts nothing',
+      (stub.__registered.executedWith || []).length, before);
+    context.globalState.update('nikui.notified',
+      [{ id: 'gone-1', claude: 'c0ffee', cwd: '/Users/nikoloz/Codes/Peuka', label: 'PR 12' }]);
+    await handler.handleUri(link('/open', 'session=gone-1'));
+    checkEqual('one it announced and that has since closed is resumed',
+      (stub.__registered.executedWith || []).pop(),
+      ['nikui.resumeHistory', { sessionId: 'c0ffee', cwd: '/Users/nikoloz/Codes/Peuka', label: 'PR 12', title: 'PR 12' }]);
+  }
 };

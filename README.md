@@ -382,7 +382,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.maxTranscriptItems` | `400` | Messages an instance keeps in memory; 0 keeps everything |
 | `nikui.keepHiddenPanelsWarm` | `false` | Hold a hidden panel's webview in memory for instant switching |
 | `nikui.notifyOnAttention` | `true` | Tell you when an instance you cannot see is blocked or failed to start |
-| `nikui.notifyWhenDone` | `false` | A system notification on this laptop when an instance finishes its turn |
+| `nikui.notifyWhenDone` | `false` | A system notification on this laptop when an instance finishes its turn; on a Mac, clicking it opens that instance, in its own window, reopening it if it was closed. The banner comes from a small app NikUI builds once from `notifier/main.swift` (needs Apple's command line tools); without it the banner cannot be clicked |
 | `nikui.notifyWhenDoneSound` | `true` | With it, a soft chime (`sounds/done.wav`, made by `tools/sound.js`) |
 | `nikui.interruptOnSingleEscape` | `false` | Interrupt on the first Escape, the way the CLI does |
 | `nikui.statusEmoji` | see below | Emoji per status in tab titles |

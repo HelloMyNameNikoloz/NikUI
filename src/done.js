@@ -28,7 +28,7 @@ class DoneNotifier {
    * @param {object} deps
    * @param {() => {popup: boolean, sound: boolean}} deps.settings
    * @param {(id: string) => boolean} [deps.isLookingAt]  on screen, in a focused window
-   * @param {(title: string, body: string) => void} [deps.banner]
+   * @param {(title: string, body: string, session: object) => void} [deps.banner]
    * @param {() => void} [deps.chime]
    */
   constructor(deps) {
@@ -54,7 +54,7 @@ class DoneNotifier {
     if (on.sound !== false) this.chime();
     if (this.isLookingAt(session.id)) return;
     const name = session.customTitle || session.label || 'An instance';
-    this.banner(name + ' is done', summary(items.filter((i) => i.kind === 'text').pop()));
+    this.banner(name + ' is done', summary(items.filter((i) => i.kind === 'text').pop()), session);
   }
 
   forget(session) { if (session) this.was.delete(session.id); }
@@ -101,4 +101,4 @@ function chime() {
   }
 }
 
-module.exports = { DoneNotifier, summary, SOUND };
+module.exports = { DoneNotifier, summary, banner, SOUND };

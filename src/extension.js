@@ -9,7 +9,8 @@ const { projectRoot } = require('./tree');
 const { SessionTree } = require('./tree');
 const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
-const { DoneNotifier } = require('./done');
+const { DoneNotifier, banner: plainBanner } = require('./done');
+const { MacNotifier } = require('./notifier');
 const { closeHub, closeAllHubs, eachHub } = require('./hub');
 const { HistoryTree } = require('./historyTree');
 const { projectsRoot } = require('./history');
@@ -1606,16 +1607,85 @@ function watchForCrowding(manager, deps) {
   });
 }
 
-/** A banner, and if wanted a chime, when an instance finishes. See done.js. */
+/**
+ * A banner, and if wanted a chime, when an instance finishes. See done.js.
+ *
+ * On a Mac the banner comes from NikUI's own small app (notifier.js), so a
+ * click on it opens that instance: the window it lives in comes to the front,
+ * and a link back to NikUI opens its panel there. Anywhere that app cannot be
+ * built, the banner is the plain kind that cannot be clicked.
+ */
 function watchForDone(manager, context) {
+  const mac = new MacNotifier({
+    dir: context.globalStorageUri ? context.globalStorageUri.fsPath : null,
+    log: (line) => console.log('[nikui] ' + line)
+  });
+  const appPath = () => {
+    const at = (vscode.env.appRoot || '').indexOf('.app/');
+    return at === -1 ? '' : vscode.env.appRoot.slice(0, at + 4);
+  };
+  // The window's own folder, or workspace file: opening it again is what
+  // brings this window forward rather than whichever was last in front.
+  const windowFolder = () => {
+    const file = vscode.workspace.workspaceFile;
+    if (file && file.scheme === 'file') return file.fsPath;
+    const folders = vscode.workspace.workspaceFolders || [];
+    return folders.length === 1 ? folders[0].uri.fsPath : '';
+  };
+
   const notifier = new DoneNotifier({
     settings: () => {
       const cfg = vscode.workspace.getConfiguration('nikui');
       return { popup: cfg.get('notifyWhenDone', false), sound: cfg.get('notifyWhenDoneSound', true) };
     },
-    isLookingAt: (id) => !!(vscode.window.state && vscode.window.state.focused) && SessionPanel.isVisible(id)
+    isLookingAt: (id) => !!(vscode.window.state && vscode.window.state.focused) && SessionPanel.isVisible(id),
+    banner: async (title, body, session) => {
+      remember(context, session);
+      const project = session.cwd ? path.basename(session.cwd) : '';
+      const shown = mac.available && await mac.post({
+        id: 'done-' + session.id,
+        title, body,
+        subtitle: project && project !== session.label ? project : '',
+        url: `${vscode.env.uriScheme}://${(context.extension && context.extension.id) || 'nikoloz.nikui'}/open?session=${encodeURIComponent(session.id)}`,
+        app: appPath(),
+        folder: windowFolder()
+      });
+      if (!shown) plainBanner(title, body);
+    }
   });
   context.subscriptions.push({ dispose: notifier.watch(manager) });
+  // Built now, while nothing is waiting on it, rather than at the first banner.
+  if (mac.available && vscode.workspace.getConfiguration('nikui').get('notifyWhenDone', false)) mac.ensure();
+
+  context.subscriptions.push(vscode.window.registerUriHandler({
+    handleUri: (uri) => openFromLink(uri, manager, context)
+  }));
+}
+
+// What a banner was about, kept so a click can reopen an instance that has
+// been closed since. Only what NikUI itself announced: a link from anywhere
+// else cannot name a conversation or a folder and have it started.
+const NOTIFIED = 'nikui.notified';
+function remember(context, session) {
+  const known = (context.globalState.get(NOTIFIED) || []).filter((n) => n.id !== session.id);
+  known.unshift({ id: session.id, claude: session.claudeSessionId || null, cwd: session.cwd || null,
+    label: session.customTitle || session.label || null });
+  context.globalState.update(NOTIFIED, known.slice(0, 50));
+}
+
+async function openFromLink(uri, manager, context) {
+  if (uri.path !== '/open') return;
+  const id = new URLSearchParams(uri.query).get('session');
+  if (!id) return;
+  const live = manager.get(id);
+  if (live) { SessionPanel.show(live, context, manager).focusInput(); return; }
+  const known = (context.globalState.get(NOTIFIED) || []).find((n) => n.id === id);
+  if (known && known.claude && known.cwd) {
+    await vscode.commands.executeCommand('nikui.resumeHistory',
+      { sessionId: known.claude, cwd: known.cwd, label: known.label, title: known.label || '' });
+    return;
+  }
+  vscode.window.showInformationMessage('NikUI: that instance is not open in this window any more.');
 }
 
 /**

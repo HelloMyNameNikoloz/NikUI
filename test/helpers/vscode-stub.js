@@ -83,6 +83,8 @@ function makeStub(overrides) {
         return panel;
       },
       registerWebviewPanelSerializer: (type, s) => { registered.serializers.push(type); return { dispose() {} }; },
+      registerUriHandler: (handler) => { registered.uriHandler = handler; return { dispose() {} }; },
+      state: { focused: true },
       // Answerable, so a command that asks something can be driven to the end
       // of what it does rather than only to the question. `__answer` is a queue:
       // each dialog takes the next reply, and an empty queue is somebody
@@ -110,12 +112,14 @@ function makeStub(overrides) {
     },
     StatusBarAlignment: { Left: 1, Right: 2 },
     env: {
+      uriScheme: 'vscode',
+      appRoot: '/Applications/Visual Studio Code.app/Contents/Resources/app',
       openExternal: async (uri) => { registered.opened.push(String(uri && uri.toString ? uri.toString() : uri)); return true; },
       clipboard: { writeText: async (text) => { registered.copied.push(text); } }
     },
     commands: {
       registerCommand: (id, fn) => { registered.commands[id] = fn; return { dispose() {} }; },
-      executeCommand: async (id) => { registered.executed.push(id); }
+      executeCommand: async (id, ...args) => { registered.executed.push(id); (registered.executedWith = registered.executedWith || []).push([id, ...args]); }
     },
     workspace: {
       workspaceFolders: (overrides && overrides.workspaceFolders) ||
