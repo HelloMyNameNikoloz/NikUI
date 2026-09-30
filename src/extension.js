@@ -1650,7 +1650,12 @@ function watchForDone(manager, context) {
         app: appPath(),
         folder: windowFolder()
       });
-      if (!shown) plainBanner(title, body);
+      if (shown) return;
+      // A Mac's own fallback belongs to Script Editor, and a click on it opens
+      // Script Editor. VS Code's is at least one that can open the instance.
+      if (process.platform !== 'darwin') return void plainBanner(title, body);
+      const choice = await vscode.window.showInformationMessage(`${title} · ${body}`, 'Open instance');
+      if (choice && manager.get(session.id)) SessionPanel.show(session, context, manager).focusInput();
     }
   });
   context.subscriptions.push({ dispose: notifier.watch(manager) });

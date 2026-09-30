@@ -76,18 +76,12 @@ function summary(said) {
 }
 
 /**
- * The system's own banner. The words go in as arguments, never into the
- * script, so nothing an instance says can become AppleScript.
+ * The system's own banner, where it has one anybody can post. Not a Mac's:
+ * osascript's banners belong to Script Editor, and clicking one opens it —
+ * there the extension uses NikUI's own app instead (notifier.js).
  */
 function banner(title, body) {
-  if (process.platform === 'darwin') {
-    execFile('osascript', [
-      '-e', 'on run argv',
-      '-e', 'display notification (item 2 of argv) with title (item 1 of argv)',
-      '-e', 'end run',
-      title, body
-    ], () => {});
-  } else if (process.platform === 'linux') {
+  if (process.platform === 'linux') {
     execFile('notify-send', ['--app-name=NikUI', title, body], () => {});
   }
 }
