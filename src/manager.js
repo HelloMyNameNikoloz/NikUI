@@ -222,8 +222,10 @@ class SessionManager extends EventEmitter {
     session.on('status', () => { this._changed(session); });
     // One place to listen for trouble, however many instances there are.
     session.on('failed', (message, code) => this.emit('failed', session, message, code));
-    // A queued prompt changes what the row has to say about the instance.
+    // A queued prompt changes what the row has to say about the instance, and
+    // so do agents running behind it, which keep it busy whatever its status.
     session.on('queue', () => this._changed(session));
+    session.on('background', () => this._changed(session));
     // Whichever instance hears about the account's limits, all of them know.
     session.on('limits', (limits) => this.rememberLimits(limits));
     session.on('exhausted', (limits) => this.pauseForLimit(limits));

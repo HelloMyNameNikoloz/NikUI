@@ -21,6 +21,16 @@ const STATUS = {
 // Give any background work a beat to settle before the next queued prompt.
 const QUEUE_DELAY_MS = 5000;
 
+// Background tasks that are work the conversation is waiting on. A shell
+// command in the background is as often a dev server that never ends, and a
+// monitor watches until it is told to stop, so neither keeps an instance working.
+const AGENT_TASKS = new Set(['local_agent', 'remote_agent', 'in_process_teammate', 'local_workflow']);
+
+// When the last agent finishes, the CLI starts a turn of its own a moment
+// later to hand over what it found. Resting as done in between would flash
+// green and let the machine sleep, so that turn gets this long to begin.
+const AGENT_SETTLE_MS = 3000;
+
 // A `cat` of a large file, a failing test suite, a 40 MB log: one tool result
 // can be bigger than everything else in the conversation put together. The
 // model saw all of it either way, and the whole thing is in the transcript on
@@ -109,6 +119,14 @@ class Session extends EventEmitter {
     this.cutByLimit = !!opts.cutByLimit;
     this._limitThisTurn = false;
     this._turnTools = [];
+    // What the CLI says is running behind the conversation, and whether the
+    // instance is working only because of that rather than in a turn.
+    this.backgroundTasks = [];
+    this._agents = new Map();
+    this._inBackground = false;
+    this._stoppingAgents = false;
+    this._settleTimer = null;
+    this.agentSettleMs = AGENT_SETTLE_MS;
 
     this.proc = null;
     // A restored instance has no process yet but is not "stopped" — it has
@@ -158,8 +176,26 @@ class Session extends EventEmitter {
     return !!this.proc && this.proc.exitCode === null && !this.proc.killed;
   }
 
+  /**
+   * Something is running that closing it or letting the machine sleep would
+   * kill: a turn, or agents in the background, which can outlast a turn that
+   * failed.
+   */
   get isBusy() {
-    return this.status === STATUS.WORKING || this.status === STATUS.WAITING;
+    return this.status === STATUS.WORKING || this.status === STATUS.WAITING || this.backgroundAgents > 0;
+  }
+
+  /**
+   * A turn is in flight. Agents in the background are not one: the CLI answers
+   * a prompt sent meanwhile straight away, so only a turn holds the queue.
+   */
+  get inTurn() {
+    return (this.status === STATUS.WORKING && !this._inBackground) || this.status === STATUS.WAITING;
+  }
+
+  /** Agents this instance started that are still running in the background. */
+  get backgroundAgents() {
+    return this.backgroundTasks.filter((t) => AGENT_TASKS.has(t.type)).length;
   }
 
   get isPaused() {
@@ -227,6 +263,7 @@ class Session extends EventEmitter {
       if (this.proc !== proc && this.proc !== null) return;
       this.proc = null;
       this._streamMsgId = null;
+      this._clearBackground();
       if (this.status !== STATUS.STOPPED) {
         this._setStatus(code === 0 || code === null ? STATUS.STOPPED : STATUS.ERROR);
         if (code) this._notice(`Instance exited with code ${code}${signal ? ` (${signal})` : ''}.`, 'exit');
@@ -239,11 +276,13 @@ class Session extends EventEmitter {
     this._costBaseline = this.totalCost;
     this.processStartedAt = Date.now();
 
+    this._clearBackground();
     this._setStatus(STATUS.IDLE);
     this.emit('meta');
   }
 
   stop() {
+    this._clearBackground();
     this._setStatus(STATUS.STOPPED);
     // Nothing half-read carries over into the next process's first line.
     this._stdoutBuf = '';
@@ -387,7 +426,7 @@ class Session extends EventEmitter {
   submit(text, attachments, opts) {
     const hasContent = String(text || '').trim() || (attachments && attachments.length);
     if (!hasContent) return null;
-    if (this.isBusy || this.queue.length) {
+    if (this.inTurn || this.queue.length) {
       this.enqueue(text, attachments, opts);
       return 'queued';
     }
@@ -454,7 +493,7 @@ class Session extends EventEmitter {
    */
   isReadyForQueue() {
     if (this.isPaused) return false;
-    if (!this.isRunning || this.isBusy) return false;
+    if (!this.isRunning || this.inTurn) return false;
     // Only a tool that is genuinely still running counts. It used to be "any
     // tool not marked done", which included tools abandoned by a process that
     // died mid-turn and tools replayed from a transcript that ends in one —
@@ -501,6 +540,7 @@ class Session extends EventEmitter {
       turns: this.turns,
       elapsedMs: this.turnStartedAt ? Date.now() - this.turnStartedAt : this.lastDurationMs,
       running: !!this.turnStartedAt,
+      background: this.backgroundAgents,
       contextTokens: this.contextTokens,
       contextWindow: this.contextWindow
     };
@@ -508,7 +548,10 @@ class Session extends EventEmitter {
 
   interrupt() {
     if (!this.isRunning || !this.isBusy) return;
-    this._interrupted = true;
+    // Between turns only agents in the background are running. An interrupt
+    // stops those as well, but no result follows to say so.
+    if (this.inTurn) this._interrupted = true;
+    else this._stoppingAgents = true;
     this._write({
       type: 'control_request',
       request_id: `nikui-${this._controlSeq++}`,
@@ -547,7 +590,9 @@ class Session extends EventEmitter {
    * that was in flight is remembered so it can be picked up again.
    */
   pause({ until, reason }) {
-    const wasBusy = this.isBusy;
+    // Only a turn is cut off. Agents in the background may be on a model the
+    // limit does not cover, and they are left to finish or fail on their own.
+    const wasBusy = this.inTurn;
     this.pausedUntil = until || 0;
     this.pauseReason = reason || 'limit';
     if (wasBusy) this.interruptedByPause = true;
@@ -781,6 +826,9 @@ class Session extends EventEmitter {
   }
 
   _handleSystem(event) {
+    if (event.subtype === 'background_tasks_changed') return this._handleBackgroundTasks(event.tasks);
+    if (event.subtype === 'task_started') return this._rememberAgent(event);
+    if (event.subtype === 'task_notification') return this._handleTaskNotification(event);
     // Compaction is the CLI's own business — it decides when the context is
     // full and summarises it. All we get is a boundary event, and all we have
     // to do is not pretend it did not happen: our transcript keeps every
@@ -796,7 +844,96 @@ class Session extends EventEmitter {
       slashCommands: event.slash_commands || []
     };
     if (event.cwd) this.cwd = event.cwd;
+    // Every turn opens with an init. One nobody here sent is the CLI starting
+    // a turn by itself: to hand over what a background agent found, or
+    // because a wakeup came due.
+    if (!this.inTurn) this._beginOwnTurn();
     this.emit('meta');
+  }
+
+  _beginOwnTurn() {
+    this._interrupted = false;
+    this._limitThisTurn = false;
+    this._turnTools = [];
+    this.turnStartedAt = Date.now();
+    this._setStatus(STATUS.WORKING);
+  }
+
+  /**
+   * The CLI's whole list of what is running behind the conversation, sent
+   * each time it changes, and empty once nothing is.
+   */
+  _handleBackgroundTasks(tasks) {
+    this.backgroundTasks = (Array.isArray(tasks) ? tasks : [])
+      .filter((t) => t && t.task_id)
+      .map((t) => ({ id: t.task_id, type: t.task_type || null, description: t.description || '' }));
+    // An agent can be sent to the background after it started in the foreground.
+    for (const t of this.backgroundTasks) {
+      const agent = this._agents.get(t.id);
+      if (agent) agent.background = true;
+    }
+    this.emit('background');
+    // Inside a turn, the turn's end decides where the instance rests.
+    if (this.inTurn) return;
+    if (this.backgroundAgents) {
+      if (this.status === STATUS.DONE) this._setStatus(STATUS.WORKING, true);
+      return;
+    }
+    if (!this._inBackground) return;
+    // Stopped on purpose, so nothing follows. Otherwise the CLI is about to
+    // start a turn to hand over what the agents found.
+    if (this._stoppingAgents) { this._setStatus(STATUS.DONE); return; }
+    if (this._settleTimer) clearTimeout(this._settleTimer);
+    this._settleTimer = setTimeout(() => {
+      this._settleTimer = null;
+      if (this._inBackground && !this.backgroundAgents) this._setStatus(STATUS.DONE);
+    }, this.agentSettleMs);
+    if (this._settleTimer.unref) this._settleTimer.unref();
+  }
+
+  /** Enough about an agent to say which one it was when it reports back. */
+  _rememberAgent(event) {
+    if (!event.task_id || !AGENT_TASKS.has(event.task_type)) return;
+    if (this._agents.size > 64) this._agents.clear();
+    this._agents.set(event.task_id, {
+      name: event.subagent_type || null,
+      description: event.description || '',
+      background: !!event.is_backgrounded
+    });
+  }
+
+  /**
+   * A background agent has settled. The turn the CLI starts next says what it
+   * found; this line says why a turn started with nobody asking.
+   */
+  _handleTaskNotification(event) {
+    const agent = this._agents.get(event.task_id);
+    this._agents.delete(event.task_id);
+    // One in the foreground reported back inside its own tool call already.
+    if (!agent || !agent.background) return;
+    const outcome = { completed: 'finished', failed: 'failed', stopped: 'was stopped', killed: 'was stopped' };
+    this._notice(
+      `${agent.name ? `The ${agent.name} agent` : 'A background agent'} ${outcome[event.status] || 'finished'}` +
+      `${agent.description ? `: ${agent.description}` : ''}.`,
+      'info'
+    );
+  }
+
+  /** A process that is gone took whatever it ran in the background with it. */
+  _clearBackground() {
+    this.backgroundTasks = [];
+    this._agents.clear();
+    if (this._settleTimer) clearTimeout(this._settleTimer);
+    this._settleTimer = null;
+  }
+
+  /**
+   * Where an instance rests once a turn is over. Agents that turn started may
+   * still be running, and until they have reported back it is not done.
+   */
+  _settle() {
+    if (this.backgroundAgents) this._setStatus(STATUS.WORKING, true);
+    else this._setStatus(STATUS.DONE);
   }
 
   // Partial deltas paint the message as it is generated. The CLI then re-emits
@@ -1020,7 +1157,7 @@ class Session extends EventEmitter {
       this._setStatus(STATUS.ERROR);
     } else {
       this.lastError = null;
-      this._setStatus(STATUS.DONE);
+      this._settle();
     }
     this._abandonRunningTools();
     if (this.queue.length) { this._clearDrain(); this._scheduleDrain(); }
@@ -1124,7 +1261,11 @@ class Session extends EventEmitter {
     this.emit('failed', message, code || null);
   }
 
-  _setStatus(status) {
+  /** `background`: working only because agents are, with no turn in flight. */
+  _setStatus(status, background) {
+    // A status set for any other reason ends that, and supersedes a stop.
+    this._inBackground = status === STATUS.WORKING && !!background;
+    if (!this._inBackground) this._stoppingAgents = false;
     if (this.status === status) return;
     this.status = status;
     this.emit('status', status);

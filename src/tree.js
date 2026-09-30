@@ -276,6 +276,9 @@ class SessionTree {
         (session.queue || []).length
           ? `- Queued: ${session.queue.length} prompt${session.queue.length === 1 ? '' : 's'} waiting to be sent`
           : '',
+        session.backgroundAgents
+          ? `- ${session.backgroundAgents} agent${session.backgroundAgents === 1 ? '' : 's'} still running in the background`
+          : '',
         session.claudeSessionId ? `- Session: \`${session.claudeSessionId}\`` : '',
         session.lastError ? `- Error: ${session.lastError}` : ''
       ].filter(Boolean).join('\n')

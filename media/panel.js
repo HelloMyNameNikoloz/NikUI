@@ -174,6 +174,12 @@
       bits.push('<span class="stat' + (running ? ' live' : '') + '">' + icon('clock', 12) +
         esc(fmtDuration(elapsed)) + '</span>');
     }
+    // Agents it started can outlive the turn, and they are why a turn with
+    // nobody asking may start later.
+    if (statsBase.background > 0) {
+      bits.push('<span class="stat live" title="Agents this instance started, still running in the background">' +
+        icon('cpu', 12) + esc(statsBase.background + (statsBase.background === 1 ? ' agent' : ' agents')) + '</span>');
+    }
     const headline = (statsBase.input || 0) + (statsBase.output || 0);
     if (statsBase.total > 0) {
       bits.push('<span class="stat" title="' + esc(tokenTitle()) + '">' + icon('hash', 12) +

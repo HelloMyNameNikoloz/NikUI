@@ -437,6 +437,14 @@ two windows and run it in the second, and the phone follows to the second.
 
 Default emoji: idle ⚪, working 🟠, waiting 🔴, done 🟢, error 🔴, stopped ⚫.
 
+An instance whose turn has ended while agents it started are still running in
+the background stays working, with the machine held awake for them, until they
+have reported back and the turn the CLI starts to hand that over has finished.
+The header counts the agents still out. A prompt sent meanwhile goes straight
+to the CLI, which answers it while they work; Stop ends them. A command left
+running in the background — a dev server, a watcher — is not counted, since it
+may never end.
+
 ### Models, and never having to type one
 
 `NikUI: Settings → Model` lists what your installed CLI actually knows, newest

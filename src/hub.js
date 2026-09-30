@@ -75,6 +75,10 @@ class SessionHub {
       this.broadcast(this.metaMessage());
       this.emitHost('chrome');
     });
+    on('background', () => {
+      this.broadcastStats();
+      this.refreshStatus();
+    });
     on('reset', () => this.broadcast({ type: 'reset' }));
     on('queue', () => {
       this.broadcast(this.queueMessage());
