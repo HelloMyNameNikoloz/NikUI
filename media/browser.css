@@ -262,6 +262,9 @@ body.home .sdot.asleep {
   header .stats,
   header .ctx,
   header .crumbs { display: none; }
+  /* CI is the one number worth the room: it is why you picked the phone up. */
+  header .ci { max-width: 52vw; }
+  header .ci-bar { width: 36px; }
 
   .back {
     display: flex;

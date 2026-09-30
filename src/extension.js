@@ -10,7 +10,8 @@ const { projectRoot } = require('./tree');
 const { SessionTree } = require('./tree');
 const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
-const { DoneNotifier, banner: plainBanner } = require('./done');
+const { DoneNotifier, banner: plainBanner, chime } = require('./done');
+const { CiWatcher } = require('./ci');
 const { MacNotifier } = require('./notifier');
 const { closeHub, closeAllHubs, eachHub } = require('./hub');
 const { HistoryTree } = require('./historyTree');
@@ -91,7 +92,7 @@ function activate(context) {
 
   followFocus(view, manager);
   watchForTrouble(manager, (session) => SessionPanel.show(session, context, manager));
-  watchForDone(manager, context);
+  watchForCi(manager, context, watchForDone(manager, context));
   watchForCrowding(manager);
   watchForQuota(manager);
 
@@ -1637,36 +1638,76 @@ function watchForDone(manager, context) {
   const inbox = watchInbox(mac.dir, (id) => openClicked(id, manager, context));
   context.subscriptions.push(inbox);
 
+  // A banner about one instance, which opens that instance when clicked.
+  const announce = async (title, body, session) => {
+    remember(context, session);
+    const project = session.cwd ? path.basename(session.cwd) : '';
+    const shown = mac.available && await mac.post({
+      id: 'done-' + session.id,
+      title, body,
+      subtitle: project && project !== session.label ? project : '',
+      inbox: inbox.path || '',
+      session: session.id,
+      app: appPath(),
+      folder: windowFolder()
+    });
+    if (shown) return;
+    // A Mac's own fallback belongs to Script Editor, and a click on it opens
+    // Script Editor. VS Code's is at least one that can open the instance.
+    if (process.platform !== 'darwin') return void plainBanner(title, body);
+    const choice = await vscode.window.showInformationMessage(`${title} · ${body}`, 'Open instance');
+    if (choice && manager.get(session.id)) SessionPanel.show(session, context, manager).focusInput();
+  };
+
   const notifier = new DoneNotifier({
     settings: () => {
       const cfg = vscode.workspace.getConfiguration('nikui');
       return { popup: cfg.get('notifyWhenDone', false), sound: cfg.get('notifyWhenDoneSound', true) };
     },
     isLookingAt: (id) => !!(vscode.window.state && vscode.window.state.focused) && SessionPanel.isVisible(id),
-    banner: async (title, body, session) => {
-      remember(context, session);
-      const project = session.cwd ? path.basename(session.cwd) : '';
-      const shown = mac.available && await mac.post({
-        id: 'done-' + session.id,
-        title, body,
-        subtitle: project && project !== session.label ? project : '',
-        inbox: inbox.path || '',
-        session: session.id,
-        app: appPath(),
-        folder: windowFolder()
-      });
-      if (shown) return;
-      // A Mac's own fallback belongs to Script Editor, and a click on it opens
-      // Script Editor. VS Code's is at least one that can open the instance.
-      if (process.platform !== 'darwin') return void plainBanner(title, body);
-      const choice = await vscode.window.showInformationMessage(`${title} · ${body}`, 'Open instance');
-      if (choice && manager.get(session.id)) SessionPanel.show(session, context, manager).focusInput();
-    }
+    banner: announce
   });
   context.subscriptions.push({ dispose: notifier.watch(manager) });
   // Built now, while nothing is waiting on it, rather than at the first banner.
-  if (mac.available && vscode.workspace.getConfiguration('nikui').get('notifyWhenDone', false)) mac.ensure();
+  const cfg = vscode.workspace.getConfiguration('nikui');
+  if (mac.available && (cfg.get('notifyWhenDone', false) || cfg.get('notifyCI', true))) mac.ensure();
+  return announce;
+}
 
+/**
+ * CI on the PR an instance pushed to, watched by asking GitHub every fifteen
+ * seconds, and a banner when it is over — unless you are looking at it.
+ */
+const CI_DURATIONS = 'nikui.ciDurations';
+function watchForCi(manager, context, announce) {
+  const setting = (key, fallback) => vscode.workspace.getConfiguration('nikui').get(key, fallback);
+  const watcher = new CiWatcher({
+    autoWatch: () => setting('watchCIAfterPush', true),
+    history: {
+      get: (repo) => (context.globalState.get(CI_DURATIONS) || {})[repo] || [],
+      add: (repo, ms) => {
+        const all = Object.assign({}, context.globalState.get(CI_DURATIONS) || {});
+        all[repo] = [ms].concat(all[repo] || []).slice(0, 10);
+        context.globalState.update(CI_DURATIONS, all);
+      }
+    },
+    notify: (session, state) => {
+      if (!setting('notifyCI', true)) return;
+      if (!['passed', 'failed', 'none', 'error'].includes(state.phase)) return;
+      if (setting('notifyWhenDoneSound', true)) chime();
+      const looking = !!(vscode.window.state && vscode.window.state.focused) && SessionPanel.isVisible(session.id);
+      if (looking) return;
+      const pr = state.pr ? `PR #${state.pr.number}` : 'CI';
+      const title = state.phase === 'passed' ? `${pr} is green`
+        : state.phase === 'failed' ? `${pr} failed` : state.phase === 'none' ? `${pr} has no CI` : 'Cannot watch CI';
+      const body = state.phase === 'failed' ? `${(state.failing || []).join(', ')} · ${session.label}`
+        : state.phase === 'error' ? `${state.message} · ${session.label}`
+          : `${state.pr && state.pr.title ? state.pr.title + ' · ' : ''}${session.label}`;
+      announce(title, body, session);
+    }
+  });
+  context.subscriptions.push({ dispose: watcher.attach(manager) });
+  return watcher;
 }
 
 // What a banner was about, kept so a click can reopen an instance that has
@@ -1806,4 +1847,4 @@ function deactivate() {
   if (manager) manager.disposeAll();
 }
 
-module.exports = { activate, deactivate, followFocus, serveLocally, watchForTrouble, watchForCrowding, watchForQuota, watchInbox, openClicked };
+module.exports = { activate, deactivate, followFocus, serveLocally, watchForTrouble, watchForCrowding, watchForQuota, watchInbox, openClicked, watchForCi };

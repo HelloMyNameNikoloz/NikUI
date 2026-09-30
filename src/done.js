@@ -95,4 +95,4 @@ function chime() {
   }
 }
 
-module.exports = { DoneNotifier, summary, banner, SOUND };
+module.exports = { DoneNotifier, summary, banner, chime, SOUND };

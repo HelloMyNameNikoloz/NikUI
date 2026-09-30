@@ -2,9 +2,10 @@
 
 const { commandArgs } = require('./session');
 const { buildReport } = require('./report');
+const { GRANT } = require('./ci');
 
 // Commands NikUI answers itself rather than passing to the CLI.
-const OWN_COMMANDS = ['status', 'settings'];
+const OWN_COMMANDS = ['status', 'settings', 'watch'];
 
 /**
  * The messages that change something, as opposed to the ones that only watch.
@@ -19,6 +20,8 @@ const STEERING = new Set([
   // Running a command is steering by any reading of the word: it is the same
   // machine and the same permissions as a prompt, by a shorter route.
   'editQueued', 'clearQueue', 'openFile', 'switch', 'runInTerminal',
+  // /watch hands out permission to push, which is steering if anything is.
+  'watch',
   // A setting changes what every instance does next, and whether the laptop
   // sleeps. Reading them is watching; changing one is not.
   'setSetting'
@@ -79,6 +82,7 @@ class SessionHub {
       this.broadcastStats();
       this.refreshStatus();
     });
+    on('ci', () => this.broadcastStats());
     on('reset', () => this.broadcast({ type: 'reset' }));
     on('queue', () => {
       this.broadcast(this.queueMessage());
@@ -300,6 +304,16 @@ class SessionHub {
       case 'send':
         session.submit(msg.text, msg.attachments, { sent: msg.sent, snippets: msg.snippets });
         break;
+
+      // /watch: NikUI watches the PR's CI itself, and the model is told it may
+      // push — with the prompt that came with it, or with the next one.
+      case 'watch': {
+        const text = String(msg.text || '').trim();
+        if (text) session.submit(text, [], { sent: text + '\n\n' + GRANT });
+        else session.pendingNote = GRANT;
+        session.emit('watch');
+        break;
+      }
 
       case 'interrupt':
         session.interrupt();

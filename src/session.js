@@ -8,6 +8,7 @@ const path = require('path');
 const { nextTicket } = require('./ticket');
 const { shortLabel } = require('./label');
 const { transcriptPath } = require('./history');
+const { pushedFrom } = require('./ci');
 
 const STATUS = {
   IDLE: 'idle',
@@ -415,7 +416,10 @@ class Session extends EventEmitter {
       type: 'image',
       source: { type: 'base64', media_type: f.mediaType, data: f.data }
     }));
-    content.push({ type: 'text', text: outgoing || 'See the attached image.' });
+    // Permission /watch gave, carried on the next thing the model reads.
+    let said = outgoing || 'See the attached image.';
+    if (this.pendingNote) { said += '\n\n' + this.pendingNote; this.pendingNote = null; }
+    content.push({ type: 'text', text: said });
 
     this._write({ type: 'user', message: { role: 'user', content } });
   }
@@ -544,8 +548,15 @@ class Session extends EventEmitter {
       running: !!this.turnStartedAt,
       background: this.backgroundAgents,
       contextTokens: this.contextTokens,
-      contextWindow: this.contextWindow
+      contextWindow: this.contextWindow,
+      ci: this.ci || null
     };
+  }
+
+  /** What the CI watch on this instance's PR last saw; null when there is none. */
+  setCi(state) {
+    this.ci = state || null;
+    this.emit('ci', this.ci);
   }
 
   interrupt() {
@@ -1093,6 +1104,11 @@ class Session extends EventEmitter {
       // second copy of the same bytes.
       delete item.rawInput;
       this._touch(item);
+      // A push is where watching CI starts, whoever asked for it.
+      if (item.name === 'Bash' && !item.isError && item.input) {
+        const where = pushedFrom(item.input.command, this.cwd);
+        if (where) this.emit('pushed', where);
+      }
     }
   }
 

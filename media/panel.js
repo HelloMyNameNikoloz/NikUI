@@ -214,7 +214,50 @@
     el.title = 'Context: ' + fmtTokens(used) + ' of ' + fmtTokens(cap) + ' tokens';
   }
 
+  /**
+   * The PR's CI, next to the context budget: how many checks are done, and
+   * how long the last ten runs say is left. Green or red when it is over.
+   */
+  const CI_WORDS = {
+    looking: 'Looking for the PR', 'no-pr': 'Waiting for a PR', push: 'waiting for the push',
+    queued: 'CI starting', none: 'no CI checks', merged: 'merged', closed: 'closed'
+  };
+  function paintCi() {
+    const el = $('ci');
+    const ci = statsBase.ci;
+    if (!ci) { el.hidden = true; return; }
+    el.hidden = false;
+    const pr = ci.pr ? 'PR #' + ci.pr.number : '';
+    const elapsed = (ci.elapsedMs || 0) + (ci.finished ? 0 : Date.now() - statsBase.at);
+    let words;
+    let pct = 0;
+    if (ci.phase === 'running' || ci.phase === 'queued') {
+      const avg = ci.averageMs;
+      pct = avg ? Math.min(97, (elapsed / avg) * 100) : (ci.total ? (ci.done / ci.total) * 100 : 0);
+      const left = avg ? avg - elapsed : null;
+      const eta = left == null ? '' : left <= 0 ? ' · any moment' : left < 60000 ? ' · <1m left' : ' · ~' + Math.ceil(left / 60000) + 'm left';
+      words = pr + ' · ' + (ci.phase === 'queued' ? 'CI starting' : 'CI ' + ci.done + '/' + ci.total) + eta;
+    } else if (ci.phase === 'passed') {
+      pct = 100; words = pr + ' · green';
+    } else if (ci.phase === 'failed') {
+      pct = 100; words = pr + ' · failed: ' + (ci.failing || []).slice(0, 2).join(', ');
+    } else if (ci.phase === 'error') {
+      words = ci.message || 'Cannot watch CI';
+    } else {
+      words = (pr && ci.phase !== 'looking' && ci.phase !== 'no-pr' ? pr + ' · ' : '') + (CI_WORDS[ci.phase] || ci.phase);
+    }
+    el.className = 'ci ' + ci.phase + (ci.finished ? ' finished' : '');
+    el.querySelector('i').style.width = Math.max(ci.finished ? 0 : 3, pct) + '%';
+    el.querySelector('.ci-label').textContent = words;
+    const link = (ci.phase === 'failed' && ci.url) || (ci.pr && ci.pr.url) || '';
+    if (link) el.setAttribute('href', link); else el.removeAttribute('href');
+    el.title = (ci.pr && ci.pr.title ? ci.pr.title + '\n' : '') +
+      (ci.averageMs ? 'CI usually takes ' + fmtDuration(ci.averageMs) + ' here (average of the last runs)\n' : '') +
+      (link ? 'Click to open on GitHub' : '');
+  }
+
   setInterval(function () { if (statsBase.running) paintStats(); }, 1000);
+  setInterval(function () { if (statsBase.ci && !statsBase.ci.finished) paintCi(); }, 1000);
   // Only while there is a countdown to advance. Rebuilding the queue's markup
   // every second destroyed the buttons under the reader's focus and their
   // half-finished clicks, to redraw text that had not changed.
@@ -224,6 +267,7 @@
     statsBase = Object.assign({}, s, { at: Date.now() });
     paintStats();
     paintContext();
+    paintCi();
   }
 
   const PERMISSION_WORD = {
@@ -869,6 +913,19 @@
     // passed to the CLI — the sheet knows things the CLI cannot see.
     // Only the bare command is ours; "/status something" belongs to the CLI.
     // /settings the same way: the few settings people change, as switches.
+    // /watch, alone or in front of a prompt: NikUI watches the PR's CI, and
+    // the prompt goes with permission to push.
+    const watch = !attachments.length && /^\/watch(?:\s+([\s\S]*))?$/i.exec(text);
+    if (watch) {
+      vscode.postMessage({ type: 'watch', text: (watch[1] || '').trim() });
+      prompts.remember(text);
+      prompts.reset();
+      input.value = '';
+      remember();
+      slashBox.hidden = true;
+      autoGrow();
+      return;
+    }
     const own = !attachments.length && /^\/(status|settings)$/i.exec(text);
     if (own) {
       prompts.remember(text);

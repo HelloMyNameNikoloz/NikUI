@@ -45,6 +45,9 @@ const PREFS = [
   { id: 'pause', group: 'Claude', key: 'pauseWhenQuotaRuns', kind: 'toggle',
     label: 'Wait when the usage limit runs out', hint: 'Everything holds, then carries on when it resets.' },
 
+  { id: 'ci.watch', group: 'Claude', key: 'watchCIAfterPush', kind: 'toggle',
+    label: 'Watch CI after a push', hint: 'The PR\'s checks, with time left, in the header. /watch does it by hand.' },
+
   { id: 'awake', group: 'Your laptop', key: 'keepAwake', kind: 'toggle', label: 'Keep awake',
     hint: 'It does not sleep on its own, so your phone can always reach it.' },
   { id: 'lid', group: 'Your laptop', key: 'lidClosed', kind: 'toggle',
@@ -54,6 +57,8 @@ const PREFS = [
     label: 'When an instance is done', hint: 'A notification from the system, even with VS Code behind other windows.' },
   { id: 'done.sound', group: 'Notifications on your laptop', key: 'notifyWhenDoneSound', kind: 'toggle',
     label: 'With a chime', hint: 'Three soft notes rising.' },
+  { id: 'ci.popup', group: 'Notifications on your laptop', key: 'notifyCI', kind: 'toggle',
+    label: 'When CI is green or fails', hint: 'On a PR an instance pushed to, or one you /watch.' },
 
   // The same defaults the notifier applies when a key is missing: three on,
   // the one that would buzz all night off.

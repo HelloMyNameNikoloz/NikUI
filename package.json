@@ -593,6 +593,16 @@
           "default": true,
           "description": "With that notification, play a soft chime: three notes rising. Plays even when you are looking at the instance."
         },
+        "nikui.watchCIAfterPush": {
+          "type": "boolean",
+          "default": true,
+          "description": "When an instance pushes to a branch with a pull request, or opens one, watch that PR's CI checks through the GitHub CLI (gh) and show their progress in the panel's header. /watch does the same by hand, and also gives the instance permission to push."
+        },
+        "nikui.notifyCI": {
+          "type": "boolean",
+          "default": true,
+          "description": "Pop up a notification on this laptop when a watched PR's CI goes green or fails. Not while you are looking at that instance."
+        },
         "nikui.interruptOnSingleEscape": {
           "type": "boolean",
           "default": false,

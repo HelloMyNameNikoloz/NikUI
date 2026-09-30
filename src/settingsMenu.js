@@ -34,7 +34,9 @@ const GROUPS = [
   ['nikui.lidClosed', 'This machine'],
   ['nikui.notifyDevices', 'This window, and the phone that reaches it'],
   ['nikui.notifyOnAttention', 'This machine'],
-  ['nikui.notifyWhenDone', 'This machine']
+  ['nikui.notifyWhenDone', 'This machine'],
+  ['nikui.notifyCI', 'This machine'],
+  ['nikui.watchCIAfterPush', 'Instances']
 ];
 const OTHER = 'The panel';
 
@@ -55,6 +57,8 @@ const NAMES = {
   'nikui.notifyOnAttention': 'Notify in the editor when something needs you',
   'nikui.notifyWhenDone': 'Notify on this laptop when an instance is done',
   'nikui.notifyWhenDoneSound': 'Play a chime with that notification',
+  'nikui.notifyCI': 'Notify on this laptop when a PR\'s CI is green or fails',
+  'nikui.watchCIAfterPush': 'Watch a PR\'s CI after an instance pushes to it',
   'nikui.interruptOnSingleEscape': 'One Escape interrupts, rather than two',
   'nikui.maxTranscriptItems': 'How much transcript to keep on screen',
   'nikui.keepHiddenPanelsWarm': 'Keep hidden panels loaded',

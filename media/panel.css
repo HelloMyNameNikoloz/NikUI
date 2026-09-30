@@ -609,6 +609,35 @@ pre:hover .copy, .copy:focus-visible { opacity: 1; }
 .ctx.hot  .ctx-bar i { background: var(--red); }
 .ctx.hot { color: var(--red); }
 
+/* ── CI of the PR ──────────────────────────────────────────── */
+.ci {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: var(--r-chip);
+  background: var(--fill-1);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground);
+  text-decoration: none; white-space: nowrap;
+  max-width: 340px; overflow: hidden;
+}
+.ci[hidden] { display: none !important; }
+.ci[href]:hover { color: var(--vscode-foreground); }
+.ci-label { overflow: hidden; text-overflow: ellipsis; }
+.ci-bar {
+  flex: none; width: 60px; height: 4px; border-radius: 2px;
+  background: var(--fill-3); overflow: hidden;
+}
+.ci-bar i {
+  display: block; height: 100%; width: 0;
+  border-radius: 2px; background: var(--accent);
+  transition: width 0.9s linear, background 0.3s ease;
+}
+.ci.passed .ci-bar i { background: var(--green); }
+.ci.passed { color: var(--green); }
+.ci.failed .ci-bar i { background: var(--red); }
+.ci.failed, .ci.error { color: var(--red); }
+.ci.finished:not(.passed):not(.failed) .ci-bar { display: none; }
+
 /* ── Queued prompts ────────────────────────────────────────── */
 .queue {
   margin-bottom: var(--s2);

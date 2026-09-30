@@ -52,6 +52,7 @@ ${head}</head>
     </div>
     <div class="stats" id="stats"></div>
     <div class="ctx" id="ctx" hidden><div class="ctx-bar"><i></i></div><span class="ctx-label"></span></div>
+    <a class="ci" id="ci" target="_blank" rel="noopener" hidden><span class="ci-bar"><i></i></span><span class="ci-label"></span></a>
     <span class="spacer"></span>
     <div class="crumbs" id="crumbs"></div>
     <div class="who" id="who" hidden></div>

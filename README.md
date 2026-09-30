@@ -67,6 +67,21 @@ owns the whole surface.
   neither can reach anything that is not on the list. Everything else is one
   click away under *All settings…* in the editor. `/settings anything` still
   goes to the CLI.
+- **CI, watched for you, and `/watch`.** When an instance runs `git push` or
+  `gh pr create` on a branch with a pull request, NikUI watches that PR's
+  checks itself — `gh pr view` every fifteen seconds, no tokens spent — and
+  the panel's header shows a bar beside the context budget: *PR #12 · CI 3/5 ·
+  ~2m left*, the time left being the average of the repo's last ten PR runs
+  (`gh run list`), or of the last ten NikUI watched, for checks that are not
+  Actions. It turns green or red, links to the PR or the failing check, shows
+  in the sidebar row too, and a notification says so when it is over (clicking
+  it opens the instance). A watch started before the push waits for the push;
+  the first failing check ends it. `/watch` does it by hand, and tells the
+  model it may commit, push and open or update the PR without asking — with
+  the prompt after it (`/watch make the PR and push`), or with the next one
+  you send. `/watch` with no PR yet waits up to thirty minutes for one, so
+  *create the PR*, then `/watch`, works; on a PR this branch is ahead of, it
+  asks the instance to push. Needs `gh`, logged in.
 - **A real `/status`.** It is offered as soon as you type `/` (tagged NikUI, so
   you can tell it from the CLI's own), and NikUI answers it itself with a
   full-screen sheet in six sections you can click or key through (`1`–`6`,
@@ -388,6 +403,8 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.notifyOnAttention` | `true` | Tell you when an instance you cannot see is blocked or failed to start |
 | `nikui.notifyWhenDone` | `false` | A system notification on this laptop when an instance finishes its turn; on a Mac, clicking it brings that instance's window forward and opens it there, with no link and no prompt, reopening it if it was closed. The banner comes from a small app NikUI builds once from `notifier/main.swift` (needs Apple's command line tools); without it the banner cannot be clicked |
 | `nikui.notifyWhenDoneSound` | `true` | With it, a soft chime (`sounds/done.wav`, made by `tools/sound.js`) |
+| `nikui.watchCIAfterPush` | `true` | Watch a PR's CI after an instance pushes to it or opens it |
+| `nikui.notifyCI` | `true` | A notification on this laptop when a watched PR's CI is green or fails, with the chime if that is on |
 | `nikui.interruptOnSingleEscape` | `false` | Interrupt on the first Escape, the way the CLI does |
 | `nikui.statusEmoji` | see below | Emoji per status in tab titles |
 | `nikui.remote.port` | `4517` | Port for the local server, on `127.0.0.1` only; `0` picks a free one. A second window takes the next free port rather than refusing |

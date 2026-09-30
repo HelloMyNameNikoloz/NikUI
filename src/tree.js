@@ -4,6 +4,7 @@ const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 const { STATUS } = require('./session');
+const ci = require('./ci');
 
 const MIME = 'application/vnd.code.tree.nikui.sessions';
 
@@ -279,6 +280,7 @@ class SessionTree {
         session.backgroundAgents
           ? `- ${session.backgroundAgents} agent${session.backgroundAgents === 1 ? '' : 's'} still running in the background`
           : '',
+        session.ci ? `- CI: ${ci.describe(session.ci)}${ci.remaining(session.ci) ? ', ' + ci.remaining(session.ci) : ''}` : '',
         session.claudeSessionId ? `- Session: \`${session.claudeSessionId}\`` : '',
         session.lastError ? `- Error: ${session.lastError}` : ''
       ].filter(Boolean).join('\n')
@@ -342,6 +344,10 @@ function describe(session, look) {
   const queued = (session.queue || []).length;
   // What is about to happen belongs next to what is happening.
   if (queued) bits.push(`${queued} queued`);
+  const c = session.ci;
+  if (c && c.phase === 'running') bits.push(`CI ${c.done}/${c.total}`);
+  else if (c && c.phase === 'passed') bits.push('CI ✓');
+  else if (c && c.phase === 'failed') bits.push('CI ✗');
   const folder = path.basename(session.cwd || '');
   const project = path.basename(projectRoot(session.cwd) || '');
   if (folder && folder !== project) bits.push(folder);

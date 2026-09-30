@@ -236,6 +236,10 @@ class SessionManager extends EventEmitter {
     // so do agents running behind it, which keep it busy whatever its status.
     session.on('queue', () => this._changed(session));
     session.on('background', () => this._changed(session));
+    // CI is watched from outside the session: it only says what happened.
+    session.on('ci', () => this._changed(session));
+    session.on('pushed', (cwd) => this.emit('pushed', session, cwd));
+    session.on('watch', () => this.emit('watch', session));
     // Whichever instance hears about the account's limits, all of them know.
     session.on('limits', (limits) => this.rememberLimits(limits));
     session.on('exhausted', (limits) => this.pauseForLimit(limits));
