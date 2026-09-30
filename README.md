@@ -130,7 +130,14 @@ owns the whole surface.
   asks for the task in few, wide steps: one batched look, small edits, one
   verification pass, and a subagent only for a big sweep or web research. Every
   step re-reads the whole conversation, so fewer steps is fewer tokens; the
-  checks stay the same.
+  checks stay the same. `/delegate` splits a task with independent parts and
+  hands each to the cheapest agent that will do it well — Haiku to run checks
+  or make an exactly specified change, Sonnet to find code, research or build a
+  contained piece, Opus at high effort for one hard, isolated problem — running
+  them in parallel and keeping the plan, the decisions and the review in the
+  conversation. A small or tightly coupled task it just does. The agents it
+  names live in `~/.claude/agents`; without them it uses general-purpose with
+  the model named.
 - **Prompt recall.** Up from an empty composer brings back the last prompt, and
   again the one before it; Down walks forward and, past the newest, hands back
   whatever was half-typed before recall started. Editing a recalled prompt ends
@@ -369,7 +376,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.fontSize` | `13` | Conversation font size |
 | `nikui.showThinking` | `true` | Show thinking blocks, collapsed |
 | `nikui.groupByProject` | `auto` | Nest instances under their project folder |
-| `nikui.promptSnippets` | `/table`, `/decisions`, `/lean` | Words that append a standing instruction to your prompt |
+| `nikui.promptSnippets` | `/table`, `/decisions`, `/lean`, `/delegate` | Words that append a standing instruction to your prompt |
 | `nikui.pauseWhenQuotaRuns` | `true` | Hold every instance when the usage limit is spent, and start them again when it resets |
 | `nikui.resumePrompt` | see below | What to send an instance that was cut off mid-turn, once the quota is back |
 | `nikui.maxTranscriptItems` | `400` | Messages an instance keeps in memory; 0 keeps everything |

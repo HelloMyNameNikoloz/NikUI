@@ -36,8 +36,8 @@ module.exports = async function () {
   const props = pkg.contributes.configuration.properties;
   checkEqual('permissions bypass by default', props['nikui.permissionMode'].default, 'bypassPermissions');
   checkEqual('effort is left to Claude Code by default', props['nikui.effort'].default, '');
-  checkEqual('the shipped snippets are /table, /decisions and /lean',
-    Object.keys(props['nikui.promptSnippets'].default).join(' '), 'table decisions lean');
+  checkEqual('the shipped snippets are /table, /decisions, /lean and /delegate',
+    Object.keys(props['nikui.promptSnippets'].default).join(' '), 'table decisions lean delegate');
   checkEqual('output style is Concise by default', props['nikui.outputStyle'].default, 'Concise');
   checkEqual('instances group automatically', props['nikui.groupByProject'].default, 'auto');
 
