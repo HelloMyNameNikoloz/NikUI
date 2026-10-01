@@ -21,6 +21,9 @@ const PAUSED = { icon: 'watch', color: 'charts.orange', word: 'waiting for quota
 // A green dot means "this just finished, look at it". Five minutes later it
 // means nothing, so it stops being green and goes back to reading as idle.
 const DONE_FADES_AFTER_MS = 5 * 60 * 1000;
+// Only a turn that finished in this window fades. One that finished before a
+// reload comes back as it was, opened or not: the reload is not news.
+const WINDOW_OPENED_AT = Date.now();
 
 // Finished, and not opened since. Blue, the way Mail and Messages mark
 // something unread, with the name in bold beside it.
@@ -101,7 +104,7 @@ class SessionTree {
     // eventually. Only fires when a row would actually change.
     this._fade = setInterval(() => {
       const stale = manager.list.some((s) => !s.isAsleep &&
-        s.status === STATUS.DONE && s.finishedAt && Date.now() - s.finishedAt > DONE_FADES_AFTER_MS);
+        s.status === STATUS.DONE && s.finishedAt >= WINDOW_OPENED_AT && Date.now() - s.finishedAt > DONE_FADES_AFTER_MS);
       if (stale) this._onDidChangeTreeData.fire();
     }, 60000);
     if (this._fade.unref) this._fade.unref();
@@ -287,6 +290,9 @@ class SessionTree {
         session.backgroundAgents
           ? `- ${session.backgroundAgents} agent${session.backgroundAgents === 1 ? '' : 's'} still running in the background`
           : '',
+        session.backgroundShells
+          ? `- ${session.backgroundShells} command${session.backgroundShells === 1 ? '' : 's'} still running in the background`
+          : '',
         session.ci ? `- CI: ${ci.describe(session.ci)}${ci.remaining(session.ci) ? ', ' + ci.remaining(session.ci) : ''}` : '',
         session.claudeSessionId ? `- Session: \`${session.claudeSessionId}\`` : '',
         session.lastError ? `- Error: ${session.lastError}` : ''
@@ -336,7 +342,7 @@ function lookFor(session, now) {
   if (unread) return UNREAD;
   // Green means "just finished". Only while the window has been open: a
   // restored row is reporting an outcome, not claiming freshness.
-  if (session.status === STATUS.DONE && session.finishedAt &&
+  if (session.status === STATUS.DONE && session.finishedAt && session.finishedAt >= WINDOW_OPENED_AT &&
       (now || Date.now()) - session.finishedAt > DONE_FADES_AFTER_MS) {
     return LOOK[STATUS.IDLE];
   }

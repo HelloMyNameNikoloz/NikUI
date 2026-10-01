@@ -60,6 +60,15 @@ module.exports = function () {
     panel.dispose();
   }
 
+  suite('a reload brings back the colours it had');
+  for (const [was, now] of [['done', 'done'], ['stopped', 'idle'], ['error', 'idle']]) {
+    const s = new Session({ cwd: '/tmp', claudePath: '/bin/cat', status: was });
+    s.status = was;
+    s.start();
+    checkEqual(`${was}, and its process starts: ${now}`, s.status, now);
+    s.stop();
+  }
+
   suite('NikUI’s commands come first in the palette');
   {
     const s = new Session({ cwd: '/p/c' });

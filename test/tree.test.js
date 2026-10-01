@@ -163,10 +163,15 @@ module.exports = async function () {
   checkEqual('a turn that just ended is green', lookFor(fresh).color, 'charts.green');
 
   const stale = Object.assign(instance('d2', '/Users/nikoloz/Codes/Peuka', 'stale'), {
-    status: 'done', finishedAt: Date.now() - DONE_FADES_AFTER_MS - 1000
+    status: 'done', finishedAt: Date.now()
   });
-  checkEqual('an hour later it reads as idle', lookFor(stale).word, 'idle');
-  check('and stops being green', lookFor(stale).color !== 'charts.green');
+  const later = Date.now() + DONE_FADES_AFTER_MS + 1000;
+  checkEqual('an hour later it reads as idle', lookFor(stale, later).word, 'idle');
+  check('and stops being green', lookFor(stale, later).color !== 'charts.green');
+  const earlier = Object.assign(instance('d3', '/Users/nikoloz/Codes/Peuka', 'before'), {
+    status: 'done', finishedAt: Date.now() - 86400000
+  });
+  checkEqual('one that finished before a reload stays green once opened', lookFor(earlier).color, 'charts.green');
   checkEqual('the instance itself still knows it finished', stale.status, 'done');
 
   suite('a reload does not forget which folder an instance was in');

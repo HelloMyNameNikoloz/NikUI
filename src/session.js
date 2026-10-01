@@ -26,6 +26,9 @@ const QUEUE_DELAY_MS = 5000;
 // command in the background is as often a dev server that never ends, and a
 // monitor watches until it is told to stop, so neither keeps an instance working.
 const AGENT_TASKS = new Set(['local_agent', 'remote_agent', 'in_process_teammate', 'local_workflow']);
+// A command left running that is never meant to end: a server, a watcher, a
+// tail. It does not keep an instance working; a check or a build does.
+const NEVER_ENDS = /\b(dev|serve|server|start|preview|watch|storybook|nodemon|tail\s+-f|logs?\s+-f)\b/i;
 
 // When the last agent finishes, the CLI starts a turn of its own a moment
 // later to hand over what it found. Resting as done in between would flash
@@ -126,6 +129,7 @@ class Session extends EventEmitter {
     // instance is working only because of that rather than in a turn.
     this.backgroundTasks = [];
     this._agents = new Map();
+    this._shells = new Map();
     this._inBackground = false;
     this._stoppingAgents = false;
     this._settleTimer = null;
@@ -187,7 +191,7 @@ class Session extends EventEmitter {
    * failed.
    */
   get isBusy() {
-    return this.status === STATUS.WORKING || this.status === STATUS.WAITING || this.backgroundAgents > 0;
+    return this.status === STATUS.WORKING || this.status === STATUS.WAITING || this.backgroundWork > 0;
   }
 
   /**
@@ -201,6 +205,22 @@ class Session extends EventEmitter {
   /** Agents this instance started that are still running in the background. */
   get backgroundAgents() {
     return this.backgroundTasks.filter((t) => AGENT_TASKS.has(t.type)).length;
+  }
+
+  /**
+   * Commands it left running that will end — `pnpm run check &`, a test
+   * suite — and that it said it is waiting for. The CLI starts a turn by
+   * itself when one finishes, so until then the work is not done. Not a dev
+   * server, and not one an agent left behind: neither is anybody waiting on.
+   */
+  get backgroundShells() {
+    return this.backgroundTasks.filter((t) => t.type === 'local_bash' &&
+      !(this._shells.get(t.id) || {}).owned && !NEVER_ENDS.test(t.description || '')).length;
+  }
+
+  /** Everything behind the conversation that it is not finished without. */
+  get backgroundWork() {
+    return this.backgroundAgents + this.backgroundShells;
   }
 
   get isPaused() {
@@ -282,7 +302,9 @@ class Session extends EventEmitter {
     this.processStartedAt = Date.now();
 
     this._clearBackground();
-    this._setStatus(STATUS.IDLE);
+    // A process starting is not news about the conversation: one that had
+    // finished is still finished, and stays the green it was before a reload.
+    if (this.status !== STATUS.DONE) this._setStatus(STATUS.IDLE);
     this.emit('meta');
   }
 
@@ -549,6 +571,7 @@ class Session extends EventEmitter {
       elapsedMs: this.turnStartedAt ? Date.now() - this.turnStartedAt : this.lastDurationMs,
       running: !!this.turnStartedAt,
       background: this.backgroundAgents,
+      shells: this.backgroundShells,
       contextTokens: this.contextTokens,
       contextWindow: this.contextWindow,
       ci: this.ci || null
@@ -893,7 +916,7 @@ class Session extends EventEmitter {
     this.emit('background');
     // Inside a turn, the turn's end decides where the instance rests.
     if (this.inTurn) return;
-    if (this.backgroundAgents) {
+    if (this.backgroundWork) {
       if (this.status === STATUS.DONE) this._setStatus(STATUS.WORKING, true);
       return;
     }
@@ -904,13 +927,18 @@ class Session extends EventEmitter {
     if (this._settleTimer) clearTimeout(this._settleTimer);
     this._settleTimer = setTimeout(() => {
       this._settleTimer = null;
-      if (this._inBackground && !this.backgroundAgents) this._setStatus(STATUS.DONE);
+      if (this._inBackground && !this.backgroundWork) this._setStatus(STATUS.DONE);
     }, this.agentSettleMs);
     if (this._settleTimer.unref) this._settleTimer.unref();
   }
 
   /** Enough about an agent to say which one it was when it reports back. */
   _rememberAgent(event) {
+    if (event.task_id && event.task_type === 'local_bash') {
+      if (this._shells.size > 64) this._shells.clear();
+      this._shells.set(event.task_id, { owned: !!event.owned_by_subagent });
+      return;
+    }
     if (!event.task_id || !AGENT_TASKS.has(event.task_type)) return;
     if (this._agents.size > 64) this._agents.clear();
     this._agents.set(event.task_id, {
@@ -941,6 +969,7 @@ class Session extends EventEmitter {
   _clearBackground() {
     this.backgroundTasks = [];
     this._agents.clear();
+    this._shells.clear();
     if (this._settleTimer) clearTimeout(this._settleTimer);
     this._settleTimer = null;
   }
@@ -950,7 +979,7 @@ class Session extends EventEmitter {
    * still be running, and until they have reported back it is not done.
    */
   _settle() {
-    if (this.backgroundAgents) this._setStatus(STATUS.WORKING, true);
+    if (this.backgroundWork) this._setStatus(STATUS.WORKING, true);
     else this._setStatus(STATUS.DONE);
   }
 

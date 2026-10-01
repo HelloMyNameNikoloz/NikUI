@@ -153,6 +153,24 @@ module.exports = async function () {
     check('or the machine awake', !s.isBusy);
   }
 
+  {
+    const s = new Session({ cwd: '/tmp' });
+    running(s);
+    s.send('run the checks, then push');
+    s._handle(init);
+    s._handle({ type: 'system', subtype: 'task_started', task_id: 'b2', tool_use_id: 'toolu_b2', description: 'pnpm run check', is_backgrounded: true, task_type: 'local_bash' });
+    s._handle(tasks({ task_id: 'b2', task_type: 'local_bash', description: 'pnpm run check' }));
+    answer(s, 'msg_wait', 'I will commit and push once they pass.');
+    checkEqual('a check left running keeps it working', s.status, 'working');
+    check('without holding the queue', !s.inTurn);
+    checkEqual('and says what it is waiting on', s.stats().shells, 1);
+    s._handle(tasks());
+    s._handle(init);
+    check('when it ends, the CLI picks the turn back up', s.inTurn);
+    answer(s, 'msg_pushed', 'Pushed.', { origin: { kind: 'task-notification' } });
+    checkEqual('and then it is done', s.status, 'done');
+  }
+
   suite('stopping agents between turns');
 
   {

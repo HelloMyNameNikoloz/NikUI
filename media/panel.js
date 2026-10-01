@@ -180,6 +180,10 @@
       bits.push('<span class="stat live" title="Agents this instance started, still running in the background">' +
         icon('cpu', 12) + esc(statsBase.background + (statsBase.background === 1 ? ' agent' : ' agents')) + '</span>');
     }
+    if (statsBase.shells > 0) {
+      bits.push('<span class="stat live" title="Commands it left running in the background, which it is waiting for">' +
+        icon('terminal', 12) + esc(statsBase.shells + (statsBase.shells === 1 ? ' command' : ' commands')) + '</span>');
+    }
     const headline = (statsBase.input || 0) + (statsBase.output || 0);
     if (statsBase.total > 0) {
       bits.push('<span class="stat" title="' + esc(tokenTitle()) + '">' + icon('hash', 12) +
