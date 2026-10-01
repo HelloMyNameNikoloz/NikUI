@@ -503,6 +503,7 @@ class SessionHub {
       model: (s.meta && s.meta.model) || cfg.model || null,
       cost: s.totalCost,
       ticket: s.ticket,
+      prUrl: s.prUrl || null,
       effort: s.effort || null,
       // Bypassing permissions means every tool runs without asking. That is the
       // default here, so it has to be visible in the panel, not buried in

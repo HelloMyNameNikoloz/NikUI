@@ -12,6 +12,7 @@ const { FolderStore } = require('./folders');
 const { SessionPanel } = require('./panel');
 const { DoneNotifier, banner: plainBanner, chime } = require('./done');
 const { CiWatcher } = require('./ci');
+const { PrLinks } = require('./prlink');
 const { MacNotifier } = require('./notifier');
 const { closeHub, closeAllHubs, eachHub } = require('./hub');
 const { HistoryTree } = require('./historyTree');
@@ -93,6 +94,7 @@ function activate(context) {
   followFocus(view, manager);
   watchForTrouble(manager, (session) => SessionPanel.show(session, context, manager));
   watchForCi(manager, context, watchForDone(manager, context));
+  context.subscriptions.push({ dispose: new PrLinks().attach(manager) });
   watchForCrowding(manager);
   watchForQuota(manager);
 

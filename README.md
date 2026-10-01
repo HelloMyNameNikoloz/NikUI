@@ -74,6 +74,10 @@ owns the whole surface.
   view, or opening it on the phone — instead of fading like green does, and it
   survives a reload. Nothing flashes: something waiting for you should not
   wave.
+- **The title opens the PR.** Click an instance's title in its panel to open
+  the PR it is about: the pull URL you gave in a prompt, the PR the CI watch
+  found, or whatever `gh pr view` says for its ticket (or, with no ticket, its
+  branch) in its folder. No PR, no link.
 - **CI, watched for you, and `/watch`.** When an instance runs `git push` or
   `gh pr create` on a branch with a pull request, NikUI watches that PR's
   checks itself — `gh pr view` every fifteen seconds, no tokens spent — and

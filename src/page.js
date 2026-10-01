@@ -48,7 +48,7 @@ ${head}</head>
     <a class="back" id="back" href="/" aria-label="All instances" title="All instances"></a>
     <div class="title-group">
       <span id="dot" class="dot idle"></span>
-      <span class="title" id="title">Claude</span>
+      <a class="title" id="title" target="_blank" rel="noopener">Claude</a>
     </div>
     <div class="stats" id="stats"></div>
     <div class="ctx" id="ctx" hidden><div class="ctx-bar"><i></i></div><span class="ctx-label"></span></div>

@@ -332,7 +332,11 @@
 
   function setMeta(next) {
     meta = next || {};
-    $('title').textContent = meta.label || '';
+    const title = $('title');
+    title.textContent = meta.label || '';
+    // The title opens the PR the instance is about, when there is one.
+    if (meta.prUrl) { title.href = meta.prUrl; title.title = 'Open ' + meta.prUrl.replace(/^https?:\/\/[^/]+\//, ''); }
+    else { title.removeAttribute('href'); title.removeAttribute('title'); }
     const bits = [];
     if (meta.ticket) bits.push('#' + meta.ticket);
     if (meta.cwd) bits.push(meta.cwd.replace(meta.home, '~'));

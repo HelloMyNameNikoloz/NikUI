@@ -6,6 +6,7 @@ const readline = require('readline');
 const { EventEmitter } = require('events');
 const path = require('path');
 const { nextTicket } = require('./ticket');
+const { prUrlIn } = require('./prlink');
 const { shortLabel } = require('./label');
 const { transcriptPath } = require('./history');
 const { pushedFrom } = require('./ci');
@@ -76,6 +77,8 @@ class Session extends EventEmitter {
     this.customTitle = opts.customTitle || null;
     this.autoLabel = opts.autoLabel || null;
     this.ticket = opts.ticket || null;
+    // The PR the title opens; PrLinks finds it when the prompt did not say.
+    this.prUrl = null;
     this.claudeSessionId = opts.claudeSessionId || null;
 
     // A restored instance comes back wearing the state its conversation ended
@@ -410,6 +413,8 @@ class Session extends EventEmitter {
         this.emit('meta');
       }
     }
+    const pull = prUrlIn(prompt, this.ticket);
+    if (pull && pull !== this.prUrl) { this.prUrl = pull; this.emit('meta'); }
 
     this._upsert({
       id: `u${this._seq++}`,
@@ -744,6 +749,7 @@ class Session extends EventEmitter {
         const t = nextTicket(this.ticket, text);
         if (t !== this.ticket) this.ticket = t;
       }
+      this.prUrl = prUrlIn(text, this.ticket) || this.prUrl;
       if (this.autoTitle && !this.autoLabel) this.autoLabel = shortLabel(text);
     }
 
