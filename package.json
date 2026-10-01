@@ -632,9 +632,10 @@
             "waiting": "\ud83d\udd34",
             "done": "\ud83d\udfe2",
             "error": "\ud83d\udd34",
-            "stopped": "\u26ab"
+            "stopped": "\u26ab",
+            "unread": "\ud83d\udd35"
           },
-          "description": "Emoji used per status in panel titles."
+          "description": "Emoji used per status in panel titles. \"unread\" is a finished instance you have not opened since."
         },
         "nikui.effort": {
           "type": "string",

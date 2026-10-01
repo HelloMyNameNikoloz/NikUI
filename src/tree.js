@@ -22,6 +22,10 @@ const PAUSED = { icon: 'watch', color: 'charts.orange', word: 'waiting for quota
 // means nothing, so it stops being green and goes back to reading as idle.
 const DONE_FADES_AFTER_MS = 5 * 60 * 1000;
 
+// Finished, and not opened since. Blue, the way Mail and Messages mark
+// something unread, with the name in bold beside it.
+const UNREAD = { icon: 'circle-filled', color: 'charts.blue', word: 'done' };
+
 const LOOK = {
   [STATUS.IDLE]:    { icon: 'circle-outline', color: 'descriptionForeground', word: 'idle' },
   [STATUS.WORKING]: { icon: 'circle-filled',  color: 'charts.orange',         word: 'working' },
@@ -254,13 +258,16 @@ class SessionTree {
   sessionItem(session) {
     const look = lookFor(session);
     const name = this.manager.displayName ? this.manager.displayName(session) : session.label;
-    const item = new vscode.TreeItem(name, vscode.TreeItemCollapsibleState.None);
+    // A tree cannot set a weight, but a highlight is drawn bold: the whole
+    // name highlighted is the bold title of an unread message.
+    const label = session.unread && name ? { label: name, highlights: [[0, name.length]] } : name;
+    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
     item.id = session.id;
     item.iconPath = new vscode.ThemeIcon(look.icon, new vscode.ThemeColor(look.color));
     item.description = describe(session, look);
     item.tooltip = new vscode.MarkdownString(
       [
-        `**${name}** — ${look.word}`,
+        `**${name}** — ${look.word}${session.unread ? ', not opened since' : ''}`,
         '',
         session.isPaused
           ? `- Waiting for the account's usage limit to reset${session.pausedUntil ? ', at about ' + new Date(session.pausedUntil).toLocaleTimeString() : ''}. Anything you send meanwhile waits in the queue.`
@@ -323,7 +330,10 @@ function summarise(sessions) {
 function lookFor(session, now) {
   const base = LOOK[session.status] || LOOK[STATUS.IDLE];
   if (session.isPaused) return PAUSED;
-  if (session.isAsleep) return { icon: ASLEEP.icon, color: base.color, word: base.word };
+  const unread = session.unread && session.status === STATUS.DONE;
+  if (session.isAsleep) return { icon: ASLEEP.icon, color: unread ? UNREAD.color : base.color, word: base.word };
+  // Unread does not fade: it is waiting for you, not reporting how recent it is.
+  if (unread) return UNREAD;
   // Green means "just finished". Only while the window has been open: a
   // restored row is reporting an outcome, not claiming freshness.
   if (session.status === STATUS.DONE && session.finishedAt &&
@@ -355,4 +365,4 @@ function describe(session, look) {
   return bits.join(' · ');
 }
 
-module.exports = { SessionTree, LOOK, ASLEEP, PAUSED, lookFor, describe, summarise, projectRoot, MIME, DONE_FADES_AFTER_MS };
+module.exports = { SessionTree, LOOK, UNREAD, ASLEEP, PAUSED, lookFor, describe, summarise, projectRoot, MIME, DONE_FADES_AFTER_MS };

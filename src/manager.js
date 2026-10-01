@@ -191,7 +191,7 @@ class SessionManager extends EventEmitter {
   }
 
   create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage, turnLog, startedAt,
-    turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt, queue, cutByLimit }) {
+    turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt, queue, cutByLimit, unread }) {
     const cfg = this.config;
     const session = new Session({
       id,
@@ -226,7 +226,8 @@ class SessionManager extends EventEmitter {
       lastCompactedAt,
       // Whether the limit cut off its last turn: owed a nudge when the quota
       // comes back, reload or no reload.
-      cutByLimit
+      cutByLimit,
+      unread
     });
 
     session.on('status', () => { this._changed(session); });
@@ -238,6 +239,7 @@ class SessionManager extends EventEmitter {
     session.on('background', () => this._changed(session));
     // CI is watched from outside the session: it only says what happened.
     session.on('ci', () => this._changed(session));
+    session.on('unread', () => this._changed(session));
     session.on('pushed', (cwd) => this.emit('pushed', session, cwd));
     session.on('watch', () => this.emit('watch', session));
     // Whichever instance hears about the account's limits, all of them know.
@@ -449,7 +451,9 @@ class SessionManager extends EventEmitter {
         queue: (s.queue || []).slice(0, KEEP_QUEUED).map(slimQueued),
         // Work the limit cut off. It was only ever held in memory, so a reload
         // during a pause forgot who to nudge, and those instances stayed red.
-        cutByLimit: !!(s.cutByLimit || s.interruptedByPause)
+        cutByLimit: !!(s.cutByLimit || s.interruptedByPause),
+        // Not opened since it finished: still not, after a reload.
+        unread: !!s.unread
       }));
     this.context.workspaceState.update(STORAGE_KEY, data.slice(-KEEP));
   }
@@ -492,6 +496,7 @@ class SessionManager extends EventEmitter {
         lastCompactedAt: entry.lastCompactedAt,
         queue: entry.queue,
         cutByLimit: !!(entry.cutByLimit || onDisk),
+        unread: !!entry.unread,
         autoStart: false
       });
     }

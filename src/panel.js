@@ -8,7 +8,7 @@ const { renderPage, randomNonce } = require('./page');
 
 const DEFAULT_EMOJI = {
   idle: '⚪', working: '🟠', waiting: '🔴',
-  done: '🟢', error: '🔴', stopped: '⚫'
+  done: '🟢', error: '🔴', stopped: '⚫', unread: '🔵'
 };
 
 const panels = new Map();
@@ -88,7 +88,12 @@ class SessionPanel {
     this.hub.attach({ id: this.clientId, kind: 'webview', post: (m) => this.panel.webview.postMessage(m) });
     // The tab's title and icon follow the instance for as long as this panel is
     // one of its clients, and stop following the moment it is not.
-    this.hostOff = this.hub.onHost((event) => { if (event === 'chrome') this.refreshChrome(); });
+    this.hostOff = this.hub.onHost((event) => {
+      if (event !== 'chrome') return;
+      // A turn that finishes in front of you was seen finishing.
+      this.markSeen();
+      this.refreshChrome();
+    });
     this.refreshChrome();
 
     this.panel.webview.onDidReceiveMessage(
@@ -100,20 +105,35 @@ class SessionPanel {
       this.panel.onDidChangeViewState((e) => {
         const live = e && e.webviewPanel ? e.webviewPanel : this.panel;
         if (live.active && this.manager) this.manager.focus(this.session);
+        this.markSeen();
       }, null, this.disposables);
     }
+    // Coming back to the window is looking at whatever tab it shows.
+    if (vscode.window.onDidChangeWindowState) {
+      this.disposables.push(vscode.window.onDidChangeWindowState(() => this.markSeen()));
+    }
+    this.markSeen();
     if (this.manager && this.panel.active === true) this.manager.focus(this.session);
+  }
+
+  /** In view, in a window that is in front: the blue dot comes off. */
+  markSeen() {
+    if (!this.session.unread || typeof this.session.setUnread !== 'function') return;
+    const focused = !vscode.window.state || vscode.window.state.focused !== false;
+    if (this.panel.visible !== false && focused) this.session.setUnread(false);
   }
 
   // Coloured tab icon + emoji title — status visible without opening the tab.
   refreshChrome() {
     const cfg = readConfig();
     const emoji = Object.assign({}, DEFAULT_EMOJI, cfg.statusEmoji || {});
-    const glyph = emoji[this.session.status] || '';
+    // Finished and not opened since: blue, as Mail marks a message unread.
+    const unread = !!this.session.unread;
+    const glyph = (unread ? emoji.unread : emoji[this.session.status]) || '';
     const name = this.manager && this.manager.displayName
       ? this.manager.displayName(this.session) : this.session.label;
     this.panel.title = `${glyph} ${name}`.trim();
-    const icon = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'status', `${this.session.status}.svg`);
+    const icon = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'status', `${unread ? 'unread' : this.session.status}.svg`);
     this.panel.iconPath = { light: icon, dark: icon };
   }
 

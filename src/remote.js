@@ -929,6 +929,7 @@ ${this.appHead(nonce)}</head>
         queued: (session.queue || []).length,
         paused: !!session.isPaused,
         asleep: !!session.isAsleep,
+        unread: !!session.unread,
         // Where the editor files it: a folder somebody made, or the project its
         // directory belongs to. Sent rather than guessed from the path, because
         // a worktree belongs to its project and a path does not say so.

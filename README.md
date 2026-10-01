@@ -67,6 +67,13 @@ owns the whole surface.
   neither can reach anything that is not on the list. Everything else is one
   click away under *All settings…* in the editor. `/settings anything` still
   goes to the CLI.
+- **Unread, the way Mail does it.** An instance that finishes a turn while
+  you are not looking at it turns blue with its name in bold in the sidebar,
+  its tab shows 🔵 (`statusEmoji.unread`), and the phone's list gives it a
+  blue dot and a bold name. It stays until you open it — bringing its tab into
+  view, or opening it on the phone — instead of fading like green does, and it
+  survives a reload. Nothing flashes: something waiting for you should not
+  wave.
 - **CI, watched for you, and `/watch`.** When an instance runs `git push` or
   `gh pr create` on a branch with a pull request, NikUI watches that PR's
   checks itself — `gh pr view` every fifteen seconds, no tokens spent — and

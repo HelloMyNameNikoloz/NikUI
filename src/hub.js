@@ -83,6 +83,7 @@ class SessionHub {
       this.refreshStatus();
     });
     on('ci', () => this.broadcastStats());
+    on('unread', () => this.emitHost('chrome'));
     on('reset', () => this.broadcast({ type: 'reset' }));
     on('queue', () => {
       this.broadcast(this.queueMessage());
@@ -444,6 +445,9 @@ class SessionHub {
   /** A client has loaded and wants the whole picture. */
   async hello(entry) {
     const session = this.session;
+    // Opened somewhere other than this window's own panel — a phone, a
+    // browser — is opened. The panel says so itself, when it is in view.
+    if (!this.isLocal(entry) && typeof session.setUnread === 'function') session.setUnread(false);
     // A restored instance has no items yet; rebuild it from disk before the
     // first paint, then bring its process back with --resume. Only the first
     // client through the door pays for this.
@@ -524,9 +528,10 @@ class SessionHub {
     const live = this.session.meta && this.session.meta.slashCommands;
     const remembered = typeof this.host.knownCommands === 'function' ? this.host.knownCommands() : [];
     const base = (live && live.length) ? live : (remembered || []);
-    const merged = base.slice();
-    for (const own of this.ownCommands(this.config())) if (!merged.includes(own)) merged.push(own);
-    return merged;
+    // NikUI's first: the palette shows forty at a time, and the CLI alone
+    // lists more than that, which put /watch past the end of the list.
+    const own = this.ownCommands(this.config());
+    return own.concat(base.filter((c) => !own.includes(c)));
   }
 
   queueSummary() {

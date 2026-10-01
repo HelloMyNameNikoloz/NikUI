@@ -236,6 +236,11 @@ body.home .sdot.asleep {
   box-shadow: inset 0 0 0 1.5px #8e8e93;
 }
 
+/* Finished and not opened since: Mail's unread mark, a blue dot and a bold
+   name. Still, deliberately — something waiting for you should not wave. */
+body.home .sdot.unread { background: #0a84ff; box-shadow: none; }
+body.home .row.unread .row-name { font-weight: 700; }
+
 /* ---- one hand, one thumb -------------------------------------------------
 
    The same client, with a layer on top for a small screen. It lives here

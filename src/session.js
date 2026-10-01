@@ -118,6 +118,8 @@ class Session extends EventEmitter {
     // this one is remembered across a reload, because a flag that lives only
     // in memory is exactly how instances were left red after a reset.
     this.cutByLimit = !!opts.cutByLimit;
+    // Finished a turn nobody has looked at since: the blue dot.
+    this.unread = !!opts.unread;
     this._limitThisTurn = false;
     this._turnTools = [];
     // What the CLI says is running behind the conversation, and whether the
@@ -1288,8 +1290,19 @@ class Session extends EventEmitter {
     this._inBackground = status === STATUS.WORKING && !!background;
     if (!this._inBackground) this._stoppingAgents = false;
     if (this.status === status) return;
+    const was = this.status;
     this.status = status;
+    // Before the event, so whoever is looking can take it straight back off.
+    if (status === STATUS.DONE && (was === STATUS.WORKING || was === STATUS.WAITING)) this.unread = true;
+    else if (status === STATUS.WORKING || status === STATUS.WAITING) this.unread = false;
     this.emit('status', status);
+  }
+
+  /** Seen, or not: the blue dot comes off when somebody looks. */
+  setUnread(value) {
+    if (this.unread === !!value) return;
+    this.unread = !!value;
+    this.emit('unread', this.unread);
   }
 
   toJSON() {

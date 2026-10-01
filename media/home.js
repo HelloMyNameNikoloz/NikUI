@@ -135,8 +135,12 @@
 
       const dot = document.createElement('span');
       dot.className = 'sdot ' + String(instance.status || 'idle').replace(/[^a-z]/g, '') +
-        (instance.asleep ? ' asleep' : '');
+        (instance.asleep ? ' asleep' : '') + (instance.unread ? ' unread' : '');
       row.appendChild(dot);
+      if (instance.unread) {
+        row.classList.add('unread');
+        dot.title = 'Finished, not opened since';
+      }
 
       const name = document.createElement('span');
       name.className = 'row-name';
