@@ -62,6 +62,7 @@ module.exports = async function () {
     checkEqual('asked about the URL as an argument, not inside the script', [asked[0][2], asked[0][1].includes('github')], ['https://github.com/o/r/pull/1210', false]);
     check('no tab: the caller opens one', !(await focusOpenTab('https://github.com/o/r/pull/9', { platform: 'darwin', defaultBrowser: brave, run })));
     check('a browser it cannot ask is not asked', !(await focusOpenTab('https://x/pull/1', { platform: 'darwin', defaultBrowser: async () => 'org.mozilla.firefox', run })) && asked.length === 2);
+    checkEqual('macOS refusing to let it ask says so', await focusOpenTab('https://x/pull/1', { platform: 'darwin', defaultBrowser: brave, run: async () => 'denied' }), 'denied');
     check('nor off a Mac', !(await focusOpenTab('https://x/pull/1', { platform: 'linux', defaultBrowser: brave, run })));
     check('Chromium switches tabs its way', script('com.brave.browser').includes('active tab index'));
     check('Safari its own', script('com.apple.safari').includes('current tab of w'));

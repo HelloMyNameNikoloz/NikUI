@@ -407,12 +407,17 @@
 
   // In the editor the title goes to a tab already showing the PR, if there is
   // one; elsewhere it is an ordinary link.
-  if (typeof acquireVsCodeApi === 'function') {
-    $('title').addEventListener('click', (e) => {
+  // VS Code opens every clicked <a href> in a new tab whatever the page does
+  // with the click, so in the editor the title carries no href at all.
+  const IN_EDITOR = typeof acquireVsCodeApi === 'function';
+  if (IN_EDITOR) {
+    const openPr = (e) => {
       if (!meta.prUrl) return;
       e.preventDefault();
       vscode.postMessage({ type: 'openPr' });
-    });
+    };
+    $('title').addEventListener('click', openPr);
+    $('title').addEventListener('keydown', (e) => { if (e.key === 'Enter') openPr(e); });
   }
 
   function setMeta(next) {
@@ -420,8 +425,14 @@
     const title = $('title');
     title.textContent = meta.label || '';
     // The title opens the PR the instance is about, when there is one.
-    if (meta.prUrl) { title.href = meta.prUrl; title.title = 'Open ' + meta.prUrl.replace(/^https?:\/\/[^/]+\//, ''); }
-    else { title.removeAttribute('href'); title.removeAttribute('title'); }
+    title.classList.toggle('linked', !!meta.prUrl);
+    if (meta.prUrl) {
+      if (IN_EDITOR) { title.removeAttribute('href'); title.tabIndex = 0; title.setAttribute('role', 'link'); }
+      else title.href = meta.prUrl;
+      title.title = 'Open ' + meta.prUrl.replace(/^https?:\/\/[^/]+\//, '');
+    } else {
+      title.removeAttribute('href'); title.removeAttribute('title'); title.removeAttribute('role'); title.removeAttribute('tabindex');
+    }
     const bits = [];
     if (meta.ticket) bits.push('#' + meta.ticket);
     if (meta.cwd) bits.push(meta.cwd.replace(meta.home, '~'));

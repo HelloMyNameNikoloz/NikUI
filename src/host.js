@@ -15,6 +15,8 @@ const { focusOpenTab } = require('./browserTab');
  * laptop, whether or not a panel happens to be on screen. Built once per window
  * and handed to the hub; transports add only their own chrome on top.
  */
+const openUrl = {};
+
 function createHost(context, manager, extras) {
   const devices = (extras && extras.devices) || null;
   const awake = (extras && extras.awake) || null;
@@ -31,7 +33,17 @@ function createHost(context, manager, extras) {
     openFile: (req) => openFile(req),
     // To the tab already showing it if there is one, else a new one.
     openUrl: async (url) => {
-      if (!(await focusOpenTab(url))) await vscode.env.openExternal(vscode.Uri.parse(url));
+      const found = await focusOpenTab(url);
+      if (found === true) return;
+      await vscode.env.openExternal(vscode.Uri.parse(url));
+      if (found === 'denied' && !openUrl.told) {
+        openUrl.told = true;
+        const pick = await vscode.window.showWarningMessage(
+          'NikUI opened a new tab because macOS does not let VS Code look at your browser’s tabs. ' +
+          'Turn on your browser under Visual Studio Code in Privacy & Security → Automation to go to the open tab instead.',
+          'Open Automation settings');
+        if (pick) vscode.env.openExternal(vscode.Uri.parse('x-apple.systempreferences:com.apple.preference.security?Privacy_Automation'));
+      }
     },
     runInTerminal: (req) => runInTerminal(req),
     switchTo: (id, from) => switchTo(context, manager, id, from),

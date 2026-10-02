@@ -14,7 +14,11 @@ const CHROMIUM = new Set(['com.google.chrome', 'com.google.chrome.beta', 'com.br
 const SAFARI = new Set(['com.apple.safari']);
 
 const run = (file, args) => new Promise((resolve) => {
-  execFile(file, args, { timeout: 8000 }, (err, stdout) => resolve(err ? null : String(stdout || '').trim()));
+  execFile(file, args, { timeout: 8000 }, (err, stdout, stderr) => {
+    // -1743: macOS has not let this app control the browser.
+    if (err && /-1743|not allowed|Not authori[sz]ed/i.test(String(stderr || ''))) return resolve('denied');
+    resolve(err ? null : String(stdout || '').trim());
+  });
 });
 
 /** The bundle id of the browser that opens https links; null when it cannot be told. */
@@ -58,7 +62,8 @@ end run`;
 
 /**
  * Brings forward a tab already showing `url` (or a page under it, like its
- * files). Resolves true if it did; false means nothing was touched.
+ * files). Resolves true if it did, 'denied' if macOS would not let it ask, and
+ * false otherwise; anything but true means nothing was touched.
  */
 async function focusOpenTab(url, opts) {
   opts = opts || {};
@@ -66,7 +71,7 @@ async function focusOpenTab(url, opts) {
   const bundle = await (opts.defaultBrowser || defaultBrowser)();
   if (!bundle || !(CHROMIUM.has(bundle) || SAFARI.has(bundle))) return false;
   const out = await (opts.run || run)('osascript', ['-e', script(bundle), String(url).replace(/\/+$/, '')]);
-  return out === 'found';
+  return out === 'found' ? true : out === 'denied' ? 'denied' : false;
 }
 
 module.exports = { focusOpenTab, defaultBrowser, script, CHROMIUM, SAFARI };
