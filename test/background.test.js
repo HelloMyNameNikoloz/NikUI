@@ -171,6 +171,32 @@ module.exports = async function () {
     checkEqual('and then it is done', s.status, 'done');
   }
 
+  suite('which commands, since when, and stopping one');
+  {
+    const s = new Session({ cwd: '/tmp' });
+    const written = running(s);
+    s.send('run the checks');
+    s._handle(init);
+    const before = Date.now();
+    s._handle({ type: 'system', subtype: 'task_started', task_id: 'b3', tool_use_id: 'toolu_b3', description: 'pnpm run check', is_backgrounded: true, task_type: 'local_bash' });
+    s._handle(tasks({ task_id: 'b3', task_type: 'local_bash', description: 'pnpm run check' },
+      { task_id: 'b4', task_type: 'local_bash', description: 'npm run dev' }));
+    const list = s.stats().shellList;
+    checkEqual('names the command it is waiting on, not the dev server', list.map((t) => t.command), ['pnpm run check']);
+    check('and when it started', list[0].startedAt >= before && list[0].startedAt <= Date.now());
+    check('a command not in the background is not stopped', !s.stopTask('nope'));
+    const n = written.length;
+    check('one that is, is', s.stopTask('b3'));
+    checkEqual('by asking the CLI to stop that task', [written.length, written[n].type, written[n].request.subtype, written[n].request.task_id],
+      [n + 1, 'control_request', 'stop_task', 'b3']);
+    check('and the chip says it is stopping', s.stats().shellList[0].stopping);
+
+    const t = new Session({ cwd: '/tmp' });
+    running(t);
+    t._handle(tasks({ task_id: 'b5', task_type: 'local_bash', description: 'pnpm test' }));
+    check('one first seen in the list is timed from then', t.stats().shellList[0].startedAt > 0);
+  }
+
   suite('stopping agents between turns');
 
   {

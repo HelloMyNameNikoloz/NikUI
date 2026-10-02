@@ -20,6 +20,8 @@ const STEERING = new Set([
   // Running a command is steering by any reading of the word: it is the same
   // machine and the same permissions as a prompt, by a shorter route.
   'editQueued', 'clearQueue', 'openFile', 'switch', 'runInTerminal',
+  // Stopping a command it is running is the same as interrupting it.
+  'stopTask',
   // /watch hands out permission to push, which is steering if anything is.
   'watch',
   // A setting changes what every instance does next, and whether the laptop
@@ -318,6 +320,10 @@ class SessionHub {
 
       case 'interrupt':
         session.interrupt();
+        break;
+
+      case 'stopTask':
+        if (typeof session.stopTask === 'function') session.stopTask(String(msg.taskId || ''));
         break;
 
       case 'unqueue':

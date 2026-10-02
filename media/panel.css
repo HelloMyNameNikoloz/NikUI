@@ -134,6 +134,49 @@ a.title[href]:hover { color: var(--accent, var(--vscode-textLink-foreground)); t
 .stat.live { color: var(--orange); background: color-mix(in srgb, var(--orange) 12%, transparent); }
 .stat .ico { opacity: 0.75; }
 
+.stat.shells { cursor: default; }
+.stat.shells:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.shells-pop {
+  position: fixed; z-index: 50;
+  min-width: 260px; max-width: min(520px, calc(100vw - 16px));
+  padding: 6px;
+  border-radius: var(--r-card);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorWidget-border, var(--fill-1));
+  box-shadow: var(--shadow-sheet);
+  font-size: var(--fs-small);
+}
+.shells-pop[hidden] { display: none; }
+.shells-head {
+  padding: 4px 8px 6px;
+  color: var(--vscode-descriptionForeground);
+  font-weight: 590;
+}
+.shell-row {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.shell-row:hover { background: var(--fill-1); }
+.shell-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.shell-cmd {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.shell-since { color: var(--orange); font-variant-numeric: tabular-nums; }
+.shell-stop {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: var(--r-chip);
+  border: 1px solid color-mix(in srgb, var(--red, #ff453a) 45%, transparent);
+  background: transparent;
+  color: var(--red, #ff453a);
+  font: inherit; cursor: pointer;
+}
+.shell-stop:hover:not(:disabled) { background: color-mix(in srgb, var(--red, #ff453a) 14%, transparent); }
+.shell-stop:disabled { opacity: 0.6; cursor: default; }
+body.read-only .shell-stop { display: none; }
+
 .spacer { flex: 1 1 auto; }
 .crumbs {
   display: flex; align-items: center; gap: var(--s3);

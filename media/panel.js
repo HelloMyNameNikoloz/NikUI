@@ -181,7 +181,7 @@
         icon('cpu', 12) + esc(statsBase.background + (statsBase.background === 1 ? ' agent' : ' agents')) + '</span>');
     }
     if (statsBase.shells > 0) {
-      bits.push('<span class="stat live" title="Commands it left running in the background, which it is waiting for">' +
+      bits.push('<span class="stat live shells" tabindex="0" role="button" aria-haspopup="true">' +
         icon('terminal', 12) + esc(statsBase.shells + (statsBase.shells === 1 ? ' command' : ' commands')) + '</span>');
     }
     const headline = (statsBase.input || 0) + (statsBase.output || 0);
@@ -267,9 +267,84 @@
   // half-finished clicks, to redraw text that had not changed.
   setInterval(function () { if (drainAt) paintQueue(); }, 1000);
 
+  // Hovering the commands chip says which commands, for how long, and offers
+  // to stop each. The card lives outside #stats, which is redrawn every second.
+  const shellPop = $('shells-pop');
+  let shellHide = null;
+  let shellsOpen = false;
+  const stopping = new Set();
+
+  function paintShells() {
+    const list = (statsBase.shellList || []);
+    if (!shellsOpen) return;
+    if (!list.length) { closeShells(); return; }
+    const now = Date.now();
+    shellPop.innerHTML = '<div class="shells-head">Running in the background</div>' + list.map(function (t) {
+      const since = t.startedAt ? fmtDuration(now - t.startedAt) : '';
+      const busy = t.stopping || stopping.has(t.id);
+      return '<div class="shell-row">' +
+        '<div class="shell-main"><code class="shell-cmd" title="' + esc(t.command) + '">' + esc(t.command || 'A command') + '</code>' +
+        (since ? '<span class="shell-since">running ' + esc(since) + '</span>' : '') + '</div>' +
+        '<button class="shell-stop" data-task="' + esc(t.id) + '"' + (busy ? ' disabled' : '') + '>' +
+        (busy ? 'Stopping…' : 'Cancel') + '</button></div>';
+    }).join('');
+  }
+
+  function openShells() {
+    const chip = $('stats').querySelector('.stat.shells');
+    if (!chip) return;
+    if (shellHide) { clearTimeout(shellHide); shellHide = null; }
+    shellsOpen = true;
+    shellPop.hidden = false;
+    paintShells();
+    const r = chip.getBoundingClientRect();
+    const width = shellPop.offsetWidth;
+    shellPop.style.top = (r.bottom + 6) + 'px';
+    shellPop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8)) + 'px';
+  }
+
+  function closeShells() {
+    shellsOpen = false;
+    shellPop.hidden = true;
+  }
+
+  function closeShellsSoon() {
+    if (shellHide) clearTimeout(shellHide);
+    shellHide = setTimeout(closeShells, 250);
+  }
+
+  $('stats').addEventListener('mouseover', function (e) {
+    if (e.target.closest('.stat.shells')) openShells(); else if (shellsOpen) closeShellsSoon();
+  });
+  $('stats').addEventListener('mouseleave', function () { if (shellsOpen) closeShellsSoon(); });
+  $('stats').addEventListener('click', function (e) {
+    if (!e.target.closest('.stat.shells')) return;
+    if (shellsOpen && !shellHide) closeShells(); else openShells();
+  });
+  $('stats').addEventListener('keydown', function (e) {
+    if (e.target.closest('.stat.shells') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openShells(); }
+  });
+  shellPop.addEventListener('mouseenter', function () { if (shellHide) { clearTimeout(shellHide); shellHide = null; } });
+  shellPop.addEventListener('mouseleave', closeShellsSoon);
+  shellPop.addEventListener('click', function (e) {
+    const btn = e.target.closest('.shell-stop');
+    if (!btn || btn.disabled) return;
+    stopping.add(btn.dataset.task);
+    vscode.postMessage({ type: 'stopTask', taskId: btn.dataset.task });
+    paintShells();
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && shellsOpen) closeShells(); });
+  document.addEventListener('click', function (e) {
+    if (shellsOpen && !e.target.closest('#shells-pop') && !e.target.closest('.stat.shells')) closeShells();
+  });
+  setInterval(paintShells, 1000);
+
   function setStats(s) {
     statsBase = Object.assign({}, s, { at: Date.now() });
+    const live = new Set((statsBase.shellList || []).map(function (t) { return t.id; }));
+    stopping.forEach(function (id) { if (!live.has(id)) stopping.delete(id); });
     paintStats();
+    paintShells();
     paintContext();
     paintCi();
   }

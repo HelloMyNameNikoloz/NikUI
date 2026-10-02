@@ -58,6 +58,7 @@ ${head}</head>
     <div class="who" id="who" hidden></div>
     <div class="link" id="link" role="status" aria-live="polite" hidden></div>
   </header>
+  <div class="shells-pop" id="shells-pop" role="dialog" aria-label="Commands running in the background" hidden></div>
 
   <div class="find" id="find" hidden>
     <input id="find-input" type="text" placeholder="Find in this conversation" aria-label="Find in this conversation">

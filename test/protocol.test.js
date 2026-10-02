@@ -20,7 +20,7 @@ const TO_HOST = [
   // A command from a code block, handed to a real terminal in the editor. Only
   // the editor's route: the app has a terminal of its own and goes there.
   'runInTerminal',
-  'watch',
+  'watch', 'stopTask',
   // `/settings`: asked for, kept fresh while it is open, changed one row at a
   // time, and — from the editor only — the way to the full list.
   'settings', 'settingsOpen', 'setSetting', 'allSettings'

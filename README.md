@@ -74,6 +74,10 @@ owns the whole surface.
   view, or opening it on the phone — instead of fading like green does, and it
   survives a reload. Nothing flashes: something waiting for you should not
   wave.
+- **Commands running in the background.** While an instance waits on a
+  command it left running (`pnpm run check`, a test suite), it stays orange and
+  the header shows how many. Hover that chip (or tap it) for each command, how
+  long it has been running, and a Cancel button that stops it.
 - **The title opens the PR.** Click an instance's title in its panel to open
   the PR it is about: the pull URL you gave in a prompt, the PR the CI watch
   found, or whatever `gh pr view` says for its ticket (or, with no ticket, its

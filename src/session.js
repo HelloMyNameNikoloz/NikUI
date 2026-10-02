@@ -221,6 +221,30 @@ class Session extends EventEmitter {
       !(this._shells.get(t.id) || {}).owned && !NEVER_ENDS.test(t.description || '')).length;
   }
 
+  /** Those commands, for the chip that says what they are and since when. */
+  get shellList() {
+    return this.backgroundTasks.filter((t) => t.type === 'local_bash' &&
+      !(this._shells.get(t.id) || {}).owned && !NEVER_ENDS.test(t.description || ''))
+      .map((t) => {
+        const shell = this._shells.get(t.id) || {};
+        return { id: t.id, command: t.description || '', startedAt: shell.at || null, stopping: !!shell.stopping };
+      });
+  }
+
+  /** Stops one command it left running. The CLI tells the model it was stopped. */
+  stopTask(taskId) {
+    if (!this.isRunning || !this.backgroundTasks.some((t) => t.id === taskId && t.type === 'local_bash')) return false;
+    const shell = this._shells.get(taskId) || {};
+    this._shells.set(taskId, Object.assign(shell, { stopping: true }));
+    this._write({
+      type: 'control_request',
+      request_id: `nikui-${this._controlSeq++}`,
+      request: { subtype: 'stop_task', task_id: taskId }
+    });
+    this.emit('background');
+    return true;
+  }
+
   /** Everything behind the conversation that it is not finished without. */
   get backgroundWork() {
     return this.backgroundAgents + this.backgroundShells;
@@ -577,6 +601,7 @@ class Session extends EventEmitter {
       running: !!this.turnStartedAt,
       background: this.backgroundAgents,
       shells: this.backgroundShells,
+      shellList: this.shellList,
       contextTokens: this.contextTokens,
       contextWindow: this.contextWindow,
       ci: this.ci || null
@@ -916,6 +941,11 @@ class Session extends EventEmitter {
       .map((t) => ({ id: t.task_id, type: t.task_type || null, description: t.description || '' }));
     // An agent can be sent to the background after it started in the foreground.
     for (const t of this.backgroundTasks) {
+      // When a command started is when it was first seen, if nothing said sooner.
+      if (t.type === 'local_bash' && !this._shells.has(t.id)) {
+        if (this._shells.size > 64) this._shells.clear();
+        this._shells.set(t.id, { owned: false, at: Date.now() });
+      }
       const agent = this._agents.get(t.id);
       if (agent) agent.background = true;
     }
@@ -942,7 +972,8 @@ class Session extends EventEmitter {
   _rememberAgent(event) {
     if (event.task_id && event.task_type === 'local_bash') {
       if (this._shells.size > 64) this._shells.clear();
-      this._shells.set(event.task_id, { owned: !!event.owned_by_subagent });
+      const known = this._shells.get(event.task_id);
+      this._shells.set(event.task_id, { owned: !!event.owned_by_subagent, at: (known && known.at) || Date.now() });
       return;
     }
     if (!event.task_id || !AGENT_TASKS.has(event.task_type)) return;
