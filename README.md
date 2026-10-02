@@ -77,7 +77,10 @@ owns the whole surface.
 - **The title opens the PR.** Click an instance's title in its panel to open
   the PR it is about: the pull URL you gave in a prompt, the PR the CI watch
   found, or whatever `gh pr view` says for its ticket (or, with no ticket, its
-  branch) in its folder. No PR, no link.
+  branch) in its folder. No PR, no link. If the PR is already open in your
+  default browser (Brave, Chrome, Edge, Arc, Vivaldi or Safari), that tab is
+  brought forward instead of a new one; the first time, macOS asks whether VS
+  Code may control the browser.
 - **CI, watched for you, and `/watch`.** When an instance runs `git push` or
   `gh pr create` on a branch with a pull request, NikUI watches that PR's
   checks itself — `gh pr view` every fifteen seconds, no tokens spent — and

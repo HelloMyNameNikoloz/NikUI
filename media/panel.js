@@ -330,6 +330,16 @@
     }, 6000);
   }
 
+  // In the editor the title goes to a tab already showing the PR, if there is
+  // one; elsewhere it is an ordinary link.
+  if (typeof acquireVsCodeApi === 'function') {
+    $('title').addEventListener('click', (e) => {
+      if (!meta.prUrl) return;
+      e.preventDefault();
+      vscode.postMessage({ type: 'openPr' });
+    });
+  }
+
   function setMeta(next) {
     meta = next || {};
     const title = $('title');

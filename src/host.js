@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const { readConfig } = require('./manager');
 const { transcriptPath } = require('./history');
+const { focusOpenTab } = require('./browserTab');
 
 /**
  * The parts of the picture only the editor and the machine can supply.
@@ -28,6 +29,10 @@ function createHost(context, manager, extras) {
     fleet: () => (manager ? manager.list : []),
     env: (session) => describeEnv(context, manager, session, devices, awake),
     openFile: (req) => openFile(req),
+    // To the tab already showing it if there is one, else a new one.
+    openUrl: async (url) => {
+      if (!(await focusOpenTab(url))) await vscode.env.openExternal(vscode.Uri.parse(url));
+    },
     runInTerminal: (req) => runInTerminal(req),
     switchTo: (id, from) => switchTo(context, manager, id, from),
     // What arrived from a device, allowed or not. The editor's own panel has no

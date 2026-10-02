@@ -396,6 +396,14 @@ class SessionHub {
         if (this.isLocal(entry) && typeof this.host.openAllSettings === 'function') this.host.openAllSettings();
         break;
 
+      // Only the PR this instance already names, and only from the editor:
+      // a phone opening it would open it on the laptop.
+      case 'openPr':
+        if (session.prUrl && this.isLocal(entry) && typeof this.host.openUrl === 'function') {
+          await this.host.openUrl(session.prUrl);
+        }
+        break;
+
       case 'openFile':
         if (typeof this.host.openFile === 'function') {
           await this.host.openFile({ path: msg.path, line: msg.line, cwd: session.cwd });

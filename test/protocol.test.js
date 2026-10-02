@@ -15,7 +15,7 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
  * of — which is how a phone client and the panel would quietly drift apart.
  */
 const TO_HOST = [
-  'ready', 'send', 'interrupt', 'permission', 'openFile', 'switch',
+  'ready', 'send', 'interrupt', 'permission', 'openFile', 'openPr', 'switch',
   'status', 'statusOpen', 'unqueue', 'clearQueue', 'promoteQueued', 'editQueued',
   // A command from a code block, handed to a real terminal in the editor. Only
   // the editor's route: the app has a terminal of its own and goes there.

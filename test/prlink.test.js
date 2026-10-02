@@ -1,6 +1,7 @@
 'use strict';
 const { EventEmitter } = require('events');
 const { PrLinks, prUrlIn } = require('../src/prlink.js');
+const { focusOpenTab, script } = require('../src/browserTab.js');
 
 function fakeSession(fields) {
   return Object.assign(new EventEmitter(), { cwd: '/repo', ticket: null, prUrl: null, ci: null }, fields);
@@ -49,6 +50,21 @@ module.exports = async function () {
     await new Promise((r) => setTimeout(r, 5));
     checkEqual('with no ticket, the branch’s PR', [calls[0], s.prUrl], [['pr', 'view', '--json', 'url'], 'https://github.com/o/r/pull/3']);
     detach();
+  }
+
+
+  suite('a PR already open in the browser');
+  {
+    const asked = [];
+    const run = async (file, args) => { asked.push(args); return args[2].endsWith('/1210') ? 'found' : 'none'; };
+    const brave = async () => 'com.brave.browser';
+    check('its tab is brought forward', await focusOpenTab('https://github.com/o/r/pull/1210/', { platform: 'darwin', defaultBrowser: brave, run }));
+    checkEqual('asked about the URL as an argument, not inside the script', [asked[0][2], asked[0][1].includes('github')], ['https://github.com/o/r/pull/1210', false]);
+    check('no tab: the caller opens one', !(await focusOpenTab('https://github.com/o/r/pull/9', { platform: 'darwin', defaultBrowser: brave, run })));
+    check('a browser it cannot ask is not asked', !(await focusOpenTab('https://x/pull/1', { platform: 'darwin', defaultBrowser: async () => 'org.mozilla.firefox', run })) && asked.length === 2);
+    check('nor off a Mac', !(await focusOpenTab('https://x/pull/1', { platform: 'linux', defaultBrowser: brave, run })));
+    check('Chromium switches tabs its way', script('com.brave.browser').includes('active tab index'));
+    check('Safari its own', script('com.apple.safari').includes('current tab of w'));
   }
 
 };
