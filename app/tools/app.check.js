@@ -355,6 +355,23 @@ const record = (name, ok) => {
       await phone.until('document.getElementById("link").textContent === "Live"', 10000));
     record('showing what was already there',
       /what the app should show/.test(await phone.evaluate('document.getElementById("stream").textContent')));
+    if (process.env.SHOTS) {
+      // The composer as somebody who can send sees it, empty and written in.
+      devices.setControl(paired.id, true);
+      await phone.until('!!document.querySelector(".composer") && document.querySelector(".composer").offsetParent !== null', 8000);
+      await phone.evaluate(`document.documentElement.classList.add('plat-android')`);
+      await wait(300);
+      await shoot(phone, 'composer');
+      await phone.evaluate(`(() => { const i = document.getElementById('input'); i.focus();
+        i.value = 'Look at the failing check on this branch and tell me why it fails before changing anything';
+        i.dispatchEvent(new Event('input')); })()`);
+      await wait(300);
+      await shoot(phone, 'composer-written');
+      await phone.evaluate(`(() => { const i = document.getElementById('input'); i.value = ''; i.dispatchEvent(new Event('input')); i.blur();
+        document.documentElement.classList.remove('plat-android'); })()`);
+      devices.setControl(paired.id, false);
+      await phone.until('!document.getElementById("watching").hidden', 8000);
+    }
 
     // A path long enough that a narrow screen cannot show all of it: what it
     // keeps has to be the end, because the front is what you already knew.
@@ -1394,10 +1411,10 @@ const record = (name, ok) => {
       box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     })()`);
     record('/settings on the phone opens the settings',
-      await phone.until('document.querySelectorAll(".prefs .prefs-group").length === 4', 10000));
-    record('said in words, in four groups',
+      await phone.until('document.querySelectorAll(".prefs .prefs-group").length === 5', 10000));
+    record('said in words, in five groups',
       (await phone.evaluate(`[...document.querySelectorAll('.prefs-group h3')].map(h => h.textContent).join('|')`))
-        === 'Claude|Your laptop|Notifications on your phone|In the editor');
+        === 'Claude|Your laptop|Notifications on your laptop|Notifications on your phone|In the editor');
     record('with this CLI\u2019s models to choose from',
       /Opus 5\.5/.test(await phone.evaluate(`document.querySelector('[data-choose="model"]').textContent`)));
     await shoot(phone, 'settings-sheet');

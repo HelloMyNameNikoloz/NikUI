@@ -583,7 +583,101 @@ body.app-conversation header {
 }
 
 body.app-conversation footer {
-  padding-bottom: calc(6px + var(--app-bottom));
+  padding: 8px 12px calc(8px + var(--app-bottom));
+}
+
+/* The app is dark, so the conversation is dark too: browser.css follows the
+   phone's own scheme, which left a light composer under a dark transcript. */
+body.app-conversation {
+  color-scheme: dark;
+  --vscode-editor-background: var(--app-bg);
+  --vscode-foreground: var(--app-text);
+  --vscode-descriptionForeground: var(--app-dim);
+  --vscode-input-background: var(--app-raised);
+  --vscode-input-foreground: var(--app-text);
+}
+
+/* ---- the composer -----------------------------------------------------------
+   What you write on top, and under it a row of round buttons, each the same
+   size with its icon dead centre: attach on the left, stop and send on the
+   right. The words on Stop and Send stay for screen readers and go from the
+   screen — an arrow in a blue circle is what send looks like on a phone. */
+body.app-conversation .composer {
+  gap: 2px;
+  padding: 6px;
+  border-radius: 24px;
+}
+
+body.app-conversation .composer:focus-within {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+}
+
+body.app-conversation #input {
+  padding: 8px 10px 4px;
+  line-height: 1.4;
+  /* A scrollbar showing while the field measures itself narrows it, the text
+     wraps once more, and the field keeps a line it does not need. */
+  scrollbar-width: none;
+}
+
+body.app-conversation #input::placeholder { color: var(--app-faint); opacity: 1; }
+
+body.app-conversation .composer-actions { gap: 6px; }
+
+body.app-conversation .composer-actions :is(#attach, #stop, #send) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: 0;
+  line-height: 0;
+  transition: background-color 140ms ease, color 140ms ease, transform 120ms ease;
+}
+
+/* Drawn at 36, tapped at 44. */
+body.app-conversation .composer-actions :is(#attach, #stop, #send)::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+
+body.app-conversation .composer-actions :is(#attach, #stop, #send):active { transform: scale(0.92); filter: none; }
+
+body.app-conversation .composer-actions :is(#attach, #stop, #send) svg { display: block; }
+body.app-conversation #attach svg { width: 19px; height: 19px; }
+body.app-conversation #send svg { width: 18px; height: 18px; stroke-width: 2.4; }
+body.app-conversation #stop svg { width: 14px; height: 14px; }
+
+body.app-conversation #attach {
+  background: transparent;
+  color: var(--app-dim);
+}
+
+body.app-conversation .composer-actions #stop[disabled] { display: none; }
+
+body.app-conversation #stop {
+  background: var(--app-raised-2);
+  color: var(--app-text);
+}
+
+body.app-conversation #send {
+  background: var(--app-accent);
+  color: #fff;
+}
+
+/* Nothing written and nothing attached: send is there, but quiet. */
+body.app-conversation .composer-wrap:has(.attachments:empty) .composer:has(#input:placeholder-shown) #send {
+  background: var(--app-raised-2);
+  color: var(--app-faint);
 }
 
 /* ---- motion ---------------------------------------------------------------
@@ -2229,4 +2323,22 @@ html:not(.plat-ios) body.app .tile {
   background: var(--app-raised);
   border: 0.5px solid var(--app-hairline);
   box-shadow: none;
+}
+
+/* The conversation's chrome, flat: the same surface as the field, a hairline
+   where it meets the transcript, and a field one step up from it. */
+html:not(.plat-ios) body.app-conversation header,
+html:not(.plat-ios) body.app-conversation footer {
+  background: var(--app-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html:not(.plat-ios) body.app-conversation footer {
+  border-top: 0.5px solid var(--app-hairline);
+}
+
+html:not(.plat-ios) body.app-conversation .composer {
+  background: var(--app-raised);
+  border: 0.5px solid var(--app-hairline);
 }
