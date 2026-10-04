@@ -2149,13 +2149,79 @@ html:not(.plat-ios) body.app .tabs {
   border-top: 0.5px solid var(--app-hairline);
 }
 
-/* The capsule is a selection, not a pane of glass: a filled shape, flat, with
-   no rim light and nothing showing through it. */
+/* ---- the tab bar, off an iPhone ---------------------------------------------
+
+   Clean rather than glass: one opaque surface a step above the field, a
+   hairline on top, and the selection as a small tinted capsule behind the
+   icon only — the shape Android's own navigation bar uses, in this app's
+   colours and type. The capsule still travels between tabs on the same spring;
+   it just has no rim, no lens and nothing showing through it. The system
+   navigation sits in its own strip below, painted the same colour by
+   MainActivity, so the two read as one bar. */
+html:not(.plat-ios) body.app .tabs {
+  background: #141417;
+  border-top: 0.5px solid var(--app-hairline);
+  padding-top: 2px;
+}
+
+html:not(.plat-ios) body.app .tab {
+  gap: 4px;
+  min-height: 64px;
+  padding: 8px 2px 8px;
+}
+
+html:not(.plat-ios) body.app .tab:active { opacity: 1; }
+html:not(.plat-ios) body.app .tab:active .tab-icon { transform: scale(0.92); }
+
+html:not(.plat-ios) body.app .tab-icon {
+  height: 30px;
+  transition: transform 120ms ease;
+}
+
+html:not(.plat-ios) body.app .tabs .tab {
+  color: color-mix(in srgb, var(--app-accent) calc(var(--lit, 0) * 100%), var(--app-dim));
+}
+
+html:not(.plat-ios) body.app .tabs .tab .tab-label {
+  font-size: 11.5px;
+  letter-spacing: 0;
+  color: color-mix(in srgb, var(--app-text) calc(var(--lit, 0) * 100%), var(--app-dim));
+  font-weight: calc(500 + var(--lit, 0) * 100);
+}
+
+/* The pill keeps its place and its motion; what is drawn is the capsule. */
 html:not(.plat-ios) body.app .tab-pill {
-  background: var(--app-raised-2);
+  top: 0;
+  bottom: 0;
+  background: none;
   border: 0;
+  border-radius: 0;
   box-shadow: none;
 }
+
+html:not(.plat-ios) body.app .tab-pill.held {
+  background: none;
+  box-shadow: none;
+}
+
+html:not(.plat-ios) body.app .tab-pill::before {
+  top: 10px;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  width: 60px;
+  height: 30px;
+  margin-left: -30px;
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--app-accent) 18%, transparent);
+  transition: background-color 160ms ease;
+}
+
+html:not(.plat-ios) body.app .tab-pill.held::before {
+  background: color-mix(in srgb, var(--app-accent) 26%, transparent);
+}
+
+html:not(.plat-ios) body.app .tab-pill::after { display: none; }
 
 html:not(.plat-ios) body.app .card,
 html:not(.plat-ios) body.app .hero,
