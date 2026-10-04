@@ -158,6 +158,17 @@ owns the whole surface.
   reprinted on every turn. They appear in the `/` palette tagged *NikUI*, and
   they are yours to write: `nikui.promptSnippets` maps a word to its text, your
   entries merged over the built-in ones, and an empty string switches one off.
+- **The Commands page.** `/commands`, or *Commands* at the bottom of `/settings`,
+  opens a page laid out like `/status`: a rail with NikUI's own commands
+  (`/status`, `/settings`, `/commands`, `/watch`) and every prompt snippet, and
+  a page for the one picked — what it is for, the whole prompt it adds, and how
+  to type it. Snippets can be edited, renamed, switched off, put back to the
+  shipped text, deleted if they are yours, and added with *New snippet*. Edits
+  are written to `nikui.promptSnippets` (and the one-line descriptions to
+  `nikui.promptSnippetDescriptions`), so the palette picks them up at once in
+  every window and on the phone. A phone that only watches can read the page
+  but not change it; changing a snippet is steering, because it rewrites every
+  prompt that uses it. NikUI's own commands are described, not editable.
   `/review <PR or issue link>` reads it with `gh` and `git` without changing
   anything — requested changes, unresolved threads, conflicts, failing CI — and
   answers with a plan; on its own it reviews this branch's PR. `/implement`
@@ -345,6 +356,8 @@ owns the whole surface.
 | `↓` | Forward again, and past the newest one, back to what you were typing |
 | `/` | Command palette — the CLI's commands plus NikUI's own, tagged *NikUI* |
 | `/table` | Append the standing "plan as a table" instruction — and `/decisions` after it, as many as you want |
+| `/commands` | Every command and snippet, with descriptions and prompts — edit them or add your own |
+| `⌘Enter` / `Ctrl+Enter` *(editing a snippet)* | Save it; `Esc` puts the edit down |
 | `Tab` | Fill in the highlighted command; again for its values |
 | `⌘F` / `Ctrl+F` | Find in this conversation |
 | `Enter` / `Shift`+`Enter` *(in find)* | Next / previous match |
@@ -420,7 +433,8 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.fontSize` | `13` | Conversation font size |
 | `nikui.showThinking` | `true` | Show thinking blocks, collapsed |
 | `nikui.groupByProject` | `never` | Nest instances under their project folder |
-| `nikui.promptSnippets` | `/table`, `/decisions`, `/lean`, `/delegate` | Words that append a standing instruction to your prompt |
+| `nikui.promptSnippets` | `/table`, `/decisions`, `/lean`, `/delegate`, `/review`, `/implement` | Words that append a standing instruction to your prompt |
+| `nikui.promptSnippetDescriptions` | one line each for the shipped ones | What each snippet is for, as the Commands page shows it |
 | `nikui.pauseWhenQuotaRuns` | `true` | Hold every instance when the usage limit is spent, and start them again when it resets |
 | `nikui.resumePrompt` | see below | What to send an instance that was cut off mid-turn, once the quota is back |
 | `nikui.maxTranscriptItems` | `400` | Messages an instance keeps in memory; 0 keeps everything |

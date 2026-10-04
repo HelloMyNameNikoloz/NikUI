@@ -570,6 +570,21 @@
           },
           "markdownDescription": "Words you can type to add a standing instruction to the prompt you just wrote. `/table fix the rollback` and `fix the rollback /table` both send your text with the instruction appended; the word itself never reaches the CLI. Yours are merged over the built-in ones \u2014 set a value to an empty string to switch that one off."
         },
+        "nikui.promptSnippetDescriptions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {
+            "table": "The whole plan for the current task as a table, one row per step, coloured by how far along it is.",
+            "decisions": "Read the #691/#692 decisions reference in peuka/backend first, and say which of its rows apply.",
+            "lean": "The same care, in fewer steps: look once, edit small, check once, keep output short.",
+            "delegate": "Split the work across cheaper agents where it pays, and keep the judgment and the review.",
+            "review": "Read a pull request or issue and come back with an implementation plan, changing nothing.",
+            "implement": "Implement the plan from this chat in full, with tests and every check, and commit without pushing."
+          },
+          "markdownDescription": "One line per prompt snippet saying what it is for, shown on the Commands page (`/commands`). Edited from that page; a snippet with none is described by the first sentence of its prompt."
+        },
         "nikui.pauseWhenQuotaRuns": {
           "type": "boolean",
           "default": true,

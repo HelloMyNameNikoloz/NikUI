@@ -52,6 +52,7 @@ const NAMES = {
   'nikui.fontFamily': 'Font',
   'nikui.fontSize': 'Font size',
   'nikui.promptSnippets': 'Prompt snippets',
+  'nikui.promptSnippetDescriptions': 'What each prompt snippet is for',
   'nikui.pauseWhenQuotaRuns': 'Pause everything when the quota runs out',
   'nikui.resumePrompt': 'What to say when an instance is resumed',
   'nikui.notifyOnAttention': 'Notify in the editor when something needs you',

@@ -23,12 +23,13 @@ const TO_HOST = [
   'watch', 'stopTask',
   // `/settings`: asked for, kept fresh while it is open, changed one row at a
   // time, and — from the editor only — the way to the full list.
-  'settings', 'settingsOpen', 'setSetting', 'allSettings'
+  'settings', 'settingsOpen', 'setSetting', 'allSettings',
+  'commands', 'commandsOpen', 'saveCommand', 'removeCommand', 'restoreCommand'
 ];
 
 const TO_CLIENT = [
   'init', 'items', 'status', 'stats', 'meta', 'queue', 'reset',
-  'statusReport', 'openStatus', 'editPrompt', 'focus', 'presence', 'settings'
+  'statusReport', 'openStatus', 'editPrompt', 'focus', 'presence', 'settings', 'commands'
 ];
 
 /**
@@ -216,6 +217,12 @@ module.exports = async function () {
   check('and the sheet is kept fresh while it is open', hubUnderTest.clients.get('anything').settingsOpen === true);
   await say({ type: 'settingsOpen', open: false });
   check('until it is closed', hubUnderTest.clients.get('anything').settingsOpen === false);
+
+  await say({ type: 'commands' });
+  check('/commands is answered', sawType('commands'));
+  check('and kept fresh while it is open', hubUnderTest.clients.get('anything').commandsOpen === true);
+  await say({ type: 'commandsOpen', open: false });
+  check('until it is closed', hubUnderTest.clients.get('anything').commandsOpen === false);
 
   checkEqual('so every message the host can send has been seen',
     TO_CLIENT.filter((t) => !sawType(t)), []);

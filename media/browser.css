@@ -408,6 +408,18 @@ body.home .row.unread .row-name { font-weight: 700; }
   .stepper button { width: 40px; height: 40px; }
   .prefs-foot button { min-height: 44px; }
 
+  /* /commands: the rail is a strip of names along the top, as /status's is,
+     and the page underneath takes the whole width. Inputs at 16px so iOS does
+     not zoom to type in them. */
+  .cmd-body { flex-direction: column; }
+  .cmd-nav { width: auto; margin: 0 0 var(--s2); flex: 0 0 auto; }
+  .cmd-nav .nav-item span, .cmd-nav .cmd-group { display: revert; }
+  .cmd-group { align-self: center; padding: 0 4px 0 8px; }
+  .cmd-tag { display: none; }
+  .cmd-content { padding: 4px 0 var(--s6); }
+  .cmd-field input, .cmd-field textarea { font-size: 16px; }
+  .cmd-actions button { min-height: 44px; }
+
   /* Nothing scrolls sideways except the fleet table, which says so itself. */
   body { overflow-x: hidden; }
   .msg-text pre { max-width: 100%; }

@@ -904,6 +904,10 @@ body.app :focus-visible {
   outline-offset: 2px;
   border-radius: 6px;
 }
+/* Except the sheets' scrolling panes: focus goes there on opening so the
+   keyboard can scroll them, and a ring round the whole page points at nothing. */
+body.app .sheet-content:focus-visible,
+body.app .prefs:focus-visible { outline: none; }
 
 /* The one paragraph that says what any of this is, for somebody who opened the
    app because it appeared on their phone. */

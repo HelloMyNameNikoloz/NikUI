@@ -1030,14 +1030,16 @@
       autoGrow();
       return;
     }
-    const own = !attachments.length && /^\/(status|settings)$/i.exec(text);
+    const own = !attachments.length && /^\/(status|settings|commands)$/i.exec(text);
     if (own) {
       prompts.remember(text);
       prompts.reset();
       input.value = '';
       slashBox.hidden = true;
       autoGrow();
-      if (own[1].toLowerCase() === 'status') askForStatus();
+      const which = own[1].toLowerCase();
+      if (which === 'status') askForStatus();
+      else if (which === 'commands') askForCommands();
       else askForSettings();
       return;
     }
@@ -1303,7 +1305,7 @@
   const sheetApi = window.statusSheet;
   let report = null;
   let section = 'overview';
-  // One sheet on screen at a time, and it is either /status or /settings.
+  // One sheet on screen at a time: /status, /settings or /commands.
   let sheetKind = null;
 
   function askForStatus() { vscode.postMessage({ type: 'status' }); }
@@ -1360,6 +1362,7 @@
 
   function closeSheet() {
     if (!sheet.hidden && sheetKind === 'settings') vscode.postMessage({ type: 'settingsOpen', open: false });
+    else if (!sheet.hidden && sheetKind === 'commands') vscode.postMessage({ type: 'commandsOpen', open: false });
     else if (!sheet.hidden) vscode.postMessage({ type: 'statusOpen', open: false });
     sheetKind = null;
     prefsWaiting = false;
@@ -1380,7 +1383,7 @@
    */
   function trapTab(e) {
     if (sheet.hidden || e.key !== 'Tab') return;
-    const stops = sheet.querySelectorAll('button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"]), input, a[href]');
+    const stops = sheet.querySelectorAll('button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"]), input, textarea, a[href]');
     if (!stops.length) return;
     const first = stops[0];
     const last = stops[stops.length - 1];
@@ -1425,7 +1428,7 @@
   function focusKey() {
     const on = document.activeElement;
     if (!on || !sheet.contains(on)) return null;
-    for (const attr of ['data-toggle', 'data-choose', 'data-step', 'data-act']) {
+    for (const attr of ['data-toggle', 'data-choose', 'data-step', 'data-act', 'data-command']) {
       if (on.hasAttribute(attr)) {
         const by = on.getAttribute('data-by');
         return '[' + attr + '="' + on.getAttribute(attr) + '"]' + (by ? '[data-by="' + by + '"]' : '');
@@ -1473,6 +1476,7 @@
     if (act) {
       if (act.dataset.act === 'close') closeSheet();
       else if (act.dataset.act === 'all-settings') { closeSheet(); vscode.postMessage({ type: 'allSettings' }); }
+      else if (act.dataset.act === 'commands') askForCommands();
       return;
     }
     const toggle = e.target.closest('[data-toggle]');
@@ -1488,6 +1492,150 @@
     }
   }
 
+  // ── commands sheet ───────────────────────────────────────────
+
+  const cmdApi = window.commandsSheet;
+  let cmdNow = null;
+  let cmdAsked = false;
+  // What this page is doing, which is nobody else's business: which entry is
+  // open, the draft being typed, and a delete waiting for its second tap.
+  const cmdView = { active: null, editing: null, confirm: null, refused: null, saving: false };
+
+  function askForCommands() { cmdAsked = true; vscode.postMessage({ type: 'commands' }); }
+
+  function onCommands(message) {
+    const open = !sheet.hidden && sheetKind === 'commands';
+    if (!open && !cmdAsked) return;
+    cmdAsked = false;
+    cmdNow = message;
+    if (!open) {
+      // Reached from /settings, which it replaces rather than sits on top of.
+      if (!sheet.hidden && sheetKind === 'settings') vscode.postMessage({ type: 'settingsOpen', open: false });
+      else if (!sheet.hidden && sheetKind === 'status') vscode.postMessage({ type: 'statusOpen', open: false });
+      else { focusBeforeSheet = document.activeElement; setBackgroundInert(true); }
+      sheetKind = 'commands';
+      Object.assign(cmdView, { active: null, editing: null, confirm: null, refused: null, saving: false });
+    }
+    if (message.refused) {
+      cmdView.refused = message.refused;
+      cmdView.saving = false;
+    } else if (message.done) {
+      // Done: the form goes, and the page shows what was saved. A change made
+      // somewhere else arrives without `done` and leaves a draft alone — and so
+      // does the late answer to a restore or a delete, if a form was opened
+      // after it was asked for.
+      const ours = message.done === 'saveCommand' ? cmdView.saving : !cmdView.editing;
+      if (ours) {
+        Object.assign(cmdView, { editing: null, confirm: null, refused: null, saving: false });
+        if (message.name) cmdView.active = message.name;
+      }
+    }
+    paintCommands(!open);
+  }
+
+  function paintCommands(opening) {
+    if (!cmdNow) return;
+    const content = sheet.querySelector('.sheet-content');
+    const where = opening || !content ? 0 : content.scrollTop;
+    const on = document.activeElement;
+    const inSheet = !opening && on && sheet.contains(on);
+    const keep = inSheet ? (on.id ? '#' + on.id : focusKey()) : null;
+    const caret = inSheet && on.id && typeof on.selectionStart === 'number' ? [on.selectionStart, on.selectionEnd] : null;
+    sheet.innerHTML = cmdApi.render(cmdNow, cmdView);
+    sheet.hidden = false;
+    const now = sheet.querySelector('.sheet-content');
+    if (now) now.scrollTop = where;
+    const back = keep ? sheet.querySelector(keep) : null;
+    if (back && !back.disabled) {
+      back.focus();
+      if (caret && back.setSelectionRange) back.setSelectionRange(caret[0], caret[1]);
+    } else if ((opening || inSheet) && now) now.focus();
+  }
+
+  /** The entry the page has open, as the laptop last described it. */
+  function cmdOpen() { return cmdApi.pick((cmdNow && cmdNow.commands) || [], cmdView.active); }
+
+  function cmdFocus(selector) {
+    const el = sheet.querySelector(selector);
+    if (el) el.focus();
+  }
+
+  function cancelEdit() {
+    if (cmdView.active === cmdApi.NEW) cmdView.active = null;
+    Object.assign(cmdView, { editing: null, refused: null, saving: false });
+    paintCommands(false);
+  }
+
+  function saveCommand() {
+    const d = cmdView.editing;
+    if (!d || cmdView.saving) return;
+    cmdView.saving = true;
+    cmdView.refused = null;
+    paintCommands(false);
+    vscode.postMessage({ type: 'saveCommand', was: d.was, name: d.name, description: d.description, prompt: d.prompt });
+  }
+
+  /** A change this device was not allowed to make, said where it was made. */
+  function commandsRefused(msg) {
+    if (sheetKind !== 'commands' || !/Command$/.test((msg && msg.what) || '')) return;
+    cmdView.saving = false;
+    cmdView.refused = (msg && msg.reason) || 'That is not allowed from this device.';
+    paintCommands(false);
+  }
+
+  function commandsClick(e) {
+    const item = e.target.closest('[data-command]');
+    if (item) {
+      const name = item.dataset.command;
+      Object.assign(cmdView, { active: name, editing: null, confirm: null, refused: null, saving: false });
+      if (name === cmdApi.NEW) cmdView.editing = { was: '', name: '', description: '', prompt: '' };
+      paintCommands(false);
+      const content = sheet.querySelector('.sheet-content');
+      if (content) content.scrollTop = 0;
+      if (name === cmdApi.NEW) cmdFocus('#cmd-name');
+      return;
+    }
+    const act = e.target.closest('[data-act]');
+    if (!act || act.disabled) return;
+    const open = cmdOpen();
+    switch (act.dataset.act) {
+      case 'close': closeSheet(); break;
+      case 'settings': closeSheet(); askForSettings(); break;
+      case 'edit':
+        if (!open || open.kind !== 'snippet') break;
+        cmdView.editing = { was: open.name, name: open.name, description: open.description, prompt: open.prompt };
+        cmdView.refused = null;
+        paintCommands(false);
+        cmdFocus('#cmd-prompt');
+        break;
+      case 'cancel': cancelEdit(); break;
+      case 'save': saveCommand(); break;
+      case 'ask-remove':
+        if (!open) break;
+        cmdView.confirm = open.name;
+        paintCommands(false);
+        cmdFocus('[data-act="remove"]');
+        break;
+      case 'keep': cmdView.confirm = null; paintCommands(false); break;
+      case 'remove':
+        if (!open) break;
+        cmdView.confirm = null;
+        vscode.postMessage({ type: 'removeCommand', name: open.name });
+        break;
+      case 'restore':
+        if (open) vscode.postMessage({ type: 'restoreCommand', name: open.name });
+        break;
+    }
+  }
+
+  // The draft follows the form, so a redraw — another device saving, say —
+  // cannot throw away what is being typed.
+  sheet.addEventListener('input', function (e) {
+    if (sheetKind !== 'commands' || !cmdView.editing) return;
+    const field = e.target.dataset && e.target.dataset.field;
+    if (field) cmdView.editing[field] = e.target.value;
+  });
+
   sheet.addEventListener('change', function (e) {
     if (sheetKind !== 'settings') return;
     const pick = e.target.closest('[data-choose]');
@@ -1502,6 +1650,7 @@
 
   sheet.addEventListener('click', function (e) {
     if (sheetKind === 'settings') { settingsClick(e); return; }
+    if (sheetKind === 'commands') { commandsClick(e); return; }
     const nav = e.target.closest('[data-section]');
     if (nav) { section = nav.dataset.section; paintSheet(); return; }
 
@@ -1624,13 +1773,14 @@
       case '@welcome':
       case '@device': setControl(msg.device); break;
       case '@denied': setControl({ control: false }); break;
-      case '@refused': flashRefusal(msg); break;
+      case '@refused': flashRefusal(msg); commandsRefused(msg); break;
 
       // Who else is watching this instance. Only ever other people's presence:
       // what they are typing is theirs and is never sent anywhere.
       case 'presence': setPresence(msg.clients); break;
       case 'statusReport': showSheet(msg.report); break;
       case 'settings': onSettings(msg); break;
+      case 'commands': onCommands(msg); break;
       case 'editPrompt': {
         // Nothing typed is thrown away: a draft already in the box keeps its
         // place underneath the prompt that came back out of the queue.
@@ -1656,6 +1806,12 @@
     if (e.key === 'Escape' && !findBar.hidden && sheet.hidden) { closeFind(); return; }
     if (e.key === 'Escape' && !lightbox.hidden) { closeLightbox(); return; }
     if (sheet.hidden) return;
+    // In the form, Escape puts the draft down rather than the whole page, and
+    // Cmd/Ctrl+Enter saves it.
+    if (sheetKind === 'commands' && cmdView.editing) {
+      if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); return; }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveCommand(); return; }
+    }
     if (e.key === 'Escape') { e.preventDefault(); closeSheet(); return; }
     // Arrows and numbers move through /status's sections; /settings has none,
     // and its pickers want the arrows for themselves.

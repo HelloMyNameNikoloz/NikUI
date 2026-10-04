@@ -260,6 +260,86 @@ const drive = `
     out.watchNoFullList = !pane.querySelector('[data-act="all-settings"]');
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 
+    // /commands: reached from /settings, laid out like /status, and a snippet
+    // edited, saved, refused and added from it.
+    const COMMANDS = (extra) => [
+      { name: 'status', kind: 'own', usage: '/status', description: 'A sheet of what this instance is doing.' },
+      { name: 'watch', kind: 'own', usage: '/watch [prompt]', description: 'Watches the CI.' },
+      { name: 'table', kind: 'snippet', prompt: 'Give me a table.', description: 'The plan as a table.',
+        summary: 'The plan as a table.', shipped: true, edited: false, off: false }
+    ].concat(extra || []);
+    const lastPosted = (type) => window.__posted.filter((m) => m.type === type).pop() || {};
+    input.value = '/settings';
+    key(input, 'Enter');
+    post({ type: 'settings', mayChange: true, local: true, settings: SETTINGS(true) });
+    out.commandsRowInSettings = !!pane.querySelector('[data-act="commands"]');
+    const beforeCommands = window.__posted.length;
+    pane.querySelector('[data-act="commands"]').click();
+    out.commandsAsked = window.__posted.slice(beforeCommands).some((m) => m.type === 'commands');
+    post({ type: 'commands', mayChange: true, commands: COMMANDS() });
+    out.commandsReplaceSettings = !pane.querySelector('.prefs') && !!pane.querySelector('.cmd-nav') &&
+      window.__posted.slice(beforeCommands).some((m) => m.type === 'settingsOpen' && m.open === false);
+    out.commandsLayout = !!pane.querySelector('.sheet-body .sheet-nav') && !!pane.querySelector('.sheet-body .sheet-content');
+    out.commandsNav = Array.from(pane.querySelectorAll('[data-command]')).map((b) => b.dataset.command).join(',');
+    pane.querySelector('[data-command="table"]').click();
+    out.commandsPreview = (pane.querySelector('.cmd-prompt') || {}).textContent || '';
+    pane.querySelector('[data-act="edit"]').click();
+    const promptBox = pane.querySelector('#cmd-prompt');
+    out.commandsEditFocused = document.activeElement === promptBox;
+    promptBox.value = 'A shorter table.';
+    promptBox.dispatchEvent(new Event('input', { bubbles: true }));
+    // Somebody else saves something meanwhile: the draft survives the redraw.
+    post({ type: 'commands', mayChange: true, commands: COMMANDS([{ name: 'other', kind: 'snippet', prompt: 'x',
+      description: '', summary: 'x', shipped: false, edited: false, off: false }]) });
+    out.commandsDraftKept = (pane.querySelector('#cmd-prompt') || {}).value;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
+    const saved = lastPosted('saveCommand');
+    out.commandsSaveSent = [saved.was, saved.name, saved.prompt].join('|');
+    out.commandsSaving = !!pane.querySelector('[data-act="save"][disabled]');
+    post({ type: 'commands', mayChange: true, refused: 'There is already a /table.', name: 'table', commands: COMMANDS() });
+    out.commandsRefusedShown = pane.textContent.includes('already a /table') && !!pane.querySelector('#cmd-prompt');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
+    post({ type: 'commands', mayChange: true, done: 'saveCommand', name: 'table', commands: COMMANDS() });
+    out.commandsSavedCloses = !pane.querySelector('#cmd-prompt') && !!pane.querySelector('.cmd-prompt');
+    // A new one, from the rail.
+    pane.querySelector('[data-command="+new"]').click();
+    out.commandsNewFocused = document.activeElement === pane.querySelector('#cmd-name');
+    // The answer to something asked earlier must not shut a form opened since.
+    post({ type: 'commands', mayChange: true, done: 'restoreCommand', name: 'table', commands: COMMANDS() });
+    out.commandsLateReplyKeepsForm = !!pane.querySelector('#cmd-name');
+    const field = (id, value) => { const el = pane.querySelector(id); el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    field('#cmd-name', 'checklist');
+    field('#cmd-description', 'A checklist at the end');
+    field('#cmd-prompt', 'End with a checklist.');
+    pane.querySelector('[data-act="save"]').click();
+    const added = lastPosted('saveCommand');
+    out.commandsNewSent = [added.was, added.name, added.description, added.prompt].join('|');
+    post({ type: 'commands', mayChange: true, done: 'saveCommand', name: 'checklist', commands: COMMANDS([{ name: 'checklist',
+      kind: 'snippet', prompt: 'End with a checklist.', description: 'A checklist at the end', summary: 'A checklist at the end',
+      shipped: false, edited: false, off: false }]) });
+    out.commandsNewShown = !!pane.querySelector('.cmd-item.on[data-command="checklist"]');
+    pane.querySelector('[data-act="ask-remove"]').click();
+    out.commandsDeleteAsks = lastPosted('removeCommand').name !== 'checklist' && !!pane.querySelector('[data-act="remove"]');
+    pane.querySelector('[data-act="remove"]').click();
+    out.commandsDeleteSent = lastPosted('removeCommand').name;
+    // Escape in the form puts the draft down; Escape again closes the page.
+    pane.querySelector('[data-command="table"]').click();
+    pane.querySelector('[data-act="edit"]').click();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    out.commandsEscapeCancels = !pane.hidden && !pane.querySelector('#cmd-prompt');
+    const beforeCommandsClose = window.__posted.length;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    out.commandsClosed = pane.hidden &&
+      window.__posted.slice(beforeCommandsClose).some((m) => m.type === 'commandsOpen' && m.open === false);
+    // Typed, and for a phone that only watches.
+    input.value = '/commands';
+    key(input, 'Enter');
+    out.commandsTypedNotSent = lastPosted('send').text !== '/commands';
+    post({ type: 'commands', mayChange: false, commands: COMMANDS() });
+    out.commandsWatchReadOnly = !pane.hidden && !pane.querySelector('[data-act="edit"]') &&
+      !pane.querySelector('[data-command="+new"]') && /can watch but not change commands/.test(pane.textContent);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
     // A URL and a path both contain a slash and neither is a command.
     input.value = 'see https://example.com/';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -511,7 +591,7 @@ const checks = [
   ['typing part of an identifier narrows the list', out.valueNarrowed === 3],
   ['/settings opens the sheet rather than going to the CLI', out.settingsAsked === true && out.settingsNotSent === true],
   ['it opens when the laptop answers', out.settingsOpen === true],
-  ['in groups, in order', out.settingsGroups === 'Claude|Your laptop'],
+  ['in groups, in order, with Commands last', out.settingsGroups === 'Claude|Your laptop|Commands'],
   ['a row says what the laptop is doing', /password once/.test(out.settingsNote || '')],
   ['the editor is offered the full list', out.allSettingsOffered === true],
   ['a switch flips with one click', out.toggleSent === 'thinking=false'],
@@ -528,6 +608,28 @@ const checks = [
   ['a watching device cannot change anything', out.watchLocked === true],
   ['and is told why', out.watchToldWhy === true],
   ['and is not offered the editor\u2019s full list', out.watchNoFullList === true],
+  ['/settings has a way to /commands', out.commandsRowInSettings === true],
+  ['which asks the laptop for them', out.commandsAsked === true],
+  ['and replaces the settings sheet rather than stacking', out.commandsReplaceSettings === true],
+  ['/commands is /status\u2019s layout: a rail and a page', out.commandsLayout === true],
+  ['the rail lists every command, and a way to add one', out.commandsNav === 'status,watch,table,+new'],
+  ['a snippet\u2019s prompt is previewed', out.commandsPreview === 'Give me a table.'],
+  ['Edit puts the cursor in the prompt', out.commandsEditFocused === true],
+  ['a change elsewhere does not throw the draft away', out.commandsDraftKept === 'A shorter table.'],
+  ['Cmd+Enter saves it', out.commandsSaveSent === 'table|table|A shorter table.'],
+  ['and the Save button says it is saving', out.commandsSaving === true],
+  ['a refused save keeps the form and says why', out.commandsRefusedShown === true],
+  ['a save goes back to the preview', out.commandsSavedCloses === true],
+  ['New snippet puts the cursor in the name', out.commandsNewFocused === true],
+  ['a late answer to an earlier change keeps a form opened since', out.commandsLateReplyKeepsForm === true],
+  ['and sends what was typed', out.commandsNewSent === '|checklist|A checklist at the end|End with a checklist.'],
+  ['the page goes to the one just added', out.commandsNewShown === true],
+  ['delete asks once more first', out.commandsDeleteAsks === true],
+  ['and then sends it', out.commandsDeleteSent === 'checklist'],
+  ['escape in the form cancels the edit, not the page', out.commandsEscapeCancels === true],
+  ['escape again closes it, and says so', out.commandsClosed === true],
+  ['/commands typed is answered here, not sent', out.commandsTypedNotSent === true],
+  ['a watching phone reads it and cannot change it', out.commandsWatchReadOnly === true],
   ['a URL does not open the palette', out.urlOpensPalette === false],
   ['nor does a path', out.pathOpensPalette === false],
   ['cmd+F opens find', out.findOpened === true],

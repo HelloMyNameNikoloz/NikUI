@@ -526,7 +526,7 @@ function activate(context) {
   if (vscode.workspace.onDidChangeConfiguration) {
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
       if (event && event.affectsConfiguration && !event.affectsConfiguration('nikui')) return;
-      eachHub((hub) => { hub.broadcast(hub.metaMessage()); hub.broadcastSettings(); });
+      eachHub((hub) => { hub.broadcast(hub.metaMessage()); hub.broadcastSettings(); hub.broadcastCommands(); });
       tree.refresh();
     }));
   }

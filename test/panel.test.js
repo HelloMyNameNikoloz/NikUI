@@ -67,7 +67,7 @@ module.exports = async function () {
   stub.__config.promptSnippets = { table: 'TABLE INSTRUCTION', quiet: '   ' };
   const { readConfig } = require('../src/manager.js');
   const cfg = readConfig();
-  checkEqual('a configured snippet becomes one of ours', panel.hub.ownCommands(cfg).sort(), ['settings', 'status', 'table', 'watch']);
+  checkEqual('a configured snippet becomes one of ours', panel.hub.ownCommands(cfg).sort(), ['commands', 'settings', 'status', 'table', 'watch']);
   check('an emptied one is not offered', panel.hub.ownCommands(cfg).indexOf('quiet') < 0);
   check('and it joins the list the palette shows', panel.hub.commandList().includes('table'));
   delete stub.__config.promptSnippets;

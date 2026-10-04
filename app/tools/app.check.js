@@ -151,6 +151,20 @@ const record = (name, ok) => {
   };
   const setting = (key) => (key === 'keepAwake' ? awakeSetting : saved[key]);
 
+  // What /commands reads and writes: the real list and rules, over snippets
+  // kept here, starting from the ones that ship.
+  const commandRules = require(path.join(REPO, 'src', 'commands.js'));
+  const shippedConfig = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8')).contributes.configuration;
+  const declared = (key) => [].concat(shippedConfig).map((c) => c.properties && c.properties[key]).find(Boolean).default;
+  const commandsHeld = { shipped: declared('nikui.promptSnippets'), mine: {},
+    shippedSaid: declared('nikui.promptSnippetDescriptions'), mineSaid: {} };
+  const changeCommands = (how) => async (arg) => {
+    const next = commandRules[how](commandsHeld, arg);
+    commandsHeld.mine = next.mine;
+    commandsHeld.mineSaid = next.mineSaid;
+    return next.name;
+  };
+
   // The laptop's transcriber, as a script: the phone's half is under test here,
   // and the real one needs VoiceInk's model and a Mac's Neural Engine.
   const { readWav } = require(path.join(REPO, 'src', 'voice.js'));
@@ -183,7 +197,11 @@ const record = (name, ok) => {
         get: setting,
         set: async (key, v) => { saved[key] = v; },
         special: { awake: (on) => keeping.set(on) }
-      })
+      }),
+      commands: () => commandRules.list(commandsHeld),
+      saveCommand: changeCommands('save'),
+      removeCommand: changeCommands('remove'),
+      restoreCommand: changeCommands('restore')
     },
     sessions: { list: () => [session], get: (id) => (id === session.id ? session : null) },
     devices, identity, pairing, localKey: new LocalKey(),
@@ -1405,10 +1423,10 @@ const record = (name, ok) => {
       box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     })()`);
     record('/settings on the phone opens the settings',
-      await phone.until('document.querySelectorAll(".prefs .prefs-group").length === 5', 10000));
-    record('said in words, in five groups',
+      await phone.until('document.querySelectorAll(".prefs .prefs-group").length === 6', 10000));
+    record('said in words, in five groups and the way to the commands',
       (await phone.evaluate(`[...document.querySelectorAll('.prefs-group h3')].map(h => h.textContent).join('|')`))
-        === 'Claude|Your laptop|Notifications on your laptop|Notifications on your phone|In the editor');
+        === 'Claude|Your laptop|Notifications on your laptop|Notifications on your phone|In the editor|Commands');
     record('with this CLI\u2019s models to choose from',
       /Opus 5\.5/.test(await phone.evaluate(`document.querySelector('[data-choose="model"]').textContent`)));
     await shoot(phone, 'settings-sheet');
@@ -1452,8 +1470,65 @@ const record = (name, ok) => {
 
     record('the phone is not offered the editor\u2019s full list',
       (await phone.evaluate(`!document.querySelector('[data-act="all-settings"]')`)) === true);
-    await phone.evaluate(`document.querySelector('.prefs').closest('.sheet').querySelector('[data-act="close"]').click()`);
+
+    // ---- /commands, from the settings sheet -------------------------------------
+    await phone.evaluate(`document.querySelector('[data-act="commands"]').click()`);
+    record('Commands in /settings opens the commands page',
+      await phone.until('!!document.querySelector(".cmd-nav") && !document.querySelector(".prefs")', 10000));
+    record('listing NikUI\u2019s own and the shipped snippets',
+      await phone.evaluate(`['status','settings','commands','watch','table','delegate','implement']
+        .every((n) => !!document.querySelector('[data-command="' + n + '"]'))`));
+    await phone.evaluate(`document.querySelector('[data-command="delegate"]').click()`);
+    record('a snippet shows what it is for and its prompt',
+      await phone.until(`/cheaper agents/.test(document.querySelector('.cmd-description').textContent) &&
+        /Delegate this where it pays/.test(document.querySelector('.cmd-prompt').textContent)`, 4000));
+    record('the page fits the phone\u2019s width',
+      await phone.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'));
+    await shoot(phone, 'commands-snippet');
+
+    await phone.evaluate(`document.querySelector('[data-act="edit"]').click()`);
+    await phone.evaluate(`(() => {
+      const box = document.getElementById('cmd-prompt');
+      box.value = 'Delegate only the tests.';
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('[data-act="save"]').click();
+    })()`);
+    let rewritten = false;
+    for (let i = 0; i < 100 && !rewritten; i++) { rewritten = commandsHeld.mine.delegate === 'Delegate only the tests.'; if (!rewritten) await wait(50); }
+    record('a snippet edited on the phone is changed on the laptop', rewritten);
+    record('and the page shows it saved, with the way back to the default',
+      await phone.until(`!document.getElementById('cmd-prompt') &&
+        /Delegate only the tests/.test(document.querySelector('.cmd-prompt').textContent) &&
+        !!document.querySelector('[data-act="restore"]')`, 8000));
+    await phone.evaluate(`document.querySelector('[data-act="restore"]').click()`);
+    let restored = false;
+    for (let i = 0; i < 100 && !restored; i++) { restored = !('delegate' in commandsHeld.mine); if (!restored) await wait(50); }
+    record('restoring the default puts it back', restored);
+
+    await phone.evaluate(`document.querySelector('[data-command="+new"]').click()`);
+    await phone.evaluate(`(() => {
+      const put = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+      put('cmd-name', 'checklist');
+      put('cmd-description', 'A checklist at the end');
+      put('cmd-prompt', 'End with a checklist of what was done.');
+    })()`);
+    await shoot(phone, 'commands-new');
+    await phone.evaluate(`document.querySelector('[data-act="save"]').click()`);
+    let added = false;
+    for (let i = 0; i < 100 && !added; i++) { added = commandsHeld.mine.checklist === 'End with a checklist of what was done.'; if (!added) await wait(50); }
+    record('a new snippet added on the phone is saved on the laptop', added);
+    record('and the page goes to it',
+      await phone.until(`!!document.querySelector('.cmd-item.on[data-command="checklist"]')`, 8000));
+    if (process.env.SHOTS) {
+      await phone.asScreen(1100, 760);
+      await wait(300);
+      await shoot(phone, 'commands-desktop');
+      await phone.asPhone(390, 844);
+    }
+    await phone.evaluate(`document.querySelector('.cmd-nav').closest('.sheet').querySelector('[data-act="close"]').click()`);
     record('and it closes', (await phone.evaluate(`document.getElementById('status').hidden`)) === true);
+    commandsHeld.mine = {};
+    commandsHeld.mineSaid = {};
     saved.showThinking = true;
     saved.effort = 'max';
 

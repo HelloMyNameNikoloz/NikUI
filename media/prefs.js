@@ -52,6 +52,18 @@
       '</div>';
   }
 
+  /** The way to /commands, as one more row: it is a setting too, only a long one. */
+  function commandsRow() {
+    return '<section class="card prefs-group"><h3>Commands</h3><div class="prefs-list">' +
+      '<div class="pref" data-pref="commands"><div class="pref-text">' +
+      '<span class="pref-label" id="pref-commands">Commands and prompt snippets</span>' +
+      '<span class="pref-hint">/watch, /delegate and the rest: what each one does and sends. ' +
+      'Change them, or add your own.</span></div>' +
+      '<div class="pref-control"><button type="button" class="ghost" data-act="commands" ' +
+      'aria-describedby="pref-commands">Open' + icon('chevron', 13) + '</button></div></div>' +
+      '</div></section>';
+  }
+
   /**
    * @param {object} message  what the laptop sent: `settings`, `mayChange`,
    *                          `local`, and — after a refused change — `refused`
@@ -80,7 +92,7 @@
           if (!rows.length) return '';
           return '<section class="card prefs-group"><h3>' + esc(name) + '</h3>' +
             '<div class="prefs-list">' + rows.map((r) => rowHtml(r, locked)).join('') + '</div></section>';
-        }).join('');
+        }).join('') + commandsRow();
     }
 
     const foot = '<div class="sheet-foot prefs-foot">' +

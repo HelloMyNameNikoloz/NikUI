@@ -54,7 +54,12 @@ function createHost(context, manager, extras) {
     // What `/settings` shows, and the one way it changes anything.
     settings: () => readPrefs(awake),
     setSetting: (id, value, from) => writePref(id, value, from, awake),
-    openAllSettings: () => vscode.commands.executeCommand('nikui.settings')
+    openAllSettings: () => vscode.commands.executeCommand('nikui.settings'),
+    // What `/commands` lists, and the three ways it changes a snippet.
+    commands: () => require('./commands').list(readHeldCommands()),
+    saveCommand: (change) => writeCommands('save', change),
+    removeCommand: (name) => writeCommands('remove', name),
+    restoreCommand: (name) => writeCommands('restore', name)
   };
 }
 
@@ -87,6 +92,36 @@ function writePref(id, value, from, awake) {
       lid: (on) => (local && awake.switchLid ? awake.switchLid(on) : awake.setLid(on))
     } : {}
   });
+}
+
+/**
+ * The two settings behind `/commands`, split into what ships and what is
+ * yours. Yours is read from wherever a write would land, so a workspace that
+ * set its own snippets edits those, not the user's.
+ */
+function heldAt(key) {
+  const held = vscode.workspace.getConfiguration('nikui').inspect(key) || {};
+  const mine = held.workspaceFolderValue !== undefined ? held.workspaceFolderValue
+    : held.workspaceValue !== undefined ? held.workspaceValue : held.globalValue;
+  return { shipped: held.defaultValue || {}, mine: mine || {} };
+}
+
+function readHeldCommands() {
+  const prompts = heldAt('promptSnippets');
+  const said = heldAt('promptSnippetDescriptions');
+  return { shipped: prompts.shipped, mine: prompts.mine, shippedSaid: said.shipped, mineSaid: said.mine };
+}
+
+/** One change from the page, written only to the settings it changes. */
+async function writeCommands(how, arg) {
+  const commands = require('./commands');
+  const { write } = require('./settingsMenu');
+  const held = readHeldCommands();
+  const next = commands[how](held, arg);
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  if (!same(next.mine, held.mine)) await write('nikui.promptSnippets', next.mine);
+  if (!same(next.mineSaid, held.mineSaid)) await write('nikui.promptSnippetDescriptions', next.mineSaid);
+  return next.name;
 }
 
 /** What the status report can only learn from the editor and the machine. */

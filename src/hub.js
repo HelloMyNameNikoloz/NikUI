@@ -5,7 +5,7 @@ const { buildReport } = require('./report');
 const { GRANT } = require('./ci');
 
 // Commands NikUI answers itself rather than passing to the CLI.
-const OWN_COMMANDS = ['status', 'settings', 'watch'];
+const OWN_COMMANDS = ['status', 'settings', 'commands', 'watch'];
 
 /**
  * The messages that change something, as opposed to the ones that only watch.
@@ -26,7 +26,10 @@ const STEERING = new Set([
   'watch',
   // A setting changes what every instance does next, and whether the laptop
   // sleeps. Reading them is watching; changing one is not.
-  'setSetting'
+  'setSetting',
+  // A snippet is a standing instruction added to prompts, so rewriting one is
+  // writing every prompt that uses it. Reading the list is watching.
+  'saveCommand', 'removeCommand', 'restoreCommand'
 ]);
 
 // A sheet that quietly goes stale while a turn runs is worse than no sheet, and
@@ -162,6 +165,21 @@ class SessionHub {
     };
   }
 
+  /** What the commands page draws, in this client's terms. */
+  commandsMessage(entry) {
+    let commands = null;
+    try { commands = typeof this.host.commands === 'function' ? this.host.commands() : null; }
+    catch (_) { commands = null; }
+    return { type: 'commands', commands, mayChange: this.mayControl(entry) };
+  }
+
+  /** Everyone with the commands page open, told what it says now. */
+  broadcastCommands() {
+    for (const [id, entry] of this.clients) {
+      if (entry.commandsOpen) this.send(id, this.commandsMessage(entry));
+    }
+  }
+
   /** Everyone with the sheet open, told what it says now. */
   broadcastSettings() {
     for (const [id, entry] of this.clients) {
@@ -278,7 +296,8 @@ class SessionHub {
     if (STEERING.has(msg.type)) {
       // Which setting, not only that one was changed: "a phone changed a
       // setting" is not an answer to "who turned the lid switch on".
-      const what = msg.type === 'setSetting' ? String(msg.id) + ' → ' + JSON.stringify(msg.value) : null;
+      const what = msg.type === 'setSetting' ? String(msg.id) + ' → ' + JSON.stringify(msg.value)
+        : /Command$/.test(msg.type) ? '/' + String(msg.name || '') : null;
       if (!this.mayControl(entry)) {
         // Refused, said so, and written down: a refused attempt is the entry
         // you would most want to find afterwards.
@@ -394,6 +413,37 @@ class SessionHub {
           refused = (err && err.message) || 'That could not be changed.';
         }
         this.send(clientId, Object.assign(this.settingsMessage(entry), refused ? { refused, id: msg.id } : {}));
+        break;
+      }
+
+      // `/commands`: the same shape as /settings. A change is answered to whoever
+      // made it, with the name it was saved under so the page can go to it;
+      // everybody else hears it when the setting changes.
+      case 'commands':
+        entry.commandsOpen = true;
+        this.send(clientId, this.commandsMessage(entry));
+        break;
+
+      case 'commandsOpen':
+        entry.commandsOpen = !!msg.open;
+        break;
+
+      case 'saveCommand':
+      case 'removeCommand':
+      case 'restoreCommand': {
+        const how = msg.type;
+        let refused = null;
+        let saved = null;
+        try {
+          if (typeof this.host[how] !== 'function') throw new Error('This window does not offer its commands.');
+          saved = await this.host[how](how === 'saveCommand'
+            ? { was: msg.was, name: msg.name, prompt: msg.prompt, description: msg.description }
+            : msg.name);
+        } catch (err) {
+          refused = (err && err.message) || 'That could not be changed.';
+        }
+        this.send(clientId, Object.assign(this.commandsMessage(entry),
+          refused ? { refused, name: msg.name } : { done: how, name: saved }));
         break;
       }
 

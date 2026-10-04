@@ -1169,6 +1169,9 @@ body.vscode-high-contrast-light .tip, body.vscode-high-contrast-light .pill {
   .sheet-content { grid-template-columns: minmax(0, 1fr); }
   .sheet-nav { width: 52px; }
   .nav-item span, .nav-item kbd { display: none; }
+  .cmd-nav { width: 132px; }
+  .cmd-nav .nav-item span, .cmd-nav .cmd-group { display: revert; }
+  .cmd-nav .cmd-tag { display: none; }
 }
 
 /* The permission mode, stated in the header. Amber when nothing will stop a
@@ -1515,3 +1518,61 @@ body.app .copy { right: 6px; }
 .prefs-head .dim { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .prefs-head .sheet-title { flex: 1 1 auto; overflow: hidden; }
 .prefs-foot button { font-size: var(--fs-small); padding: 4px 10px; }
+
+/* ── /commands ─────────────────────────────────────────────────
+   /status's layout — a rail of names, a page for the one picked — with one
+   column of cards, because a prompt is read top to bottom. */
+.cmd-content { grid-template-columns: minmax(0, 1fr); max-width: 820px; }
+.cmd-nav { width: 200px; }
+.cmd-group {
+  padding: 10px 11px 4px; font-size: var(--fs-micro); font-weight: 590;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+.cmd-group:first-child { padding-top: 4px; }
+.cmd-item .cmd-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+.cmd-item.off .cmd-name { opacity: 0.5; text-decoration: line-through; }
+.cmd-tag {
+  margin-left: auto; flex: 0 0 auto;
+  padding: 1px 6px; border-radius: var(--r-chip);
+  background: var(--fill-2); font-size: var(--fs-micro); font-weight: 400;
+  color: var(--vscode-descriptionForeground);
+}
+.cmd-new { margin-top: var(--s2); color: var(--accent); }
+.cmd-description { margin: 0 0 var(--s2); line-height: 1.5; }
+.cmd-where { margin: 0; font-size: var(--fs-small); }
+.cmd-usage { margin: var(--s2) 0; line-height: 1.9; }
+.cmd-usage code, .cmd-head-card code {
+  padding: 2px 6px; border-radius: 5px; background: var(--fill-2);
+  font-family: var(--vscode-editor-font-family, monospace); font-size: var(--fs-small);
+}
+.cmd-preview .cmd-prompt {
+  margin: 0; max-height: 46vh; overflow: auto;
+  padding: var(--s3); border-radius: var(--r-ctrl); background: var(--fill-1);
+  white-space: pre-wrap; word-break: break-word;
+  font-family: var(--vscode-editor-font-family, monospace); font-size: var(--fs-small); line-height: 1.55;
+}
+.cmd-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+.cmd-actions button { font-size: var(--fs-small); padding: 5px 12px; }
+.cmd-actions button.danger { background: var(--red, #e5484d); color: #fff; }
+.cmd-form { display: grid; gap: var(--s3); }
+.cmd-field { display: grid; gap: 4px; }
+.cmd-field > span:first-child { font-size: var(--fs-small); font-weight: 510; }
+.cmd-field input, .cmd-field textarea {
+  width: 100%; box-sizing: border-box; padding: 7px 9px;
+  font: inherit; color: var(--vscode-input-foreground, var(--vscode-foreground));
+  background: var(--vscode-input-background, var(--fill-1));
+  border: 0.5px solid var(--vscode-input-border, var(--hairline)); border-radius: var(--r-ctrl);
+}
+.cmd-field textarea {
+  resize: vertical; min-height: 180px; line-height: 1.5;
+  font-family: var(--vscode-editor-font-family, monospace); font-size: var(--fs-small);
+}
+.cmd-field input:focus-visible, .cmd-field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cmd-slash { display: flex; align-items: center; gap: 4px; }
+.cmd-slash b { font-family: var(--vscode-editor-font-family, monospace); opacity: 0.6; }
+.cmd-locked { margin-bottom: var(--s1); }
+.pref-control [data-act="commands"] { display: inline-flex; align-items: center; gap: 4px; }

@@ -75,7 +75,7 @@ module.exports = function () {
     s.meta = Object.assign({}, s.meta, { slashCommands: Array.from({ length: 60 }, (_, i) => 'cli' + i).concat(['status']) });
     const hub = new SessionHub(s, { config: () => ({}), knownCommands: () => [] });
     const list = hub.commandList();
-    checkEqual('watch, status and settings lead', list.slice(0, 3), ['status', 'settings', 'watch']);
+    checkEqual('watch, status, settings and commands lead', list.slice(0, 4), ['status', 'settings', 'commands', 'watch']);
     checkEqual('and nothing is listed twice', list.filter((c) => c === 'status').length, 1);
     hub.dispose && hub.dispose();
   }
