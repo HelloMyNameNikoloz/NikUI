@@ -134,7 +134,7 @@ check('and it listens for the frame the laptop actually sends',
 check('Android is told it may show one', /POST_NOTIFICATIONS/.test(
   fs.readFileSync(path.join(APP, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8')));
 check('and that it may keep watching behind a notification of its own',
-  /foregroundServiceType="dataSync"/.test(fs.readFileSync(
+  /foregroundServiceType="remoteMessaging"/.test(fs.readFileSync(
     path.join(APP, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8')));
 check('with a status icon that is not the launcher icon squashed into a square',
   fs.existsSync(path.join(APP, 'android', 'app', 'src', 'main', 'res', 'drawable-xxhdpi', 'ic_stat_nikui.png')));

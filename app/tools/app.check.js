@@ -1624,10 +1624,13 @@ const record = (name, ok) => {
         return phone.until('/Wrong passcode/.test(document.body.textContent)', 4000);
       })());
 
-    record('the right one opens it',
+    record('it draws as many dots as the passcode has digits, and no arrow',
+      (await phone.evaluate(`document.querySelectorAll('.lock-dot').length === 4 &&
+        !document.querySelector('.lock-key[aria-label="Unlock"]')`)) === true);
+
+    record('the right one opens it on the last digit, with nothing to press',
       await (async () => {
         await punch('2468');
-        await enter();
         return phone.until('document.querySelector(".lock") === null', 6000);
       })());
     record('and the app is there underneath',
@@ -1638,6 +1641,46 @@ const record = (name, ok) => {
         await phone.navigate(appOrigin + '/settings.html');
         await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
         return (await phone.evaluate('document.querySelector(".lock") === null')) === true;
+      })());
+
+    // A lock set before the length was kept: checked quietly as it is typed,
+    // opened when it is right, and the length learned for next time.
+    await phone.evaluate(`(() => {
+      const saved = JSON.parse(localStorage.getItem('nikui.app.lock'));
+      delete saved.length;
+      localStorage.setItem('nikui.app.lock', JSON.stringify(saved));
+    })()`);
+    await coldStart();
+    await phone.until('document.querySelector(".lock") !== null', 8000);
+    record('an older lock opens on the right code too, without the arrow',
+      await (async () => {
+        await punch('2468');
+        return phone.until('document.querySelector(".lock") === null', 6000);
+      })());
+    record('and learns how long the code is',
+      (await phone.evaluate("JSON.parse(localStorage.getItem('nikui.app.lock')).length")) === 4);
+    record('a code typed quietly wrong on the way is not counted',
+      (await phone.evaluate("JSON.parse(localStorage.getItem('nikui.app.lock')).wrong")) === 0);
+
+    // The phone taking the prompt down — the app still settling, the screen
+    // going off — is not somebody choosing the keypad. Asked again, not
+    // counted, and the button still there.
+    await phone.evaluate('window.__setFace({ say: "interrupted", asked: 0 })');
+    await coldStart();
+    await phone.until('document.querySelector(".lock") !== null', 8000);
+    record('a prompt the phone took down is asked for again',
+      await phone.until('window.__face.asked >= 3', 8000));
+    record('without counting it as a try or saying it failed',
+      await phone.until(`(() => {
+        const b = document.querySelector('.lock-face');
+        return !!b && !b.hidden && !b.disabled &&
+          !/not recognised|instead/.test(document.body.textContent);
+      })()`, 6000));
+    await phone.evaluate('window.__setFace({ say: "yes" })');
+    record('and the finger still opens it after',
+      await (async () => {
+        await phone.evaluate("document.querySelector('.lock-face').click()");
+        return phone.until('document.querySelector(".lock") === null', 6000);
       })());
 
     // Three tries with a face, and then the keypad — the rule that stops a phone

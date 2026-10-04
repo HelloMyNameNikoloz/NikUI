@@ -2,6 +2,8 @@ package com.nikoloz.nikui.applock;
 
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.view.View;
+import android.view.ViewTreeObserver;
 
 import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
@@ -74,6 +76,14 @@ public class AppLockPlugin extends Plugin {
         }
     }
 
+    // One prompt on screen at a time. Every screen of the app is its own page,
+    // so a page that loads while the prompt is up asks again: that ask takes
+    // over the prompt already showing rather than putting up a second one,
+    // which is what used to dismiss the first and drop straight to the keypad.
+    private BiometricPrompt showing;
+    private PluginCall waiting;
+    private ViewTreeObserver.OnWindowFocusChangeListener focusWait;
+
     @PluginMethod
     public void prompt(final PluginCall call) {
         final FragmentActivity activity = getActivity();
@@ -81,60 +91,121 @@ public class AppLockPlugin extends Plugin {
             call.reject("nothing on screen to ask with", "UNAVAILABLE");
             return;
         }
-        String reason = call.getString("reason", "Unlock NikUI");
-
         int verdict = BiometricManager.from(getContext()).canAuthenticate(STRONG);
         if (verdict != BiometricManager.BIOMETRIC_SUCCESS) {
             call.reject(reasonFor(verdict),
                 verdict == BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE ? "LOCKED_OUT" : "UNAVAILABLE");
             return;
         }
-
-        final Executor onMain = androidx.core.content.ContextCompat.getMainExecutor(activity);
         activity.runOnUiThread(() -> {
-            BiometricPrompt prompt = new BiometricPrompt(activity, onMain,
-                new BiometricPrompt.AuthenticationCallback() {
-                    @Override
-                    public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
-                        JSObject out = new JSObject();
-                        out.put("ok", true);
-                        call.resolve(out);
-                    }
-
-                    @Override
-                    public void onAuthenticationError(int code, CharSequence said) {
-                        if (code == BiometricPrompt.ERROR_USER_CANCELED
-                                || code == BiometricPrompt.ERROR_NEGATIVE_BUTTON
-                                || code == BiometricPrompt.ERROR_CANCELED) {
-                            call.reject("cancelled", "CANCELLED");
-                        } else if (code == BiometricPrompt.ERROR_LOCKOUT
-                                || code == BiometricPrompt.ERROR_LOCKOUT_PERMANENT) {
-                            call.reject("too many tries — use the passcode", "LOCKED_OUT");
-                        } else {
-                            call.reject(said == null ? "that did not work" : said.toString(), "UNAVAILABLE");
-                        }
-                    }
-
-                    // A finger that did not match is not the end of the attempt:
-                    // the system lets them try again on the same prompt, and the
-                    // screen only counts the times the prompt comes back.
-                    @Override
-                    public void onAuthenticationFailed() { }
-                });
-
-            BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
-                .setTitle("Unlock NikUI")
-                .setSubtitle(reason)
-                // The app's own passcode, not the phone's: it is the one that
-                // knows how many tries are left and what happens when they run
-                // out. Offering the device credential here would be a second way
-                // in with none of that behind it.
-                .setNegativeButtonText("Use passcode")
-                .setAllowedAuthenticators(STRONG)
-                .setConfirmationRequired(false)
-                .build();
-
-            prompt.authenticate(info);
+            PluginCall before = waiting;
+            waiting = call;
+            if (before != null) before.reject("asked again", "REPLACED");
+            if (showing != null || focusWait != null) return;
+            whenFocused(activity);
         });
+    }
+
+    /** Stop asking: the passcode got there first. */
+    @PluginMethod
+    public void cancel(PluginCall call) {
+        FragmentActivity activity = getActivity();
+        if (activity != null) activity.runOnUiThread(() -> {
+            PluginCall was = waiting;
+            waiting = null;
+            if (focusWait != null) {
+                activity.getWindow().getDecorView().getViewTreeObserver().removeOnWindowFocusChangeListener(focusWait);
+                focusWait = null;
+            }
+            if (showing != null) showing.cancelAuthentication();
+            showing = null;
+            if (was != null) was.reject("cancelled", "CANCELLED");
+        });
+        call.resolve();
+    }
+
+    // A prompt put up before the window is really on screen — the app still
+    // opening, or coming back from behind something — is taken down again by
+    // Android as the window settles, a moment after it appeared. So it waits
+    // until the window has focus, and appears once it does.
+    private void whenFocused(FragmentActivity activity) {
+        View root = activity.getWindow().getDecorView();
+        if (root.hasWindowFocus()) {
+            show(activity);
+            return;
+        }
+        focusWait = (has) -> {
+            if (!has || focusWait == null) return;
+            ViewTreeObserver.OnWindowFocusChangeListener was = focusWait;
+            focusWait = null;
+            root.post(() -> {
+                root.getViewTreeObserver().removeOnWindowFocusChangeListener(was);
+                if (waiting != null && showing == null) show(activity);
+            });
+        };
+        root.getViewTreeObserver().addOnWindowFocusChangeListener(focusWait);
+    }
+
+    private void settle(boolean ok, String message, String code) {
+        showing = null;
+        PluginCall call = waiting;
+        waiting = null;
+        if (call == null) return;
+        if (ok) {
+            JSObject out = new JSObject();
+            out.put("ok", true);
+            call.resolve(out);
+        } else {
+            call.reject(message, code);
+        }
+    }
+
+    private void show(FragmentActivity activity) {
+        final Executor onMain = androidx.core.content.ContextCompat.getMainExecutor(activity);
+        showing = new BiometricPrompt(activity, onMain,
+            new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                    settle(true, null, null);
+                }
+
+                @Override
+                public void onAuthenticationError(int code, CharSequence said) {
+                    if (code == BiometricPrompt.ERROR_USER_CANCELED
+                            || code == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                        settle(false, "cancelled", "CANCELLED");
+                    } else if (code == BiometricPrompt.ERROR_CANCELED) {
+                        // Taken down by the system rather than by them: the app
+                        // went behind something, the screen went off. Not a
+                        // choice, so not counted as one — the screen asks again
+                        // when it is looked at.
+                        settle(false, "interrupted", "INTERRUPTED");
+                    } else if (code == BiometricPrompt.ERROR_LOCKOUT
+                            || code == BiometricPrompt.ERROR_LOCKOUT_PERMANENT) {
+                        settle(false, "too many tries — use the passcode", "LOCKED_OUT");
+                    } else {
+                        settle(false, said == null ? "that did not work" : said.toString(), "UNAVAILABLE");
+                    }
+                }
+
+                // A finger that did not match is not the end of the attempt:
+                // the system lets them try again on the same prompt, and the
+                // screen only counts the times the prompt comes back.
+                @Override
+                public void onAuthenticationFailed() { }
+            });
+
+        BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock NikUI")
+            // The app's own passcode, not the phone's: it is the one that
+            // knows how many tries are left and what happens when they run
+            // out. Offering the device credential here would be a second way
+            // in with none of that behind it.
+            .setNegativeButtonText("Use passcode")
+            .setAllowedAuthenticators(STRONG)
+            .setConfirmationRequired(false)
+            .build();
+
+        showing.authenticate(info);
     }
 }

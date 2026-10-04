@@ -116,6 +116,10 @@
         salt: b64(salt),
         hash: hash,
         rounds: ROUNDS,
+        // How many digits, so the screen can draw that many dots and open the
+        // moment the last one is typed, the way a phone's own lock does. Says
+        // no more than the dots on the screen already would.
+        length: String(code).length,
         biometric: options && 'biometric' in options
           ? !!options.biometric
           : (was.biometric !== false),
@@ -245,9 +249,14 @@
    * page has drawn a thing — and used by both the screen that asks for the
    * passcode and the one that sets it, so the two cannot drift into looking
    * like different apps.
+   *
+   * With `length` it knows how long the code is: that many dots, and it is
+   * handed over the moment the last digit goes in. Without, it grows a dot per
+   * digit and waits for the arrow.
    */
   function makeScreen(opts) {
     const o = opts || {};
+    const length = o.length || 0;
     document.documentElement.classList.add('locked');
 
     const skin = document.createElement('div');
@@ -263,6 +272,7 @@
     title.textContent = o.title || 'Enter passcode';
     const said = document.createElement('p');
     said.className = 'lock-said';
+    said.setAttribute('aria-live', 'polite');
     if (o.said) said.textContent = o.said;
 
     const dots = document.createElement('div');
@@ -289,20 +299,32 @@
     document.body.appendChild(skin);
 
     let typed = '';
+    let busy = false;
+    let refusing = false;
+    let closed = false;
 
     const view = {
       skin, title, said, face,
       get typed() { return typed; },
+      get closed() { return closed; },
       clear() { typed = ''; view.draw(); },
+      // Changed in place rather than rebuilt, so a dot filling is a dot
+      // filling and not every dot being drawn again.
       draw() {
-        dots.textContent = '';
-        const most = Math.max(MIN, typed.length);
-        for (let i = 0; i < most; i++) {
+        const most = length || Math.max(MIN, typed.length);
+        while (dots.children.length < most) {
           const dot = document.createElement('span');
-          dot.className = 'lock-dot' + (i < typed.length ? ' on' : '');
+          dot.className = 'lock-dot';
           dots.appendChild(dot);
         }
-        skin.classList.toggle('ready', typed.length >= MIN);
+        while (dots.children.length > most) dots.lastChild.remove();
+        for (let i = 0; i < most; i++) dots.children[i].classList.toggle('on', i < typed.length);
+        skin.classList.toggle('ready', !length && typed.length >= MIN);
+      },
+      // Waiting on the check: the keys stop taking digits, the dots breathe.
+      busy(yes) {
+        busy = !!yes;
+        skin.classList.toggle('checking', busy);
       },
       shake() {
         skin.classList.remove('wrong');
@@ -310,51 +332,124 @@
         skin.classList.add('wrong');
         buzz('heavy');
       },
+      // Wrong: shake with the dots still full so it is clear what was refused,
+      // then empty them.
+      refuse(then) {
+        refusing = true;
+        view.shake();
+        setTimeout(() => {
+          refusing = false;
+          skin.classList.remove('wrong');
+          view.clear();
+          if (then) then();
+        }, 420);
+      },
       held(yes) { pad.classList.toggle('held', !!yes); },
       close() {
+        if (closed) return;
+        closed = true;
         document.removeEventListener('keydown', onKey);
         document.documentElement.classList.remove('locked');
         skin.remove();
+      },
+      // Right: the dots go green and the lock lifts off the app that was
+      // already drawn underneath it, rather than vanishing.
+      open(then) {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener('keydown', onKey);
+        skin.classList.add('right');
+        const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        setTimeout(() => {
+          document.documentElement.classList.remove('locked');
+          skin.classList.add('leaving');
+          setTimeout(() => skin.remove(), still ? 0 : 240);
+          if (then) then();
+        }, still ? 0 : 140);
       }
     };
 
+    const blocked = () => closed || busy || refusing || pad.classList.contains('held');
+
     const type = (digit) => {
-      if (pad.classList.contains('held') || typed.length >= MAX) return;
+      if (blocked() || typed.length >= (length || MAX)) return;
       typed += digit;
       said.textContent = '';
       view.draw();
       buzz('light');
+      if (length && typed.length === length) o.onDone(typed);
+      else if (o.onTyped) o.onTyped(typed);
     };
 
     const back = () => {
-      if (!typed.length) return;
+      if (blocked() || !typed.length) return;
       typed = typed.slice(0, -1);
       view.draw();
     };
 
-    // Never submitted for you: a passcode may be longer than four, and guessing
-    // when it is finished would be wrong exactly for whoever chose a longer one.
+    // Only when the length is not known — choosing one, or a lock set before
+    // the length was kept. Guessing when it is finished would be wrong exactly
+    // for whoever chose a longer code.
     const go = () => {
-      if (pad.classList.contains('held') || typed.length < MIN) return;
+      if (blocked() || typed.length < MIN) return;
       o.onDone(typed);
     };
 
-    for (const key of ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'back', '0', 'go']) {
+    for (const key of ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'go', '0', 'back']) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'lock-key' + (key === 'back' || key === 'go' ? ' lock-key-thin' : '');
+      button.className = 'lock-key';
+      let act;
       if (key === 'back') {
-        button.textContent = '\u232b';
+        button.className += ' lock-key-thin';
+        button.textContent = '⌫';
         button.setAttribute('aria-label', 'Delete');
-        button.addEventListener('click', back);
+        act = back;
       } else if (key === 'go') {
-        button.textContent = '\u2192';
+        button.className += ' lock-key-thin lock-key-go';
+        if (length) {
+          // Nothing to press: it opens on the last digit.
+          button.className += ' lock-key-none';
+          button.setAttribute('aria-hidden', 'true');
+          button.tabIndex = -1;
+          pad.appendChild(button);
+          continue;
+        }
+        button.textContent = '→';
         button.setAttribute('aria-label', o.goLabel || 'Unlock');
-        button.addEventListener('click', go);
+        act = go;
       } else {
         button.textContent = key;
-        button.addEventListener('click', () => type(key));
+        act = () => type(key);
       }
+
+      // On the finger going down, not on it coming up: a click waits for the
+      // lift and, in a WebView, for a little longer after that, which is the
+      // lag that makes a keypad feel like a web page. The press is shown for
+      // long enough to be seen however quick the tap was.
+      let pressed = false;
+      let downAt = 0;
+      const lift = () => {
+        const wait = Math.max(0, 110 - (Date.now() - downAt));
+        setTimeout(() => button.classList.remove('down'), wait);
+      };
+      button.addEventListener('pointerdown', (event) => {
+        if (event.button > 0) return;
+        event.preventDefault();
+        pressed = true;
+        downAt = Date.now();
+        button.classList.add('down');
+        act();
+      });
+      button.addEventListener('pointerup', lift);
+      button.addEventListener('pointercancel', lift);
+      button.addEventListener('pointerleave', lift);
+      // A click with no press before it is a screen reader or a test; one
+      // after a press has already been acted on.
+      button.addEventListener('click', () => {
+        if (pressed) { pressed = false; return; }
+        act();
+      });
       pad.appendChild(button);
     }
 
@@ -374,25 +469,51 @@
   function ask(reason, options) {
     if (showing) return showing;
     const o = options || {};
+    const saved = read();
 
     let checking = false;
     let faceTries = 0;
+    let facePending = false;
+    let faceLater = null;
+    let interrupted = 0;
     let ticking = null;
     let done = null;
+    // Locks set before the length was kept: checked quietly as it is typed,
+    // and the length learned the first time it is right.
+    let quietly = Promise.resolve();
+
+    const learn = (code) => {
+      const now = read();
+      if (now && !now.length) { now.length = String(code).length; write(now); }
+    };
 
     const view = makeScreen({
       title: reason || 'Enter passcode',
+      length: saved && saved.length,
       onDone: (code) => {
         if (checking || heldUntil()) return;
         checking = true;
+        view.busy(true);
         verify(code).then((ok) => {
           checking = false;
-          if (ok) return finish();
+          view.busy(false);
+          if (ok) { learn(code); return finish(); }
           const until = wrongAgain();
-          view.clear();
-          view.shake();
-          if (until) countdown();
-          else view.said.textContent = 'Wrong passcode.';
+          view.refuse(() => {
+            if (until) countdown();
+            else view.said.textContent = 'Wrong passcode.';
+          });
+        });
+      },
+      // Not counted when it is wrong: nobody said they had finished.
+      onTyped: (code) => {
+        if (saved && saved.length) return;
+        if (code.length < MIN) return;
+        quietly = quietly.then(() => {
+          if (view.closed || checking || view.typed !== code) return null;
+          return verify(code).then((ok) => {
+            if (ok && !view.closed && !checking && view.typed === code) { learn(code); finish(); }
+          });
         });
       }
     });
@@ -419,13 +540,21 @@
     }
 
     function finish() {
+      if (view.closed) return;
       if (ticking) clearInterval(ticking);
+      document.removeEventListener('visibilitychange', onSeen);
+      // The passcode got there while the prompt was still waiting to appear.
+      if (facePending) {
+        const api = plugin();
+        if (api && api.cancel) Promise.resolve(api.cancel()).catch(() => {});
+      }
       rightAtLast();
       allow();
-      view.close();
-      showing = null;
       buzz('light');
-      if (done) done(true);
+      view.open(() => {
+        showing = null;
+        if (done) done(true);
+      });
     }
 
     const offerFace = (kind) => {
@@ -436,15 +565,36 @@
 
     const askFace = (kind) => {
       const api = plugin();
-      if (!api || faceTries >= FACE_TRIES) return;
+      if (!api || view.closed || facePending || faceTries >= FACE_TRIES) return;
+      // A prompt asked for behind something is a prompt nobody sees, and the
+      // system takes it straight down again. Asked for when the app is back.
+      if (document.hidden) { faceLater = kind; return; }
       faceTries++;
+      facePending = true;
       view.face.disabled = true;
       api.prompt({ reason: 'Unlock NikUI' }).then(() => {
+        facePending = false;
         view.face.disabled = false;
         finish();
       }).catch((err) => {
+        facePending = false;
         view.face.disabled = false;
+        if (view.closed) return;
         const code = (err && (err.code || err.errorCode)) || '';
+        // Another screen of the app asked while this one was waiting.
+        if (code === 'REPLACED') return;
+        // Taken down by the phone, not by them — the app went behind
+        // something, the screen went off. Not a try, and asked again when the
+        // app is looked at, a few times before it stops insisting.
+        if (code === 'INTERRUPTED') {
+          faceTries--;
+          offerFace(kind);
+          if (++interrupted > 3) return;
+          if (document.hidden) faceLater = kind;
+          else setTimeout(() => askFace(kind), 400);
+          return;
+        }
+        interrupted = 0;
         if (code === 'LOCKED_OUT' || code === 'UNAVAILABLE') {
           faceTries = FACE_TRIES;
           view.face.hidden = true;
@@ -467,12 +617,19 @@
       });
     };
 
+    const onSeen = () => {
+      if (document.hidden || !faceLater || view.closed) return;
+      const kind = faceLater;
+      faceLater = null;
+      setTimeout(() => askFace(kind), 300);
+    };
+    document.addEventListener('visibilitychange', onSeen);
+
     if (heldUntil()) countdown();
 
-    const saved = read();
     if (!o.passcodeOnly && saved && saved.biometric !== false) {
       available().then((can) => {
-        if (!can || !can.available || !showing) return;
+        if (!can || !can.available || view.closed) return;
         offerFace(can.kind);
         // Offered without being asked for: on a phone, holding it up is the
         // thing you were going to do anyway.
@@ -503,9 +660,7 @@
       goLabel: 'Continue',
       onDone: (code) => {
         if (!looksLikeCode(code)) {
-          view.clear();
-          view.shake();
-          view.said.textContent = 'Use ' + MIN + ' to ' + MAX + ' digits.';
+          view.refuse(() => { view.said.textContent = 'Use ' + MIN + ' to ' + MAX + ' digits.'; });
           return;
         }
         if (first === null) {
@@ -517,21 +672,20 @@
         }
         if (first !== code) {
           first = null;
-          view.clear();
-          view.shake();
-          view.title.textContent = 'Choose a passcode';
-          view.said.textContent = 'Those did not match. Start again.';
+          view.refuse(() => {
+            view.title.textContent = 'Choose a passcode';
+            view.said.textContent = 'Those did not match. Start again.';
+          });
           return;
         }
         set(code).then(() => {
-          view.close();
-          showing = null;
           buzz('medium');
-          done(code);
+          view.open(() => {
+            showing = null;
+            done(code);
+          });
         }).catch((err) => {
-          view.clear();
-          view.shake();
-          view.said.textContent = (err && err.message) || 'That would not do.';
+          view.refuse(() => { view.said.textContent = (err && err.message) || 'That would not do.'; });
         });
       }
     });

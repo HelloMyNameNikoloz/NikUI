@@ -59,10 +59,16 @@ const SOURCE = `(function () {
       all.asked = (all.asked || 0) + 1;
       keepFace(all);
       if (all.say === 'yes') return Promise.resolve({ ok: true });
+      if (all.say === 'interrupted') {
+        const err = new Error('interrupted');
+        err.code = 'INTERRUPTED';
+        return Promise.reject(err);
+      }
       const err = new Error(all.say === 'no' ? 'that was not recognised' : 'cancelled');
       err.code = all.say === 'no' ? 'FAILED' : String(all.say).toUpperCase();
       return Promise.reject(err);
-    }
+    },
+    cancel: function () { return Promise.resolve(); }
   };
 
   window.Capacitor.Plugins.LocalNotifications = {
