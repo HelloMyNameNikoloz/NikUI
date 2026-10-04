@@ -680,6 +680,84 @@ body.app-conversation .composer-wrap:has(.attachments:empty) .composer:has(#inpu
   color: var(--app-faint);
 }
 
+/* ---- talking ----------------------------------------------------------------
+   The mic sits with stop and send, the same round button. Recording turns it
+   red with a square in it, which is the one thing everybody knows means stop;
+   above the composer a strip says how long, how loud, and how to cancel. */
+body.app-conversation .composer-actions #mic {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--app-dim);
+  transition: background-color 140ms ease, color 140ms ease, transform 120ms ease;
+}
+body.app-conversation .composer-actions #mic[hidden] { display: none; }
+body.app-conversation .composer-actions #mic::after { content: ""; position: absolute; inset: -4px; }
+body.app-conversation .composer-actions #mic:active { transform: scale(0.92); }
+body.app-conversation .composer-actions #mic[disabled] { opacity: 0.4; }
+body.app-conversation #mic svg { display: block; width: 20px; height: 20px; }
+body.app-conversation #mic.on { background: var(--app-red); color: #fff; }
+body.app-conversation #mic.on svg { width: 14px; height: 14px; }
+
+body.app-conversation .voice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 4px 8px;
+  padding: 8px 8px 8px 14px;
+  min-height: 44px;
+  border-radius: 22px;
+  background: var(--app-raised);
+  color: var(--app-text);
+  font-size: 14px;
+  line-height: 1.35;
+}
+body.app-conversation .voice[hidden] { display: none; }
+body.app-conversation .voice-said { flex: 1; min-width: 0; color: var(--app-dim); }
+body.app-conversation .voice-clock { font-variant-numeric: tabular-nums; min-width: 3.2em; }
+body.app-conversation .voice-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex: none;
+  background: var(--app-red);
+}
+body.app-conversation .voice-level { flex: 1; display: flex; align-items: center; gap: 3px; height: 22px; }
+body.app-conversation .voice-level i {
+  display: block; width: 4px; height: 100%; border-radius: 2px;
+  background: var(--app-dim);
+  transform: scaleY(0.12);
+  transition: transform 110ms linear;
+}
+body.app-conversation .voice-spin {
+  width: 16px; height: 16px; flex: none; border-radius: 50%;
+  border: 2px solid var(--app-raised-2);
+  border-top-color: var(--app-accent);
+}
+body.app-conversation .voice-act {
+  flex: none;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--app-raised-2);
+  color: var(--app-text);
+  font-size: 13px;
+}
+body.app-conversation .voice-act.voice-go { background: var(--app-accent); color: #fff; }
+
+@media (prefers-reduced-motion: no-preference) {
+  body.app-conversation .voice-dot { animation: nik-breathe 0.7s ease-in-out infinite alternate; }
+  body.app-conversation .voice-spin { animation: voice-turn 0.9s linear infinite; }
+}
+@keyframes voice-turn { to { transform: rotate(360deg); } }
+
 /* ---- motion ---------------------------------------------------------------
    Enough to say "this moved", never enough to wait for. */
 

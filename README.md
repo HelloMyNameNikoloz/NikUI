@@ -442,6 +442,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.keepAwake` | `false` | Keep this laptop awake while NikUI listens for your phone — also switchable from the phone |
 | `nikui.lidClosed` | `false` | Keep working with the lid closed while Claude works, then sleep — needs your password once |
 | `nikui.notifyDevices` | needs-you, quota, failed, CI | Which things are worth sending to a paired phone, on top of whatever pops up on the laptop |
+| `nikui.voice.enabled` | `true` | Let a phone that may send prompts talk instead of typing, transcribed on this Mac by VoiceInk's model |
 
 ### One place for all of it
 
@@ -532,6 +533,30 @@ the laptop goes to the phone too: `nikui.notifyWhenDone`, `notifyCI` and
 `notifyOnAttention` switch the same kinds on for it, whatever
 `notifyDevices` says. `src/audience.js` is the whole rule, and
 `test/audience.test.js` walks it with the clock in its hand.
+
+### Talking instead of typing, from the phone
+
+The conversation on the phone has a mic next to send. Press it, talk, press it
+again: the recording goes down the socket the conversation already holds, the
+laptop writes it down with **the model VoiceInk keeps on this Mac** (Parakeet
+TDT 0.6B v3, on the Neural Engine), and the words land in the composer where
+the cursor was — **not sent**, because speech recognition gets names and code
+wrong and the person who said it reads it first. VoiceInk's word replacements
+are applied, read-only, from its own dictionary.
+
+Nothing runs until it is used. The transcriber is a small Swift program in
+`voice/`, built once into NikUI's storage (a few minutes, the first time the
+server is serving and the model is on this Mac) and then started for one
+recording and gone when the words are out. The recording is written to a
+private temporary folder for exactly as long as that takes and removed
+whatever happened. Up to five minutes, 16 kHz mono; one at a time.
+
+It needs the same grant as a prompt, a Mac with Apple silicon, Apple's command
+line tools for the one build, and VoiceInk's Parakeet model downloaded. Anything
+missing is said on the phone rather than the button quietly doing nothing; a
+recording the laptop could not take yet — still building, a timeout, the socket
+dropped — is kept on the phone to send again, and one made during the first
+build goes by itself once it is ready. `nikui.voice.enabled` turns it off.
 
 ### A command on this machine, from the phone
 

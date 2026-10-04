@@ -4,3 +4,5 @@
 test/**
 tools/**
 app/**
+voice/.build/**
+voice/.swiftpm/**

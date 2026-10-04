@@ -38,6 +38,8 @@ async function launch(binary) {
   const proc = spawn(binary, [
     '--headless', '--disable-gpu', '--no-sandbox', '--no-first-run',
     '--disable-extensions', '--remote-debugging-port=0',
+    // Audio is started by a script, not a finger, in a check.
+    '--autoplay-policy=no-user-gesture-required',
     '--user-data-dir=' + profile, 'about:blank'
   ], { stdio: ['ignore', 'ignore', 'ignore'] });
 

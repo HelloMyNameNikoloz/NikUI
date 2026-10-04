@@ -151,9 +151,24 @@ const record = (name, ok) => {
   };
   const setting = (key) => (key === 'keepAwake' ? awakeSetting : saved[key]);
 
+  // The laptop's transcriber, as a script: the phone's half is under test here,
+  // and the real one needs VoiceInk's model and a Mac's Neural Engine.
+  const { readWav } = require(path.join(REPO, 'src', 'voice.js'));
+  const voiceStage = { state: { available: true, model: 'parakeet-tdt-0.6b-v3' }, heard: [], fail: null };
+  const voice = {
+    state: async () => voiceStage.state,
+    ensure: () => Promise.resolve(true),
+    transcribe: async (audio) => {
+      voiceStage.heard.push(readWav(audio));
+      if (voiceStage.fail) throw Object.assign(new Error(voiceStage.fail.message), { code: voiceStage.fail.code });
+      return { text: 'words from the laptop', seconds: 1, ms: 300 };
+    }
+  };
+
   const laptop = new RemoteServer({
     root: REPO,
     terminals,
+    voice,
     keepAwake: keeping,
     host: {
       config: () => ({ showThinking: true, promptSnippets: {} }),
@@ -1487,6 +1502,111 @@ const record = (name, ok) => {
       await phone.until('/watch, but not run commands/.test(document.body.textContent)', 10000));
     record('and is given nowhere to type',
       (await phone.evaluate('document.getElementById("runner").hidden')) === true);
+    devices.setControl(paired.id, true);
+
+    // ---- talking instead of typing ---------------------------------------------
+    //
+    // Recorded on the phone for real — the microphone is a tone, everything
+    // after it is the app's own code — sent down the conversation's socket,
+    // and the laptop's words put where the cursor was, not sent.
+
+    const conversation = appOrigin + '/conversation.html?session=' + session.id;
+    const phase = () => phone.evaluate('window.__voice ? window.__voice().phase : null');
+    const micLive = () => phone.evaluate('window.__mic.state().live');
+    const typed = (text) => phone.evaluate(`(() => { const i = document.getElementById('input');
+      i.value = ${JSON.stringify(text)}; i.setSelectionRange(i.value.length, i.value.length);
+      i.dispatchEvent(new Event('input')); })()`);
+    await phone.navigate(conversation);
+    await phone.evaluate('window.__mic.reset()');
+    record('a device that may send prompts gets a mic in the composer',
+      await phone.until('!!document.getElementById("mic") && !document.getElementById("mic").hidden', 10000));
+    record('next to send',
+      (await phone.evaluate('document.getElementById("mic").parentNode.className')) === 'composer-actions');
+    record('and nothing is listening until it is pressed', (await micLive()) === 0);
+
+    await typed('Fix');
+    await phone.evaluate('document.getElementById("mic").click()');
+    record('pressing it records', await phone.until('window.__voice().phase === "recording" && window.__mic.state().live === 1', 6000));
+    record('saying how long',
+      await phone.until('/0:0[1-9]/.test(document.querySelector(".voice-clock").textContent)', 6000));
+    await shoot(phone, 'voice-recording');
+    await phone.evaluate('document.getElementById("mic").click()');
+    record('pressing it again lets the microphone go', await phone.until('window.__mic.state().live === 0', 4000));
+    record('and the words come back into the composer, after what was typed',
+      await phone.until('document.getElementById("input").value === "Fix words from the laptop"', 8000));
+    record('not sent', (await phone.evaluate(`!/words from the laptop/.test(document.getElementById('stream').textContent)`)) === true &&
+      !(session.items || []).some((i) => i.kind === 'user' && /words from the laptop/.test(i.text || '')));
+    const got = voiceStage.heard[0] || {};
+    record('the laptop got 16 kHz mono 16-bit PCM', got.rate === 16000 && got.channels === 1 && got.bits === 16 && got.encoding === 1);
+    record('of about as long as was recorded', got.seconds > 0.8 && got.seconds < 4);
+    record('and the bar is gone', (await phase()) === 'idle' &&
+      (await phone.evaluate('document.getElementById("voice").hidden')) === true);
+
+    await typed('');
+    voiceStage.fail = { code: 'TIMEOUT', message: 'The laptop took too long to transcribe that.' };
+    await phone.evaluate('document.getElementById("mic").click()');
+    await phone.until('window.__voice().phase === "recording" && window.__mic.state().live === 1', 6000);
+    await wait(700);
+    await phone.evaluate('document.getElementById("mic").click()');
+    record('a recording the laptop could not do is kept, with the reason',
+      await phone.until('window.__voice().phase === "held" && window.__voice().kept && /too long/.test(document.getElementById("voice").textContent)', 8000));
+    await shoot(phone, 'voice-held');
+    voiceStage.fail = null;
+    await phone.evaluate('document.querySelector("[data-voice=send]").click()');
+    record('and sent again without saying it again',
+      await phone.until('document.getElementById("input").value === "words from the laptop"', 8000));
+    record('the same recording, twice', voiceStage.heard.length === 3 &&
+      Math.abs(voiceStage.heard[1].seconds - voiceStage.heard[2].seconds) < 0.001);
+
+    await typed('');
+    voiceStage.state = { available: true, building: false, needsBuild: true, model: 'parakeet-tdt-0.6b-v3' };
+    await phone.evaluate('document.getElementById("mic").click()');
+    await phone.until('window.__voice().phase === "recording" && window.__mic.state().live === 1', 6000);
+    await wait(500);
+    await phone.evaluate('document.getElementById("mic").click()');
+    record('the first time, the laptop says it is setting up and the recording waits',
+      await phone.until('window.__voice().phase === "held" && window.__voice().waiting && /first time/.test(document.getElementById("voice").textContent)', 8000));
+    voiceStage.state = { available: true, model: 'parakeet-tdt-0.6b-v3' };
+    record('and goes by itself once it is ready',
+      await phone.until('document.getElementById("input").value === "words from the laptop"', 22000));
+
+    await typed('');
+    const heardBefore = voiceStage.heard.length;
+    await phone.evaluate('document.getElementById("mic").click()');
+    await phone.until('window.__mic.state().live === 1', 6000);
+    await phone.evaluate('document.querySelector("[data-voice=cancel]").click()');
+    record('cancelling lets the microphone go and sends nothing',
+      await phone.until('window.__mic.state().live === 0 && window.__voice().phase === "idle"', 4000) &&
+      (await wait(400), voiceStage.heard.length === heardBefore));
+
+    await phone.evaluate('document.getElementById("mic").click()');
+    await phone.until('window.__mic.state().live === 1', 6000);
+    await phone.navigate(appOrigin + '/index.html');
+    record('leaving the conversation while recording lets the microphone go', (await micLive()) === 0);
+    record('and sends nothing', voiceStage.heard.length === heardBefore);
+
+    await phone.navigate(conversation);
+    await phone.until('!document.getElementById("mic").hidden', 10000);
+    await phone.evaluate('window.__mic.allow(false)');
+    await phone.evaluate('document.getElementById("mic").click()');
+    record('a microphone the phone refuses is said, with where to allow it',
+      await phone.until('window.__voice().phase === "notice" && /Allow it for NikUI/.test(document.getElementById("voice").textContent)', 6000));
+    await phone.evaluate('window.__mic.reset()');
+
+    voiceStage.state = { available: false, code: 'OFF', reason: 'Voice is turned off on the laptop.' };
+    await phone.navigate(conversation);
+    await phone.until('!!document.getElementById("input")', 10000);
+    await wait(800);
+    record('voice turned off on the laptop is no mic at all',
+      (await phone.evaluate('document.getElementById("mic").hidden')) === true);
+    voiceStage.state = { available: true, model: 'parakeet-tdt-0.6b-v3' };
+
+    devices.setControl(paired.id, false);
+    await phone.navigate(conversation);
+    await phone.until('!document.getElementById("watching").hidden', 10000);
+    await wait(800);
+    record('and a device that only watches has no mic either',
+      (await phone.evaluate('document.getElementById("mic").hidden')) === true);
     devices.setControl(paired.id, true);
 
     // ---- the chip loses the key the record points at -------------------------

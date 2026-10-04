@@ -9,6 +9,8 @@
 	<!-- Face ID is how the key in the Secure Enclave is unlocked. Without this
 	     key iOS does not refuse the check: it kills the app, on the first
 	     signature, with a TCC privacy violation and signal 6. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>What you say is sent to your laptop, which writes it into the message for you to check before sending.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID proves it is you before this phone signs in to your laptop.</string>
 	<key>CFBundleDisplayName</key>

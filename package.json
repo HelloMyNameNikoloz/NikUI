@@ -725,6 +725,12 @@
           "default": true,
           "markdownDescription": "Send to Apple\u2019s production network. Turn off for a build installed straight from Xcode, which gets a sandbox token \u2014 a production token sent to sandbox, or the other way round, is refused as `BadDeviceToken`."
         },
+        "nikui.voice.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "markdownDescription": "Let a phone that may send prompts dictate: it records, and this Mac turns the recording into text with the speech model VoiceInk uses (Parakeet), then sends the words back to the phone's composer to check before sending. Nothing leaves this Mac and the recording is deleted as soon as it is read. Needs a Mac with Apple silicon and VoiceInk's Parakeet model downloaded. The transcriber runs only while a recording is being read."
+        },
         "nikui.keepAwake": {
           "type": "boolean",
           "default": false,

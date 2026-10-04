@@ -35,7 +35,7 @@ const CLIENT_FILES = SCRIPTS.concat([
 ]);
 
 const SHELL_FILES = ['app.css', 'app.js', 'lock.js', 'notify.js', 'connect.js', 'settings.js',
-  'history.js', 'status.js', 'terminal.js'];
+  'history.js', 'status.js', 'terminal.js', 'voice.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -180,7 +180,9 @@ function conversationPage() {
       '<script src="lock.js"></script>\n' +
       '<script src="app.js"></script>\n' +
       '<script src="notify.js"></script>\n' +
-      '<script src="media/mobile.js" defer></script>\n'
+      '<script src="media/mobile.js" defer></script>\n' +
+      // After the client, which is what puts the composer it adds a button to on the page.
+      '<script src="voice.js" defer></script>\n'
   })
     // The app has no nonces to hand out and no use for them: nothing here is
     // fetched over a network, and the policy already says 'self'.

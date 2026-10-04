@@ -7,6 +7,7 @@ const path = require('path');
 const { renderPage, randomNonce, jsonForScript } = require('./page');
 const { Gate, LocalKey, localDevice, forwarded } = require('./auth');
 const wire = require('./wire');
+const voiceMaxBytes = () => require('./voice').MAX_BYTES;
 
 /**
  * The same client, served over HTTP, to this machine and to devices it knows.
@@ -95,6 +96,9 @@ class RemoteServer {
     // Whether this laptop may go to sleep: `state()` and `set(on)`. Null when the
     // window has not offered it, which a phone reads as "nothing to show".
     this.keepAwake = deps.keepAwake || null;
+    // Hearing what was said into the phone: `state()` and `transcribe(wav)`
+    // (voice.js). Null when the window has not offered it.
+    this.voice = deps.voice || null;
     this.projectRoot = deps.projectRoot || null;
     this.history = deps.history || null;
     this.report = deps.report || null;
@@ -936,7 +940,14 @@ ${this.appHead(nonce)}</head>
       const hub = this.hubs.hubFor(session, this.host);
       hub.attach({ id: client.id, kind: 'socket', device: client.device, post: (m) => client.post(m) });
       client.bind({
-        receive: (message) => hub.receive(client.id, message),
+        receive: (message) => {
+          // Voice is the laptop's, not the instance's: the conversation's
+          // socket is simply the one the phone is holding when it talks.
+          if (message && (message.type === 'voice' || message.type === 'voice:state')) {
+            return this.voiceMessage(client, message);
+          }
+          return hub.receive(client.id, message);
+        },
         device: (device) => hub.setDevice(client.id, device),
         detach: () => {
           hub.detach(client.id);
@@ -970,6 +981,7 @@ ${this.appHead(nonce)}</head>
           if (message.type === 'awake:set') return void (await this.setAwakeFor(client, message.on));
           if (message.type === 'lid:set') return void (await this.setLidFor(client, message.on));
           if (message.type.indexOf('term:') === 0) return void this.terminalFor(client, message);
+          if (message.type === 'voice' || message.type === 'voice:state') return void (await this.voiceMessage(client, message));
         } catch (err) {
           // A handler that throws used to answer nothing at all, and nothing at
           // all is the one answer a phone cannot act on: it waits, and then it
@@ -977,7 +989,9 @@ ${this.appHead(nonce)}</head>
           // stale variable name in `terminalFor` did exactly that.
           this.log(`${client.id} asked ${message.type} and it threw: ${(err && err.message) || err}`);
           client.post({
-            type: message.type.indexOf('term:') === 0 ? 'term:no' : '@refused',
+            type: message.type.indexOf('term:') === 0 ? 'term:no'
+              : '@refused',
+            id: message.id,
             what: message.type,
             reason: 'That went wrong on the laptop: ' + ((err && err.message) || 'unknown error')
           });
@@ -1276,6 +1290,80 @@ ${this.appHead(nonce)}</head>
       client.awakeSaid = said;
       client.post(message);
     }
+  }
+
+  /**
+   * Whether this laptop can turn speech into text for this device, and why not.
+   *
+   * Behind the same grant as sending a prompt: the words go into a prompt, and
+   * a watching seat has nothing to type into.
+   */
+  /** Either socket's voice messages, with an answer even when something throws. */
+  async voiceMessage(client, message) {
+    try {
+      if (message.type === 'voice:state') return await this.voiceStateFor(client);
+      return await this.voiceFor(client, message);
+    } catch (err) {
+      this.log(`${client.id} asked ${message.type} and it threw: ${(err && err.message) || err}`);
+      client.post(message.type === 'voice'
+        ? { type: 'voice:no', id: typeof message.id === 'string' ? message.id.slice(0, 64) : '', code: 'FAILED',
+          reason: 'That went wrong on the laptop: ' + ((err && err.message) || 'unknown error') }
+        : { type: 'voice:state', available: false, code: 'FAILED', reason: 'That went wrong on the laptop.' });
+    }
+  }
+
+  async voiceStateFor(client) {
+    const seat = client.device;
+    if (!this.voice) {
+      return void client.post({ type: 'voice:state', available: false, code: 'OFF',
+        reason: 'This window is not offering voice.' });
+    }
+    if (seat && seat.kind === 'device' && !seat.control) {
+      return void client.post({ type: 'voice:state', available: false, code: 'WATCH_ONLY',
+        reason: 'This device can watch but not send prompts. Grant it control in the editor.' });
+    }
+    const state = await this.voice.state();
+    // Asked about means about to be used: the first build is started now, not
+    // when somebody has already said something and is waiting.
+    if (state.available && state.needsBuild && this.voice.ensure) this.voice.ensure();
+    client.post(Object.assign({ type: 'voice:state' }, state));
+  }
+
+  /**
+   * One recording from the phone, turned into words for its composer.
+   *
+   * Never sent anywhere and never kept: written to a private temporary folder
+   * for as long as the transcriber takes, then removed. The words go back only
+   * to the device that asked, which puts them in its composer for somebody to
+   * read — nothing is sent to an instance from here.
+   */
+  async voiceFor(client, message) {
+    const seat = client.device;
+    const id = typeof message.id === 'string' ? message.id.slice(0, 64) : '';
+    const no = (code, reason) => client.post({ type: 'voice:no', id, code, reason });
+    if (!this.voice) return void no('OFF', 'This window is not offering voice.');
+    if (seat && seat.kind === 'device' && !seat.control) {
+      this.note(seat, 'voice', 'refused', false);
+      return void no('WATCH_ONLY', 'This device can watch but not send prompts. Grant it control in the editor.');
+    }
+    if (typeof message.audio !== 'string' || !message.audio) return void no('NO_AUDIO', 'Nothing was recorded.');
+    if (message.audio.length > Math.ceil(voiceMaxBytes() / 3) * 4 + 8) {
+      return void no('TOO_LONG', 'That recording is longer than five minutes.');
+    }
+    const state = await this.voice.state();
+    if (!state.available) return void no(state.code || 'OFF', state.reason);
+    if (state.building || state.needsBuild) {
+      if (this.voice.ensure) this.voice.ensure();
+      return void no('BUILDING', 'The laptop is setting up voice for the first time. ' +
+        'It takes a few minutes; your recording is kept, so try again then.');
+    }
+    let heard;
+    try {
+      heard = await this.voice.transcribe(Buffer.from(message.audio, 'base64'));
+    } catch (err) {
+      return void no((err && err.code) || 'FAILED', (err && err.message) || 'That could not be transcribed.');
+    }
+    client.post({ type: 'voice:text', id, text: heard.text, seconds: heard.seconds, ms: heard.ms });
   }
 
   /**

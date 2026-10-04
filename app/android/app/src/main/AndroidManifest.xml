@@ -90,4 +90,9 @@
          this ships to 24. Both are normal permissions: nothing is prompted for. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" android:maxSdkVersion="27" />
+    <!-- The microphone, for talking to the composer. Asked for the first time
+         the mic button is pressed and never before; the WebView's own request
+         is what Capacitor turns into Android's prompt, and it asks for both. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 </manifest>

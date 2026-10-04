@@ -167,6 +167,50 @@ const SOURCE = `(function () {
     exitApp: function () {}
   };
 
+  // The microphone. A tone from an oscillator rather than a room, so a check can
+  // record for real — Web Audio, the encoder, the socket — without a device.
+  // Whether it is allowed, and whether anything is still holding it, are what
+  // the checks ask; a microphone left open is the failure that matters most.
+  const MIC = 'nikui.test.mic';
+  const mic = () => { try { return Object.assign({ allow: true, opened: 0, live: 0 }, JSON.parse(localStorage.getItem(MIC) || '{}')); } catch (_) { return { allow: true, opened: 0, live: 0 }; } };
+  const keepMic = (all) => localStorage.setItem(MIC, JSON.stringify(all));
+  if (navigator.mediaDevices) {
+    navigator.mediaDevices.getUserMedia = function (constraints) {
+      const all = mic();
+      if (!constraints || !constraints.audio) return Promise.reject(new Error('audio only'));
+      if (!all.allow) {
+        const err = new Error('Permission denied');
+        err.name = 'NotAllowedError';
+        return Promise.reject(err);
+      }
+      const Context = window.AudioContext || window.webkitAudioContext;
+      const context = new Context();
+      const tone = context.createOscillator();
+      tone.frequency.value = 440;
+      const out = context.createMediaStreamDestination();
+      tone.connect(out);
+      tone.start();
+      all.opened += 1;
+      all.live += 1;
+      keepMic(all);
+      for (const track of out.stream.getTracks()) {
+        const stop = track.stop.bind(track);
+        let stopped = false;
+        track.stop = function () {
+          if (!stopped) { stopped = true; const now = mic(); now.live = Math.max(0, now.live - 1); keepMic(now); }
+          stop();
+          try { tone.stop(); context.close(); } catch (_) { /* gone */ }
+        };
+      }
+      return Promise.resolve(out.stream);
+    };
+  }
+  window.__mic = {
+    state: mic,
+    allow: function (yes) { const all = mic(); all.allow = !!yes; keepMic(all); },
+    reset: function () { localStorage.removeItem(MIC); }
+  };
+
   // What the test drives from outside.
   window.__buzz = {
     shown: function () { return shelf().shown; },

@@ -36,6 +36,7 @@ const { Notifier } = require('./notify');
 const { openSettings, schemaFrom, rememberModelsIn, useSwitch, write: writeSetting, registered,
   unloaded, offerReload, notLoaded } = require('./settingsMenu');
 const { loadApns } = require('./apns');
+const { Voice } = require('./voice');
 
 let manager;
 
@@ -750,10 +751,19 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     : null;
   context.subscriptions.push({ dispose: () => { if (terminals) terminals.closeAll(); } });
 
+  // Speech from the phone, heard here. Built once into NikUI's storage and
+  // run only while a recording is being turned into words.
+  const voice = new Voice({
+    dir: context.globalStorageUri ? context.globalStorageUri.fsPath : null,
+    enabled: () => vscode.workspace.getConfiguration('nikui').get('voice.enabled', true),
+    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
+  });
+
   const server = new RemoteServer({
     root: context.extensionUri.fsPath,
     host: served,
     terminals,
+    voice,
     audience,
     // Whether this laptop may sleep, readable by any paired device and
     // switchable by one that may send prompts.
@@ -949,6 +959,13 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     if (vscode.workspace.getConfiguration('nikui').get('remote.tailnet', true)) becomeReachable();
     else adoptTunnel();
     context.workspaceState.update('nikui.remote.wasServing', true);
+    // Built ahead of being needed, so the first thing said into the phone is
+    // not the thing that waits minutes for a compiler. Once: after that the
+    // program is kept, and only ever started for a recording.
+    if (voice.possible && voice.enabled() && voice.modelPresent() && !voice.isBuilt()) {
+      const later = setTimeout(() => voice.ensure(), 20000);
+      context.subscriptions.push({ dispose: () => clearTimeout(later) });
+    }
     if (server.movedFrom) {
       // Another window already has the usual port. Said once, quietly: the
       // address is handed out rather than typed, so the number rarely matters.
