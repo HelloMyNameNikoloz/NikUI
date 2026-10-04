@@ -856,9 +856,18 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // down that rather than through a push service, which needs a tunnel, an
     // account somewhere, and a phone that is reachable from outside.
     toSockets: (message) => server.notifyDevices(message),
+    // Whatever pops up on this laptop also goes to the phone — somebody out of
+    // the house has only the phone. notifyDevices can add to that, not take
+    // away from it: a turn finishing is sent when either says so.
     settings: () => {
-      try { return vscode.workspace.getConfiguration('nikui').get('notifyDevices', {}) || {}; }
-      catch (_) { return {}; }
+      try {
+        const cfg = vscode.workspace.getConfiguration('nikui');
+        const phone = Object.assign({}, cfg.get('notifyDevices', {}) || {});
+        if (cfg.get('notifyWhenDone', false)) phone.turnFinished = true;
+        if (cfg.get('notifyCI', true)) phone.ci = true;
+        if (cfg.get('notifyOnAttention', true)) phone.needsYou = true;
+        return phone;
+      } catch (_) { return {}; }
     },
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  push: ' + line); }
   });

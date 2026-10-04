@@ -27,7 +27,7 @@ module.exports = async function () {
     const time = clock();
     const who = new Audience({ now: time.now });
 
-    checkEqual('nobody has asked for anything, so nobody is told', who.who('alpha'), null);
+    checkEqual('nobody seen yet is nobody in particular: everyone', who.who('alpha'), null);
 
     who.steered('alpha', 'phone');
     checkEqual('the phone that sent the prompt owns what comes of it', who.who('alpha'), 'phone');
@@ -42,60 +42,20 @@ module.exports = async function () {
     checkEqual('and the newest prompt anywhere owns the rest', who.who(null), 'phone');
   }
 
-  suite('forty minutes is a phone somebody is still holding');
+  suite('a phone nobody has touched for hours is still told');
 
-  {
-    const time = clock();
-    const who = new Audience({ now: time.now });
-    who.steered('alpha', 'phone');
-
-    time.tick(40 * MINUTE);
-    check('it is still awake', who.awake('phone'));
-    checkEqual('so it is told', who.who('alpha'), 'phone');
-    checkEqual('and being told costs it nothing', who.delivered('phone', 'alpha'), false);
-    check('it is awake afterwards', who.awake('phone'));
-  }
-
-  suite('ninety minutes is still yours, and then it is not');
-
-  {
-    const time = clock();
-    const who = new Audience({ now: time.now });
-    who.steered('alpha', 'phone');
-
-    time.tick(90 * MINUTE);
-    check('the phone has gone quiet', !who.awake('phone'));
-    // The point of the whole feature: you asked for this, and the answer is
-    // what you went away to wait for.
-    checkEqual('but it asked for this, so it is told', who.who('alpha'), 'phone');
-    checkEqual('and that is the last thing it hears', who.delivered('phone', 'alpha'), true);
-    check('it is dormant now', who.dormant('phone'));
-
-    who.steered('beta', 'phone');
-    // Steering is using the app, so that wakes it — the case below is the one
-    // where nothing has been touched at all.
-    check('using it again wakes it', !who.dormant('phone'));
-  }
-
-  suite('a dormant phone hears nothing at all');
-
+  // The phone in a pocket out of the house is the one this is for.
   {
     const time = clock();
     const who = new Audience({ now: time.now });
     who.steered('alpha', 'phone');
     who.steered('beta', 'phone');
 
-    time.tick(90 * MINUTE);
-    checkEqual('the first thing it is owed still arrives', who.who('alpha'), 'phone');
+    time.tick(5 * 60 * MINUTE);
+    checkEqual('what it asked for arrives', who.who('alpha'), 'phone');
     who.delivered('phone', 'alpha');
-
-    checkEqual('and then nothing does, even for work it also asked for',
-      who.who('beta'), null);
-    checkEqual('nor anything that belongs to no instance', who.who(null), null);
-
-    who.active('phone');
-    checkEqual('picking the phone up brings it back', who.who('beta'), 'phone');
-    check('and it is awake again', who.awake('phone'));
+    checkEqual('and so does what comes after', who.who('beta'), 'phone');
+    checkEqual('and news that belongs to no instance', who.who(null), 'phone');
   }
 
   suite('two phones, and only one of them buzzes');
@@ -141,12 +101,11 @@ module.exports = async function () {
     who.active('the-other-one');
     checkEqual('asking still beats holding', who.who('alpha'), 'in-my-hand');
 
-    // And a phone nobody has touched for an hour is not a phone in a hand.
+    // A phone put down hours ago is still the one somebody took out.
     const cold = new Audience({ now: time.now });
     cold.active('put-down');
-    time.tick(90 * MINUTE);
-    checkEqual('a phone put down an hour ago is not the one to tell',
-      cold.who('alpha'), null);
+    time.tick(5 * 60 * MINUTE);
+    checkEqual('a phone put down hours ago is still told', cold.who('alpha'), 'put-down');
   }
 
   suite('a device that is gone owns nothing');
@@ -202,17 +161,28 @@ module.exports = async function () {
       sentTo, ['https://push/2']);
     void quiet;
 
-    // And once that phone has been quiet an hour, the thing it asked for
-    // arrives and nothing after it does.
+    // Nobody seen at all, as after a reload: every device, not none.
+    const fresh = new Notifier({
+      devices,
+      vapid: {},
+      audience: new Audience({ now: time.now }),
+      now: time.now,
+      settings: () => ({ turnFinished: true }),
+      send: async (subscription) => { sentTo.push(subscription.endpoint); return { ok: true }; },
+      toSockets: (body) => { toldOverSocket.push(body.to || 'everyone'); return 1; }
+    });
+    sentTo.length = 0;
+    toldOverSocket.length = 0;
+    await fresh.announce('needs-you', { title: 'waiting', session: 'epsilon' });
+    checkEqual('with nobody seen yet, every phone is told', sentTo, ['https://push/1', 'https://push/2']);
+    checkEqual('and the socket message names nobody', toldOverSocket, ['everyone']);
+
+    // Hours later the phone that asked is still told, and so is the next thing.
     sentTo.length = 0;
     who.steered('delta', 'tablet');
-    time.tick(90 * MINUTE);
+    time.tick(5 * 60 * MINUTE);
     await notifier.announce('turn-finished', { title: 'late', session: 'delta' });
-    checkEqual('the late answer arrives', sentTo, ['https://push/2']);
-
-    sentTo.length = 0;
-    const after = await notifier.announce('turn-finished', { title: 'later still', session: 'delta' });
-    checkEqual('and nothing after it', sentTo, []);
-    checkEqual('which is said rather than counted as sent', after.skipped, true);
+    await notifier.announce('turn-finished', { title: 'later still', session: 'delta' });
+    checkEqual('nothing is dropped for a phone left alone', sentTo, ['https://push/2', 'https://push/2']);
   }
 };

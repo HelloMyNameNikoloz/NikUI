@@ -1,6 +1,6 @@
 {
   "name": "nikui-app",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "The NikUI phone app: a native shell around the same client the editor runs.",
   "scripts": {

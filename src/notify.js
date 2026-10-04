@@ -74,14 +74,11 @@ class Notifier {
   async announce(kind, message) {
     if (!this.wants(kind)) return { sent: 0, failed: 0, attached: 0, skipped: true };
 
-    // One phone, not all of them. A device that has gone quiet for an hour is
-    // not somebody waiting for an answer — unless this is the answer it asked
-    // for, which is exactly the case `who` is written around.
+    // One phone, not all of them: whoever asked for this, else whoever was
+    // holding one last. Nobody seen yet is everyone — never nobody, because
+    // the phone that has not been touched is the one in a pocket out of the
+    // house, and this is what it is for.
     const to = this.audience ? this.audience.who(message.session) : null;
-    if (this.audience && !to) {
-      this.log(`"${message.title}" not sent: nobody is waiting for it`);
-      return { sent: 0, failed: 0, attached: 0, skipped: true };
-    }
 
     const body = Object.assign({ kind, at: this.now() }, message, to ? { to } : null);
     // Only the device this is for. Without an audience this is every device,
@@ -123,8 +120,7 @@ class Notifier {
     if (!subscribers.length) {
       // Delivery over the socket alone is the ordinary case, not an edge: the
       // app is open, nothing is subscribed to a push service, and this used to
-      // return here without recording that anything had been said. A phone that
-      // had gone quiet then never went dormant, and kept being buzzed forever.
+      // return here without recording that anything had been said.
       this.spent(to, message.session, attached || sent);
       return { sent, failed, attached, skipped: !attached && !sent && !failed };
     }
@@ -159,17 +155,12 @@ class Notifier {
   }
 
   /**
-   * Said, and what saying it cost.
-   *
-   * Telling a phone that had gone quiet is the last thing it hears: it asked
-   * for this, and it is in a drawer again now. One place, because there are two
-   * ways out of `announce` and the first one used to forget.
+   * Said: the instance's news has reached the phone that asked for it. One
+   * place, because there are two ways out of `announce`.
    */
   spent(to, instance, reached) {
     if (!this.audience || !to || !reached) return;
-    if (this.audience.delivered(to, instance)) {
-      this.log(`${to} had been quiet for an hour; that was the last it hears until it is used again`);
-    }
+    this.audience.delivered(to, instance);
   }
 
   // ---- the three things ----------------------------------------------------

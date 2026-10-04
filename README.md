@@ -441,7 +441,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.apns.*` | empty | Apple team ID, key ID, `.p8` path and topic, for telling an iPhone something while the app is closed |
 | `nikui.keepAwake` | `false` | Keep this laptop awake while NikUI listens for your phone — also switchable from the phone |
 | `nikui.lidClosed` | `false` | Keep working with the lid closed while Claude works, then sleep — needs your password once |
-| `nikui.notifyDevices` | needs-you, quota, failed, CI | Which things are worth sending to a paired phone |
+| `nikui.notifyDevices` | needs-you, quota, failed, CI | Which things are worth sending to a paired phone, on top of whatever pops up on the laptop |
 
 ### One place for all of it
 
@@ -523,18 +523,15 @@ that buzzes. Work nobody steered from a phone goes to whichever phone was most
 recently in a hand, because most instances are started at the laptop and the
 alternative is silence for nearly everything.
 
-The hour is not a mute. The case this exists for is the ninety-minute job: you
-sent it, went away, and the answer is what you left to wait for. So the rule is
-about what a phone asked for rather than only about the clock:
-
-- It hears about work it steered, **however long that took**.
-- Delivering to one that has since gone quiet is **the last thing it hears** —
-  after that it is dormant and is told nothing at all.
-- Using the app wakes it, and it hears everything again.
-
-Forty minutes: a notification, phone still awake. Ninety: still a notification,
-and then silence until you pick it up. `src/audience.js` is the whole rule, and
-`test/audience.test.js` walks every case above with the clock in its hand.
+Nothing is dropped for a phone left alone. A phone nobody has touched for
+hours is the one in a pocket out of the house, and whatever the laptop would
+say is what it is there for — so it hears about work it steered however long
+that took, and everything after. When no phone has been seen at all, as right
+after the window reloads, every paired device is told. And whatever pops up on
+the laptop goes to the phone too: `nikui.notifyWhenDone`, `notifyCI` and
+`notifyOnAttention` switch the same kinds on for it, whatever
+`notifyDevices` says. `src/audience.js` is the whole rule, and
+`test/audience.test.js` walks it with the clock in its hand.
 
 ### A command on this machine, from the phone
 

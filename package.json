@@ -765,7 +765,7 @@
             },
             "turnFinished": {
               "type": "boolean",
-              "description": "Any turn finished. Off by default: four agents finishing overnight is a phone buzzing all night."
+              "description": "Any turn finished. Sent anyway while nikui.notifyWhenDone is on: whatever pops up on the laptop also goes to the phone."
             }
           },
           "additionalProperties": false,

@@ -17,11 +17,13 @@
 
   const PREFS = 'nikui.app.notify';
 
-  // The same three the laptop tells anybody about by default, and the same
-  // fourth left off for the same reason: four agents finishing overnight is a
-  // phone buzzing all night, and a notification you learn to ignore is worse
-  // than no notification at all.
-  const DEFAULTS = { on: false, needsYou: true, quota: true, failed: true, ci: true, turnFinished: false };
+  // Everything on: the laptop decides what is worth sending — whatever pops up
+  // on it comes here too, for somebody out of the house with only the phone —
+  // and these are for turning one kind off on the phone alone.
+  const DEFAULTS = { on: false, needsYou: true, quota: true, failed: true, ci: true, turnFinished: true };
+  // Prefs saved before that had a turn finishing switched off by default,
+  // written down as if somebody had chosen it.
+  const SHAPE = 2;
 
   // What each kind is called on a screen, so the switches read as things that
   // happen rather than as the names of events.
@@ -30,7 +32,7 @@
     ['failed', 'failed', 'An instance failed', 'It stopped without finishing'],
     ['quota', 'quota', 'The usage limit', 'When it runs out, and when it comes back'],
     ['ci', 'ci', 'CI on a pull request', 'Green, failed, or no CI at all'],
-    ['turnFinished', 'turn-finished', 'A turn finished', 'Every time any instance finishes — noisy by design']
+    ['turnFinished', 'turn-finished', 'A turn finished', 'When your laptop says an instance is done']
   ];
 
   const plugins = () => (window.Capacitor && window.Capacitor.Plugins) || null;
@@ -46,11 +48,15 @@
   const appleToken = () => ours('AppleToken');
 
   function read() {
-    try { return Object.assign({}, DEFAULTS, JSON.parse(window.localStorage.getItem(PREFS)) || {}); }
-    catch (_) { return Object.assign({}, DEFAULTS); }
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(PREFS)) || {};
+      if (saved.shape !== SHAPE) delete saved.turnFinished;
+      return Object.assign({}, DEFAULTS, saved);
+    } catch (_) { return Object.assign({}, DEFAULTS); }
   }
 
   function write(next) {
+    next.shape = SHAPE;
     try { window.localStorage.setItem(PREFS, JSON.stringify(next)); } catch (_) { /* nothing to do */ }
     return next;
   }

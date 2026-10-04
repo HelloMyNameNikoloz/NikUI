@@ -583,7 +583,7 @@ const record = (name, ok) => {
     record('handed a secret for listening by the laptop, over the socket',
       await phone.until('/^[A-Za-z0-9_-]{43}$/.test(window.__buzz.secret() || "")', 6000));
     record('told which kinds are wanted',
-      (await phone.evaluate('window.__buzz.kinds().join()')) === 'needs-you,failed,quota,ci');
+      (await phone.evaluate('window.__buzz.kinds().join()')) === 'needs-you,failed,quota,ci,turn-finished');
     record('and Android is asked to leave it alone when saving battery',
       await phone.until('window.__buzz.unrestricted() === true', 6000));
 
@@ -607,9 +607,9 @@ const record = (name, ok) => {
     record('and different news does not',
       (await phone.evaluate(`window.NikNotify.idFor('needs-you:x') !== window.NikNotify.idFor('failed:x')`)) === true);
 
-    // Every turn finishing is off by default on both ends, for the same reason:
-    // four agents finishing overnight is a phone buzzing all night. Switching
-    // it on and off again is the check that these switches do anything.
+    // A turn finishing is on by default, because the laptop decides what to
+    // send. Switching it off and on again is the check that these switches do
+    // anything.
     const flip = () => phone.evaluate(`(() => {
       const row = [...document.querySelectorAll('.row')].find(r => /A turn finished/.test(r.textContent));
       row.click();
@@ -618,15 +618,15 @@ const record = (name, ok) => {
     await flip();
     await phone.evaluate('window.__buzz.clear()');
     await notifier.finished({ id: session.id, customTitle: 'app check' });
-    record('a kind this phone switched on is shown',
-      await phone.until('window.__buzz.shown().length === 1', 6000));
+    await wait(400);
+    record('a kind this phone switched off is carried down the socket but not shown',
+      (await phone.evaluate('window.__buzz.shown().length')) === 0);
 
     await flip();
     await phone.evaluate('window.__buzz.clear()');
     await notifier.finished({ id: session.id, customTitle: 'app check' });
-    await wait(400);
-    record('and one it switched off is carried down the socket but not shown',
-      (await phone.evaluate('window.__buzz.shown().length')) === 0);
+    record('and switched back on, it is shown',
+      await phone.until('window.__buzz.shown().length === 1', 6000));
 
     await phone.evaluate('window.__buzz.clear()');
     await phone.evaluate(`(() => {
@@ -640,9 +640,8 @@ const record = (name, ok) => {
     //
     // Broadcasting is fine with one phone and wrong with two: you send a prompt
     // from the phone in your hand and the tablet on the table buzzes about it.
-    // And a phone that has been in a drawer for an hour is not somebody waiting
-    // — except for the thing it asked for before it went in the drawer, which
-    // is the entire reason to send work from a phone at all.
+    // But nothing is ever dropped: a phone untouched for hours is the one in a
+    // pocket out of the house, which is the entire reason for any of this.
     {
       let at = Date.now();
       const time = { now: () => at, on: (ms) => { at += ms; } };
@@ -654,14 +653,10 @@ const record = (name, ok) => {
         toSockets: (message) => laptop.notifyDevices(message)
       });
 
-      // Turn-finished is the one this phone switched on and off again above.
-      await flip();
       await phone.evaluate('window.__buzz.clear()');
-
       await aimed.finished({ id: 'nobody', customTitle: 'unasked for' });
-      await wait(400);
-      record('work no phone asked for wakes no phone',
-        (await phone.evaluate('window.__buzz.shown().length')) === 0);
+      record('work started at the laptop, with no phone seen yet, still reaches the phone',
+        await phone.until('window.__buzz.shown().length === 1', 6000));
 
       who.steered(session.id, paired.id);
       await phone.evaluate('window.__buzz.clear()');
@@ -669,34 +664,16 @@ const record = (name, ok) => {
       record('the phone that sent the prompt is told',
         await phone.until('window.__buzz.shown().length === 1', 6000));
 
-      // Forty minutes: still somebody holding a phone.
+      // Five hours in a pocket, and everything after it too.
       who.steered(session.id, paired.id);
-      time.on(40 * 60 * 1000);
+      time.on(5 * 60 * 60 * 1000);
       await phone.evaluate('window.__buzz.clear()');
       await aimed.finished({ id: session.id, customTitle: 'app check' });
-      record('forty minutes later it is still told',
+      record('five hours later it is still told',
         await phone.until('window.__buzz.shown().length === 1', 6000));
-
-      // Ninety: past the hour, and still owed, because it asked.
-      who.steered(session.id, paired.id);
-      time.on(90 * 60 * 1000);
       await phone.evaluate('window.__buzz.clear()');
       await aimed.finished({ id: session.id, customTitle: 'app check' });
-      record('ninety minutes later it is told anyway, because it asked',
-        await phone.until('window.__buzz.shown().length === 1', 6000));
-
-      // And that was the last of it.
-      await phone.evaluate('window.__buzz.clear()');
-      await aimed.finished({ id: session.id, customTitle: 'app check' });
-      await wait(500);
-      record('and after that it hears nothing, because it is in a drawer',
-        (await phone.evaluate('window.__buzz.shown().length')) === 0);
-
-      // Until somebody picks it up.
-      who.active(paired.id);
-      await phone.evaluate('window.__buzz.clear()');
-      await aimed.finished({ id: session.id, customTitle: 'app check' });
-      record('picking the phone up brings it back',
+      record('and so is the next thing, untouched',
         await phone.until('window.__buzz.shown().length === 1', 6000));
 
       // A second phone that never asked for this hears none of it.
@@ -708,8 +685,6 @@ const record = (name, ok) => {
       record('and the message names the phone it is for, not the room',
         (await phone.evaluate('window.__buzz.shown().length')) === 1);
       devices.forget(other.id);
-
-      await flip();
     }
 
     record('the phone says whether it hears the laptop while closed',

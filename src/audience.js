@@ -1,36 +1,22 @@
 'use strict';
 
 /**
- * Which phone should be told, and when it should stop being told.
+ * Which phone should be told.
  *
  * Broadcasting was fine when there was one phone. With two it is wrong in a way
  * that matters: you send a prompt from the phone in your hand, and the tablet on
- * the kitchen table buzzes about it an hour later. So a notification has an
- * owner — the device that asked for the work — and only the owner hears about
- * it.
+ * the kitchen table buzzes about it. So a notification has an owner — the
+ * device that asked for the work — and only the owner hears about it.
  *
- * The second half is about not buzzing a phone nobody is holding. A device that
- * has not been used for an hour is not somebody waiting for an answer; it is a
- * phone in a drawer. But the hour cannot simply silence it, because the whole
- * point of this feature is the job that takes ninety minutes — you sent it,
- * went away, and the answer is exactly what you wanted to know.
- *
- * So the rule is about *what it asked for* rather than only about the clock:
- *
- *   A device hears about an instance it steered, however long that took.
- *   Delivering to one that has since gone quiet is the last thing it hears:
- *   after that it is dormant, and dormant devices are told nothing at all.
- *   Using the app again wakes it, and it hears everything once more.
- *
- * Which gives the behaviour somebody actually wants. Forty minutes: a
- * notification, and the phone is still awake. Ninety: still a notification,
- * because you are the one who asked — and then silence, until you pick the
- * phone up.
+ * What this no longer does is decide a phone is not worth telling because it
+ * has not been used for a while. A phone nobody has touched for two hours is
+ * the phone in the pocket of somebody who left the house, and anything the
+ * laptop would say is exactly what they want to hear. So nothing is ever
+ * dropped here: when nobody owns the news it goes to the phone held most
+ * recently, and when no phone has been seen at all — the window was just
+ * reloaded — it goes to every paired device.
  */
 
-// Long enough that a lunch break does not count as putting the phone down, and
-// short enough that a phone left overnight is not still being buzzed at nine in
-// the morning by something you asked for at six.
 const AWAKE_MS = 60 * 60 * 1000;
 
 class Audience {
@@ -41,7 +27,7 @@ class Audience {
     const d = deps || {};
     this.now = d.now || (() => Date.now());
     this.awakeMs = d.awakeMs || AWAKE_MS;
-    /** deviceId -> { lastActiveAt, dormant } */
+    /** deviceId -> { lastActiveAt } */
     this.devices = new Map();
     /** instanceId -> { device, at } */
     this.owners = new Map();
@@ -52,7 +38,7 @@ class Audience {
   seat(id) {
     let seat = this.devices.get(id);
     if (!seat) {
-      seat = { lastActiveAt: 0, dormant: false };
+      seat = { lastActiveAt: 0 };
       this.devices.set(id, seat);
     }
     return seat;
@@ -61,14 +47,13 @@ class Audience {
   /**
    * A device did something — opened a screen, asked for the status, anything.
    *
-   * This is what "using the app" means, and it is the only thing that clears
-   * dormancy: a phone that is being looked at is a phone worth telling.
+   * This is what "using the app" means: the phone most recently in a hand is
+   * the one told about work nobody in particular asked for.
    */
   active(deviceId) {
     if (!deviceId) return;
     const seat = this.seat(deviceId);
     seat.lastActiveAt = this.now();
-    seat.dormant = false;
   }
 
   /**
@@ -96,13 +81,8 @@ class Audience {
 
   awake(deviceId) {
     const seat = this.devices.get(deviceId);
-    if (!seat || seat.dormant) return false;
+    if (!seat) return false;
     return this.now() - seat.lastActiveAt <= this.awakeMs;
-  }
-
-  dormant(deviceId) {
-    const seat = this.devices.get(deviceId);
-    return !!(seat && seat.dormant);
   }
 
   /**
@@ -121,39 +101,23 @@ class Audience {
     // most instances are started at the laptop, and without it a phone would
     // only ever hear about work it had sent itself — which is silence for
     // nearly everything somebody would want to be told about.
-    const id = (owner && owner.device) || this.latest || this.nearest();
-    if (!id) return null;
-    // Dormant is the end of it until somebody picks the phone up. Everything
-    // else — awake, or merely owed because it asked for this — is told.
-    if (this.dormant(id)) return null;
-    return id;
+    // Null means nobody has been seen since this window started: everyone.
+    return (owner && owner.device) || this.latest || this.nearest();
   }
 
-  /** The phone most recently in somebody's hand, if any of them still is. */
+  /** The phone most recently in somebody's hand, however long ago. */
   nearest() {
     let best = null;
     for (const [id, seat] of this.devices) {
-      if (seat.dormant || !this.awake(id)) continue;
       if (!best || seat.lastActiveAt > best.at) best = { id, at: seat.lastActiveAt };
     }
     return best ? best.id : null;
   }
 
-  /**
-   * Said, and what that costs.
-   *
-   * Telling a phone that has been quiet for an hour is allowed once, because it
-   * asked for the thing it is being told about. It is also the last thing it
-   * hears: anything after that is a phone in a drawer being buzzed about work
-   * nobody is waiting for.
-   */
+  /** Said: the instance's news has reached its owner, and is nobody's now. */
   delivered(deviceId, instanceId) {
-    if (!deviceId) return false;
     if (instanceId) this.owners.delete(String(instanceId));
-    const seat = this.seat(deviceId);
-    const stale = this.now() - seat.lastActiveAt > this.awakeMs;
-    if (stale) seat.dormant = true;
-    return stale;
+    return false;
   }
 
   /** For the status sheet and the tests: what this thinks is going on. */
@@ -163,7 +127,6 @@ class Audience {
       out.push({
         device: id,
         lastActiveAt: seat.lastActiveAt,
-        dormant: seat.dormant,
         awake: this.awake(id)
       });
     }
