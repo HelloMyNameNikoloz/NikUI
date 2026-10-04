@@ -268,9 +268,14 @@ class Notifier {
     });
   }
 
-  /** An instance that is no longer waiting can announce itself again later. */
+  /**
+   * An instance that has moved on can announce itself again later. Resting in
+   * `done` is not moving on: clearing the note there meant every second
+   * change to a finished instance — CI polled, the cost recounted — said "is
+   * done" all over again, every half a minute until somebody opened it.
+   */
   settled(session) {
-    if (session.status === 'waiting' || session.status === 'error') return;
+    if (['waiting', 'error', 'done'].includes(session.status)) return;
     this.told.delete(session.id);
   }
 

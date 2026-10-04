@@ -204,6 +204,17 @@ module.exports = async function () {
   window2.emit('session-changed', { id: 'f1', label: '1327', status: 'done', items: [] });
   await new Promise((r) => setTimeout(r, 120));
   checkEqual('and resting there does not say it again', sent.length, 2);
+  // A finished instance keeps changing — CI polled, the cost recounted — and
+  // none of that is it finishing again, however many times it happens.
+  for (let i = 0; i < 6; i++) {
+    window2.emit('session-changed', { id: 'f1', label: '1327', status: 'done', items: [] });
+  }
+  await new Promise((r) => setTimeout(r, 120));
+  checkEqual('nor does anything else changing while it rests', sent.length, 2);
+  window2.emit('session-changed', { id: 'f1', label: '1327', status: 'working', items: [] });
+  window2.emit('session-changed', { id: 'f1', label: '1327', status: 'done', items: [] });
+  await new Promise((r) => setTimeout(r, 120));
+  checkEqual('but the next turn ending is news again', sent.length, 4);
   stopWatching();
 
   suite('said the way the laptop says it');
