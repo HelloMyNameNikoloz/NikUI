@@ -158,6 +158,13 @@ owns the whole surface.
   reprinted on every turn. They appear in the `/` palette tagged *NikUI*, and
   they are yours to write: `nikui.promptSnippets` maps a word to its text, your
   entries merged over the built-in ones, and an empty string switches one off.
+  `/review <PR or issue link>` reads it with `gh` and `git` without changing
+  anything — requested changes, unresolved threads, conflicts, failing CI — and
+  answers with a plan; on its own it reviews this branch's PR. `/implement`
+  then does that plan (or what you wrote with it): everything that can be done
+  from the repo, tested to 95%+ of the changed lines, committed locally, ending
+  with the push command and, only if truly needed, follow-up PRs or issues it
+  did not create. Shadows the CLI's own `/review`.
   `/table` asks for the current plan as a table — 🟢 done, 🟡 in progress,
   🔴 not started — scoped to the task in hand rather than the project. `/lean`
   asks for the task in few, wide steps: one batched look, small edits, one

@@ -1,4 +1,5 @@
 'use strict';
+const { findTicket } = require('../src/ticket.js');
 
 // What a slash in the composer offers.
 //
@@ -185,4 +186,25 @@ module.exports = function () {
       out.sent, 'fix the refund path\n\nTHE DECISIONS\n\nAS A TABLE');
     checkEqual('and the prompt says which were used', out.used, ['decisions', 'table']);
   }
+
+  suite('/review and /implement');
+  {
+    const { expand } = require('../media/snippets.js');
+    const shipped = require('../package.json').contributes.configuration;
+    const blocks = Array.isArray(shipped) ? shipped : [shipped];
+    const defaults = blocks.map((b) => b.properties['nikui.promptSnippets']).find(Boolean).default;
+    check('both ship', /implementation plan/.test(defaults.review) && /Ready to push/.test(defaults.implement));
+    check('neither names a number that would rename the instance', !findTicket(defaults.review) && !findTicket(defaults.implement));
+    const out = expand('/review https://github.com/o/r/pull/1210', defaults);
+    checkEqual('the link is what you see', [out.text, out.used], ['https://github.com/o/r/pull/1210', ['review']]);
+    check('and the model gets it with the instruction', out.sent.startsWith('https://github.com/o/r/pull/1210\n\nReview the pull request'));
+    const bare = expand('/implement', defaults);
+    check('on its own it still says something', bare.text === '' && bare.sent === defaults.implement);
+    const { Session } = require('../src/session.js');
+    const s = new Session({ cwd: '/tmp' });
+    let sent = null;
+    s.send = (text, a, opts) => { sent = opts.sent; };
+    checkEqual('and is sent, not dropped as empty', [s.submit('', [], { sent: bare.sent, snippets: ['implement'] }), sent], ['sent', defaults.implement]);
+  }
+
 };

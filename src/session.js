@@ -483,7 +483,8 @@ class Session extends EventEmitter {
    * genuinely finished.
    */
   submit(text, attachments, opts) {
-    const hasContent = String(text || '').trim() || (attachments && attachments.length);
+    // A snippet on its own (`/review`) shows nothing of yours but still sends.
+    const hasContent = String(text || '').trim() || String((opts && opts.sent) || '').trim() || (attachments && attachments.length);
     if (!hasContent) return null;
     if (this.inTurn || this.queue.length) {
       this.enqueue(text, attachments, opts);
