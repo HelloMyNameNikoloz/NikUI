@@ -200,11 +200,58 @@ module.exports = async function () {
   window2.emit('session-changed', { id: 'f1', label: '1327', status: 'done', items: [] });
   await new Promise((r) => setTimeout(r, 120));
   checkEqual('a turn that ends reaches the devices that asked', sent.length, 2);
-  check('by name', /1327 finished/.test(sent[0]));
+  check('by name, as the laptop says it', /1327 is done/.test(sent[0]));
   window2.emit('session-changed', { id: 'f1', label: '1327', status: 'done', items: [] });
   await new Promise((r) => setTimeout(r, 120));
   checkEqual('and resting there does not say it again', sent.length, 2);
   stopWatching();
+
+  suite('said the way the laptop says it');
+
+  const told = [];
+  const echo = new Notifier({
+    devices, vapid,
+    settings: () => ({ turnFinished: true }),
+    send: (target, message) => { told.push(message); return Promise.resolve({ ok: true }); }
+  });
+  const window3 = new EventEmitter();
+  window3.off = window3.removeListener;
+  const stopEcho = echo.watch(window3);
+  window3.emit('session-changed', { id: 'g1', label: '1400', status: 'done', items: [
+    { kind: 'text', text: '## Fixed the **flaky** test\nIt was a timer.' }, { kind: 'result' }] });
+  await new Promise((r) => setTimeout(r, 120));
+  checkEqual('a finished turn says the first line of its answer',
+    told[0] && told[0].body, 'Fixed the flaky test');
+  told.length = 0;
+  window3.emit('session-changed', { id: 'g2', label: '1401', status: 'done', items: [
+    { kind: 'text', text: 'half' }, { kind: 'result', interrupted: true }] });
+  await new Promise((r) => setTimeout(r, 120));
+  checkEqual('a turn you stopped yourself is not news', told.length, 0);
+
+  window3.emit('ci-result', { id: 'g3', label: '1402' },
+    { phase: 'failed', pr: { number: 88, title: 'Faster boot' }, failing: ['lint', 'unit'] });
+  await new Promise((r) => setTimeout(r, 120));
+  checkEqual('CI that failed reaches the phone', told[0] && told[0].title, 'PR #88 failed');
+  checkEqual('naming what failed and where', told[0] && told[0].body, 'lint, unit · 1402');
+  checkEqual('as one notification per instance', told[0] && told[0].tag, 'ci:g3');
+  told.length = 0;
+  window3.emit('ci-result', { id: 'g3', label: '1402' }, { phase: 'passed', pr: { number: 88, title: 'Faster boot' } });
+  await new Promise((r) => setTimeout(r, 120));
+  checkEqual('and green says so', told[0] && told[0].title, 'PR #88 is green');
+  checkEqual('with the PR it is about', told[0] && told[0].body, 'Faster boot · 1402');
+  told.length = 0;
+  window3.emit('ci-result', { id: 'g3', label: '1402' }, { phase: 'running' });
+  await new Promise((r) => setTimeout(r, 120));
+  checkEqual('a build still running is not news', told.length, 0);
+  stopEcho();
+
+  const noCi = new Notifier({
+    devices, vapid,
+    settings: () => ({ ci: false }),
+    send: (target, message) => { told.push(message); return Promise.resolve({ ok: true }); }
+  });
+  await noCi.ci({ id: 'g4', label: 'x' }, { phase: 'passed' });
+  checkEqual('and CI can be turned off', told.length, 0);
 
   suite('a device that is gone stops being written to');
 

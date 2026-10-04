@@ -21,7 +21,7 @@
   // fourth left off for the same reason: four agents finishing overnight is a
   // phone buzzing all night, and a notification you learn to ignore is worse
   // than no notification at all.
-  const DEFAULTS = { on: false, needsYou: true, quota: true, failed: true, turnFinished: false };
+  const DEFAULTS = { on: false, needsYou: true, quota: true, failed: true, ci: true, turnFinished: false };
 
   // What each kind is called on a screen, so the switches read as things that
   // happen rather than as the names of events.
@@ -29,6 +29,7 @@
     ['needsYou', 'needs-you', 'Something needs an answer', 'An instance is waiting and cannot go on'],
     ['failed', 'failed', 'An instance failed', 'It stopped without finishing'],
     ['quota', 'quota', 'The usage limit', 'When it runs out, and when it comes back'],
+    ['ci', 'ci', 'CI on a pull request', 'Green, failed, or no CI at all'],
     ['turnFinished', 'turn-finished', 'A turn finished', 'Every time any instance finishes — noisy by design']
   ];
 
@@ -124,6 +125,10 @@
         // Something that cannot go on without you is worth a sound. The rest
         // is worth a line on a lock screen and nothing more.
         channelId: message.kind === 'needs-you' ? 'nikui-needs-you' : 'nikui-news',
+        // What the laptop's banner says, as it says it: the line under the
+        // title is the answer, and it can run to more than one line.
+        largeBody: String(message.body || '').slice(0, 300),
+        group: 'nikui',
         smallIcon: 'ic_stat_nikui',
         extra: { session: message.session || null }
       }]
@@ -242,7 +247,7 @@
         }).catch(function () {});
         api.createChannel({
           id: 'nikui-news', name: 'Everything else', importance: 3,
-          description: 'Finished turns, failures, the usage limit', visibility: 1
+          description: 'Finished turns, CI, failures, the usage limit', visibility: 1
         }).catch(function () {});
       }
       if (api.addListener) {

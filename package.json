@@ -743,6 +743,7 @@
             "needsYou": true,
             "quota": true,
             "failed": true,
+            "ci": true,
             "turnFinished": false
           },
           "properties": {
@@ -757,6 +758,10 @@
             "failed": {
               "type": "boolean",
               "description": "An instance failed."
+            },
+            "ci": {
+              "type": "boolean",
+              "description": "CI on an instance's pull request finished: green, failed, or there is none."
             },
             "turnFinished": {
               "type": "boolean",

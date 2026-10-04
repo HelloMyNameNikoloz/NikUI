@@ -1694,6 +1694,9 @@ function watchForCi(manager, context, announce) {
       }
     },
     notify: (session, state) => {
+      // The phone hears it whatever the laptop's own banner is set to; which
+      // phones, and whether at all, is nikui.notifyDevices.ci.
+      manager.emit('ci-result', session, state);
       if (!setting('notifyCI', true)) return;
       if (!['passed', 'failed', 'none', 'error'].includes(state.phase)) return;
       if (setting('notifyWhenDoneSound', true)) chime();

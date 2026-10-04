@@ -441,7 +441,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.apns.*` | empty | Apple team ID, key ID, `.p8` path and topic, for telling an iPhone something while the app is closed |
 | `nikui.keepAwake` | `false` | Keep this laptop awake while NikUI listens for your phone — also switchable from the phone |
 | `nikui.lidClosed` | `false` | Keep working with the lid closed while Claude works, then sleep — needs your password once |
-| `nikui.notifyDevices` | needs-you, quota, failed | Which things are worth sending to a paired phone |
+| `nikui.notifyDevices` | needs-you, quota, failed, CI | Which things are worth sending to a paired phone |
 
 ### One place for all of it
 

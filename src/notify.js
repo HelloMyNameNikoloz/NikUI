@@ -1,6 +1,7 @@
 'use strict';
 
 const push = require('./push');
+const { summary } = require('./done');
 
 /**
  * What is worth waking a phone for.
@@ -61,6 +62,7 @@ class Notifier {
     if (kind === 'needs-you') return on.needsYou !== false;
     if (kind === 'quota') return on.quota !== false;
     if (kind === 'failed') return on.failed !== false;
+    if (kind === 'ci') return on.ci !== false;
     return false;
   }
 
@@ -197,11 +199,35 @@ class Notifier {
     });
   }
 
+  /** Said the way the laptop's banner says it: who, and the first line of the answer. */
   finished(session) {
+    const said = (session.items || []).filter((i) => i.kind === 'text').pop();
     return this.announce('turn-finished', {
-      title: `${label(session)} finished`,
-      body: 'The turn is done.',
+      title: `${label(session)} is done`,
+      body: summary(said),
       tag: 'finished:' + session.id,
+      session: session.id,
+      url: '/s/' + session.id
+    });
+  }
+
+  /**
+   * CI on the PR an instance pushed to has come to an end: the laptop's banner,
+   * word for word, so the phone and the laptop never disagree about a build.
+   */
+  ci(session, state) {
+    const s = state || {};
+    if (!['passed', 'failed', 'none', 'error'].includes(s.phase)) return Promise.resolve(null);
+    const pr = s.pr ? `PR #${s.pr.number}` : 'CI';
+    const title = s.phase === 'passed' ? `${pr} is green`
+      : s.phase === 'failed' ? `${pr} failed` : s.phase === 'none' ? `${pr} has no CI` : 'Cannot watch CI';
+    const body = s.phase === 'failed' ? `${(s.failing || []).join(', ')} · ${label(session)}`
+      : s.phase === 'error' ? `${s.message} · ${label(session)}`
+        : `${s.pr && s.pr.title ? s.pr.title + ' · ' : ''}${label(session)}`;
+    return this.announce('ci', {
+      title, body,
+      tag: 'ci:' + session.id,
+      renotify: true,
       session: session.id,
       url: '/s/' + session.id
     });
@@ -272,10 +298,13 @@ class Notifier {
       this.settled(session);
       if (finishing) {
         this.told.set(session.id, 'done');
-        this.finished(session);
+        // A turn you stopped yourself is not news, as on the laptop.
+        const last = (session.items || []).filter((i) => i.kind === 'result').pop();
+        if (!(last && last.interrupted)) this.finished(session);
       }
     });
     on('failed', (session, message) => this.failed(session, message));
+    on('ci-result', (session, state) => { if (session) this.ci(session, state); });
     on('paused', (pause) => this.paused(pause));
     on('resumed', (what) => this.resumed(what || {}));
 

@@ -68,6 +68,8 @@ const PREFS = [
     kind: 'toggle', fallback: true, label: 'When something fails' },
   { id: 'notify.quota', group: 'Notifications on your phone', key: 'notifyDevices', part: 'quota',
     kind: 'toggle', fallback: true, label: 'When the usage limit runs out, and when it resets' },
+  { id: 'notify.ci', group: 'Notifications on your phone', key: 'notifyDevices', part: 'ci',
+    kind: 'toggle', fallback: true, label: 'When CI on a pull request is green or fails' },
   { id: 'notify.turnFinished', group: 'Notifications on your phone', key: 'notifyDevices', part: 'turnFinished',
     kind: 'toggle', fallback: false, label: 'When a turn finishes', hint: 'Off by default: busy nights are loud.' },
 

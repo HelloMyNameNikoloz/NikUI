@@ -26,7 +26,7 @@ function store(values) {
   const now = Object.assign({
     model: '', effort: 'max', permissionMode: 'bypassPermissions', showThinking: true,
     pauseWhenQuotaRuns: true, keepAwake: false, lidClosed: false,
-    notifyDevices: { needsYou: true, quota: true, failed: true, turnFinished: false },
+    notifyDevices: { needsYou: true, quota: true, failed: true, ci: true, turnFinished: false },
     fontSize: 13, interruptOnSingleEscape: false, notifyOnAttention: true, autoTitleFromTicket: true
   }, values || {});
   const writes = [];
@@ -126,7 +126,7 @@ module.exports = async function () {
 
     await prefs.write('notify.turnFinished', true, s);
     checkEqual('a phone notification is merged into its object, keeping the rest',
-      s.now.notifyDevices, { needsYou: true, quota: true, failed: true, turnFinished: true });
+      s.now.notifyDevices, { needsYou: true, quota: true, failed: true, ci: true, turnFinished: true });
 
     const switched = [];
     await prefs.write('lid', true, Object.assign({}, s, { special: { lid: async (v) => switched.push(v) } }));
