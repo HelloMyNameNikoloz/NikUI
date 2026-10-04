@@ -306,22 +306,36 @@
       });
     }
 
-    // Keeping the socket open while the app is not on screen. Android allows
-    // it behind a quiet ongoing notification; iOS does not allow it at all,
-    // and says so rather than offering a switch that would do nothing.
+    // Being told with the phone locked and the app closed is not a second
+    // switch: it is what notifications on means. Android does it with a
+    // listener of the app's own, so this row only says whether it is working,
+    // and the one under it fixes the usual reason it is not. iOS cannot listen
+    // at all, and says so rather than offering a switch that would do nothing.
     const away = state.watching || { supported: false, running: false };
     if (wanted.on && allowed === 'granted') {
       if (away.supported) {
+        const words = {
+          listening: ['Listening', 'Notifications arrive with the phone locked or NikUI closed', 'good'],
+          connecting: ['Connecting', 'Reaching your laptop', ''],
+          refused: ['Reconnecting', 'Your laptop is handing this phone a new way in', ''],
+          waiting: ['Waiting', 'For your laptop to be reachable — it tries again on its own', ''],
+          off: ['Off', 'Starting…', '']
+        }[away.state] || ['Off', 'Starting…', ''];
         row(telling, {
-          label: 'Keep watching in the background',
-          hint: away.running
-            ? 'A quiet notification says so, because this phone requires one'
-            : 'Off — you are only told while NikUI is open',
-          value: away.running ? 'On' : 'Off',
-          tone: away.running ? 'good' : '',
-          tap: () => window.NikNotify.watch(!away.running).then((now) => { state.watching = now; draw(); }),
-          chevron: true
+          label: 'While NikUI is closed',
+          hint: words[1],
+          value: words[0],
+          tone: words[2]
         });
+        if (!away.unrestricted) {
+          row(telling, {
+            label: 'Let it run in the background',
+            hint: 'Battery saving can put NikUI to sleep, and then nothing arrives',
+            value: 'Allow',
+            tap: () => window.NikNotify.exempt(),
+            chevron: true
+          });
+        }
       } else if (state.apple && state.apple.supported) {
         // iOS cannot keep a socket open, so the only way to reach a closed app
         // is Apple's own network — which needs a token from this phone and an
@@ -866,8 +880,8 @@
     if (!api) return;
     const now = api.prefs();
     if (now.on) {
+      // Nothing to listen for means nothing to stay awake for: setPref stops it.
       api.setPref('on', false);
-      // Nothing to listen for means nothing to stay awake for.
       return api.watch(false).then((watching) => { state.watching = watching; draw(); });
     }
     return api.ask().then((verdict) => {
@@ -880,6 +894,13 @@
       api.setPref('on', true);
       buzz('medium');
       draw();
+      // On means with the phone locked too: start listening, and ask Android
+      // once to leave it alone when saving battery.
+      return api.listen().then((watching) => {
+        state.watching = watching;
+        draw();
+        if (watching.supported && !watching.unrestricted) api.exempt();
+      });
     });
   }
 
@@ -993,6 +1014,13 @@
     if (window.NikNotify) {
       window.NikNotify.permission().then((verdict) => { state.notify = verdict; draw(); });
       window.NikNotify.background().then((watching) => { state.watching = watching; draw(); });
+      // Coming back from Android's battery screen, or the listener getting through.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          window.NikNotify.background().then((watching) => { state.watching = watching; draw(); });
+        }
+      });
+      setTimeout(() => window.NikNotify.background().then((watching) => { state.watching = watching; draw(); }), 3000);
       window.NikNotify.apple().then((apple) => { state.apple = apple; draw(); });
     }
   }

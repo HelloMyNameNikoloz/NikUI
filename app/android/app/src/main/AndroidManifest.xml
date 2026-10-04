@@ -39,12 +39,24 @@
 
         <!-- The only honest way Android lets an app keep listening while it is
              not on screen: a service in the foreground, with a notification
-             saying so. dataSync is what it is: keeping one socket in step with
-             a laptop. -->
+             saying so. remoteMessaging is what it is: messages from another
+             device. Unlike dataSync it has no daily limit, and it may start
+             when the phone does. -->
         <service
             android:name=".watcher.WatchService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="remoteMessaging" />
+
+        <!-- Listening again after a restart or an update, without waiting for
+             somebody to open the app. -->
+        <receiver
+            android:name=".watcher.Boot"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -64,7 +76,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Keeping the socket open while the app is in a pocket, and nothing else. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Held for the moment it takes to raise one, so the phone does not fall
+         asleep half way through. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- So it can ask, once, to be left alone by battery saving. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- The key in the Keystore can be made to require a face or a finger before
          it will sign. Asking for that without declaring it does not fail the
          check: BiometricPrompt throws, and the app has no identity at all.

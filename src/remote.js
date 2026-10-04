@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('http');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { renderPage, randomNonce, jsonForScript } = require('./page');
@@ -115,6 +116,9 @@ class RemoteServer {
     this.server = null;
     this.port = 0;
     this.clients = new Set();
+    // Android phones' background services, each holding the notification
+    // stream open: { device, hash, res, timer }.
+    this.listeners = new Set();
     this.fleetClients = new Set();
     this.seq = 0;
     this.refusals = [];
@@ -183,7 +187,75 @@ class RemoteServer {
       client.post(Object.assign({ type: '@notify' }, message));
       told++;
     }
+    const event = 'event: notify\ndata: ' + JSON.stringify(Object.assign({ type: '@notify' }, message)) + '\n\n';
+    for (const listener of [...this.listeners]) {
+      if (only && listener.device !== only) continue;
+      if (this.writeListener(listener, event)) told++;
+    }
     return told;
+  }
+
+  /**
+   * A secret for this phone's background service, handed over on the socket it
+   * has just signed in on — sealed, if the socket is — and only to a paired
+   * device. A new one replaces the old, so a stream still open with the old one
+   * is closed the next time anything is written to it.
+   */
+  issueListener(client) {
+    const device = client && client.device;
+    if (!this.devices || !device || device.kind !== 'device') return false;
+    const secret = crypto.randomBytes(32).toString('base64url');
+    if (!this.devices.setListener(device.id, sha256(secret))) return false;
+    client.post({ type: '@listener', secret });
+    this.log(`${device.name} can be told things while NikUI is closed`);
+    return true;
+  }
+
+  /**
+   * The stream an Android phone's background service holds open, so it is told
+   * while the app is closed and the screen is off.
+   *
+   * Server-sent events, opened with the listener secret. It carries @notify and
+   * nothing else — no instance, no prompt, nothing that can be sent back — so
+   * the secret is worth exactly the notifications that phone is shown anyway.
+   */
+  serveListener(req, res) {
+    const offered = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(String(req.headers.authorization || ''));
+    const device = offered && this.devices ? this.devices.byListener(sha256(offered[1])) : null;
+    if (!device) {
+      if (!this.allowAttempt(req, 'listen')) return plain(res, 429, 'Too many tries; wait a minute');
+      this.refuse(req, 'listener: no such secret');
+      return plain(res, 401, 'Not a listener');
+    }
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-accel-buffering': 'no'
+    });
+    if (req.socket) { req.socket.setTimeout(0); req.socket.setKeepAlive(true, LISTENER_PING_MS); }
+    res.write(': listening\n\n');
+    const listener = { device: device.id, hash: device.listener.hash, res, timer: null };
+    // Something every half minute, so neither end — nor tailscale between
+    // them — takes a quiet line for a dead one.
+    listener.timer = setInterval(() => this.writeListener(listener, ': ping\n\n'), LISTENER_PING_MS);
+    if (listener.timer.unref) listener.timer.unref();
+    this.listeners.add(listener);
+    const gone = () => { clearInterval(listener.timer); this.listeners.delete(listener); };
+    req.on('close', gone);
+    res.on('close', gone);
+    this.log(`${device.name} is listening in the background`);
+  }
+
+  /** Written only while the device still holds this secret; closed otherwise. */
+  writeListener(listener, text) {
+    const device = this.devices && this.devices.get(listener.device);
+    if (!device || !device.listener || device.listener.hash !== listener.hash) {
+      clearInterval(listener.timer);
+      this.listeners.delete(listener);
+      try { listener.res.end(); } catch (_) { /* already gone */ }
+      return false;
+    }
+    try { listener.res.write(text); return true; } catch (_) { return false; }
   }
 
   /**
@@ -294,6 +366,11 @@ class RemoteServer {
     if (!server) return Promise.resolve();
     this.server = null;
     for (const client of [...this.clients]) client.close(wire.CLOSE.GOING_AWAY, 'server stopping');
+    for (const listener of [...this.listeners]) {
+      clearInterval(listener.timer);
+      try { listener.res.end(); } catch (_) { /* already gone */ }
+    }
+    this.listeners.clear();
     this.clients.clear();
     this.fleetClients.clear();
     this.announceState();
@@ -470,6 +547,7 @@ class RemoteServer {
 
     if (req.method === 'POST' && route === '/pair') return this.pair(req, res);
     if (req.method === 'POST' && route === '/push/subscribe') return this.subscribe(req, res);
+    if (req.method === 'GET' && route === '/notify/listen') return this.serveListener(req, res);
     if (req.method !== 'GET' && req.method !== 'HEAD') return plain(res, 405, 'Only GET');
 
     // The key arrived in the address bar; put it in a cookie and take it back
@@ -1522,6 +1600,7 @@ class RemoteClient {
     // and it is stored against that device's record — so forgetting the device
     // forgets where to reach it, with no second list to remember to clean.
     if (msg.type === '@apple') return this.server.rememberApple(this.device, msg.token);
+    if (msg.type === '@listen') return this.server.issueListener(this);
 
     if (msg.type.charCodeAt(0) === 64) return; // '@' frames are the transport's, not the session's
     if (!this.binding) return;
@@ -1625,10 +1704,16 @@ function html(res, body, csp) {
 function isAppRoute(method, route) {
   if (route === '/health' || route === '/push/key') return method === 'GET' || method === 'HEAD';
   if (route === '/pair' || route === '/push/subscribe') return method === 'POST';
+  if (route === '/notify/listen') return method === 'GET';
   return false;
 }
 
 const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+// How often a background listener hears something, even if only a ping.
+const LISTENER_PING_MS = 30000;
+
+const sha256 = (text) => crypto.createHash('sha256').update(String(text)).digest('hex');
 
 // A subscription is only accepted for a minute after the device signed for it.
 const SUBSCRIBE_WINDOW_MS = 60000;

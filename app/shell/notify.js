@@ -60,7 +60,9 @@
   function setPref(key, value) {
     const next = read();
     next[key] = value;
-    return write(next);
+    write(next);
+    sync();
+    return next;
   }
 
   /** Whether this kind, right now, is worth interrupting somebody for. */
@@ -115,6 +117,8 @@
 
   function raise(message) {
     if (!message || !wants(message.kind)) return Promise.resolve(false);
+    // The phone's own listener has raised this one already, with the chime.
+    if (listening) return Promise.resolve(false);
     const api = local();
     if (!api) return Promise.resolve(false);
     return api.schedule({
@@ -124,7 +128,9 @@
         body: String(message.body || '').slice(0, 300),
         // Something that cannot go on without you is worth a sound. The rest
         // is worth a line on a lock screen and nothing more.
-        channelId: message.kind === 'needs-you' ? 'nikui-needs-you' : 'nikui-news',
+        // Both made natively (watcher/Chime.java), with the laptop's chime as
+        // their sound and its three rising notes as their buzz.
+        channelId: message.kind === 'needs-you' ? 'nikui-chime-urgent' : 'nikui-chime',
         // What the laptop's banner says, as it says it: the line under the
         // title is the answer, and it can run to more than one line.
         largeBody: String(message.body || '').slice(0, 300),
@@ -145,27 +151,35 @@
         id: idFor('nikui-test'),
         title: 'NikUI can reach you',
         body: 'That is all this one was for.',
-        channelId: 'nikui-news',
+        channelId: 'nikui-chime',
         smallIcon: 'ic_stat_nikui'
       }]
     }).then(function () { return true; }).catch(function () { return false; });
   }
 
-  // ---- watching while the app is not on screen -------------------------------
+  // ---- listening while the app is not running --------------------------------
 
   /**
-   * Android can keep the socket open behind a quiet ongoing notification, so
-   * the phone is told while it is in a pocket. iPhone cannot: iOS stops an app
-   * listening the moment it leaves the screen, and there is no setting, no
-   * entitlement and no trick that changes it — so the honest thing is to say
-   * so rather than offer a switch that does nothing.
+   * Notifications on means notifications with the phone locked and the app
+   * closed — anything less is not what anybody means by the switch. On Android
+   * a service of the app's own holds a connection of its own to the laptop
+   * (watcher/WatchService.java), opened with a secret that can do nothing but
+   * listen. The laptop hands that secret over on this socket, which is the one
+   * that has already proved who this phone is.
+   *
+   * iPhone cannot: iOS stops an app listening the moment it leaves the screen,
+   * so there the only way is Apple's — see below.
    *
    * @returns {Promise<{supported: boolean, running: boolean}>}
    */
+  let listening = false;
+
   function background() {
     const api = watcher();
     if (!api) return Promise.resolve({ supported: false, running: false });
-    return api.status().catch(function () { return { supported: false, running: false }; });
+    return api.status()
+      .then(function (now) { listening = !!(now && now.listening); return now; })
+      .catch(function () { return { supported: false, running: false }; });
   }
 
   function watch(on) {
@@ -174,6 +188,52 @@
     return (on ? api.start() : api.stop())
       .then(function () { return background(); })
       .catch(function () { return background(); });
+  }
+
+  const laptopOrigin = () => (window.NikApp && window.NikApp.laptop && window.NikApp.origin
+    ? window.NikApp.origin(window.NikApp.laptop()) : null);
+
+  /** The kinds the listener should raise: none at all when the switch is off. */
+  const wanted = () => {
+    const p = read();
+    return p.on ? KINDS.filter((k) => p[k[0]] !== false).map((k) => k[1]) : [];
+  };
+
+  /**
+   * Tells the listener what it needs, starts or stops it to match the switch,
+   * and resolves with whether it still needs a secret from the laptop.
+   */
+  function sync() {
+    const api = watcher();
+    if (!api || !api.configure) return Promise.resolve(false);
+    const on = read().on;
+    return api.configure({ origin: laptopOrigin(), kinds: wanted() })
+      .then(function (now) {
+        if (!now || !now.supported) return now;
+        if (on && !now.running) return api.start();
+        if (!on && now.enabled) return api.stop();
+        return now;
+      })
+      .then(function (now) {
+        listening = !!(now && now.listening);
+        return !!(on && now && !now.hasSecret);
+      })
+      .catch(function () { return false; });
+  }
+
+  /** sync, and if the listener has no secret, ask the laptop for one on this socket. */
+  function listen() {
+    return sync().then(function (needs) {
+      if (needs && window.nikLink) window.nikLink.postMessage({ type: '@listen' });
+      return background();
+    });
+  }
+
+  /** Ask Android to leave the listener alone when it is saving battery. */
+  function exempt() {
+    const api = watcher();
+    if (!api || !api.exempt) return Promise.resolve(null);
+    return api.exempt().catch(function () { return null; });
   }
 
   // ---- being told while the app is not running at all -------------------------
@@ -233,23 +293,14 @@
     else window.NikApp.go('index.html');
   }
 
+  /** The same, for one the phone's own listener raised: nothing to do if none was. */
+  function opened(event) {
+    if (event && event.session && window.NikApp) window.NikApp.go('conversation.html', { session: event.session });
+  }
+
   function start() {
     const api = local();
     if (api) {
-      // Two channels, so the phone's own settings can separate the one that
-      // should make a sound from the ones that should not. Created every time
-      // because creating one that exists is free and never creating it means a
-      // silent notification nobody can fix.
-      if (api.createChannel) {
-        api.createChannel({
-          id: 'nikui-needs-you', name: 'Needs an answer', importance: 5,
-          description: 'An instance is waiting for you', visibility: 1
-        }).catch(function () {});
-        api.createChannel({
-          id: 'nikui-news', name: 'Everything else', importance: 3,
-          description: 'Finished turns, CI, failures, the usage limit', visibility: 1
-        }).catch(function () {});
-      }
       if (api.addListener) {
         api.addListener('localNotificationActionPerformed', function (event) {
           open(event && event.notification);
@@ -257,21 +308,42 @@
       }
     }
 
+    // A notification the phone's own listener raised, tapped.
+    const native = watcher();
+    if (native && native.opened) {
+      native.opened().then(opened).catch(function () {});
+      if (native.addListener) native.addListener('opened', opened);
+    }
+    sync();
+
     window.addEventListener('message', function (event) {
       const message = event.data;
       if (!message) return;
       if (message.type === '@notify') return void raise(message);
+      // The secret for listening, asked for below.
+      if (message.type === '@listener') {
+        const api = watcher();
+        if (api && api.configure && message.secret) {
+          api.configure({ origin: laptopOrigin(), secret: message.secret, kinds: wanted() })
+            .then(function (now) { listening = !!(now && now.listening); })
+            .catch(function () {});
+        }
+        return;
+      }
       // A fresh socket has not been told where to reach this phone when it is
       // closed. Tokens outlive connections; the laptop's record of one does not
       // need to, because saying it again costs nothing.
       if (message.type === '@welcome' && window.nikLink) {
         offerApple(function (out) { window.nikLink.postMessage(out); });
+        // The listener asks for a secret only when it has none: a new one
+        // retires the old, so asking every time would be churn.
+        listen();
       }
     });
   }
 
   window.NikNotify = {
-    prefs, setPref, wants, raise, test, permission, ask, background, watch,
+    prefs, setPref, wants, raise, test, permission, ask, background, watch, sync, listen, exempt,
     apple, registerWithApple, offerApple,
     KINDS, DEFAULTS, idFor
   };

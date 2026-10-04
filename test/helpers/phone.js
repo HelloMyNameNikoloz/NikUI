@@ -95,17 +95,39 @@ const SOURCE = `(function () {
   // Which phone this is. A real one is one or the other; the stand-in is told,
   // because both branches of "how do I hear about this while the app is shut"
   // need driving and no single device has both.
+  // The listener holds a connection of its own; here it only remembers what it
+  // was told. It never says it is listening, so the page raises what it hears
+  // itself and the checks above can see it.
+  const watcherState = function () {
+    const all = shelf();
+    const supported = all.platform !== 'ios';
+    return {
+      supported: supported,
+      enabled: supported && !!all.watching,
+      running: supported && !!all.watching,
+      state: supported && all.watching ? 'waiting' : 'off',
+      listening: false,
+      origin: all.origin || null,
+      hasSecret: !!all.secret,
+      unrestricted: !!all.unrestricted,
+      platform: all.platform || 'android'
+    };
+  };
   window.Capacitor.Plugins.Watcher = {
-    status: function () {
+    status: function () { return Promise.resolve(watcherState()); },
+    start: function () { const all = shelf(); all.watching = true; keep(all); return Promise.resolve(watcherState()); },
+    stop: function () { const all = shelf(); all.watching = false; keep(all); return Promise.resolve(watcherState()); },
+    configure: function (options) {
       const all = shelf();
-      return Promise.resolve({
-        supported: all.platform !== 'ios',
-        running: all.watching,
-        platform: all.platform || 'android'
-      });
+      if (options.origin && options.origin !== all.origin) { all.origin = options.origin; all.secret = null; }
+      if (options.secret) all.secret = options.secret;
+      if (options.kinds) all.kinds = options.kinds;
+      keep(all);
+      return Promise.resolve(watcherState());
     },
-    start: function () { const all = shelf(); all.watching = true; keep(all); return Promise.resolve(); },
-    stop: function () { const all = shelf(); all.watching = false; keep(all); return Promise.resolve(); }
+    exempt: function () { const all = shelf(); all.unrestricted = true; keep(all); return Promise.resolve(watcherState()); },
+    opened: function () { return Promise.resolve({ session: null }); },
+    addListener: function () { return Promise.resolve({ remove: function () {} }); }
   };
 
   window.Capacitor.Plugins.Haptics = {
@@ -144,6 +166,9 @@ const SOURCE = `(function () {
     shown: function () { return shelf().shown; },
     channels: function () { return shelf().channels; },
     watching: function () { return shelf().watching; },
+    secret: function () { return shelf().secret || null; },
+    kinds: function () { return shelf().kinds || []; },
+    unrestricted: function () { return !!shelf().unrestricted; },
     clear: function () { const all = shelf(); all.shown = []; keep(all); },
     answerWith: function (verdict) { const all = shelf(); all.answer = verdict; keep(all); },
     buzzes: function () { return shelf().buzzes || []; },

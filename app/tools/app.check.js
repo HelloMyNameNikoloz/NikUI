@@ -577,10 +577,15 @@ const record = (name, ok) => {
     record('the switches for what to be told appear',
       await phone.until(`[...document.querySelectorAll('.row')]
         .some(r => /Something needs an answer/.test(r.textContent))`, 6000));
-    record('with a channel for the one that should make a sound',
-      (await phone.evaluate('window.__buzz.channels().indexOf("nikui-needs-you") >= 0')) === true);
-    record('and one for everything that should not',
-      (await phone.evaluate('window.__buzz.channels().indexOf("nikui-news") >= 0')) === true);
+    // On means with the phone locked too: no second switch for that.
+    record('and the listener for while the app is closed starts with them',
+      await phone.until('window.__buzz.watching() === true', 6000));
+    record('handed a secret for listening by the laptop, over the socket',
+      await phone.until('/^[A-Za-z0-9_-]{43}$/.test(window.__buzz.secret() || "")', 6000));
+    record('told which kinds are wanted',
+      (await phone.evaluate('window.__buzz.kinds().join()')) === 'needs-you,failed,quota,ci');
+    record('and Android is asked to leave it alone when saving battery',
+      await phone.until('window.__buzz.unrestricted() === true', 6000));
 
     await phone.evaluate('window.__buzz.clear()');
     notifier.settled({ id: session.id, status: 'idle' });
@@ -589,7 +594,7 @@ const record = (name, ok) => {
       await phone.until('window.__buzz.shown().length === 1', 8000));
     const shown = JSON.parse(await phone.evaluate('JSON.stringify(window.__buzz.shown()[0])'));
     record('saying which instance it is', /app check/.test(shown.title || ''));
-    record('on the channel that makes a sound', shown.channelId === 'nikui-needs-you');
+    record('on the channel with the laptop\'s chime, heads-up', shown.channelId === 'nikui-chime-urgent');
     record('carrying the instance, so a tap can open it',
       shown.extra && shown.extra.session === session.id);
     record('and its own icon rather than a white square',
@@ -707,15 +712,14 @@ const record = (name, ok) => {
       await flip();
     }
 
-    record('a phone that can keep watching is offered it',
+    record('the phone says whether it hears the laptop while closed',
       await phone.until(`[...document.querySelectorAll('.row')]
-        .some(r => /Keep watching in the background/.test(r.textContent))`, 6000));
-    await phone.evaluate(`(() => {
-      const row = [...document.querySelectorAll('.row')].find(r => /Keep watching in the background/.test(r.textContent));
-      row.click();
-    })()`);
-    record('and turning it on starts the watcher',
-      await phone.until('window.__buzz.watching() === true', 6000));
+        .some(r => /While NikUI is closed/.test(r.textContent))`, 6000));
+    record('rather than offering a second switch for it',
+      !(await phone.evaluate(`[...document.querySelectorAll('.row')]
+        .some(r => /Keep watching in the background/.test(r.textContent))`)));
+    record('and the listener is still running',
+      (await phone.evaluate('window.__buzz.watching()')) === true);
 
     // ---- the one door that goes through somebody else's machine --------------
     //

@@ -41,8 +41,8 @@ const TO_CLIENT = [
 // handshake agrees a key, every frame on the socket is one of these with a
 // message sealed in it. It is listed here because it is part of the protocol,
 // not an implementation detail of one end.
-const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate', '@box', '@notify'];
-const CONTROL_TO_HOST = ['@auth', '@box', '@apple'];
+const CONTROL_TO_CLIENT = ['@challenge', '@welcome', '@denied', '@device', '@refused', '@navigate', '@box', '@notify', '@listener'];
+const CONTROL_TO_HOST = ['@auth', '@box', '@apple', '@listen'];
 
 function quietSession() {
   const s = new Session({ cwd: '/tmp' });

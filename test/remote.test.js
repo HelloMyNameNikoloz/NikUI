@@ -31,6 +31,23 @@ function get(port, route, headers) {
   return request({ port, path: route, headers });
 }
 
+/** A stream held open, collecting what it is sent until it ends. */
+function stream(port, route, headers) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: route, headers }, (res) => {
+      const got = { status: res.statusCode, headers: res.headers, text: '', ended: false, req };
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { got.text += chunk; });
+      res.on('end', () => { got.ended = true; });
+      resolve(got);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+const settle = (ms) => new Promise((r) => setTimeout(r, ms || 60));
+
 function request(options) {
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -471,6 +488,43 @@ module.exports = async function () {
   const picture = await watcher.waitFor('init');
   checkEqual('and it sees the whole conversation', picture.sessionId, first.id);
 
+  suite('and can be told things while the app is closed');
+
+  watcher.send({ type: '@listen' });
+  const issued = await watcher.waitFor('@listener');
+  check('a paired device is handed a listener secret on its own socket',
+    /^[A-Za-z0-9_-]{43}$/.test(issued.secret || ''));
+  check('and only its hash is kept',
+    devices.get(phone.id).listener.hash.length === 64 && !JSON.stringify(devices.list()).includes(issued.secret));
+  const nobody = await get(port, '/notify/listen', { authorization: 'Bearer ' + 'x'.repeat(43) });
+  checkEqual('a made-up secret opens nothing', nobody.status, 401);
+  const bare = await get(port, '/notify/listen');
+  checkEqual('and nor does none', bare.status, 401);
+  const listening = await stream(port, '/notify/listen', { authorization: 'Bearer ' + issued.secret });
+  checkEqual('the secret opens the stream', listening.status, 200);
+  checkEqual('as server-sent events', listening.headers['content-type'], 'text/event-stream; charset=utf-8');
+  await settle();
+  const told = server.notifyDevices({ kind: 'ci', title: 'PR #9 is green', body: 'alpha', tag: 'ci:a' });
+  await settle();
+  check('a notification reaches it', /event: notify\ndata: .*PR #9 is green/.test(listening.text));
+  check('counted as told', told >= 2);
+  server.notifyDevices({ kind: 'ci', title: 'for somebody else', to: 'another-device' });
+  await settle();
+  check('and one meant for another device does not', !/somebody else/.test(listening.text));
+  const heard = listening.text;
+  watcher.messages = watcher.messages.filter((m) => !m || m.type !== '@listener');
+  watcher.send({ type: '@listen' });
+  const rotated = await watcher.waitFor('@listener');
+  check('asking again hands over a new secret', rotated.secret !== issued.secret);
+  server.notifyDevices({ kind: 'ci', title: 'after the new one', body: '' });
+  await settle();
+  check('which closes a stream still holding the old one',
+    listening.ended && !/after the new one/.test(listening.text.slice(heard.length)));
+  const old = await get(port, '/notify/listen', { authorization: 'Bearer ' + issued.secret });
+  checkEqual('and the old secret no longer opens anything', old.status, 401);
+  const relistening = await stream(port, '/notify/listen', { authorization: 'Bearer ' + rotated.secret });
+  checkEqual('the new one does', relistening.status, 200);
+
   suite('but it cannot steer');
 
   const held = first.items.length;
@@ -504,6 +558,9 @@ module.exports = async function () {
 
   devices.forget(phone.id);
   checkEqual('forgetting a device forgets where to reach it too', devices.subscribers().length, 0);
+  server.notifyDevices({ kind: 'ci', title: 'after forgetting', body: '' });
+  await settle();
+  check('and closes its background stream', relistening.ended && !/after forgetting/.test(relistening.text));
   const dropped = await watcher.waitClosed();
   check('the live socket is closed', !!dropped);
   const afterwards = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${first.id}`);

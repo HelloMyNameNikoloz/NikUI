@@ -206,6 +206,30 @@ class DeviceStore {
     return true;
   }
 
+  /**
+   * The secret an Android phone's background service opens the notification
+   * stream with. Only its hash is kept, on the device's own record, so
+   * forgetting the device closes that door too; a new one replaces the old.
+   */
+  setListener(id, hash) {
+    const devices = this.list();
+    const device = devices.find((d) => d.id === id);
+    if (!device || !/^[0-9a-f]{64}$/.test(String(hash || ''))) return null;
+    device.listener = { hash, at: this.now() };
+    this.save(devices);
+    return device;
+  }
+
+  /** The device a listener's secret hashes to, or null. */
+  byListener(hash) {
+    const want = Buffer.from(String(hash || ''), 'hex');
+    if (want.length !== 32) return null;
+    return this.list().find((device) => {
+      const have = device.listener && Buffer.from(String(device.listener.hash || ''), 'hex');
+      return !!have && have.length === 32 && crypto.timingSafeEqual(have, want);
+    }) || null;
+  }
+
   /** Every iPhone that has told us where to find it. */
   appleSubscribers() {
     return this.list().filter((device) => device.apns && device.apns.token);

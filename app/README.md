@@ -28,7 +28,7 @@ cd app && npm test     # check the bundle is still a copy, not a fork
     app/android, app/ios        the native projects, committed
     …/ios/App/App/SecureKey/    the Secure Enclave half of the key plugin
     …/android/…/securekey/      the Android Keystore half
-    …/android/…/watcher/        the foreground service that keeps watching
+    …/android/…/watcher/        the listener for while the app is closed, and the chime
     …/ios/App/App/AppleToken/   the device token, for being told while closed
 
 ## The one rule
@@ -265,16 +265,26 @@ optionally every turn finishing. That decision is made once, in
 
 The phone then decides which of those are worth interrupting for, with its own
 switches, and raises a real system notification. Tapping it opens the instance
-it was about. Two channels — one that makes a sound because something cannot go
-on without you, one that does not — so the phone's own settings can separate
-them.
+it was about. On Android both channels sound like the laptop: its own chime
+(`sounds/done.wav`, copied to `res/raw/nikui_done.wav`) and a buzz in the same
+three rising steps — a pulse on each note, 90 ms apart, each longer and, from
+Android 16, stronger than the last (`watcher/Chime.java`). One is heads-up,
+because something cannot go on without you; the other is not.
 
-**Keeping the socket open when the app is not on screen** is where the two
-platforms differ, and the app says which one it is on rather than pretending:
+**Being told when the app is not on screen** is where the two platforms
+differ, and the app says which one it is on rather than pretending:
 
-- **Android** can, behind the quiet ongoing notification the system requires
-  (`WatchService`, `foregroundServiceType="dataSync"`, importance `MIN`, no
-  sound, no badge). It is off until asked for.
+- **Android** does it whenever notifications are on — locked, swiped away, or
+  after a restart. The app's WebView socket dies with the app, so a service of
+  its own (`WatchService`, `foregroundServiceType="remoteMessaging"`, behind
+  the quiet notification the system requires) holds one long HTTPS request to
+  `GET /notify/listen`, down which the laptop writes each notification as
+  server-sent events. It opens that with a bearer secret the laptop hands over
+  on the authenticated socket (`@listen` → `@listener`); the laptop keeps only
+  its hash, on the device's record, so forgetting the device or asking for a
+  new one closes the stream. The device key cannot do this itself: it is in the
+  Keystore, behind a face or a finger. A boot receiver starts it again, and
+  Settings offers the battery-saving exemption Samsung needs to leave it alone.
 - **iOS** cannot. The system suspends an app the moment it leaves the screen,
   and there is no entitlement that changes that for this purpose. Settings says
   so in one line instead of offering a switch that would do nothing. The
@@ -346,7 +356,7 @@ Three doors, and only the third goes through anybody else's machine:
 | | when it works | what it needs |
 | --- | --- | --- |
 | the socket | while the app is on screen | nothing |
-| a foreground service | Android, in a pocket | nothing |
+| a listener of the app's own | Android, locked or closed | nothing |
 | Apple's push network | iPhone, closed | an Apple Developer account |
 
 An iPhone cannot keep a socket open — iOS suspends an app the moment it leaves
