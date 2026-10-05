@@ -42,6 +42,8 @@ const PREFS = [
   { id: 'permissions', group: 'Claude', key: 'permissionMode', kind: 'choice', label: 'Permissions',
     choices: PERMISSIONS, hint: 'What it may do without asking you first.' },
   { id: 'thinking', group: 'Claude', key: 'showThinking', kind: 'toggle', label: 'Show thinking' },
+  { id: 'clock', group: 'Claude', key: 'clock', kind: 'choice', label: 'Times',
+    choices: [['24h', '24-hour'], ['12h', '12-hour']], fallback: '24h', hint: 'When each message was sent, and when each answer came back.' },
   { id: 'pause', group: 'Claude', key: 'pauseWhenQuotaRuns', kind: 'toggle',
     label: 'Wait when the usage limit runs out', hint: 'Everything holds, then carries on when it resets.' },
 
@@ -103,7 +105,7 @@ function read(get, extra) {
   const rows = PREFS.map((p) => {
     let value = get(p.key);
     if (p.part) value = value && typeof value === 'object' ? value[p.part] : undefined;
-    if (value === undefined || value === null) value = p.part ? p.fallback : value;
+    if (value === undefined || value === null) value = p.fallback !== undefined ? p.fallback : value;
     const row = { id: p.id, group: p.group, kind: p.kind, label: p.label, hint: p.hint || '', value };
     if (p.kind === 'choice') row.choices = p.choices.map(([v, label]) => ({ value: v, label }));
     if (p.kind === 'model') row.choices = modelChoices(e.models, value);

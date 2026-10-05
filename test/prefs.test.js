@@ -43,6 +43,17 @@ module.exports = async function () {
   suite('what the sheet shows');
 
   {
+    const t = row(prefs.read(store().get), 'clock');
+    checkEqual('times: a choice of 24-hour or 12-hour', t.choices.map((c) => c.value), ['24h', '12h']);
+    checkEqual('24-hour when nothing is set', t.value, '24h');
+    checkEqual('12-hour when it is', row(prefs.read(store({ clock: '12h' }).get), 'clock').value, '12h');
+    checkEqual('and 12-hour can be chosen', prefs.validate('clock', '12h'), '12h');
+    let refused = false;
+    try { prefs.validate('clock', '13h'); } catch (_) { refused = true; }
+    check('but nothing else', refused);
+  }
+
+  {
     const s = store();
     const read = prefs.read(s.get, { models: [
       { value: 'claude-opus-5-5', label: 'Opus 5.5' },

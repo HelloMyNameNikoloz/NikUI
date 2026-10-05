@@ -71,6 +71,7 @@
   let snippetText = {};
   let meta = {};
   let showThinking = true;
+  let clock = '24h';
   let statsBase = { elapsedMs: 0, running: false, at: Date.now(), total: 0, cost: 0, turns: 0 };
   let attachSeq = 0;
   let queued = [];
@@ -102,7 +103,9 @@
   function fmtClock(at) {
     const d = new Date(at);
     if (!at || isNaN(d)) return '';
-    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const time = d.toLocaleTimeString([], clock === '12h'
+      ? { hour: 'numeric', minute: '2-digit', hour12: true }
+      : { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
     return d.toDateString() === new Date().toDateString() ? time
       : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + time;
   }
@@ -111,6 +114,16 @@
     const said = fmtClock(at);
     return said ? '<time class="' + klass + '" datetime="' + new Date(at).toISOString() + '" title="' +
       esc(label + ' ' + new Date(at).toLocaleString()) + '">' + esc(said) + '</time>' : '';
+  }
+
+  // The setting changed: every time already on the page is written again.
+  function setClock(next) {
+    const was = clock;
+    clock = next === '12h' ? '12h' : '24h';
+    if (clock === was) return;
+    stream.querySelectorAll('time.sent-at, time.received-at').forEach(function (t) {
+      t.textContent = fmtClock(Date.parse(t.getAttribute('datetime')));
+    });
   }
 
   let follow = true;
@@ -1726,6 +1739,7 @@
         window.__clientId = msg.client || null;
         remember();
         showThinking = msg.showThinking;
+        clock = msg.clock === '12h' ? '12h' : '24h';
         singleEscape = !!msg.singleEscape;
         disarmEscape();
         commands = msg.slashCommands || [];
@@ -1764,6 +1778,7 @@
         // Settings can change while this page is open, so they arrive here as
         // well as in `init` — and are applied the same way.
         if (typeof msg.showThinking === 'boolean') showThinking = msg.showThinking;
+        if (msg.clock) setClock(msg.clock);
         if (typeof msg.singleEscape === 'boolean') { singleEscape = msg.singleEscape; disarmEscape(); }
         if (msg.font !== undefined) {
           document.documentElement.style.setProperty('--nik-font', msg.font || '');

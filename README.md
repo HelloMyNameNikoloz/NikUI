@@ -437,6 +437,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.fontFamily` | *(empty)* | Conversation font; empty uses the UI font |
 | `nikui.fontSize` | `13` | Conversation font size |
 | `nikui.showThinking` | `true` | Show thinking blocks, collapsed |
+| `nikui.clock` | `24h` | Message times as `24h` (13:05) or `12h` (1:05 PM); also under /settings |
 | `nikui.groupByProject` | `never` | Nest instances under their project folder |
 | `nikui.promptSnippets` | `/table`, `/decisions`, `/lean`, `/delegate`, `/review`, `/implement` | Words that append a standing instruction to your prompt |
 | `nikui.promptSnippetDescriptions` | one line each for the shipped ones | What each snippet is for, as the Commands page shows it |

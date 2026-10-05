@@ -636,6 +636,13 @@
           "default": false,
           "description": "Keep the webview of a hidden instance in memory so switching back is instant. Off by default: with several instances open it costs real memory, and a hidden panel is rebuilt from the instance the moment you return to it."
         },
+        "nikui.clock": {
+          "type": "string",
+          "enum": ["24h", "12h"],
+          "enumDescriptions": ["13:05", "1:05 PM"],
+          "default": "24h",
+          "description": "How the time a message was sent, and an answer came back, is written."
+        },
         "nikui.showThinking": {
           "type": "boolean",
           "default": true,

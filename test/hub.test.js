@@ -163,6 +163,13 @@ module.exports = async function () {
   hubWithSettings.broadcast(hubWithSettings.metaMessage());
   checkEqual('and so does a later one, so nothing waits for a reload',
     [reader.last('meta').fontSize, reader.last('meta').showThinking], [18, false]);
+  checkEqual('times are 24-hour unless asked otherwise', reader.last('init').clock, '24h');
+  settings.clock = '12h';
+  hubWithSettings.broadcast(hubWithSettings.metaMessage());
+  checkEqual('and 12-hour reaches an open page', reader.last('meta').clock, '12h');
+  settings.clock = 'nonsense';
+  hubWithSettings.broadcast(hubWithSettings.metaMessage());
+  checkEqual('anything else is 24-hour', reader.last('meta').clock, '24h');
   hubWithSettings.dispose();
   live2.dispose();
 

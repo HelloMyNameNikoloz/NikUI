@@ -650,6 +650,7 @@ class SessionHub {
       // `init`, so changing the font or hiding thinking blocks did nothing
       // until the tab was closed and opened again.
       showThinking: cfg.showThinking,
+      clock: cfg.clock === '12h' ? '12h' : '24h',
       singleEscape: !!cfg.interruptOnSingleEscape,
       font: cfg.fontFamily || '',
       fontSize: cfg.fontSize || 13
@@ -680,6 +681,7 @@ class SessionHub {
       ownCommands: this.ownCommands(cfg),
       snippets: cfg.promptSnippets || {},
       showThinking: cfg.showThinking,
+      clock: cfg.clock === '12h' ? '12h' : '24h',
       singleEscape: !!cfg.interruptOnSingleEscape,
       font: cfg.fontFamily || '',
       fontSize: cfg.fontSize || 13

@@ -156,6 +156,11 @@ const drive = `
     out.receivedAt = backTag ? backTag.textContent : null;
     const untimed = document.querySelector('[data-id="ut2"]');
     out.untimedHasNoTime = !!untimed && !untimed.querySelector('.sent-at');
+    post({ type: 'meta', clock: '12h' });
+    out.sentAt12 = sentTag ? sentTag.textContent : null;
+    out.receivedAt12 = backTag ? backTag.textContent : null;
+    post({ type: 'meta', clock: '24h' });
+    out.sentAtBack = sentTag ? sentTag.textContent : null;
 
     // The palette offers it, tagged as ours.
     input.value = '/tab';
@@ -590,6 +595,8 @@ const checks = [
   ['a finished turn says how long it took and when it came back', /Done/.test(out.resultLine || '') && /1m 05s/.test(out.resultLine || '')],
   ['an older one says which day', /Mar/.test(out.receivedAt || '') && /17[:.]30|5[:.]30/.test(out.receivedAt || '')],
   ['an item with no time shows none', out.untimedHasNoTime],
+  ['switched to 12-hour, the times already shown are rewritten', /^9[:.]05/.test(out.sentAt12 || '') && /PM|pm/.test(out.receivedAt12 || '')],
+  ['and back to 24-hour', out.sentAtBack === out.sentAt],
   ['the palette offers it as ours', /table/.test(out.snippetInPalette || '') && /NikUI/.test(out.snippetInPalette || '')],
   ['a slash at the end of a prompt opens the palette', out.trailingPaletteOpen === true],
   ['and it offers the snippet there', out.trailingPaletteOffers === true],
