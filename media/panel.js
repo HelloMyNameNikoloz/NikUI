@@ -72,6 +72,12 @@
   let meta = {};
   let showThinking = true;
   let clock = '24h';
+  let suggestReplies = true;
+  // What the last turn ended on, for the replies offered under it.
+  let lastReply = '';
+  let lastKind = '';
+  let lastResult = null;
+  let status = '';
   let statsBase = { elapsedMs: 0, running: false, at: Date.now(), total: 0, cost: 0, turns: 0 };
   let attachSeq = 0;
   let queued = [];
@@ -404,6 +410,7 @@
       banner.textContent = WATCHING;
     }
     input.disabled = !allowed;
+    paintReplies();
   }
 
   /** A quiet note that somebody else is looking at the same instance. */
@@ -485,6 +492,8 @@
   }
 
   function setStatus(next) {
+    status = next;
+    paintReplies();
     if (next !== 'working' && next !== 'waiting') disarmEscape();
     $('dot').className = 'dot ' + next;
     $('stop').disabled = !(next === 'working' || next === 'waiting');
@@ -737,11 +746,49 @@
     el.appendChild(btn);
   }
 
+  /**
+   * The obvious answers to a turn that has just finished, as buttons under it.
+   * Only under the last turn, only once it is over, and only while the box is
+   * empty — a half-typed reply is the one being given.
+   */
+  function paintReplies() {
+    let box = $('replies');
+    const picks = suggestReplies && lastKind === 'result' && lastResult &&
+      !lastResult.isError && !lastResult.interrupted && status !== 'working' && status !== 'waiting' &&
+      !input.value.trim() && !document.body.classList.contains('read-only')
+      ? window.replySuggest.replies(lastReply) : [];
+    if (!picks.length) { if (box) box.remove(); return; }
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'replies';
+      box.className = 'reply-suggestions';
+      box.setAttribute('role', 'group');
+      box.setAttribute('aria-label', 'Suggested replies');
+    }
+    const html = picks.map(function (p) {
+      return '<button class="reply-chip" data-reply="' + esc(p) + '" title="Send “' + esc(p) + '”">' + esc(p) + '</button>';
+    }).join('');
+    if (box.innerHTML !== html) box.innerHTML = html;
+    if (box !== stream.lastElementChild) stream.appendChild(box);
+    if (follow) scrollDown();
+  }
+
+  stream.addEventListener('click', function (e) {
+    const chip = e.target.closest && e.target.closest('.reply-chip');
+    if (!chip) return;
+    input.value = chip.dataset.reply;
+    const box = $('replies');
+    if (box) box.remove();
+    send();
+  });
+
   function upsert(items) {
     const empty = stream.querySelector('.empty');
     if (empty && items.length) empty.remove();
     for (const item of items) {
-      if (item.kind === 'user') prompts.remember(item.text, item.id);
+      if (item.kind === 'user') { prompts.remember(item.text, item.id); lastReply = ''; }
+      if (item.kind === 'text' && !item.streaming) lastReply = item.text || '';
+      if (item.kind === 'result') lastResult = item;
       const existing = nodes.get(item.id);
       if (existing) {
         paint(existing, item);
@@ -753,8 +800,11 @@
         if (!item.streaming) { decorateCode(el); decorateMessage(el, item); linkifyPaths(el); }
         nodes.set(item.id, el);
         stream.appendChild(el);
+        // Notices and the like come and go; what the turn ended on is what counts.
+        if (item.kind !== 'notice') lastKind = item.kind;
       }
     }
+    paintReplies();
     trimStream();
     refreshFind();
     if (follow) scrollDown();
@@ -1107,6 +1157,7 @@
     autoGrow();
     refreshSlash();
     remember();
+    paintReplies();
   });
 
   function recall(text) {
@@ -1740,6 +1791,8 @@
         remember();
         showThinking = msg.showThinking;
         clock = msg.clock === '12h' ? '12h' : '24h';
+        suggestReplies = msg.replySuggestions !== false;
+        lastReply = ''; lastKind = ''; lastResult = null;
         singleEscape = !!msg.singleEscape;
         disarmEscape();
         commands = msg.slashCommands || [];
@@ -1779,6 +1832,7 @@
         // well as in `init` — and are applied the same way.
         if (typeof msg.showThinking === 'boolean') showThinking = msg.showThinking;
         if (msg.clock) setClock(msg.clock);
+        if (typeof msg.replySuggestions === 'boolean') { suggestReplies = msg.replySuggestions; paintReplies(); }
         if (typeof msg.singleEscape === 'boolean') { singleEscape = msg.singleEscape; disarmEscape(); }
         if (msg.font !== undefined) {
           document.documentElement.style.setProperty('--nik-font', msg.font || '');

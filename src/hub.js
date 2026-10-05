@@ -651,6 +651,7 @@ class SessionHub {
       // until the tab was closed and opened again.
       showThinking: cfg.showThinking,
       clock: cfg.clock === '12h' ? '12h' : '24h',
+      replySuggestions: cfg.replySuggestions !== false,
       singleEscape: !!cfg.interruptOnSingleEscape,
       font: cfg.fontFamily || '',
       fontSize: cfg.fontSize || 13
@@ -682,6 +683,7 @@ class SessionHub {
       snippets: cfg.promptSnippets || {},
       showThinking: cfg.showThinking,
       clock: cfg.clock === '12h' ? '12h' : '24h',
+      replySuggestions: cfg.replySuggestions !== false,
       singleEscape: !!cfg.interruptOnSingleEscape,
       font: cfg.fontFamily || '',
       fontSize: cfg.fontSize || 13

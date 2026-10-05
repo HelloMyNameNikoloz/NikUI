@@ -44,6 +44,8 @@ const PREFS = [
   { id: 'thinking', group: 'Claude', key: 'showThinking', kind: 'toggle', label: 'Show thinking' },
   { id: 'clock', group: 'Claude', key: 'clock', kind: 'choice', label: 'Times',
     choices: [['24h', '24-hour'], ['12h', '12-hour']], fallback: '24h', hint: 'When each message was sent, and when each answer came back.' },
+  { id: 'replies', group: 'Claude', key: 'replySuggestions', kind: 'toggle', fallback: true,
+    label: 'Suggest replies', hint: 'One tap for the obvious answer, like "pushed" when it asks you to push.' },
   { id: 'pause', group: 'Claude', key: 'pauseWhenQuotaRuns', kind: 'toggle',
     label: 'Wait when the usage limit runs out', hint: 'Everything holds, then carries on when it resets.' },
 

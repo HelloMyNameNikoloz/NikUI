@@ -76,6 +76,13 @@ owns the whole surface.
   conversation on screen is seen finishing, so it never turns blue at all; one
   that finishes with the phone in a pocket does, until the app is back in
   front. Nothing flashes: something waiting for you should not wave.
+- **Reply suggestions.** When a turn ends waiting on you — "tell me once it's
+  pushed", "shall I open the PR?", "do you want A, B, or C?" — the obvious
+  answers sit under it as buttons: *pushed*, *yes* / *no*, or each option. One
+  tap sends it. They are read off the end of the reply by rules, not a model,
+  so they cost nothing; when nothing is obvious, nothing is offered. Hidden
+  while you type, on a failed turn, and on a watch-only phone. Switch off with
+  `nikui.replySuggestions` or under /settings.
 - **When, on every message.** Each prompt shows the time it was sent, and the
   line that ends a turn — Done, how long it took, what it cost — ends with the
   time it came back. Today's are the time alone; older ones say the day.
@@ -437,6 +444,7 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.fontFamily` | *(empty)* | Conversation font; empty uses the UI font |
 | `nikui.fontSize` | `13` | Conversation font size |
 | `nikui.showThinking` | `true` | Show thinking blocks, collapsed |
+| `nikui.replySuggestions` | `true` | One-tap replies under a finished turn; also under /settings |
 | `nikui.clock` | `24h` | Message times as `24h` (13:05) or `12h` (1:05 PM); also under /settings |
 | `nikui.groupByProject` | `never` | Nest instances under their project folder |
 | `nikui.promptSnippets` | `/table`, `/decisions`, `/lean`, `/delegate`, `/review`, `/implement` | Words that append a standing instruction to your prompt |

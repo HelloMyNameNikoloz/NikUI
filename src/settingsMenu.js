@@ -65,6 +65,7 @@ const NAMES = {
   'nikui.keepHiddenPanelsWarm': 'Keep hidden panels loaded',
   'nikui.showThinking': 'Show thinking',
   'nikui.clock': 'Times: 24-hour or 12-hour',
+  'nikui.replySuggestions': 'Suggest replies',
   'nikui.statusEmoji': 'Emoji per status in tab titles',
   'nikui.groupByProject': 'Group instances by project folder',
   'nikui.remote.port': 'Port for the local server',

@@ -162,6 +162,42 @@ const drive = `
     post({ type: 'meta', clock: '24h' });
     out.sentAtBack = sentTag ? sentTag.textContent : null;
 
+    // A turn that ends asking you to push offers "pushed", one tap away.
+    try {
+    const chips = () => Array.from(document.querySelectorAll('#replies .reply-chip')).map((b) => b.textContent);
+    post({ type: 'status', status: 'working' });
+    post({ type: 'items', items: [
+      { id: 'ux1', kind: 'user', text: 'make the change', images: [] },
+      { id: 'tx1', kind: 'text', text: 'Committed. Tell me once it is pushed.' }] });
+    out.repliesWhileWorking = chips().length;
+    post({ type: 'items', items: [{ id: 'rx1', kind: 'result', durationMs: 4000, at: Date.now() }] });
+    out.repliesBeforeDone = chips().length;
+    post({ type: 'status', status: 'done' });
+    out.replies = chips().join(',');
+    out.repliesLast = document.getElementById('stream').lastElementChild.id;
+    input.value = 'my own words';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    out.repliesWhileTyping = chips().length;
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    out.repliesBack = chips().length;
+    window.__posted.length = 0;
+    const chip = document.querySelector('#replies .reply-chip');
+    if (chip) chip.click();
+    const chipSend = window.__posted.filter((m) => m.type === 'send').pop() || {};
+    out.chipSent = chipSend.text;
+    out.chipCleared = input.value === '' && !document.getElementById('replies');
+    post({ type: 'status', status: 'done' });
+    post({ type: 'items', items: [
+      { id: 'tx2', kind: 'text', text: 'Shall I open the PR?' },
+      { id: 'rx2', kind: 'result', isError: true, text: 'Error' }] });
+    out.repliesAfterError = chips().length;
+    post({ type: 'items', items: [{ id: 'rx3', kind: 'result', durationMs: 1000 }] });
+    out.repliesYesNo = chips().join(',');
+    post({ type: 'meta', replySuggestions: false });
+    out.repliesSwitchedOff = chips().length;
+    } catch (e) { out.replyError = String(e && e.stack || e); }
+
     // The palette offers it, tagged as ours.
     input.value = '/tab';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -576,7 +612,7 @@ const checks = [
   ['the single-press setting restores the CLI behaviour', out.singleEscapeInterrupts === true],
   ['opening the sheet tells the host to keep it fresh', out.sheetOpenTold === true],
   ['and closing it tells the host to stop', out.sheetCloseTold === true],
-  ['a whole message can be copied, not just its code', out.copyAllButtons === 5],
+  ['a whole message can be copied, not just its code', out.copyAllButtons === 8],
   ['dropping a file has a visible target', out.dropTargetShown === true],
   ['which goes away again', out.dropTargetGone === true],
   ['the sheet announces itself as a dialog', out.sheetIsDialog === true],
@@ -597,6 +633,15 @@ const checks = [
   ['an item with no time shows none', out.untimedHasNoTime],
   ['switched to 12-hour, the times already shown are rewritten', /^9[:.]05/.test(out.sentAt12 || '') && /PM|pm/.test(out.receivedAt12 || '')],
   ['and back to 24-hour', out.sentAtBack === out.sentAt],
+  ['no reply is suggested while the turn is still going', out.repliesWhileWorking === 0 && out.repliesBeforeDone === 0],
+  ['asked to push, it offers "pushed"', out.replies === 'pushed'],
+  ['under the finished turn, at the very end', out.repliesLast === 'replies'],
+  ['not while you are typing your own reply', out.repliesWhileTyping === 0 && out.repliesBack === 1],
+  ['one tap sends it', out.chipSent === 'pushed'],
+  ['and the suggestion goes away', out.chipCleared],
+  ['a turn that failed offers nothing', out.repliesAfterError === 0],
+  ['a yes-or-no question offers yes and no', out.repliesYesNo === 'yes,no'],
+  ['switched off in settings, none are offered', out.repliesSwitchedOff === 0],
   ['the palette offers it as ours', /table/.test(out.snippetInPalette || '') && /NikUI/.test(out.snippetInPalette || '')],
   ['a slash at the end of a prompt opens the palette', out.trailingPaletteOpen === true],
   ['and it offers the snippet there', out.trailingPaletteOffers === true],
@@ -669,7 +714,7 @@ const checks = [
   ['and leaves nothing highlighted', out.findLeavesNoMarks === true],
   ['escape closes find', out.findClosed === true],
   ['and takes its highlights with it', out.findCleanedUp === true],
-  ['leaving the transcript exactly as it was', out.transcriptIntact === 5]
+  ['leaving the transcript exactly as it was', out.transcriptIntact === 6]
 ];
 
 let failed = 0;
@@ -678,5 +723,6 @@ for (const [name, ok] of checks) {
   if (!ok) failed++;
 }
 if (out.errors && out.errors.length) console.error(out.errors.join('\n'));
+if (out.replyError) console.error('reply suggestions threw: ' + out.replyError);
 console.log('\n' + (checks.length - failed) + '/' + checks.length + ' webview checks passed');
 process.exit(failed ? 1 : 0);

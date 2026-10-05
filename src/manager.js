@@ -106,6 +106,7 @@ function readConfig() {
     fontSize: cfg.get('fontSize', 13),
     showThinking: cfg.get('showThinking', true),
     clock: cfg.get('clock', '24h'),
+    replySuggestions: cfg.get('replySuggestions', true),
     pauseOnLimit: cfg.get('pauseWhenQuotaRuns', true),
     resumePrompt: cfg.get('resumePrompt',
       'Your usage limit reset and NikUI has restarted this instance. Carry on with the task you were ' +

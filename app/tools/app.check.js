@@ -99,6 +99,7 @@ const record = (name, ok) => {
   session._write = function () {};
   Object.defineProperty(session, 'isRunning', { get: () => true });
   session._upsert({ id: 'u1', kind: 'user', text: 'what the app should show', images: [], at: Date.now() - 95000 });
+  session._upsert({ id: 't0', kind: 'text', text: 'Committed on the branch. Tell me once it\'s pushed.' });
   session._upsert({ id: 'r1', kind: 'result', durationMs: 92000, costUsd: 0.4123, at: Date.now() - 3000 });
 
   const devices = new DeviceStore(memoryState());
@@ -396,6 +397,13 @@ const record = (name, ok) => {
       await phone.until('!!document.querySelector(".turn-user .sent-at") && document.querySelector(".turn-user .sent-at").textContent.length > 3', 4000));
     record('and the finished turn says when it came back',
       await phone.until('!!document.querySelector(".result .received-at")', 4000));
+    // A watch-only phone cannot answer, so it is offered nothing to answer with.
+    record('watching only, no reply is suggested', !(await phone.evaluate('!!document.querySelector("#replies")')));
+    devices.setControl(paired.id, true);
+    record('allowed to steer, the phone offers "pushed" to tap',
+      await phone.until('!!document.querySelector("#replies .reply-chip") && document.querySelector("#replies .reply-chip").textContent === "pushed"', 8000));
+    devices.setControl(paired.id, false);
+    await phone.until('document.body.classList.contains("read-only")', 8000);
     if (process.env.SHOTS) {
       // The composer as somebody who can send sees it, empty and written in.
       devices.setControl(paired.id, true);

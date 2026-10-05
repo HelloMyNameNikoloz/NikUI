@@ -643,6 +643,11 @@
           "default": "24h",
           "description": "How the time a message was sent, and an answer came back, is written."
         },
+        "nikui.replySuggestions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Under a finished turn, offer the obvious reply as a button — \"pushed\" when it asks you to push, yes or no when it asks a yes-or-no question. One tap sends it."
+        },
         "nikui.showThinking": {
           "type": "boolean",
           "default": true,
