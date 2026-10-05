@@ -132,7 +132,7 @@ module.exports = async function () {
   checkEqual('and says so', pill.textContent, 'Signing in…');
 
   welcome(first);
-  checkEqual('the moment it is let in, the client says hello again', first.sent, [{ type: 'ready' }]);
+  checkEqual('the moment it is let in, the client says hello again', first.sent, [{ type: 'ready', hidden: false }]);
   checkEqual('and the state is visible', [pill.className, pill.textContent], ['link on', 'Live']);
 
   transport.postMessage({ type: 'send', text: 'hello', sent: 'hello', snippets: [] });
@@ -189,7 +189,7 @@ module.exports = async function () {
   check('coming back online reconnects at once, not after the backoff', second !== first);
   second.accept();
   welcome(second);
-  checkEqual('and the client asks for the whole picture again', second.sent, [{ type: 'ready' }]);
+  checkEqual('and the client asks for the whole picture again', second.sent, [{ type: 'ready', hidden: false }]);
   checkEqual('which is the same path a discarded webview takes', pill.textContent, 'Live');
 
   withFakeClock(() => {

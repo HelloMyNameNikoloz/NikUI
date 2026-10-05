@@ -1225,7 +1225,8 @@ class Session extends EventEmitter {
       text: interrupted ? 'Interrupted' : (event.is_error ? String(event.result || event.subtype || 'Error') : ''),
       durationMs: event.duration_ms || 0,
       numTurns: event.num_turns || 0,
-      costUsd: turnCost
+      costUsd: turnCost,
+      at: this.finishedAt
     });
     this._logTurn(turnUsage, turnCost, event, interrupted);
     // Belt and braces: if neither the rate limit event nor the marked message

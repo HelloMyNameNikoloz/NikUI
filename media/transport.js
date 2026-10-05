@@ -268,7 +268,7 @@
       tries = 0;
       stopped = null;
       show('on', 'Live');
-      if (wantsReady) send({ type: 'ready' });
+      if (wantsReady) send({ type: 'ready', hidden: !!document.hidden });
       window.dispatchEvent(new MessageEvent('message', { data: message }));
       return true;
     }
@@ -521,6 +521,8 @@
           wantsReady = true;
           if (!live()) return;
         }
+        // Being on screen or not is only news to a laptop that is listening.
+        if (!live() && message && message.type === 'visible') return;
         if (!live()) return refuse(message);
         try { send(message); } catch (_) { refuse(message); }
       },

@@ -98,7 +98,8 @@ const record = (name, ok) => {
   session.start = function () { this.everStarted = true; };
   session._write = function () {};
   Object.defineProperty(session, 'isRunning', { get: () => true });
-  session._upsert({ id: 'u1', kind: 'user', text: 'what the app should show', images: [] });
+  session._upsert({ id: 'u1', kind: 'user', text: 'what the app should show', images: [], at: Date.now() - 95000 });
+  session._upsert({ id: 'r1', kind: 'result', durationMs: 92000, costUsd: 0.4123, at: Date.now() - 3000 });
 
   const devices = new DeviceStore(memoryState());
   const identity = loadIdentity(memoryState());
@@ -381,6 +382,8 @@ const record = (name, ok) => {
       sockets.length > 0 && JSON.stringify(sockets[0].box.seal('{"type":"fleet"}')).indexOf('fleet') < 0);
 
     // ---- the conversation, the same client as the editor's ------------------
+    // Finished and not yet opened anywhere: blue in the editor's list.
+    session.unread = true;
     await phone.evaluate('document.querySelector(".rows .row").click()');
     record('tapping an instance opens the conversation',
       await phone.until('!!document.getElementById("transcript")', 8000));
@@ -388,6 +391,11 @@ const record = (name, ok) => {
       await phone.until('document.getElementById("link").textContent === "Live"', 10000));
     record('showing what was already there',
       /what the app should show/.test(await phone.evaluate('document.getElementById("stream").textContent')));
+    record('opened on the phone, it is no longer blue on the laptop', !session.unread);
+    record('the prompt says when it was sent',
+      await phone.until('!!document.querySelector(".turn-user .sent-at") && document.querySelector(".turn-user .sent-at").textContent.length > 3', 4000));
+    record('and the finished turn says when it came back',
+      await phone.until('!!document.querySelector(".result .received-at")', 4000));
     if (process.env.SHOTS) {
       // The composer as somebody who can send sees it, empty and written in.
       devices.setControl(paired.id, true);

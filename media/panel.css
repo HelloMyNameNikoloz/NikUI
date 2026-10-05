@@ -444,6 +444,14 @@ body.read-only .shell-stop { display: none; }
   opacity: 0.75;
 }
 .result.err { color: var(--red); opacity: 1; }
+/* When a prompt went, and when the answer to it came back. */
+.sent-at {
+  display: block; margin-top: 6px; text-align: right;
+  font-size: var(--fs-small); font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground); opacity: 0.75;
+  white-space: nowrap;
+}
+.received-at { margin-left: auto; }
 
 .notice {
   font-size: var(--fs-small);

@@ -58,6 +58,7 @@ module.exports = function () {
 
   const firstResult = s.items.filter((i) => i.kind === 'result').pop();
   checkEqual('the first turn is charged its own cost', Number(firstResult.costUsd.toFixed(6)), 0.01);
+  check('and says when it came back', typeof firstResult.at === 'number' && firstResult.at > 0);
   checkEqual('tokens come from result.usage, not the stale assistant event', s.usage.output, 49);
 
   s.send('second');

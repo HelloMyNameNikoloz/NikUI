@@ -24,7 +24,9 @@ const TO_HOST = [
   // `/settings`: asked for, kept fresh while it is open, changed one row at a
   // time, and — from the editor only — the way to the full list.
   'settings', 'settingsOpen', 'setSetting', 'allSettings',
-  'commands', 'commandsOpen', 'saveCommand', 'removeCommand', 'restoreCommand'
+  'commands', 'commandsOpen', 'saveCommand', 'removeCommand', 'restoreCommand',
+  // Whether the page is on screen, which is what says a phone saw it finish.
+  'visible'
 ];
 
 const TO_CLIENT = [

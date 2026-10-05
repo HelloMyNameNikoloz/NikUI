@@ -6,7 +6,7 @@ const { SessionPanel } = require('../src/panel.js');
 const { lookFor, UNREAD, DONE_FADES_AFTER_MS } = require('../src/tree.js');
 const { SessionHub } = require('../src/hub.js');
 
-module.exports = function () {
+module.exports = async function () {
   suite('a finished instance nobody has opened');
 
   {
@@ -58,6 +58,40 @@ module.exports = function () {
     s._setStatus('done');
     check('finishing in front of you is seen finishing', !s.unread);
     panel.dispose();
+  }
+
+  suite('a phone looking at it has seen it');
+  {
+    const s = new Session({ cwd: '/p/d' });
+    s.start = function () { this.status = 'idle'; };
+    s.items.push({ id: 'u1', kind: 'user', text: 'hi', at: Date.now() });
+    const hub = new SessionHub(s, { config: () => ({}), knownCommands: () => [] });
+    const sent = [];
+    const phone = { kind: 'device', id: 'p1', name: 'Phone', control: true };
+    hub.attach({ id: 'panel', post: () => {} });
+    await hub.receive('panel', { type: 'ready' });
+    s._setStatus('working');
+    s._setStatus('done');
+    check('the editor panel alone does not count as a phone', s.unread);
+    hub.attach({ id: 'ph', device: phone, post: (m) => sent.push(m) });
+    await hub.receive('ph', { type: 'ready' });
+    check('opened on the phone: read', !s.unread);
+    s._setStatus('working');
+    s._setStatus('done');
+    check('on the phone\'s screen as it finishes: read', !s.unread);
+    await hub.receive('ph', { type: 'visible', on: false });
+    s._setStatus('working');
+    s._setStatus('done');
+    check('in a pocket as it finishes: still unread', s.unread);
+    await hub.receive('ph', { type: 'visible', on: true });
+    check('brought back to the front: read', !s.unread);
+    hub.detach('ph');
+    s._setStatus('working');
+    s._setStatus('done');
+    hub.attach({ id: 'ph2', device: phone, post: () => {} });
+    await hub.receive('ph2', { type: 'ready', hidden: true });
+    check('a page that opens behind something has not been seen', s.unread);
+    hub.dispose && hub.dispose();
   }
 
   suite('a reload brings back the colours it had');

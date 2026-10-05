@@ -74,6 +74,8 @@ class SessionHub {
       this.refreshStatus();
     });
     on('status', (status) => {
+      // A phone with this conversation on its screen saw it finish.
+      this.seenElsewhere();
       this.broadcast({ type: 'status', status });
       this.broadcastStats();
       this.refreshStatus();
@@ -120,6 +122,8 @@ class SessionHub {
       device: client.device || null,
       since: Date.now(),
       ready: false,
+      // Whether the page says it is on screen. Assumed so until it says not.
+      hidden: false,
       statusOpen: false,
       statusTimer: null,
       pendingStatus: false
@@ -143,6 +147,19 @@ class SessionHub {
   /** Whether this seat may change anything, rather than only watch. */
   mayControl(entry) {
     return !entry || !entry.device || entry.device.control !== false;
+  }
+
+  /**
+   * The blue dot comes off when a device is looking at this conversation —
+   * opened on it, brought back to the front, or on screen as the turn ends.
+   * The editor's own panel says so for itself, knowing whether it is in view.
+   */
+  seenElsewhere(arriving) {
+    const session = this.session;
+    if (!session.unread || typeof session.setUnread !== 'function') return;
+    for (const entry of this.clients.values()) {
+      if ((entry.ready || entry === arriving) && !entry.hidden && !this.isLocal(entry)) return void session.setUnread(false);
+    }
   }
 
   /** The editor's own panel, or a browser on this machine: somebody at this screen. */
@@ -320,7 +337,14 @@ class SessionHub {
 
     switch (msg.type) {
       case 'ready':
+        if (typeof msg.hidden === 'boolean') entry.hidden = msg.hidden;
         await this.hello(entry);
+        break;
+
+      // The page went behind something, or came back to the front.
+      case 'visible':
+        entry.hidden = msg.on === false;
+        this.seenElsewhere();
         break;
 
       case 'send':
@@ -509,9 +533,8 @@ class SessionHub {
   /** A client has loaded and wants the whole picture. */
   async hello(entry) {
     const session = this.session;
-    // Opened somewhere other than this window's own panel — a phone, a
-    // browser — is opened. The panel says so itself, when it is in view.
-    if (!this.isLocal(entry) && typeof session.setUnread === 'function') session.setUnread(false);
+    // Opened on a phone is opened. The panel says so itself, when it is in view.
+    this.seenElsewhere(entry);
     // A restored instance has no items yet; rebuild it from disk before the
     // first paint, then bring its process back with --resume. Only the first
     // client through the door pays for this.

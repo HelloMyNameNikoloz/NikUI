@@ -33,7 +33,12 @@
 
   // VS Code throws a hidden webview away without warning, so anything still
   // waiting on the debounce is written out the moment the tab goes away.
-  document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) saveNow();
+    // Whether this conversation is in front of anybody: a phone looking at it
+    // when it finishes has seen it, and one in a pocket has not.
+    vscode.postMessage({ type: 'visible', on: !document.hidden });
+  });
   window.addEventListener('pagehide', saveNow);
 
   const stream = $('stream');
@@ -91,6 +96,21 @@
     const m = Math.floor(s / 60);
     if (m < 60) return m + 'm ' + String(s % 60).padStart(2, '0') + 's';
     return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+  }
+
+  // When something was said: the time alone today, with the day before that.
+  function fmtClock(at) {
+    const d = new Date(at);
+    if (!at || isNaN(d)) return '';
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toDateString() === new Date().toDateString() ? time
+      : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + time;
+  }
+
+  function clockTag(at, klass, label) {
+    const said = fmtClock(at);
+    return said ? '<time class="' + klass + '" datetime="' + new Date(at).toISOString() + '" title="' +
+      esc(label + ' ' + new Date(at).toLocaleString()) + '">' + esc(said) + '</time>' : '';
   }
 
   let follow = true;
@@ -479,6 +499,7 @@
             return '<img src="data:' + esc(im.mediaType) + ';base64,' + im.data + '" alt="' + esc(im.name || 'image') + '">';
           }).join('') + '</div>';
         }
+        html += clockTag(item.at, 'sent-at', 'Sent');
         el.innerHTML = html;
         break;
       }
@@ -554,7 +575,8 @@
         else bits.push('Done');
         if (item.durationMs) bits.push(fmtDuration(item.durationMs));
         if (item.costUsd) bits.push('$' + item.costUsd.toFixed(4));
-        el.innerHTML = bits.map((b) => '<span>' + esc(b) + '</span>').join('');
+        el.innerHTML = bits.map((b) => '<span>' + esc(b) + '</span>').join('') +
+          clockTag(item.at, 'received-at', 'Received');
         break;
       }
 
@@ -1826,6 +1848,6 @@
     }
   });
 
-  vscode.postMessage({ type: 'ready' });
+  vscode.postMessage({ type: 'ready', hidden: !!document.hidden });
   input.focus();
 })();

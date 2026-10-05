@@ -72,8 +72,13 @@ owns the whole surface.
   its tab shows 🔵 (`statusEmoji.unread`), and the phone's list gives it a
   blue dot and a bold name. It stays until you open it — bringing its tab into
   view, or opening it on the phone — instead of fading like green does, and it
-  survives a reload. Nothing flashes: something waiting for you should not
-  wave.
+  survives a reload. A turn that finishes while the phone has that
+  conversation on screen is seen finishing, so it never turns blue at all; one
+  that finishes with the phone in a pocket does, until the app is back in
+  front. Nothing flashes: something waiting for you should not wave.
+- **When, on every message.** Each prompt shows the time it was sent, and the
+  line that ends a turn — Done, how long it took, what it cost — ends with the
+  time it came back. Today's are the time alone; older ones say the day.
 - **Commands running in the background.** While an instance waits on a
   command it left running (`pnpm run check`, a test suite), it stays orange and
   the header shows how many. Hover that chip (or tap it) for each command, how

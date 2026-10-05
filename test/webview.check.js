@@ -141,6 +141,22 @@ const drive = `
     out.snippetChip = snippetMark ? snippetMark.textContent : null;
     out.snippetChipExplains = snippetMark ? snippetMark.getAttribute('title') : null;
 
+    // When it was sent, and when the answer came back.
+    const sentAt = new Date(); sentAt.setHours(9, 5, 0, 0);
+    const backAt = new Date(2020, 2, 4, 17, 30);
+    post({ type: 'items', items: [
+      { id: 'ut1', kind: 'user', text: 'timed', images: [], at: sentAt.getTime() },
+      { id: 'rt1', kind: 'result', durationMs: 65000, at: backAt.getTime() },
+      { id: 'ut2', kind: 'user', text: 'untimed', images: [] }] });
+    const sentTag = document.querySelector('[data-id="ut1"] .sent-at');
+    out.sentAt = sentTag ? sentTag.textContent : null;
+    out.sentAtTitle = sentTag ? sentTag.getAttribute('title') : null;
+    const backTag = document.querySelector('.result .received-at');
+    out.resultLine = backTag ? backTag.parentNode.textContent : null;
+    out.receivedAt = backTag ? backTag.textContent : null;
+    const untimed = document.querySelector('[data-id="ut2"]');
+    out.untimedHasNoTime = !!untimed && !untimed.querySelector('.sent-at');
+
     // The palette offers it, tagged as ours.
     input.value = '/tab';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -555,7 +571,7 @@ const checks = [
   ['the single-press setting restores the CLI behaviour', out.singleEscapeInterrupts === true],
   ['opening the sheet tells the host to keep it fresh', out.sheetOpenTold === true],
   ['and closing it tells the host to stop', out.sheetCloseTold === true],
-  ['a whole message can be copied, not just its code', out.copyAllButtons === 3],
+  ['a whole message can be copied, not just its code', out.copyAllButtons === 5],
   ['dropping a file has a visible target', out.dropTargetShown === true],
   ['which goes away again', out.dropTargetGone === true],
   ['the sheet announces itself as a dialog', out.sheetIsDialog === true],
@@ -569,6 +585,11 @@ const checks = [
   ['naming which one was used', out.snippetUsed === 'table'],
   ['the prompt is marked with it', out.snippetChip === '+table'],
   ['and hovering the mark shows the instruction', /TABLE INSTRUCTION/.test(out.snippetChipExplains || '')],
+  ['a prompt says when it was sent, as the time alone today', /^0?9[:.]05/.test(out.sentAt || '')],
+  ['with the full date on hover', /^Sent /.test(out.sentAtTitle || '')],
+  ['a finished turn says how long it took and when it came back', /Done/.test(out.resultLine || '') && /1m 05s/.test(out.resultLine || '')],
+  ['an older one says which day', /Mar/.test(out.receivedAt || '') && /17[:.]30|5[:.]30/.test(out.receivedAt || '')],
+  ['an item with no time shows none', out.untimedHasNoTime],
   ['the palette offers it as ours', /table/.test(out.snippetInPalette || '') && /NikUI/.test(out.snippetInPalette || '')],
   ['a slash at the end of a prompt opens the palette', out.trailingPaletteOpen === true],
   ['and it offers the snippet there', out.trailingPaletteOffers === true],
@@ -641,7 +662,7 @@ const checks = [
   ['and leaves nothing highlighted', out.findLeavesNoMarks === true],
   ['escape closes find', out.findClosed === true],
   ['and takes its highlights with it', out.findCleanedUp === true],
-  ['leaving the transcript exactly as it was', out.transcriptIntact === 3]
+  ['leaving the transcript exactly as it was', out.transcriptIntact === 5]
 ];
 
 let failed = 0;
