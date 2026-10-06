@@ -231,6 +231,13 @@ class SlackRoom {
         return void this.broadcast();
       }
 
+      // The setup page, opened by whoever can: the editor's webview may not
+      // open a window itself, so the laptop does it for the laptop.
+      case 'slack:setup': {
+        if (seat.local && this.deps.openUrl) return void this.deps.openUrl(SETUP_URL);
+        return void post({ type: 'slack:link', url: SETUP_URL });
+      }
+
       case 'slack:link': {
         const conversation = text(message.conversation, 40);
         if (!conversation || !service) return;

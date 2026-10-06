@@ -107,6 +107,8 @@ module.exports = async function () {
   checkEqual('the laptop may connect', said.connected, 1);
   await r.handle('e', { type: 'slack:link', conversation: 'D1' });
   check('and opens links itself', said.opened.length === 1);
+  await r.handle('e', { type: 'slack:setup' });
+  check('the setup page opens on the laptop, Slack connected or not', said.opened[1] === SETUP_URL);
   await r.handle('e', { type: 'slack:reply', id: 'e1', conversation: 'D2', text: 'hi' });
   check('the editor is not written in the trail', !audit.some((a) => a.detail === 'D2'));
 
@@ -126,4 +128,7 @@ module.exports = async function () {
   check('with Slack off the state still says what to do', nobody[0].state.socket === 'off' && Array.isArray(nobody[0].state.conversations));
   await off.handle('n', { type: 'slack:reply', id: 'z', conversation: 'D1', text: 'x' });
   check('and a reply says it is not connected', nobody.some((m) => m.id === 'z' && /not connected/.test(m.reason)));
+  nobody.length = 0;
+  await off.handle('n', { type: 'slack:setup' });
+  check('a phone is handed the setup page to open itself', nobody.some((m) => m.type === 'slack:link' && m.url === SETUP_URL));
 };

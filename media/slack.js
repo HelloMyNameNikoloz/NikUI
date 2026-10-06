@@ -299,7 +299,7 @@
           '<li></li>' +
         '</ol>';
       const stepApp = card.querySelector('.ns-step-app');
-      stepApp.addEventListener('click', () => { if (state && state.setupUrl) openUrl(state.setupUrl); });
+      stepApp.addEventListener('click', () => send({ type: 'slack:setup' }));
       const lastStep = card.querySelectorAll('.ns-steps li')[2];
       if (state && state.local) {
         const btn = el('button', null, { type: 'button' });

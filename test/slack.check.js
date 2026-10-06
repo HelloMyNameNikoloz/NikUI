@@ -131,6 +131,9 @@ const THREAD_ANNA = {
     await post({ type: 'slack:state', state: Object.assign({}, BASE_STATE, { hasTokens: false }) });
     out.setupCardShown = /Connect Slack/.test(await text('.ns-card h2') || '');
     out.setupExplains = /@mention you/.test(await text('.ns-card p') || '');
+    // A webview may not open a window itself, so the button asks the laptop to.
+    await click('.ns-step-app');
+    out.setupAsksLaptop = (await posted()).some((m) => m.type === 'slack:setup');
 
     // ---- disabled card --------------------------------------------------
     await post({ type: 'slack:state', state: Object.assign({}, BASE_STATE, { enabled: false }) });
@@ -299,6 +302,7 @@ const THREAD_ANNA = {
     ['slack:ready is posted once mounted', out.sentReady === true],
     ['no tokens shows the setup card', out.setupCardShown === true],
     ['which explains what this does', out.setupExplains === true],
+    ['and Create the Slack app asks the laptop to open the page', out.setupAsksLaptop === true],
     ['disabled-but-connected shows its own card', out.disabledCardShown === true],
     ['every conversation gets a row', out.rowCount === 3],
     ['a pending conversation sorts first', out.pendingFirst === 'Anna'],
