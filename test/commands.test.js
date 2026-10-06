@@ -31,7 +31,7 @@ module.exports = async function () {
   {
     const list = commands.list({ shipped: SHIPPED, mine: { Mine: 'My own. Second.', lean: '' }, shippedSaid: SAID, mineSaid: {} });
     checkEqual('NikUI\'s own first, then the shipped, then yours',
-      list.map((c) => c.name), ['status', 'settings', 'commands', 'watch', 'table', 'lean', 'mine']);
+      list.map((c) => c.name), ['status', 'settings', 'commands', 'slack', 'watch', 'table', 'lean', 'mine']);
     check('every own command says what it does', list.filter((c) => c.kind === 'own').every((c) => c.description && c.usage));
     checkEqual('the hub offers exactly those as its own', OWN_COMMANDS, commands.OWN_NAMES);
     const table = list.find((c) => c.name === 'table');

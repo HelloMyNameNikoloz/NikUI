@@ -18,7 +18,7 @@
  * rules are checked without an editor.
  */
 
-const GROUPS = ['Claude', 'Your laptop', 'Notifications on your laptop', 'Notifications on your phone', 'In the editor'];
+const GROUPS = ['Claude', 'Your laptop', 'Notifications on your laptop', 'Notifications on your phone', 'Slack', 'In the editor'];
 
 const EFFORT = [
   ['', 'Claude Code default'], ['low', 'Low'], ['medium', 'Medium'],
@@ -76,6 +76,22 @@ const PREFS = [
     kind: 'toggle', fallback: true, label: 'When CI on a pull request is green or fails' },
   { id: 'notify.turnFinished', group: 'Notifications on your phone', key: 'notifyDevices', part: 'turnFinished',
     kind: 'toggle', fallback: false, label: 'When a turn finishes', hint: 'Off by default: busy nights are loud.' },
+
+  // Off until you connect it: watching somebody's Slack is not a default.
+  { id: 'slack.on', group: 'Slack', key: 'slack.enabled', kind: 'toggle', fallback: false,
+    label: 'Watch Slack', hint: 'DMs from your VIPs, and messages that @mention you. /slack to connect and pick VIPs.' },
+  { id: 'slack.mentions', group: 'Slack', key: 'slack.mentions', kind: 'toggle', fallback: true,
+    label: 'Include @mentions', hint: 'From anybody, in any channel you are in.' },
+  { id: 'slack.popup', group: 'Slack', key: 'slack.popupOnLaptop', kind: 'toggle', fallback: true,
+    label: 'Pop the chat up on your laptop', hint: 'When a message is still unseen after the wait below.' },
+  { id: 'slack.popupAfter', group: 'Slack', key: 'slack.popupAfterMinutes', kind: 'number', min: 1, max: 30,
+    fallback: 1, label: 'Minutes before it pops up' },
+  { id: 'slack.alarm', group: 'Slack', key: 'slack.alarmOnPhone', kind: 'toggle', fallback: true,
+    label: 'Ring your phone', hint: 'Still unseen and unanswered after the wait below. The same alarm as a waiting instance.' },
+  { id: 'slack.alarmAfter', group: 'Slack', key: 'slack.alarmAfterMinutes', kind: 'number', min: 1, max: 60,
+    fallback: 3, label: 'Minutes before it rings' },
+  { id: 'slack.preview', group: 'Slack', key: 'slack.previewOnPhone', kind: 'toggle', fallback: true,
+    label: 'Show the message on your phone', hint: 'Off: the notification says only who wrote.' },
 
   { id: 'fontSize', group: 'In the editor', key: 'fontSize', kind: 'number', min: 10, max: 24,
     label: 'Text size' },

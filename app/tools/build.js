@@ -31,11 +31,11 @@ const { renderPage, SCRIPTS } = require(path.join(REPO, 'src', 'page.js'));
 // Everything the client needs, plus the app's own layer. The list is derived
 // rather than typed: whatever the panel loads, the app loads.
 const CLIENT_FILES = SCRIPTS.concat([
-  'panel.css', 'browser.css', 'mobile.js', 'home.js', 'device.js'
+  'panel.css', 'browser.css', 'mobile.js', 'home.js', 'device.js', 'slack.js', 'slack.css'
 ]);
 
 const SHELL_FILES = ['app.css', 'app.js', 'lock.js', 'notify.js', 'connect.js', 'settings.js',
-  'history.js', 'status.js', 'terminal.js', 'voice.js'];
+  'history.js', 'status.js', 'terminal.js', 'voice.js', 'slack.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -368,6 +368,32 @@ function settingsPage() {
   });
 }
 
+/**
+ * Slack, read and replied to from the phone.
+ *
+ * Reached from a notification, from Settings, or from typing `/slack` on the
+ * laptop — never from the tab bar, which is why there is no `id="tabs"` here:
+ * this is a pushed screen, with its own way back, not a peer of the three.
+ */
+function slackPage() {
+  page({
+    file: 'slack.html',
+    title: 'Slack',
+    cls: 'slack',
+    body: `  <header class="bar">
+    <div class="bar-left"><button class="bar-button back" id="back" type="button" aria-label="Back"></button></div>
+    <span class="bar-title">Slack</span>
+    <div class="bar-right">
+      <div class="link" id="link" role="status" aria-live="polite" hidden></div>
+    </div>
+  </header>
+  <main id="slack-root" class="slack-screen"></main>`,
+    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+      'media/transport.js', 'media/slack.js', 'slack.js'],
+    css: ['media/slack.css']
+  });
+}
+
 function manifest(version) {
   fs.writeFileSync(path.join(OUT, 'version.json'), JSON.stringify(version, null, 2) + '\n');
 }
@@ -384,6 +410,7 @@ function build() {
   terminalPage();
   connectPage();
   settingsPage();
+  slackPage();
   manifest(version);
 
   const files = fs.readdirSync(OUT).length;

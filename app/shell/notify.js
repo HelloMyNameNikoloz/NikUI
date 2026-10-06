@@ -20,7 +20,7 @@
   // Everything on: the laptop decides what is worth sending — whatever pops up
   // on it comes here too, for somebody out of the house with only the phone —
   // and these are for turning one kind off on the phone alone.
-  const DEFAULTS = { on: false, needsYou: true, quota: true, failed: true, ci: true, turnFinished: true };
+  const DEFAULTS = { on: false, needsYou: true, quota: true, failed: true, ci: true, turnFinished: true, slack: true };
   // Prefs saved before that had a turn finishing switched off by default,
   // written down as if somebody had chosen it.
   const SHAPE = 2;
@@ -32,7 +32,8 @@
     ['failed', 'failed', 'An instance failed', 'It stopped without finishing'],
     ['quota', 'quota', 'The usage limit', 'When it runs out, and when it comes back'],
     ['ci', 'ci', 'CI on a pull request', 'Green, failed, or no CI at all'],
-    ['turnFinished', 'turn-finished', 'A turn finished', 'When your laptop says an instance is done']
+    ['turnFinished', 'turn-finished', 'A turn finished', 'When your laptop says an instance is done'],
+    ['slack', 'slack', 'Slack from a VIP or a mention', 'Rings like a waiting instance when nobody has seen it']
   ];
 
   const plugins = () => (window.Capacitor && window.Capacitor.Plugins) || null;
@@ -133,16 +134,18 @@
         title: String(message.title || 'NikUI').slice(0, 120),
         body: String(message.body || '').slice(0, 300),
         // Something that cannot go on without you is worth a sound. The rest
-        // is worth a line on a lock screen and nothing more.
+        // is worth a line on a lock screen and nothing more. Slack gets the
+        // same alarm as needs-you: a message waiting unseen is exactly that,
+        // just arriving from somewhere else.
         // Both made natively (watcher/Chime.java), with the laptop's chime as
         // their sound and its three rising notes as their buzz.
-        channelId: message.kind === 'needs-you' ? 'nikui-chime-urgent' : 'nikui-chime',
+        channelId: message.kind === 'needs-you' || message.kind === 'slack' ? 'nikui-chime-urgent' : 'nikui-chime',
         // What the laptop's banner says, as it says it: the line under the
         // title is the answer, and it can run to more than one line.
         largeBody: String(message.body || '').slice(0, 300),
         group: 'nikui',
         smallIcon: 'ic_stat_nikui',
-        extra: { session: message.session || null }
+        extra: { session: message.session || null, conversation: message.conversation || null }
       }]
     }).then(function () { return true; })
       .catch(function () { return false; });
@@ -295,13 +298,24 @@
     const extra = (notification && (notification.extra ||
       (notification.notification && notification.notification.extra))) || {};
     if (!window.NikApp) return;
-    if (extra.session) window.NikApp.go('conversation.html', { session: extra.session });
+    if (extra.conversation) window.NikApp.go('slack.html', { conversation: extra.conversation });
+    else if (extra.session) window.NikApp.go('conversation.html', { session: extra.session });
     else window.NikApp.go('index.html');
   }
 
   /** The same, for one the phone's own listener raised: nothing to do if none was. */
   function opened(event) {
-    if (event && event.session && window.NikApp) window.NikApp.go('conversation.html', { session: event.session });
+    if (!event || !window.NikApp) return;
+    if (event.conversation) { window.NikApp.go('slack.html', { conversation: event.conversation }); return; }
+    // The listener only ever carried a session before Slack existed, so an
+    // older laptop's secret still says "slack:D123" there rather than in a
+    // field of its own — read the same way on this side until every laptop
+    // has caught up.
+    if (event.session && String(event.session).indexOf('slack:') === 0) {
+      window.NikApp.go('slack.html', { conversation: event.session.slice('slack:'.length) });
+      return;
+    }
+    if (event.session) window.NikApp.go('conversation.html', { session: event.session });
   }
 
   function start() {

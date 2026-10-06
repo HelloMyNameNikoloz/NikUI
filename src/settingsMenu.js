@@ -36,7 +36,8 @@ const GROUPS = [
   ['nikui.notifyOnAttention', 'This machine'],
   ['nikui.notifyWhenDone', 'This machine'],
   ['nikui.notifyCI', 'This machine'],
-  ['nikui.watchCIAfterPush', 'Instances']
+  ['nikui.watchCIAfterPush', 'Instances'],
+  ['nikui.slack.', 'Slack']
 ];
 const OTHER = 'The panel';
 
@@ -79,7 +80,15 @@ const NAMES = {
   'nikui.apns.keyId': 'APNs key ID',
   'nikui.apns.keyFile': 'Path to the .p8 key file',
   'nikui.apns.bundleId': 'App bundle identifier',
-  'nikui.apns.production': 'Send to Apple’s production network'
+  'nikui.apns.production': 'Send to Apple’s production network',
+  'nikui.slack.enabled': 'Watch Slack for your VIPs and @mentions',
+  'nikui.slack.vips': 'Your Slack VIPs',
+  'nikui.slack.mentions': 'Include messages that @mention you',
+  'nikui.slack.popupOnLaptop': 'Pop the chat up in the editor',
+  'nikui.slack.popupAfterMinutes': 'Minutes before it pops up',
+  'nikui.slack.alarmOnPhone': 'Ring the phone',
+  'nikui.slack.alarmAfterMinutes': 'Minutes before the phone rings',
+  'nikui.slack.previewOnPhone': 'Show the message on the phone'
 };
 
 function groupFor(key) {

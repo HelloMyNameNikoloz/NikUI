@@ -1115,7 +1115,7 @@
       autoGrow();
       return;
     }
-    const own = !attachments.length && /^\/(status|settings|commands)$/i.exec(text);
+    const own = !attachments.length && /^\/(status|settings|commands|slack)$/i.exec(text);
     if (own) {
       prompts.remember(text);
       prompts.reset();
@@ -1125,6 +1125,11 @@
       const which = own[1].toLowerCase();
       if (which === 'status') askForStatus();
       else if (which === 'commands') askForCommands();
+      // The app has a Slack page of its own; the editor opens a tab beside.
+      else if (which === 'slack') {
+        if (window.NikApp && window.NikApp.go) window.NikApp.go('slack.html');
+        else vscode.postMessage({ type: 'slack' });
+      }
       else askForSettings();
       return;
     }

@@ -37,6 +37,7 @@ const { openSettings, schemaFrom, rememberModelsIn, useSwitch, write: writeSetti
   unloaded, offerReload, notLoaded } = require('./settingsMenu');
 const { loadApns } = require('./apns');
 const { Voice } = require('./voice');
+const { startSlack } = require('./slackHome');
 
 let manager;
 
@@ -759,12 +760,15 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
   });
 
+  let slackRoom = null;
   const server = new RemoteServer({
     root: context.extensionUri.fsPath,
     host: served,
     terminals,
     voice,
     audience,
+    // Made after the notifier, which it rings the phone through.
+    slack: () => slackRoom,
     // Whether this laptop may sleep, readable by any paired device and
     // switchable by one that may send prompts.
     keepAwake: awakeState || null,
@@ -882,6 +886,16 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  push: ' + line); }
   });
   context.subscriptions.push({ dispose: notifier.watch(manager) });
+
+  // Slack: a VIP waiting a minute pops up here, three minutes rings the phone.
+  const slack = startSlack(context, {
+    notifier,
+    devices,
+    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
+  });
+  slackRoom = slack.room;
+  served.openSlack = () => slack.open({});
+
   // The lid is shut, the battery is at its floor and work is still running:
   // the one sleep a phone should hear about before it happens.
   if (awakeState && awakeState.lid && awakeState.lid.onGiveUp) {

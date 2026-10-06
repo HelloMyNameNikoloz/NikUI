@@ -255,6 +255,22 @@
         "title": "Settings",
         "category": "NikUI",
         "icon": "$(gear)"
+      },
+      {
+        "command": "nikui.slack.open",
+        "title": "Slack",
+        "category": "NikUI",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "nikui.slack.connect",
+        "title": "Connect Slack",
+        "category": "NikUI"
+      },
+      {
+        "command": "nikui.slack.disconnect",
+        "title": "Disconnect Slack",
+        "category": "NikUI"
       }
     ],
     "menus": {
@@ -803,6 +819,51 @@
           },
           "additionalProperties": false,
           "markdownDescription": "Which things are worth sending to a paired phone. A notification you learn to ignore is worse than no notification, so this is deliberately short."
+        },
+        "nikui.slack.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Watch Slack for DMs from your VIPs and messages that @mention you. Connect it with NikUI: Connect Slack."
+        },
+        "nikui.slack.vips": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Whose DMs matter: a Slack member ID (U…), an email, or a display name or @handle."
+        },
+        "nikui.slack.mentions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also watch messages from anybody that @mention you."
+        },
+        "nikui.slack.popupOnLaptop": {
+          "type": "boolean",
+          "default": true,
+          "description": "Pop the Slack chat up in the editor when a message is still unseen after nikui.slack.popupAfterMinutes."
+        },
+        "nikui.slack.popupAfterMinutes": {
+          "type": "number",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 30,
+          "description": "Minutes a message may go unseen before the chat pops up."
+        },
+        "nikui.slack.alarmOnPhone": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ring the paired phone, with the same alarm as a waiting instance, when a message is still unseen and unanswered after nikui.slack.alarmAfterMinutes."
+        },
+        "nikui.slack.alarmAfterMinutes": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Minutes a message may go unseen and unanswered before the phone rings."
+        },
+        "nikui.slack.previewOnPhone": {
+          "type": "boolean",
+          "default": true,
+          "description": "Put the message itself in the phone's notification. Off: only who wrote."
         }
       }
     }

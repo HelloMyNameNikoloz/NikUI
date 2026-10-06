@@ -59,8 +59,8 @@ module.exports = async function () {
       { value: 'claude-opus-5-5', label: 'Opus 5.5' },
       { value: 'claude-opus-5-5[1m]', label: 'Opus 5.5', detail: '1M context' }
     ] });
-    checkEqual('five groups, in the order somebody reads them', read.groups,
-      ['Claude', 'Your laptop', 'Notifications on your laptop', 'Notifications on your phone', 'In the editor']);
+    checkEqual('six groups, in the order somebody reads them', read.groups,
+      ['Claude', 'Your laptop', 'Notifications on your laptop', 'Notifications on your phone', 'Slack', 'In the editor']);
     check('every row belongs to one of them', read.rows.every((r) => read.groups.includes(r.group)));
     check('and is said in words, not keys', read.rows.every((r) => !/nikui\.|[A-Z][a-z]+[A-Z]/.test(r.label)));
 

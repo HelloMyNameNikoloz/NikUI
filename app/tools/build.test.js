@@ -67,7 +67,7 @@ for (const page of fs.readdirSync(OUT).filter((f) => f.endsWith('.html'))) {
 check('the conversation carries the classes the app styles it by',
   /<body class="app app-conversation">/.test(read('conversation.html')));
 
-for (const page of ['index.html', 'connect.html', 'settings.html', 'conversation.html']) {
+for (const page of ['index.html', 'connect.html', 'settings.html', 'conversation.html', 'slack.html']) {
   const html = read(page);
   check(page + ' carries a policy', /Content-Security-Policy/.test(html));
   check(page + ' allows scripts only from itself', /script-src 'self'/.test(html));
@@ -107,6 +107,45 @@ for (const page of ['index.html', 'status.html', 'history.html', 'settings.html'
 }
 check('the conversation is a pushed screen, so it has a way back instead',
   /id="back"/.test(read('conversation.html')) && !/id="tabs"/.test(read('conversation.html')));
+
+// ---- Slack, a page you are sent to rather than a tab --------------------------
+//
+// Opened from a notification, from Settings, or from `/slack` on the laptop —
+// never the tab bar, so it needs the same "has its own way back" shape as the
+// conversation, not the tab bar the three peers carry.
+
+const slack = read('slack.html');
+check('Slack is a pushed screen too: its own way back, no tab bar',
+  /id="back"/.test(slack) && !/id="tabs"/.test(slack));
+check('it has somewhere for the shared chat view to mount',
+  /id="slack-root"/.test(slack));
+check('it loads the shared Slack client', slack.includes('media/slack.js'));
+check('and the bootstrap that connects it to this laptop', slack.includes('"slack.js"'));
+check('and its own styling', slack.includes('media/slack.css'));
+check('and can raise a notification like every other screen', slack.includes('notify.js'));
+
+check('the app ships the shared Slack client',
+  fs.existsSync(path.join(OUT, 'media', 'slack.js')));
+check('and its stylesheet', fs.existsSync(path.join(OUT, 'media', 'slack.css')));
+
+check('a Slack notification rings the same alarm as needs-you',
+  /kind === 'needs-you'[\s\S]*?kind === 'slack'|kind === 'slack'[\s\S]*?nikui-chime-urgent/.test(
+    fs.readFileSync(path.join(APP, 'shell', 'notify.js'), 'utf8')));
+check('and opens the conversation Slack was about when tapped',
+  /conversation/.test(fs.readFileSync(path.join(APP, 'shell', 'notify.js'), 'utf8')));
+
+check('Settings is where Slack is reached from, besides a notification',
+  /slack\.html/.test(fs.readFileSync(path.join(APP, 'shell', 'settings.js'), 'utf8')));
+
+const chimeJava = fs.readFileSync(path.join(APP, 'android', 'app', 'src', 'main', 'java',
+  'com', 'nikoloz', 'nikui', 'watcher', 'Chime.java'), 'utf8');
+check('the native chime rings urgent for Slack too', /"slack"\.equals\(kind\)/.test(chimeJava));
+check('and carries which conversation it was about', /EXTRA_CONVERSATION/.test(chimeJava));
+
+const watcherPluginJava = fs.readFileSync(path.join(APP, 'android', 'app', 'src', 'main', 'java',
+  'com', 'nikoloz', 'nikui', 'watcher', 'WatcherPlugin.java'), 'utf8');
+check('and the tap is reported back to JavaScript with it',
+  /conversation/.test(watcherPluginJava));
 
 // ---- the version it reports --------------------------------------------------
 

@@ -26,7 +26,9 @@ const TO_HOST = [
   'settings', 'settingsOpen', 'setSetting', 'allSettings',
   'commands', 'commandsOpen', 'saveCommand', 'removeCommand', 'restoreCommand',
   // Whether the page is on screen, which is what says a phone saw it finish.
-  'visible'
+  'visible',
+  // `/slack` in the editor: open its tab. The app goes to its own page.
+  'slack'
 ];
 
 const TO_CLIENT = [

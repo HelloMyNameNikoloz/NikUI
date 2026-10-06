@@ -31,6 +31,11 @@ const OWN = [
     description: 'This page: NikUI\'s own commands, and your prompt snippets to read, change and add to.'
   },
   {
+    name: 'slack',
+    usage: '/slack',
+    description: 'Your Slack VIPs and @mentions: read them, and reply as yourself. Reading here never marks anything read in Slack; replying does.'
+  },
+  {
     name: 'watch',
     usage: '/watch [prompt]',
     description: 'Watches the CI of this branch\'s pull request and says when it goes green or fails. ' +

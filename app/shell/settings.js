@@ -361,6 +361,14 @@
       }
     }
 
+    const slack = group('Slack');
+    row(slack, {
+      label: 'Slack',
+      hint: 'Messages from your VIPs and @mentions',
+      tap: () => app.go('slack.html'),
+      chevron: true
+    });
+
     const look = group('Text size');
     const sizes = [['small', 'Small'], ['medium', 'Default'], ['large', 'Large']];
     const current = app.prefs().textSize;

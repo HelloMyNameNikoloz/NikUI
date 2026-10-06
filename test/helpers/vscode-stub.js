@@ -171,13 +171,28 @@ function memoryState() {
   };
 }
 
+/** VS Code's secret storage, kept in memory. */
+function memorySecrets() {
+  const store = new Map();
+  const listeners = new Set();
+  const changed = (key) => listeners.forEach((fn) => fn({ key }));
+  return {
+    get: async (key) => store.get(key),
+    store: async (key, value) => { store.set(key, value); changed(key); },
+    delete: async (key) => { store.delete(key); changed(key); },
+    onDidChange: (fn) => { listeners.add(fn); return { dispose: () => listeners.delete(fn) }; },
+    __store: store
+  };
+}
+
 function fakeContext(extra) {
   return Object.assign({
     subscriptions: [],
     extensionUri: { fsPath: path.join(__dirname, '..', '..') },
     workspaceState: memoryState(),
-    globalState: memoryState()
+    globalState: memoryState(),
+    secrets: memorySecrets()
   }, extra || {});
 }
 
-module.exports = { install, fakeContext, memoryState };
+module.exports = { install, fakeContext, memoryState, memorySecrets };

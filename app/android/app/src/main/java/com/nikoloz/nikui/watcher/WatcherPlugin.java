@@ -83,26 +83,37 @@ public class WatcherPlugin extends Plugin {
         call.resolve(state());
     }
 
-    /** The instance a tapped notification was about, once. */
+    /** The instance, or Slack conversation, a tapped notification was about, once. */
     @PluginMethod
     public void opened(PluginCall call) {
-        JSObject out = new JSObject();
         Intent intent = getActivity() == null ? null : getActivity().getIntent();
-        String session = intent == null ? null : intent.getStringExtra(Chime.EXTRA_SESSION);
-        if (session != null) intent.removeExtra(Chime.EXTRA_SESSION);
-        out.put("session", session);
+        JSObject out = fromIntent(intent);
         call.resolve(out);
     }
 
     @Override
     protected void handleOnNewIntent(Intent intent) {
         super.handleOnNewIntent(intent);
-        String session = intent == null ? null : intent.getStringExtra(Chime.EXTRA_SESSION);
-        if (session == null) return;
-        intent.removeExtra(Chime.EXTRA_SESSION);
-        JSObject out = new JSObject();
-        out.put("session", session);
+        if (intent == null) return;
+        String session = intent.getStringExtra(Chime.EXTRA_SESSION);
+        String conversation = intent.getStringExtra(Chime.EXTRA_CONVERSATION);
+        if (session == null && conversation == null) return;
+        JSObject out = fromIntent(intent);
         notifyListeners("opened", out);
+    }
+
+    /** Both extras, read once and cleared so a later look does not find a stale one. */
+    private JSObject fromIntent(Intent intent) {
+        JSObject out = new JSObject();
+        String session = intent == null ? null : intent.getStringExtra(Chime.EXTRA_SESSION);
+        String conversation = intent == null ? null : intent.getStringExtra(Chime.EXTRA_CONVERSATION);
+        if (intent != null) {
+            intent.removeExtra(Chime.EXTRA_SESSION);
+            intent.removeExtra(Chime.EXTRA_CONVERSATION);
+        }
+        out.put("session", session);
+        out.put("conversation", conversation);
+        return out;
     }
 
     private boolean unrestricted() {

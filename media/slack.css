@@ -1,0 +1,445 @@
+/* Slack, inside NikUI: a list rail and a thread, on the laptop and on the
+   phone. Only six --vscode-* variables are guaranteed to exist outside the
+   editor (see media/browser.css) — everything else here falls back to a
+   value that looks right in a dark VS Code theme, so the same file works
+   unedited in both places. */
+
+.nik-slack {
+  --ns-s1: 4px; --ns-s2: 8px; --ns-s3: 12px; --ns-s4: 16px; --ns-s5: 24px;
+  --ns-radius: 10px;
+  --ns-radius-chip: 999px;
+  --ns-accent: var(--vscode-textLink-foreground, #0a84ff);
+  --ns-hairline: color-mix(in srgb, var(--vscode-foreground, #ccc) 12%, transparent);
+  --ns-fill-1: color-mix(in srgb, var(--vscode-foreground, #ccc) 5%, transparent);
+  --ns-fill-2: color-mix(in srgb, var(--vscode-foreground, #ccc) 9%, transparent);
+  --ns-rail-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #1f1f1f));
+  /* Wrapped in color-mix even when the host variable exists: an editor theme's
+     activeSelectionBackground is a solid, opaque colour, and a whole list row
+     filled with it reads as a button, not a selection. Low emphasis, always. */
+  --ns-hover: color-mix(in srgb, var(--vscode-list-hoverBackground, var(--vscode-foreground, #ccc)) 8%, transparent);
+  --ns-active: color-mix(in srgb, var(--vscode-list-activeSelectionBackground, var(--ns-accent)) 16%, transparent);
+  --ns-btn-bg: var(--vscode-button-background, #0a84ff);
+  --ns-btn-fg: var(--vscode-button-foreground, #ffffff);
+  --ns-btn-hover: var(--vscode-button-hoverBackground, #2894ff);
+  --ns-badge-bg: var(--vscode-badge-background, color-mix(in srgb, var(--ns-accent) 25%, transparent));
+  --ns-badge-fg: var(--vscode-badge-foreground, #ffffff);
+  --ns-error: var(--vscode-errorForeground, #ff453a);
+  --ns-green: #30d158;
+  --ns-orange: #ff9f0a;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-editor-background, #1f1f1f);
+}
+
+.nik-slack * { box-sizing: border-box; }
+/* `hidden` has to win over any author rule that sets `display` on the same
+   element (icon-only buttons do), or toggling it does nothing. */
+.nik-slack [hidden] { display: none !important; }
+
+.nik-slack button {
+  font: inherit;
+  font-weight: 540;
+  border: 0.5px solid transparent;
+  border-radius: var(--ns-radius-chip);
+  padding: 6px 13px;
+  cursor: pointer;
+  background: var(--ns-btn-bg);
+  color: var(--ns-btn-fg);
+  transition: filter 0.15s ease, background 0.15s ease;
+}
+.nik-slack button:hover { filter: brightness(1.08); }
+.nik-slack button:active { filter: brightness(0.94); }
+.nik-slack button:disabled { opacity: 0.4; cursor: default; filter: none; }
+.nik-slack button.ghost { background: var(--ns-fill-2); color: var(--vscode-foreground, #ccc); }
+.nik-slack button.ghost:hover { background: var(--ns-fill-2); filter: brightness(1.2); }
+.nik-slack button.icon-only {
+  padding: 0; width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+.nik-slack .ico { display: block; width: 16px; height: 16px; flex: 0 0 auto; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---- layout: two panes, or one that slides ------------------------------ */
+
+.ns-panes {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ns-list {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--ns-hairline);
+  background: var(--ns-rail-bg);
+}
+
+.ns-thread {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.nik-slack.compact .ns-panes { position: relative; overflow: hidden; }
+.nik-slack.compact .ns-list { flex: 1 1 auto; border-right: none; }
+.nik-slack.compact .ns-thread {
+  position: absolute; inset: 0;
+  transform: translateX(100%);
+  transition: transform 0.18s ease;
+  background: var(--vscode-editor-background, #1f1f1f);
+}
+.nik-slack.compact.show-thread .ns-list { display: none; }
+.nik-slack.compact.show-thread .ns-thread { transform: translateX(0); }
+/* Matched on tag + class, same as the icon-only rule it has to beat: the
+   internal "back to the list" arrow only makes sense when there is only one
+   pane to come back from. */
+.nik-slack button.ns-thread-back { display: none; }
+.nik-slack.compact button.ns-thread-back { display: inline-flex; }
+
+/* ---- header -------------------------------------------------------------- */
+
+.ns-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ns-s2);
+  padding: var(--ns-s3) var(--ns-s3);
+  border-bottom: 1px solid var(--ns-hairline);
+}
+.ns-head h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+
+.ns-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: var(--ns-radius-chip);
+  font-size: 11px; font-weight: 560;
+  background: var(--ns-fill-1);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ns-pill::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; flex: 0 0 auto;
+}
+.ns-conn { margin-left: auto; margin-right: var(--ns-s2); color: var(--vscode-descriptionForeground, #9d9d9d); }
+.ns-conn.on { color: var(--ns-green); }
+.ns-conn.warn { color: var(--ns-orange); }
+.ns-conn.off { color: var(--ns-error); }
+
+.ns-gear { flex: 0 0 auto; }
+.ns-vipbtn {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px 5px 9px;
+  font-size: 11.5px;
+}
+.ns-vipbtn .ico { width: 13px; height: 13px; color: var(--ns-orange); }
+
+/* ---- the list ------------------------------------------------------------ */
+
+.ns-list-body { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+
+.ns-rows { list-style: none; margin: 0; padding: 0; }
+
+/* `.ns-row` is a <button>, so it needs to outrank the generic button rule's
+   blue fill — matched on tag plus class, the same specificity trick the
+   ghost and icon-only variants use above. */
+.ns-rows li { padding: 1px var(--ns-s2); }
+button.ns-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ns-s3);
+  width: 100%;
+  text-align: left;
+  padding: var(--ns-s3);
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: var(--ns-radius);
+}
+button.ns-row:hover { background: var(--ns-hover); filter: none; }
+button.ns-row.on { background: var(--ns-active); filter: none; }
+
+.ns-avatar {
+  position: relative;
+  flex: 0 0 auto;
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12.5px; font-weight: 650;
+  background: var(--ns-fill-2);
+  color: var(--vscode-foreground, #ccc);
+}
+.ns-star {
+  position: absolute; right: -3px; bottom: -3px;
+  width: 15px; height: 15px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--vscode-editor-background, #1f1f1f);
+  color: var(--ns-orange);
+}
+.ns-star .ico { width: 10px; height: 10px; }
+.ns-thread-title .ns-star { position: static; width: auto; height: auto; background: none; }
+
+.ns-row-main { flex: 1 1 auto; min-width: 0; }
+.ns-row-top { display: flex; align-items: baseline; gap: var(--ns-s2); }
+.ns-title { flex: 1 1 auto; min-width: 0; font-weight: 590; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ns-time { flex: 0 0 auto; font-size: 11px; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.ns-row-bottom { display: flex; align-items: center; gap: var(--ns-s2); margin-top: 2px; }
+.ns-last {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 12px;
+}
+.ns-pending {
+  flex: 0 0 auto;
+  font-size: 10.5px; font-weight: 650;
+  padding: 1px 7px; border-radius: var(--ns-radius-chip);
+  background: color-mix(in srgb, var(--ns-error) 20%, transparent);
+  color: var(--ns-error);
+}
+
+.ns-empty {
+  padding: var(--ns-s5) var(--ns-s4);
+  text-align: center;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+/* ---- setup / disabled cards ----------------------------------------------- */
+
+.ns-card { margin: var(--ns-s4); padding: var(--ns-s4); border: 1px solid var(--ns-hairline); border-radius: var(--ns-radius); }
+.ns-card h2 { margin: 0 0 var(--ns-s2); font-size: 14px; }
+.ns-card p { margin: 0 0 var(--ns-s3); color: var(--vscode-descriptionForeground, #9d9d9d); }
+.ns-steps { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: var(--ns-s3); }
+.ns-steps li { padding-left: var(--ns-s1); }
+.ns-note { margin-top: var(--ns-s1); font-size: 11.5px; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.ns-step-app, .ns-connect { margin-top: var(--ns-s1); }
+
+/* ---- thread header --------------------------------------------------------- */
+
+.ns-thread-head {
+  display: flex; align-items: center; gap: var(--ns-s2);
+  padding: var(--ns-s3);
+  border-bottom: 1px solid var(--ns-hairline);
+}
+.ns-thread-head .ns-avatar { width: 28px; height: 28px; font-size: 11px; }
+.ns-thread-title { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; font-weight: 590; }
+.ns-thread-title span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ns-open-slack { flex: 0 0 auto; font-size: 11.5px; padding: 5px 11px; }
+.ns-thread-empty {
+  flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+.ns-banner {
+  display: flex; align-items: center; gap: var(--ns-s2);
+  padding: var(--ns-s2) var(--ns-s3);
+  background: color-mix(in srgb, var(--ns-orange) 16%, transparent);
+  color: var(--vscode-foreground, #ccc);
+  font-size: 12.5px;
+}
+.ns-banner span:first-child { flex: 1 1 auto; }
+
+.ns-toast {
+  padding: var(--ns-s2) var(--ns-s3);
+  background: color-mix(in srgb, var(--ns-error) 18%, transparent);
+  color: var(--ns-error);
+  font-size: 12px;
+}
+
+/* ---- messages --------------------------------------------------------------- */
+
+.ns-messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  padding: var(--ns-s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ns-s3);
+}
+
+.ns-loading { margin: auto; color: var(--vscode-descriptionForeground, #9d9d9d); }
+
+.ns-day {
+  align-self: center;
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  padding: 2px 10px;
+  border-radius: var(--ns-radius-chip);
+  background: var(--ns-fill-1);
+}
+
+.ns-group { display: flex; flex-direction: column; gap: 3px; max-width: 86%; }
+.ns-group.mine { align-self: flex-end; align-items: flex-end; }
+
+.ns-msg-head { display: flex; align-items: baseline; gap: 7px; padding: 0 2px; }
+.ns-msg-name { font-weight: 620; font-size: 12.5px; }
+.ns-msg-time { font-size: 10.5px; color: var(--vscode-descriptionForeground, #9d9d9d); }
+
+.ns-msg {
+  padding: 7px 11px;
+  border-radius: 14px;
+  background: var(--ns-fill-2);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.ns-group.mine .ns-msg { background: color-mix(in srgb, var(--ns-accent) 28%, var(--ns-fill-2)); }
+
+.ns-msg a { color: var(--ns-accent); }
+.ns-msg code {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  background: var(--ns-fill-1);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.ns-msg pre {
+  margin: 4px 0; padding: var(--ns-s2); border-radius: 8px;
+  background: var(--ns-fill-1); overflow-x: auto;
+}
+.ns-msg pre code { background: none; padding: 0; }
+.ns-msg blockquote {
+  margin: 4px 0; padding-left: var(--ns-s2);
+  border-left: 3px solid var(--ns-hairline);
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+.ns-msg strong { font-weight: 650; }
+.ns-msg em { font-style: italic; }
+.ns-msg del { opacity: 0.6; }
+
+button.ns-replies {
+  align-self: flex-start;
+  font-size: 11.5px;
+  padding: 3px 10px;
+  background: var(--ns-fill-1);
+  color: var(--ns-accent);
+}
+
+/* ---- composer --------------------------------------------------------------- */
+
+.ns-composer {
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  border-top: 1px solid var(--ns-hairline);
+  padding: var(--ns-s2) var(--ns-s3);
+  background: var(--vscode-editor-background, #1f1f1f);
+}
+
+.ns-locked {
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  text-align: center;
+  padding: var(--ns-s4) var(--ns-s3);
+}
+
+.ns-thread-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-bottom: var(--ns-s2);
+  padding: 2px 4px 2px 10px;
+  border-radius: var(--ns-radius-chip);
+  background: var(--ns-fill-2);
+  font-size: 11.5px;
+}
+.ns-thread-chip button { padding: 4px; }
+
+.ns-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--ns-s2);
+  border: 1px solid var(--vscode-input-border, var(--ns-hairline));
+  border-radius: var(--ns-radius);
+  background: var(--vscode-input-background, #2b2b2b);
+  padding: var(--ns-s1) var(--ns-s1) var(--ns-s1) var(--ns-s3);
+}
+
+.ns-input {
+  flex: 1 1 auto;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--vscode-input-foreground, #ccc);
+  font: inherit;
+  padding: 7px 0;
+  max-height: 160px;
+}
+.ns-input::placeholder { color: var(--vscode-descriptionForeground, #9d9d9d); opacity: 0.8; }
+
+.ns-send { flex: 0 0 auto; align-self: flex-end; }
+
+.ns-hint {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  opacity: 0.7;
+}
+.ns-send-error { margin-top: 6px; font-size: 11.5px; color: var(--ns-error); }
+
+/* ---- VIP sheet -------------------------------------------------------------- */
+
+.ns-vip-sheet {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 20;
+}
+.ns-vip-card {
+  width: min(380px, calc(100% - 32px));
+  max-height: calc(100% - 64px);
+  display: flex; flex-direction: column;
+  padding: var(--ns-s4);
+  border-radius: 14px;
+  background: var(--vscode-editor-background, #1f1f1f);
+  border: 1px solid var(--ns-hairline);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+.ns-vip-card header { display: flex; align-items: center; gap: var(--ns-s2); margin-bottom: var(--ns-s2); }
+.ns-vip-card h2 { margin: 0; flex: 1 1 auto; font-size: 15px; }
+.ns-vip-note { margin: 0 0 var(--ns-s3); color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 12px; }
+.ns-vip-chips { display: flex; flex-wrap: wrap; gap: var(--ns-s2); overflow-y: auto; margin-bottom: var(--ns-s3); }
+.ns-vip-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 4px 4px 11px;
+  border-radius: var(--ns-radius-chip);
+  background: var(--ns-fill-2);
+  font-size: 12px;
+}
+.ns-vip-chip.unresolved { background: color-mix(in srgb, var(--ns-orange) 18%, transparent); }
+.ns-vip-warn { font-size: 10.5px; color: var(--ns-orange); }
+.ns-vip-chip button { padding: 4px; }
+.ns-vip-add { display: flex; gap: var(--ns-s2); }
+.ns-vip-add input {
+  flex: 1 1 auto;
+  border: 1px solid var(--vscode-input-border, var(--ns-hairline));
+  border-radius: var(--ns-radius);
+  background: var(--vscode-input-background, #2b2b2b);
+  color: var(--vscode-input-foreground, #ccc);
+  padding: 7px 10px;
+  font: inherit;
+}
+
+/* ---- touch: 44px targets on a phone -------------------------------------- */
+
+@media (pointer: coarse) {
+  .nik-slack button.icon-only { width: 44px; height: 44px; padding: 0; justify-content: center; }
+  .ns-row { padding: 12px var(--ns-s3); min-height: 44px; }
+  .ns-send { width: 44px; height: 44px; justify-content: center; }
+  .ns-composer { padding-bottom: max(var(--ns-s2), env(safe-area-inset-bottom)); }
+}

@@ -63,6 +63,8 @@ class Notifier {
     if (kind === 'quota') return on.quota !== false;
     if (kind === 'failed') return on.failed !== false;
     if (kind === 'ci') return on.ci !== false;
+    // Asked for in the Slack settings, which decide when it rings at all.
+    if (kind === 'slack') return on.slack !== false;
     return false;
   }
 
@@ -131,7 +133,7 @@ class Notifier {
         subject: this.subject,
         // Something needing an answer is worth waking a screen for; the rest
         // can wait for the phone to be picked up.
-        urgency: kind === 'needs-you' ? 'high' : 'normal',
+        urgency: kind === 'needs-you' || kind === 'slack' ? 'high' : 'normal',
         now: this.now()
       });
       if (outcome.ok) {

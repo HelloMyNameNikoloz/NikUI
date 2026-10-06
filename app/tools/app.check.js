@@ -181,10 +181,31 @@ const record = (name, ok) => {
     }
   };
 
+  // Slack as the laptop sees it, with Slack itself replaced by a list: the
+  // phone's half is under test here, and the real one needs a workspace.
+  const { SlackRoom } = require(path.join(REPO, 'src', 'slackRoom.js'));
+  const slackSaid = { replies: [], seen: [] };
+  const slackRoom = new SlackRoom({
+    service: () => ({
+      state: () => ({ connected: true, socket: 'live', error: null, me: { id: 'UME', teamId: 'T1' },
+        unresolved: [], vips: [{ id: 'U1', name: 'Anna Berg' }],
+        conversations: [{ id: 'D1', title: 'Anna Berg', kind: 'im', vip: true, pending: true,
+          pendingSince: Date.now() - 90000, last: { ts: '1.0', text: 'Can you look at the deploy?', user: 'U1' } }] }),
+      thread: async (id) => ({ conversation: { id, title: 'Anna Berg' },
+        messages: [{ ts: '1.0', at: Date.now() - 90000, user: 'U1', name: 'Anna Berg', initials: 'AB', text: 'Can you look at the deploy?', html: 'Can you look at the deploy?' }] }),
+      reply: async (id, text) => { slackSaid.replies.push([id, text]); return { ts: '2.0' }; },
+      seenInNikui: (id) => slackSaid.seen.push(id),
+      permalink: async () => 'https://x.slack.com/archives/D1'
+    }),
+    settings: () => ({ enabled: true, hasTokens: true, vipList: ['Anna Berg'], clock: '24h' }),
+    setVips: async () => {}, setEnabled: async () => {}, connect: async () => {}
+  });
+
   const laptop = new RemoteServer({
     root: REPO,
     terminals,
     voice,
+    slack: () => slackRoom,
     keepAwake: keeping,
     host: {
       config: () => ({ showThinking: true, promptSnippets: {} }),
@@ -632,7 +653,7 @@ const record = (name, ok) => {
     record('handed a secret for listening by the laptop, over the socket',
       await phone.until('/^[A-Za-z0-9_-]{43}$/.test(window.__buzz.secret() || "")', 6000));
     record('told which kinds are wanted',
-      (await phone.evaluate('window.__buzz.kinds().join()')) === 'needs-you,failed,quota,ci,turn-finished');
+      (await phone.evaluate('window.__buzz.kinds().join()')) === 'needs-you,failed,quota,ci,turn-finished,slack');
     record('and Android is asked to leave it alone when saving battery',
       await phone.until('window.__buzz.unrestricted() === true', 6000));
 
@@ -1439,10 +1460,10 @@ const record = (name, ok) => {
       box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     })()`);
     record('/settings on the phone opens the settings',
-      await phone.until('document.querySelectorAll(".prefs .prefs-group").length === 6', 10000));
+      await phone.until('document.querySelectorAll(".prefs .prefs-group").length === 7', 10000));
     record('said in words, in five groups and the way to the commands',
       (await phone.evaluate(`[...document.querySelectorAll('.prefs-group h3')].map(h => h.textContent).join('|')`))
-        === 'Claude|Your laptop|Notifications on your laptop|Notifications on your phone|In the editor|Commands');
+        === 'Claude|Your laptop|Notifications on your laptop|Notifications on your phone|Slack|In the editor|Commands');
     record('with this CLI\u2019s models to choose from',
       /Opus 5\.5/.test(await phone.evaluate(`document.querySelector('[data-choose="model"]').textContent`)));
     await shoot(phone, 'settings-sheet');
@@ -1699,6 +1720,43 @@ const record = (name, ok) => {
     record('and a device that only watches has no mic either',
       (await phone.evaluate('document.getElementById("mic").hidden')) === true);
     devices.setControl(paired.id, true);
+
+    // ---- Slack, from the phone ----------------------------------------------
+    //
+    // The same conversations as the laptop's tab, through the same room: a
+    // watching phone reads, a phone that may send prompts replies.
+    devices.setControl(paired.id, false);
+    await phone.navigate(appOrigin + '/slack.html');
+    record('/slack on the phone lists who is waiting',
+      await phone.until('[...document.querySelectorAll(".ns-row")].some(r => /Anna Berg/.test(r.textContent))', 12000));
+    await phone.evaluate(`document.querySelector('.ns-row').click()`);
+    record('tapping one opens the conversation',
+      await phone.until('/look at the deploy/.test(document.body.textContent)', 8000));
+    record('and opening it is seen in NikUI, not read in Slack', slackSaid.seen.includes('D1') && slackSaid.replies.length === 0);
+    record('a watching phone cannot reply',
+      await phone.until('!!document.querySelector(".ns-locked") && !document.querySelector(".ns-composer textarea")', 6000));
+    record('one pane at a time, nothing sideways',
+      (await phone.evaluate('document.scrollingElement.scrollWidth <= innerWidth + 1')) === true);
+    await phone.until("document.querySelector('.ns-thread').getBoundingClientRect().left === 0", 2000);
+    await shoot(phone, 'slack-thread-watching');
+    devices.setControl(paired.id, true);
+    await phone.navigate(appOrigin + '/slack.html?conversation=D1');
+    record('a notification opens straight onto the conversation',
+      await phone.until('!!document.querySelector(".ns-composer textarea")', 12000));
+    await phone.evaluate(`(() => {
+      const box = document.querySelector('.ns-composer textarea');
+      box.value = 'Looking now';
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('.ns-send').click();
+    })()`);
+    record('and a phone that may send prompts replies, as you',
+      await (async () => {
+        const end = Date.now() + 8000;
+        while (Date.now() < end && !slackSaid.replies.length) await new Promise((r) => setTimeout(r, 100));
+        return slackSaid.replies.length === 1 && slackSaid.replies[0][0] === 'D1' && slackSaid.replies[0][1] === 'Looking now';
+      })());
+    await phone.until("document.querySelector('.ns-thread').getBoundingClientRect().left === 0", 2000);
+    await shoot(phone, 'slack-thread');
 
     // ---- the chip loses the key the record points at -------------------------
     //

@@ -83,6 +83,13 @@ owns the whole surface.
   so they cost nothing; when nothing is obvious, nothing is offered. Hidden
   while you type, on a failed turn, and on a watch-only phone. Switch off with
   `nikui.replySuggestions` or under /settings.
+- **Slack, for the people who matter.** DMs from your VIPs, and messages that
+  @mention you, are watched from the laptop. One still unseen after a minute
+  pops the chat up beside your work; still unseen and unanswered after three,
+  your phone rings with the same alarm as a waiting instance, titled with who
+  it is. Read and reply from the editor tab or the app — `/slack` opens it.
+  Reading in NikUI never marks anything read in Slack; replying does. See
+  [Slack](#slack).
 - **When, on every message.** Each prompt shows the time it was sent, and the
   line that ends a turn — Done, how long it took, what it cost — ends with the
   time it came back. Today's are the time alone; older ones say the day.
@@ -470,6 +477,12 @@ links. Icons are Lucide, inlined as SVG because the webview CSP allows no CDN.
 | `nikui.keepAwake` | `false` | Keep this laptop awake while NikUI listens for your phone — also switchable from the phone |
 | `nikui.lidClosed` | `false` | Keep working with the lid closed while Claude works, then sleep — needs your password once |
 | `nikui.notifyDevices` | needs-you, quota, failed, CI | Which things are worth sending to a paired phone, on top of whatever pops up on the laptop |
+| `nikui.slack.enabled` | `false` | Watch Slack for your VIPs and @mentions — turned on by *Connect Slack* |
+| `nikui.slack.vips` | `[]` | Whose DMs matter: a member ID, an email, or a name or @handle |
+| `nikui.slack.mentions` | `true` | Also watch messages that @mention you, from anybody |
+| `nikui.slack.popupOnLaptop` / `popupAfterMinutes` | `true` / `1` | Pop the chat up in the editor when one is still unseen |
+| `nikui.slack.alarmOnPhone` / `alarmAfterMinutes` | `true` / `3` | Ring the paired phone when still unseen and unanswered |
+| `nikui.slack.previewOnPhone` | `true` | Put the message in the phone's notification, not only who wrote |
 | `nikui.voice.enabled` | `true` | Let a phone that may send prompts talk instead of typing, transcribed on this Mac by VoiceInk's model |
 
 ### One place for all of it
@@ -509,6 +522,8 @@ two windows and run it in the second, and the phone follows to the second.
 | `NikUI: Forget this device` | Deletes its key and closes its connection |
 | `NikUI: Settings` | Everything above, and every setting below, in one list |
 | `NikUI: Reach this window from my phone` | Puts the tailnet in front of the server |
+| `NikUI: Slack` | The Slack tab; `/slack` in a conversation does the same |
+| `NikUI: Connect Slack` / `Disconnect Slack` | Asks for the two tokens and keeps them in the system keychain / forgets them |
 | `NikUI: Stop being reachable from my phone` | Takes it back off |
 | `NikUI: Open a public address for this window` | A public tunnel, after a dialog that says what that means |
 
@@ -1242,6 +1257,56 @@ implemented, tested to the socket, and inert until four settings are filled in.
     cd app && npm test      # 97 checks that the bundle is still a copy, and shippable
 
 [`app/README.md`](app/README.md) is the detail.
+
+## Slack
+
+NikUI watches your Slack as you, from the laptop, through a small Slack app
+of your own — nothing is hosted anywhere, and no bot joins anything.
+
+**Setting it up, once.** Type `/slack` (or run `NikUI: Slack`) and press
+*Create the Slack app*: Slack opens with the app already described — the
+permissions it needs, and Socket Mode, so Slack talks to your laptop rather
+than to a server. Create it, then *Install to Workspace*. If your workspace
+only lets admins approve apps, this is where Slack asks one; in a workspace
+of your own it just installs. Then *Connect Slack*, and paste two tokens:
+the **User OAuth Token** (`xoxp-…`, on *OAuth & Permissions*) and an
+**App-Level Token** with `connections:write` (`xapp-…`, on *Basic
+Information*). The second is optional — without it NikUI checks every 20
+seconds instead of hearing about messages as they arrive. Both are checked
+with Slack before they are kept, and kept in the system keychain through VS
+Code's secret storage: never in settings, never sent to a phone.
+
+**Who counts.** VIPs are a list of your own, since Slack does not share its
+VIP list with apps: a member ID, an email, or a display name or @handle,
+added from the VIPs button in the Slack tab or `nikui.slack.vips`. With
+`nikui.slack.mentions` on, a message from anybody that @mentions you counts
+too.
+
+**What happens.**
+
+| After | If the message is still… | Then |
+| --- | --- | --- |
+| 0 | — | It appears at the top of the Slack tab, and a count shows in the status bar |
+| 1 minute | unseen | The Slack tab pops up beside your work, without taking the cursor, with a notification saying who |
+| 3 minutes | unseen and unanswered | The paired phone rings — the same alarm as an instance waiting for you — titled with who wrote |
+
+"Seen" means any of: Slack's own read marker has passed it (you read it in
+Slack, anywhere), you have written in that conversation since, or you looked
+at it in NikUI — the phone's Slack page, or the editor tab once you click into
+it. A tab that popped up on its own has not been read yet.
+
+**Reading never marks it read in Slack. Replying does.** Opening a
+conversation in NikUI leaves Slack's unread state exactly as it was, so
+nothing slips past you in Slack because NikUI showed it. Sending a reply from
+NikUI posts as you and then moves Slack's read marker to your reply, because
+answering is the clearest sign you saw it.
+
+**From the phone.** Tapping the alarm opens the app's Slack page on that
+conversation. Any paired phone can read; replying or changing VIPs needs the
+same grant as sending prompts, and each reply is written in the trail under
+`/status`. Connecting and disconnecting happen only on the laptop.
+
+The times and every switch are under `/settings` → *Slack*.
 
 ## Security
 

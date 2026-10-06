@@ -99,6 +99,8 @@ class RemoteServer {
     // Hearing what was said into the phone: `state()` and `transcribe(wav)`
     // (voice.js). Null when the window has not offered it.
     this.voice = deps.voice || null;
+    // Slack, for the phone's Slack page: who is looking, and what each may do.
+    this.slack = deps.slack || (() => null);
     this.projectRoot = deps.projectRoot || null;
     this.history = deps.history || null;
     this.report = deps.report || null;
@@ -982,6 +984,7 @@ ${this.appHead(nonce)}</head>
           if (message.type === 'lid:set') return void (await this.setLidFor(client, message.on));
           if (message.type.indexOf('term:') === 0) return void this.terminalFor(client, message);
           if (message.type === 'voice' || message.type === 'voice:state') return void (await this.voiceMessage(client, message));
+          if (message.type.indexOf('slack:') === 0) return void (await this.slackFor(client, message));
         } catch (err) {
           // A handler that throws used to answer nothing at all, and nothing at
           // all is the one answer a phone cannot act on: it waits, and then it
@@ -1000,6 +1003,8 @@ ${this.appHead(nonce)}</head>
       device: () => {},
       detach: () => {
         this.fleetClients.delete(client);
+        const room = this.slack();
+        if (room) room.leave(client.id);
         this.broadcastDevices();
       }
     });
@@ -1202,6 +1207,26 @@ ${this.appHead(nonce)}</head>
   mayKeepAwake(seat) {
     if (!seat) return false;
     return seat.kind === 'device' ? !!seat.control : true;
+  }
+
+  /**
+   * The Slack page on a phone. The room decides what a seat may do; this only
+   * says who is sitting in it, fresh each time, so control taken back on the
+   * laptop is taken back here on the next message.
+   */
+  async slackFor(client, message) {
+    const room = this.slack();
+    if (!room) {
+      return void client.post({ type: 'slack:refused', what: message.type, reason: 'This laptop is not offering Slack.' });
+    }
+    const seat = client.device || null;
+    room.join(client.id, {
+      local: !seat || seat.kind !== 'device',
+      control: this.mayKeepAwake(seat),
+      device: seat && seat.kind === 'device' ? seat : null,
+      looking: () => true
+    }, (m) => client.post(m));
+    await room.handle(client.id, message);
   }
 
   /** Answer one device, and remember that it has been told. */

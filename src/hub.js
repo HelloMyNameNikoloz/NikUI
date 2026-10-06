@@ -5,7 +5,7 @@ const { buildReport } = require('./report');
 const { GRANT } = require('./ci');
 
 // Commands NikUI answers itself rather than passing to the CLI.
-const OWN_COMMANDS = ['status', 'settings', 'commands', 'watch'];
+const OWN_COMMANDS = ['status', 'settings', 'commands', 'slack', 'watch'];
 
 /**
  * The messages that change something, as opposed to the ones that only watch.
@@ -422,6 +422,13 @@ class SessionHub {
       case 'settings':
         entry.settingsOpen = true;
         this.send(clientId, this.settingsMessage(entry));
+        break;
+
+      // `/slack` in the editor: its own tab, beside. A phone opens its own
+      // Slack page and never asks; a browser elsewhere has nowhere to open it.
+      case 'slack':
+        if (this.isLocal(entry) && this.host.openSlack) this.host.openSlack();
+        else this.send(clientId, { type: '@refused', what: 'slack', reason: 'Slack opens in the NikUI app, or in the editor on the laptop.' });
         break;
 
       case 'settingsOpen':

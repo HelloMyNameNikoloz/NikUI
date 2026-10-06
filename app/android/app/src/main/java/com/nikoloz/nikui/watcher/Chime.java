@@ -32,6 +32,7 @@ public final class Chime {
     public static final String URGENT = "nikui-chime-urgent";
     public static final String NEWS = "nikui-chime";
     public static final String EXTRA_SESSION = "nikui.session";
+    public static final String EXTRA_CONVERSATION = "nikui.conversation";
 
     // Pulses at 0, 90 and 180 ms — when tools/sound.js strikes each note.
     static final long[] PATTERN = { 0, 50, 40, 60, 30, 160 };
@@ -49,7 +50,7 @@ public final class Chime {
         if (manager == null) return;
         manager.deleteNotificationChannel("nikui-needs-you");
         manager.deleteNotificationChannel("nikui-news");
-        make(manager, context, URGENT, "Needs an answer", "An instance is waiting for you",
+        make(manager, context, URGENT, "Needs an answer", "An instance is waiting for you, or Slack is",
             NotificationManager.IMPORTANCE_HIGH);
         make(manager, context, NEWS, "Everything else", "Finished turns, CI, failures, the usage limit",
             NotificationManager.IMPORTANCE_DEFAULT);
@@ -90,13 +91,17 @@ public final class Chime {
         String body = clip(message.optString("body", ""), 300);
         String tag = message.optString("tag", "");
         String session = message.optString("session", "");
-        boolean urgent = "needs-you".equals(kind);
+        String conversation = message.optString("conversation", "");
+        // Slack rings the same alarm as needs-you: unseen and waiting is the
+        // same state, whichever side it is waiting on.
+        boolean urgent = "needs-you".equals(kind) || "slack".equals(kind);
         int id = idFor(tag.isEmpty() ? kind : tag);
 
         Intent open = new Intent(context, com.nikoloz.nikui.MainActivity.class);
         open.setAction("nikui.open." + id);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         if (!session.isEmpty()) open.putExtra(EXTRA_SESSION, session);
+        if (!conversation.isEmpty()) open.putExtra(EXTRA_CONVERSATION, conversation);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
 
