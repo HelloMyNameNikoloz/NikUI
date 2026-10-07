@@ -446,7 +446,7 @@ function activate(context) {
       if (!session.prUrl) return;
     }
     const was = session.prPane || {};
-    session.prPane = { open: !was.open, tab: was.tab || 'overview', width: was.width || null };
+    session.prPane = { open: !was.open, tab: was.tab || 'conversation', width: was.width || null, full: !!was.full };
     session.emit('meta');
     SessionPanel.show(session, context, manager);
   });

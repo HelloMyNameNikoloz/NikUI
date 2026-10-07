@@ -35,12 +35,17 @@ function parsePrUrl(url) {
   return { owner: m[1], repo: m[2], number: Number(m[3]) };
 }
 
+// A login+avatar, for either a User or a Bot (e.g. "github-actions"); a null
+// author ("ghost", a deleted account) comes back as no fields at all.
+const ACTOR_FIELDS = 'login avatarUrl(size:80)';
+
 const QUERY = `
 query($owner:String!,$name:String!,$number:Int!){
   repository(owner:$owner, name:$name) {
     pullRequest(number:$number) {
       url number title state isDraft
-      author { login }
+      author { ${ACTOR_FIELDS} }
+      createdAt
       headRefName baseRefName headRefOid
       mergeable reviewDecision
       additions deletions changedFiles updatedAt body
@@ -66,25 +71,59 @@ query($owner:String!,$name:String!,$number:Int!){
           }
         }
       }
+      commitCount: commits { totalCount }
+      recentCommits: commits(last:100) {
+        nodes { commit { oid messageHeadline committedDate author { user { login } name avatarUrl(size:80) } } }
+      }
       reviewRequests(first:20) {
-        nodes { requestedReviewer { ... on User { login } ... on Team { name } } }
+        nodes { requestedReviewer { ... on User { login avatarUrl(size:80) } ... on Team { name } } }
       }
       latestReviews(first:20) {
-        nodes { author { login } state body submittedAt url }
+        nodes { author { ${ACTOR_FIELDS} } state body submittedAt url }
       }
       reviewThreads(first:100) {
         nodes {
           id isResolved isOutdated path line originalLine diffSide
           comments(first:50) {
-            nodes { id databaseId author { login } body createdAt url diffHunk }
+            nodes { id databaseId author { ${ACTOR_FIELDS} } body createdAt url diffHunk pullRequestReview { id } }
           }
         }
       }
       comments(last:50) {
-        nodes { id author { login } body createdAt url }
+        nodes { id author { ${ACTOR_FIELDS} } body createdAt url }
       }
       files(first:100) {
         nodes { path additions deletions }
+      }
+      labels(first:50) {
+        nodes { name color }
+      }
+      assignees(first:20) {
+        nodes { login avatarUrl(size:80) }
+      }
+      timelineItems(last:100, itemTypes:[ISSUE_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_COMMIT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, LABELED_EVENT, UNLABELED_EVENT, READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT, RENAMED_TITLE_EVENT, HEAD_REF_DELETED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, BASE_REF_CHANGED_EVENT]) {
+        totalCount
+        nodes {
+          __typename
+          ... on IssueComment { id author { ${ACTOR_FIELDS} } body createdAt lastEditedAt url }
+          ... on PullRequestReview { id author { ${ACTOR_FIELDS} } state body submittedAt url }
+          ... on PullRequestCommit { commit { oid messageHeadline committedDate author { user { login } name avatarUrl(size:80) } } }
+          ... on MergedEvent { actor { ${ACTOR_FIELDS} } createdAt mergeRefName commit { oid } }
+          ... on ClosedEvent { actor { ${ACTOR_FIELDS} } createdAt }
+          ... on ReopenedEvent { actor { ${ACTOR_FIELDS} } createdAt }
+          ... on HeadRefForcePushedEvent { actor { ${ACTOR_FIELDS} } createdAt beforeCommit { oid } afterCommit { oid } ref { name } }
+          ... on ReviewRequestedEvent { actor { ${ACTOR_FIELDS} } createdAt requestedReviewer { ... on User { login } ... on Team { name } } }
+          ... on ReviewRequestRemovedEvent { actor { ${ACTOR_FIELDS} } createdAt requestedReviewer { ... on User { login } ... on Team { name } } }
+          ... on LabeledEvent { actor { ${ACTOR_FIELDS} } createdAt label { name color } }
+          ... on UnlabeledEvent { actor { ${ACTOR_FIELDS} } createdAt label { name color } }
+          ... on ReadyForReviewEvent { actor { ${ACTOR_FIELDS} } createdAt }
+          ... on ConvertToDraftEvent { actor { ${ACTOR_FIELDS} } createdAt }
+          ... on RenamedTitleEvent { actor { ${ACTOR_FIELDS} } createdAt currentTitle previousTitle }
+          ... on HeadRefDeletedEvent { actor { ${ACTOR_FIELDS} } createdAt headRefName }
+          ... on AssignedEvent { actor { ${ACTOR_FIELDS} } createdAt assignee { ... on User { login } } }
+          ... on UnassignedEvent { actor { ${ACTOR_FIELDS} } createdAt assignee { ... on User { login } } }
+          ... on BaseRefChangedEvent { actor { ${ACTOR_FIELDS} } createdAt currentRefName previousRefName }
+        }
       }
     }
   }
@@ -118,6 +157,85 @@ function readCheck(c) {
 
 const RANK = { fail: 0, pending: 1, pass: 2, skipped: 2, neutral: 2 };
 
+/** A User/Bot/Team actor (author, actor, assignee, requestedReviewer…) → {login, avatar}. A null author is a ghost. */
+function actorInfo(a) {
+  if (!a) return { login: 'ghost', avatar: null };
+  return { login: a.login || a.name || null, avatar: a.avatarUrl || null };
+}
+
+/** A commit's `author` (git identity, maybe linked to a GitHub user) → {login, avatar}. */
+function commitAuthorInfo(a) {
+  if (!a) return { login: null, avatar: null };
+  const login = (a.user && a.user.login) || a.name || null;
+  return { login, avatar: a.avatarUrl || null };
+}
+
+/** A `{commit:{...}}` node (from `commits` or a PullRequestCommit timeline item) → the commit shape. */
+function readCommit(node) {
+  const c = (node && node.commit) || node || {};
+  const who = commitAuthorInfo(c.author);
+  return { oid: c.oid || null, short: c.oid ? String(c.oid).slice(0, 7) : null, headline: c.messageHeadline || null,
+    author: who.login, avatar: who.avatar, at: c.committedDate || null };
+}
+
+const EVENT_TEXT = {
+  ReopenedEvent: () => 'reopened this pull request',
+  ReadyForReviewEvent: () => 'marked this ready for review',
+  ConvertToDraftEvent: () => 'marked this as a draft',
+  ClosedEvent: () => 'closed this pull request',
+  MergedEvent: (n) => `merged commit ${n.commit && n.commit.oid ? String(n.commit.oid).slice(0, 7) : '?'} into ${n.mergeRefName || '?'}`,
+  HeadRefForcePushedEvent: (n) => `force-pushed the ${(n.ref && n.ref.name) || '?'} branch from ${n.beforeCommit && n.beforeCommit.oid ? String(n.beforeCommit.oid).slice(0, 7) : '?'} to ${n.afterCommit && n.afterCommit.oid ? String(n.afterCommit.oid).slice(0, 7) : '?'}`,
+  ReviewRequestedEvent: (n) => `requested a review from ${(n.requestedReviewer && (n.requestedReviewer.login || n.requestedReviewer.name)) || '?'}`,
+  ReviewRequestRemovedEvent: (n) => `removed a review request from ${(n.requestedReviewer && (n.requestedReviewer.login || n.requestedReviewer.name)) || '?'}`,
+  LabeledEvent: (n) => `added the ${(n.label && n.label.name) || '?'} label`,
+  UnlabeledEvent: (n) => `removed the ${(n.label && n.label.name) || '?'} label`,
+  RenamedTitleEvent: (n) => `changed the title from ${n.previousTitle || '?'} to ${n.currentTitle || '?'}`,
+  HeadRefDeletedEvent: (n) => `deleted the ${n.headRefName || '?'} branch`,
+  AssignedEvent: (n) => `assigned ${(n.assignee && n.assignee.login) || '?'}`,
+  UnassignedEvent: (n) => `unassigned ${(n.assignee && n.assignee.login) || '?'}`,
+  BaseRefChangedEvent: (n) => `changed the base branch from ${n.previousRefName || '?'} to ${n.currentRefName || '?'}`
+};
+
+const EVENT_TYPE = {
+  MergedEvent: 'merged', ClosedEvent: 'closed', ReopenedEvent: 'reopened', HeadRefForcePushedEvent: 'force_pushed',
+  ReviewRequestedEvent: 'review_requested', ReviewRequestRemovedEvent: 'review_request_removed',
+  LabeledEvent: 'labeled', UnlabeledEvent: 'unlabeled', ReadyForReviewEvent: 'ready_for_review',
+  ConvertToDraftEvent: 'converted_to_draft', RenamedTitleEvent: 'renamed', HeadRefDeletedEvent: 'head_ref_deleted',
+  AssignedEvent: 'assigned', UnassignedEvent: 'unassigned', BaseRefChangedEvent: 'base_ref_changed'
+};
+
+/** The timeline nodes GitHub returns → our flat `timeline` entries, grouping consecutive commits. */
+function readTimeline(nodes, avatars) {
+  const out = [];
+  for (const n of nodes || []) {
+    if (!n) continue;
+    if (n.__typename === 'IssueComment') {
+      const who = actorInfo(n.author);
+      if (who.avatar) avatars[who.login] = who.avatar;
+      out.push({ kind: 'comment', id: n.id || null, author: who.login, avatar: who.avatar, body: n.body || null,
+        at: n.createdAt || null, url: n.url || null, edited: !!n.lastEditedAt });
+    } else if (n.__typename === 'PullRequestReview') {
+      const who = actorInfo(n.author);
+      if (who.avatar) avatars[who.login] = who.avatar;
+      out.push({ kind: 'review', id: n.id || null, author: who.login, avatar: who.avatar, state: n.state || null,
+        body: n.body || null, at: n.submittedAt || null, url: n.url || null });
+    } else if (n.__typename === 'PullRequestCommit') {
+      const c = readCommit(n);
+      if (c.avatar) avatars[c.author] = c.avatar;
+      const last = out[out.length - 1];
+      if (last && last.kind === 'commits') last.commits.push(c);
+      else out.push({ kind: 'commits', at: c.at, commits: [c] });
+    } else if (EVENT_TYPE[n.__typename]) {
+      const who = actorInfo(n.actor);
+      if (who.avatar) avatars[who.login] = who.avatar;
+      const text = (EVENT_TEXT[n.__typename] || (() => ''))(n);
+      out.push({ kind: 'event', type: EVENT_TYPE[n.__typename], actor: who.login, avatar: who.avatar,
+        at: n.createdAt || null, text });
+    }
+  }
+  return out;
+}
+
 /** failing first, then pending, then the rest; name order within each group. */
 function orderChecks(checks) {
   return checks.slice().sort((a, b) => {
@@ -146,18 +264,21 @@ function normalize(json) {
     pending: checks.filter((c) => c.status === 'pending').length
   };
 
-  const reviewed = new Map(); // login → state, latest review wins
+  const avatars = {}; // login → avatar url, collected as we go
+
+  const reviewed = new Map(); // login → {state, avatar}, latest review wins
   for (const n of (pr.latestReviews && pr.latestReviews.nodes) || []) {
     const login = n && n.author && n.author.login;
-    if (login) reviewed.set(login, n.state || null);
+    if (login) reviewed.set(login, { state: n.state || null, avatar: (n.author && n.author.avatarUrl) || null });
   }
   const reviewers = [];
   for (const n of (pr.reviewRequests && pr.reviewRequests.nodes) || []) {
     const who = n && n.requestedReviewer;
     const login = who && (who.login || who.name);
-    if (login && !reviewed.has(login)) reviewers.push({ login, state: 'PENDING' });
+    if (login && !reviewed.has(login)) reviewers.push({ login, state: 'PENDING', avatar: who.avatarUrl || null });
   }
-  for (const [login, state] of reviewed) reviewers.push({ login, state: state || null });
+  for (const [login, r] of reviewed) reviewers.push({ login, state: r.state, avatar: r.avatar });
+  for (const r of reviewers) if (r.avatar) avatars[r.login] = r.avatar;
 
   const reviews = ((pr.latestReviews && pr.latestReviews.nodes) || [])
     .filter((n) => n && n.body)
@@ -168,10 +289,13 @@ function normalize(json) {
     id: t.id || null, resolved: !!t.isResolved, outdated: !!t.isOutdated, path: t.path || null,
     line: (t.line != null ? t.line : t.originalLine != null ? t.originalLine : null),
     diffHunk: ((t.comments && t.comments.nodes && t.comments.nodes[0] && t.comments.nodes[0].diffHunk) || null),
-    comments: ((t.comments && t.comments.nodes) || []).map((c) => ({
-      id: c.id || null, databaseId: c.databaseId || null, author: (c.author && c.author.login) || null,
-      body: c.body || null, at: c.createdAt || null, url: c.url || null
-    }))
+    comments: ((t.comments && t.comments.nodes) || []).map((c) => {
+      const who = actorInfo(c.author);
+      if (who.avatar) avatars[who.login] = who.avatar;
+      return { id: c.id || null, databaseId: c.databaseId || null, author: who.login, avatar: who.avatar,
+        body: c.body || null, at: c.createdAt || null, url: c.url || null,
+        reviewId: (c.pullRequestReview && c.pullRequestReview.id) || null };
+    })
   })).sort((a, b) => (a.resolved === b.resolved ? 0 : a.resolved ? 1 : -1));
 
   const comments = ((pr.comments && pr.comments.nodes) || []).map((c) => ({
@@ -183,16 +307,36 @@ function normalize(json) {
     path: f.path || null, additions: f.additions == null ? null : f.additions, deletions: f.deletions == null ? null : f.deletions
   }));
 
+  const labels = ((pr.labels && pr.labels.nodes) || []).map((l) => ({ name: l.name || null, color: l.color || null }));
+
+  const assignees = ((pr.assignees && pr.assignees.nodes) || []).map((a) => {
+    if (a.avatarUrl) avatars[a.login] = a.avatarUrl;
+    return { login: a.login || null, avatar: a.avatarUrl || null };
+  });
+
+  const commits = (((pr.recentCommits && pr.recentCommits.nodes) || [])).map(readCommit);
+  for (const c of commits) if (c.avatar) avatars[c.author] = c.avatar;
+
+  const timeline = readTimeline(pr.timelineItems && pr.timelineItems.nodes, avatars);
+
+  const authorLogin = (pr.author && pr.author.login) || null;
+  const authorAvatar = (pr.author && pr.author.avatarUrl) || null;
+  if (authorLogin && authorAvatar) avatars[authorLogin] = authorAvatar;
+
   const urlParts = parsePrUrl(pr.url);
   return {
     url: pr.url || null, number: pr.number == null ? null : pr.number,
     repo: urlParts ? `${urlParts.owner}/${urlParts.repo}` : null,
     title: pr.title || null, state: pr.state || null, isDraft: !!pr.isDraft,
-    author: (pr.author && pr.author.login) || null, headRef: pr.headRefName || null, baseRef: pr.baseRefName || null,
+    author: authorLogin, authorAvatar, createdAt: pr.createdAt || null,
+    headRef: pr.headRefName || null, baseRef: pr.baseRefName || null,
     headSha: pr.headRefOid || null, mergeable: pr.mergeable || null, reviewDecision: pr.reviewDecision || null,
     additions: pr.additions == null ? null : pr.additions, deletions: pr.deletions == null ? null : pr.deletions,
     changedFiles: pr.changedFiles == null ? null : pr.changedFiles, updatedAt: pr.updatedAt || null, body: pr.body || null,
-    checks, checkSummary, reviewers, reviews, threads, comments, files, fetchedAt: now
+    commitCount: (pr.commitCount && pr.commitCount.totalCount) == null ? null : pr.commitCount.totalCount,
+    labels, assignees, checks, checkSummary, reviewers, reviews, threads, comments, files, commits, avatars,
+    timeline, timelineTotal: (pr.timelineItems && pr.timelineItems.totalCount) == null ? null : pr.timelineItems.totalCount,
+    fetchedAt: now
   };
 }
 

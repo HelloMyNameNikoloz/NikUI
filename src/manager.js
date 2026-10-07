@@ -264,7 +264,7 @@ class SessionManager extends EventEmitter {
     });
 
     if (usage) Object.assign(session.usage, usage);
-    if (prPane && typeof prPane === 'object') session.prPane = { open: !!prPane.open, tab: prPane.tab || 'overview', width: prPane.width || null };
+    if (prPane && typeof prPane === 'object') session.prPane = { open: !!prPane.open, tab: prPane.tab || 'conversation', width: prPane.width || null, full: !!prPane.full };
     if (prPinned && prUrl) { session.prPinned = true; session.prUrl = prUrl; }
     this.sessions.set(session.id, session);
     this._applyPause(session);

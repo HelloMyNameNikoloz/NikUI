@@ -12,7 +12,8 @@ const FIXTURE = {
         title: 'Carry the error message through logout',
         state: 'OPEN',
         isDraft: false,
-        author: { login: 'ada' },
+        author: { login: 'ada', avatarUrl: 'https://avatars.example/ada.png' },
+        createdAt: '2026-10-04T12:00:00Z',
         headRefName: 'fix/logout-message',
         baseRefName: 'main',
         headRefOid: 'deadbeef',
@@ -43,13 +44,13 @@ const FIXTURE = {
         reviewThreads: { nodes: [
           { id: 'T1', isResolved: true, isOutdated: true, path: 'pages/account-delete.jsx', line: null, originalLine: 88, diffSide: 'RIGHT',
             comments: { nodes: [
-              { id: 'C1', databaseId: 1001, author: { login: 'bob' }, body: 'Preserve the error across logout', createdAt: '2026-10-04T13:03:23Z',
-                url: 'https://github.com/o/r/pull/42#discussion_r1', diffHunk: '@@ -1,2 +1,3 @@\n a\n+b\n c' }
+              { id: 'C1', databaseId: 1001, author: { login: 'bob', avatarUrl: 'https://avatars.example/bob.png' }, body: 'Preserve the error across logout', createdAt: '2026-10-04T13:03:23Z',
+                url: 'https://github.com/o/r/pull/42#discussion_r1', diffHunk: '@@ -1,2 +1,3 @@\n a\n+b\n c', pullRequestReview: { id: 'PRR0' } }
             ] } },
           { id: 'T2', isResolved: false, isOutdated: false, path: 'pages/login.jsx', line: 10, originalLine: 10, diffSide: 'RIGHT',
             comments: { nodes: [
-              { id: 'C2', databaseId: 1002, author: { login: 'carol' }, body: 'nit', createdAt: '2026-10-04T15:00:00Z',
-                url: 'https://github.com/o/r/pull/42#discussion_r2', diffHunk: '@@ -5,3 +5,4 @@\n x\n+y\n z' }
+              { id: 'C2', databaseId: 1002, author: { login: 'carol', avatarUrl: 'https://avatars.example/carol.png' }, body: 'nit', createdAt: '2026-10-04T15:00:00Z',
+                url: 'https://github.com/o/r/pull/42#discussion_r2', diffHunk: '@@ -5,3 +5,4 @@\n x\n+y\n z', pullRequestReview: null }
             ] } }
         ] },
         comments: { nodes: [
@@ -58,6 +59,32 @@ const FIXTURE = {
         files: { nodes: [
           { path: 'pages/account-delete.jsx', additions: 30, deletions: 10 },
           { path: 'pages/login.jsx', additions: 10, deletions: 2 }
+        ] },
+        labels: { nodes: [{ name: 'agent: review-queued', color: 'c5def5' }] },
+        assignees: { nodes: [{ login: 'ada', avatarUrl: 'https://avatars.example/ada.png' }] },
+        commitCount: { totalCount: 4 },
+        recentCommits: { nodes: [
+          { commit: { oid: 'c1c1c1c1c1c1c1c1c1c1', messageHeadline: 'first commit', committedDate: '2026-10-04T12:05:00Z',
+            author: { user: { login: 'ada' }, name: 'ada', avatarUrl: 'https://avatars.example/ada.png' } } },
+          { commit: { oid: 'c2c2c2c2c2c2c2c2c2c2', messageHeadline: 'second commit', committedDate: '2026-10-04T12:10:00Z',
+            author: { user: null, name: 'A Git Author', avatarUrl: null } } }
+        ] },
+        timelineItems: { totalCount: 120, nodes: [
+          { __typename: 'PullRequestCommit', commit: { oid: 'c1c1c1c1c1c1c1c1c1c1', messageHeadline: 'first commit',
+            committedDate: '2026-10-04T12:05:00Z', author: { user: { login: 'ada' }, name: 'ada', avatarUrl: 'https://avatars.example/ada.png' } } },
+          { __typename: 'PullRequestCommit', commit: { oid: 'c2c2c2c2c2c2c2c2c2c2', messageHeadline: 'second commit',
+            committedDate: '2026-10-04T12:10:00Z', author: { user: null, name: 'A Git Author', avatarUrl: null } } },
+          { __typename: 'IssueComment', id: 'IC1', author: null, body: 'Deleted account commented.',
+            createdAt: '2026-10-04T12:15:00Z', lastEditedAt: null, url: 'https://github.com/o/r/pull/42#issuecomment-2' },
+          { __typename: 'PullRequestCommit', commit: { oid: 'c3c3c3c3c3c3c3c3c3c3', messageHeadline: 'third commit',
+            committedDate: '2026-10-04T12:20:00Z', author: { user: { login: 'ada' }, name: 'ada', avatarUrl: 'https://avatars.example/ada.png' } } },
+          { __typename: 'PullRequestReview', id: 'PRR1', author: { login: 'github-actions', avatarUrl: 'https://avatars.example/bot.png' },
+            state: 'COMMENTED', body: 'Automated check passed.', submittedAt: '2026-10-04T12:30:00Z',
+            url: 'https://github.com/o/r/pull/42#pullrequestreview-9' },
+          { __typename: 'LabeledEvent', actor: { login: 'ada', avatarUrl: 'https://avatars.example/ada.png' },
+            createdAt: '2026-10-04T12:35:00Z', label: { name: 'agent: review-queued', color: 'c5def5' } },
+          { __typename: 'MergedEvent', actor: { login: 'ada', avatarUrl: 'https://avatars.example/ada.png' },
+            createdAt: '2026-10-04T12:40:00Z', mergeRefName: 'main', commit: { oid: 'c3c3c3c3c3c3c3c3c3c3' } }
         ] }
       }
     }
@@ -116,21 +143,52 @@ module.exports = async function () {
   checkEqual('checkSummary counts pass/fail/pending only', s.checkSummary, { total: 4, pass: 1, fail: 1, pending: 1 });
 
   checkEqual('a requested reviewer who has not reviewed is PENDING',
-    s.reviewers.find((r) => r.login === 'bots'), { login: 'bots', state: 'PENDING' });
+    s.reviewers.find((r) => r.login === 'bots'), { login: 'bots', state: 'PENDING', avatar: null });
   checkEqual('one who has reviewed shows their state',
-    s.reviewers.find((r) => r.login === 'bob'), { login: 'bob', state: 'CHANGES_REQUESTED' });
+    s.reviewers.find((r) => r.login === 'bob'), { login: 'bob', state: 'CHANGES_REQUESTED', avatar: null });
   checkEqual('only reviews with a body are kept', s.reviews.map((r) => r.author), ['bob']);
 
   checkEqual('unresolved threads come first', s.threads.map((t) => t.id), ['T2', 'T1']);
   checkEqual('a thread carries its latest line and diff hunk', [s.threads[1].line, s.threads[1].diffHunk.includes('+b')], [88, true]);
   checkEqual('comments and files pass through', [s.comments.length, s.files.length], [1, 2]);
 
+  suite('normalizing: GitHub-shaped extras');
+  checkEqual('createdAt and authorAvatar', [s.createdAt, s.authorAvatar], ['2026-10-04T12:00:00Z', 'https://avatars.example/ada.png']);
+  checkEqual('commitCount from commits.totalCount', s.commitCount, 4);
+  checkEqual('labels keep name and colour without #', s.labels, [{ name: 'agent: review-queued', color: 'c5def5' }]);
+  checkEqual('assignees carry an avatar', s.assignees, [{ login: 'ada', avatar: 'https://avatars.example/ada.png' }]);
+  checkEqual('commits: oldest first, short sha, git-author name when unlinked',
+    s.commits.map((c) => [c.author, c.short, c.avatar]),
+    [['ada', 'c1c1c1c', 'https://avatars.example/ada.png'], ['A Git Author', 'c2c2c2c', null]]);
+  checkEqual('timelineTotal is the raw totalCount, independent of how many nodes came back', s.timelineTotal, 120);
+
+  checkEqual('timeline kinds in order, consecutive commits grouped, split by the comment between them',
+    s.timeline.map((t) => t.kind), ['commits', 'comment', 'commits', 'review', 'event', 'event']);
+  checkEqual('two consecutive commit items become one group of two', s.timeline[0].commits.map((c) => c.short), ['c1c1c1c', 'c2c2c2c']);
+  checkEqual('a commit item separated by a comment starts a new group', s.timeline[2].commits.map((c) => c.short), ['c3c3c3c']);
+  checkEqual('a ghost (deleted account) author', [s.timeline[1].author, s.timeline[1].avatar], ['ghost', null]);
+  checkEqual('a bot author reviewing', [s.timeline[3].author, s.timeline[3].avatar, s.timeline[3].state],
+    ['github-actions', 'https://avatars.example/bot.png', 'COMMENTED']);
+  checkEqual('a labeled event: type and a plain-text fragment without the actor',
+    [s.timeline[4].type, s.timeline[4].text], ['labeled', 'added the agent: review-queued label']);
+  checkEqual('a merged event names the commit and target branch',
+    [s.timeline[5].type, s.timeline[5].text], ['merged', 'merged commit c3c3c3c into main']);
+
+  checkEqual('a thread comment carries its review id when it belongs to one', s.threads[1].comments[0].reviewId, 'PRR0');
+  checkEqual('and null for a standalone (non-review) thread comment',
+    s.threads.find((t) => t.id === 'T2').comments[0].reviewId, null);
+
+  checkEqual('avatars collects every login seen anywhere, bots and ghosts aside',
+    [s.avatars.ada, s.avatars.bob, s.avatars.carol, s.avatars['github-actions'], 'ghost' in s.avatars],
+    ['https://avatars.example/ada.png', 'https://avatars.example/bob.png', 'https://avatars.example/carol.png', 'https://avatars.example/bot.png', false]);
+
   suite('normalizing partial data');
   checkEqual('no PR at all', normalize({ data: { repository: { pullRequest: null } } }), null);
   checkEqual('missing nested fields never throw', (() => {
     const partial = normalize({ data: { repository: { pullRequest: { url: 'https://github.com/o/r/pull/1', number: 1 } } } });
-    return [partial.title, partial.checks, partial.reviewers, partial.threads, partial.files];
-  })(), [null, [], [], [], []]);
+    return [partial.title, partial.checks, partial.reviewers, partial.threads, partial.files,
+      partial.labels, partial.assignees, partial.commits, partial.timeline, partial.commitCount, partial.timelineTotal, partial.avatars];
+  })(), [null, [], [], [], [], [], [], [], [], null, null, {}]);
 
   suite('prompts for the composer');
   const tp = threadPrompt(s.threads[0], s);

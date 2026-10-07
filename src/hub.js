@@ -366,12 +366,16 @@ class SessionHub {
         break;
 
       case 'pr:pane': {
-        const tabs = ['overview', 'comments', 'checks', 'files'];
+        const tabs = ['conversation', 'threads', 'commits', 'checks', 'files'];
+        const renamed = { overview: 'conversation', comments: 'threads' };
         const was = session.prPane || {};
+        const tab = renamed[msg.tab] || msg.tab;
         session.prPane = {
           open: !!msg.open,
-          tab: tabs.includes(msg.tab) ? msg.tab : (was.tab || 'overview'),
-          width: Number.isFinite(msg.width) ? Math.max(280, Math.min(2000, Math.round(msg.width))) : (was.width || null)
+          tab: tabs.includes(tab) ? tab : (renamed[was.tab] || was.tab || 'conversation'),
+          width: Number.isFinite(msg.width) ? Math.max(280, Math.min(2000, Math.round(msg.width))) : (was.width || null),
+          // The whole tab, GitHub's page and nothing else; the chat is a click away.
+          full: typeof msg.full === 'boolean' ? msg.full : !!was.full
         };
         // Everyone sees the same pane on this instance, and it is remembered.
         session.emit('meta');
@@ -702,7 +706,7 @@ class SessionHub {
       ticket: s.ticket,
       prUrl: s.prUrl || null,
       prPinned: !!s.prPinned,
-      prPane: s.prPane || { open: false, tab: 'overview', width: null },
+      prPane: s.prPane || { open: false, tab: 'conversation', width: null, full: false },
       effort: s.effort || null,
       // Bypassing permissions means every tool runs without asking. That is the
       // default here, so it has to be visible in the panel, not buried in

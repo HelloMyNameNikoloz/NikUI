@@ -72,9 +72,14 @@ module.exports = async function () {
 
   await hub.receive('laptop', { type: 'pr:pane', open: true, tab: 'checks', width: 500 });
   checkEqual('opening it makes the watch active', feed.watched.get(session.id).active, true);
-  checkEqual('and is remembered on the instance', JSON.stringify(session.prPane), JSON.stringify({ open: true, tab: 'checks', width: 500 }));
+  checkEqual('and is remembered on the instance', JSON.stringify(session.prPane), JSON.stringify({ open: true, tab: 'checks', width: 500, full: false }));
   checkEqual('and told to every client in meta', laptop.last('meta').meta.prPane.tab, 'checks');
 
+  await hub.receive('laptop', { type: 'pr:pane', open: true, tab: 'comments', width: 500, full: true });
+  checkEqual('the old tab names still land', session.prPane.tab, 'threads');
+  checkEqual('and full width is remembered', session.prPane.full, true);
+  await hub.receive('laptop', { type: 'pr:pane', open: true, tab: 'checks', width: 500 });
+  checkEqual('a message without it keeps it', session.prPane.full, true);
   await hub.receive('laptop', { type: 'pr:pane', open: true, tab: 'nonsense', width: 'wide' });
   checkEqual('an unknown tab keeps the last one', session.prPane.tab, 'checks');
   checkEqual('and a bad width keeps the last one', session.prPane.width, 500);

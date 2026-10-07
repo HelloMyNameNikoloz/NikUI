@@ -267,10 +267,14 @@ owns the whole surface.
   reloads; deleting a folder never touches the instances in it.
 - **The pull request beside the conversation.** An instance with a PR shows a
   chip by its title — `#691`, a dot for its checks, a count of unresolved review
-  threads. Click it (or Cmd/Ctrl+Shift+G in the tab) for a drawer on the right:
-  Overview (description, reviewers, conversation, a comment box), Comments
-  (threads, unresolved first, with reply and resolve), Checks (failing first,
-  re-run failed) and Files (the diff). "Ask Claude" on a review thread or a
+  threads. Click it (or Cmd/Ctrl+Shift+G in the tab) for a drawer on the right
+  laid out like GitHub's own PR page — or the whole tab, with the expand button,
+  which adds the Reviewers / Assignees / Labels column. Conversation is the
+  timeline with profile pictures: the description, comments, reviews with their
+  inline threads, commits and events, the last 100 of them, with a button back
+  to the bottom of a long one. Then Threads (unresolved first, reply and
+  resolve), Commits (by day), Checks (failing first, re-run failed) and Files
+  changed (the diff). "Ask Claude" on a review thread or a
   failing check puts it — with the code, or the failing log — into the message
   box for you to send. Open or closed, which tab and how wide are remembered per
   instance. It is all `gh`: one GraphQL query per refresh, every 15 s while

@@ -45,6 +45,20 @@ let html = panel.panel.webview.html
     `${attr}="file://${path.join(ROOT, 'media', path.basename(p))}"`);
 
 const harness = `
+<style>
+  /* VS Code injects these into the real webview; the harness fakes its
+     default dark theme so the screenshots look like the product, not a
+     browser's default light page. */
+  :root {
+    color-scheme: dark;
+    --vscode-foreground: #cccccc;
+    --vscode-descriptionForeground: #9d9d9d;
+    --vscode-editor-background: #1e1e1e;
+    --vscode-input-background: #3c3c3c;
+    --vscode-input-foreground: #cccccc;
+  }
+  html, body { background: #1e1e1e; }
+</style>
 <script>
   window.__errors = [];
   window.onerror = (m) => window.__errors.push(String(m));
@@ -62,34 +76,63 @@ const page = path.join(os.tmpdir(), 'nikui-prpane-check.html');
 fs.writeFileSync(page, html);
 
 const NOW = Date.now();
+const iso = (deltaMs) => new Date(NOW + deltaMs).toISOString();
 
 const META_LINKED = {
   label: 'nikui', cwd: ROOT, home: os.homedir(), prUrl: 'https://github.com/acme/nikui/pull/691',
-  prPane: { open: false, tab: 'overview', width: null }
+  prPane: { open: false, tab: 'overview', width: null, full: false } // old tab name: must map to 'conversation'
 };
+
+const ANA_AVATAR = 'https://avatars.githubusercontent.com/u/2?v=4';
+const NIK_AVATAR = 'https://avatars.githubusercontent.com/u/1?v=4';
 
 const PR_STATE = {
   url: 'https://github.com/acme/nikui/pull/691', number: 691, repo: 'acme/nikui',
-  title: 'Add the PR pane', state: 'OPEN', isDraft: false, author: 'nik',
+  title: 'Add the PR pane', state: 'OPEN', isDraft: false, author: 'nik', authorAvatar: NIK_AVATAR,
+  createdAt: iso(-900000),
   headRef: 'pr-pane', baseRef: 'main', headSha: 'abc123', mergeable: 'MERGEABLE', reviewDecision: 'REVIEW_REQUIRED',
-  additions: 120, deletions: 14, changedFiles: 3, updatedAt: NOW, body: 'Adds the drawer.\n\n<img src=x onerror="window.__xss=1">\n<script>window.__xss=2</script>',
+  additions: 120, deletions: 14, changedFiles: 3, updatedAt: iso(-60000),
+  commitCount: 2,
+  body: 'Adds the drawer.\n\n<img src=x onerror="window.__xss=1">\n<script>window.__xss=2</script>\n\n' +
+    '| Property | Value |\n| --- | --- |\n| dimensions | 1200 x 800 x 600 mm |\n',
+  labels: [{ name: 'enhancement', color: 'a2eeef' }, { name: 'bug', color: 'd73a4a' }],
+  assignees: [{ login: 'nik', avatar: NIK_AVATAR }],
+  reviewers: [{ login: 'ana', state: 'APPROVED', avatar: ANA_AVATAR }, { login: 'ghost', state: 'PENDING', avatar: null }],
+  avatars: { nik: NIK_AVATAR, ana: ANA_AVATAR },
   checks: [
     { name: 'build', workflow: 'CI', status: 'fail', url: 'https://github.com/acme/nikui/actions/runs/1', startedAt: NOW - 60000, completedAt: NOW - 30000, runId: 'run-1' },
     { name: 'lint', workflow: 'CI', status: 'pass', url: 'https://github.com/acme/nikui/actions/runs/2', startedAt: NOW - 60000, completedAt: NOW - 50000, runId: 'run-2' }
   ],
   checkSummary: { total: 2, pass: 1, fail: 1, pending: 0 },
-  reviewers: [{ login: 'ana', state: 'APPROVED' }],
-  reviews: [{ author: 'ana', state: 'APPROVED', body: 'Looks **good**', at: NOW - 100000, url: 'https://github.com/acme/nikui/pull/691#review-1' }],
+  commits: [
+    { oid: 'abc123def456', short: 'abc123d', headline: 'Add the drawer', author: 'nik', avatar: NIK_AVATAR, at: iso(-150000) },
+    { oid: 'def456abc789', short: 'def456a', headline: '<script>bad</script> commit', author: 'ghost', avatar: null, at: iso(-140000) }
+  ],
   threads: [
     { id: 'th-1', resolved: false, outdated: false, path: 'media/prpane.js', line: 12, diffHunk: '@@ -1,2 +1,3 @@\n+new line',
-      comments: [{ id: 'c1', databaseId: 1, author: 'ana', body: 'Why `esc` here <script>bad</script>?', at: NOW - 90000, url: 'https://github.com/acme/nikui/pull/691#c1' }] },
+      comments: [{ id: 'c1', databaseId: 1, author: 'ana', avatar: ANA_AVATAR, body: 'Why `esc` here <script>bad</script>?', at: iso(-90000), url: 'https://github.com/acme/nikui/pull/691#c1', reviewId: 'rev-1' }] },
     { id: 'th-2', resolved: true, outdated: false, path: 'media/prpane.css', line: 4, diffHunk: '@@ -1 +1 @@\n+ok',
-      comments: [{ id: 'c2', databaseId: 2, author: 'nik', body: 'fixed', at: NOW - 80000, url: 'https://github.com/acme/nikui/pull/691#c2' }] }
+      comments: [{ id: 'c2', databaseId: 2, author: 'nik', avatar: NIK_AVATAR, body: 'fixed', at: iso(-80000), url: 'https://github.com/acme/nikui/pull/691#c2' }] }
   ],
-  comments: [{ id: 'cc1', author: 'nik', body: 'Opening this up for review.', at: NOW - 200000, url: 'https://github.com/acme/nikui/pull/691#issuecomment-1' }],
+  // oldest first; one of every kind, plus a ghost/null avatar on the commit.
+  timeline: [
+    { kind: 'comment', id: 'tc1', author: 'nik', avatar: NIK_AVATAR, body: 'Opening this up for review.', at: iso(-200000), url: 'https://github.com/acme/nikui/pull/691#issuecomment-1' },
+    { kind: 'commits', at: iso(-150000), commits: [{ oid: 'abc123def456', short: 'abc123d', headline: 'Add the drawer', author: 'ghost', avatar: null, at: iso(-150000) }] },
+    { kind: 'event', type: 'labeled', actor: 'nik', avatar: NIK_AVATAR, at: iso(-120000), text: 'added the <script>bad</script> label' },
+    { kind: 'review', id: 'rev-1', author: 'ana', avatar: ANA_AVATAR, state: 'APPROVED', body: 'Looks **good**', at: iso(-100000), url: 'https://github.com/acme/nikui/pull/691#review-1' }
+  ],
+  timelineTotal: 7, // 3 more than shown above, so the "earlier items" banner shows
+  comments: [{ id: 'cc1', author: 'nik', body: 'Opening this up for review.', at: iso(-200000), url: 'https://github.com/acme/nikui/pull/691#issuecomment-1' }],
   files: [{ path: 'media/prpane.js', additions: 100, deletions: 2 }, { path: 'media/prpane.css', additions: 20, deletions: 12 }],
-  fetchedAt: NOW
+  fetchedAt: iso(0) // ISO, not a number — the bug this check guards against
 };
+
+// A long conversation, for the scroll-to-bottom button.
+const LONG_TIMELINE = [];
+for (let i = 0; i < 60; i++) {
+  LONG_TIMELINE.push({ kind: 'comment', id: 'lc' + i, author: 'nik', avatar: NIK_AVATAR, body: 'Comment number ' + i + '.', at: iso(-500000 + i * 1000) });
+}
+const PR_STATE_LONG = Object.assign({}, PR_STATE, { timeline: LONG_TIMELINE, timelineTotal: LONG_TIMELINE.length });
 
 const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
   'index 111..222 100644\n--- a/media/prpane.js\n+++ b/media/prpane.js\n' +
@@ -113,11 +156,15 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     const text = async (selector) => browser.evaluate(
       `(function(){ var e = document.querySelector(${JSON.stringify(selector)}); return e ? e.textContent : null; })()`
     );
+    const attr = async (selector, name) => browser.evaluate(
+      `(function(){ var e = document.querySelector(${JSON.stringify(selector)}); return e ? e.getAttribute(${JSON.stringify(name)}) : null; })()`
+    );
     const exists = async (selector) => browser.evaluate(`!!document.querySelector(${JSON.stringify(selector)})`);
     const hidden = async (selector) => browser.evaluate(
       `(function(){ var e = document.querySelector(${JSON.stringify(selector)}); return !e || e.hidden; })()`
     );
     const clearPosted = async () => browser.evaluate('window.__posted.length = 0; true');
+    const bodyText = async () => browser.evaluate('document.getElementById("pr-pane").textContent');
 
     // ---- init: a PR linked, the pane closed -----------------------------
     await post({
@@ -135,34 +182,93 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     out.chipFailDot = await exists('.pr-chip-dot.fail');
     out.chipBubble = await text('.pr-chip-bubble');
 
-    // ---- clicking the chip opens the drawer, and says so -----------------
+    // ---- clicking the chip opens the drawer, defaulting to Conversation ---
+    // (meta remembered the old tab name 'overview' — it must map forward.)
     await clearPosted();
     await click('#pr-chip');
     out.paneOpened = !(await hidden('#pr-pane'));
     const openMsg = (await posted()).find((m) => m.type === 'pr:pane');
-    out.paneOpenPosted = openMsg && openMsg.open === true && openMsg.tab === 'overview';
+    out.paneOpenPosted = openMsg && openMsg.open === true && openMsg.tab === 'conversation';
+    out.conversationTabOn = /^Conversation/.test(await text('.pr-tab.on') || '');
+
+    // ---- no "NaNd ago" anywhere, ever (fetchedAt/updatedAt/createdAt/at are
+    // ISO strings on the wire) ------------------------------------------
+    out.noNaN = !/NaN/.test(await bodyText());
 
     // ---- the pane head ----------------------------------------------------
     out.titleShown = /Add the PR pane/.test(await text('.pr-title') || '');
-    out.refsShown = /pr-pane.*main/.test((await text('.pr-head-sub') || '').replace(/\s+/g, ' '));
-    out.badgeShown = /Open/.test(await text('.pr-badge') || '');
+    out.stateWordShown = /Open/.test(await text('.pr-state-pill') || '');
+    out.mergeLineShown = /nik.*wants to merge.*main.*pr-pane/.test((await text('.pr-merge-line') || '').replace(/\s+/g, ' '));
+    out.changeBarShown = await exists('.pr-changebar i.add');
 
     // ---- a hostile PR body renders as text, never runs ---------------------
     out.xssDidNotRun = await browser.evaluate('window.__xss === undefined');
-    out.noScriptTag = !(await exists('.pr-body script'));
-    out.markdownStillWorks = await exists('.pr-body strong, .pr-body code, .pr-body img');
+    out.noScriptTag = !(await exists('.pr-tl-card-body script'));
+    out.markdownStillWorks = await exists('.pr-tl-card-body strong, .pr-tl-card-body code, .pr-tl-card-body img');
 
-    // ---- tabs switch and post the triple ------------------------------------
+    // ---- a markdown table's first column isn't broken mid-word ------------
+    const dimCellHeight = await browser.evaluate(`(function(){
+      var cells = Array.from(document.querySelectorAll('.pr-tl-card-body td'));
+      var cell = cells.find((c) => /dimensions/.test(c.textContent));
+      return cell ? cell.getBoundingClientRect().height : null;
+    })()`);
+    out.tableCellNotShattered = dimCellHeight != null && dimCellHeight < 36;
+
+    // ---- Conversation: description first, then the timeline in order ------
+    out.rowOrder = await browser.evaluate(`(function(){
+      var rows = Array.from(document.querySelectorAll('.pr-timeline > .pr-tl-row'));
+      return rows.map((r) => r.className.replace('pr-tl-row ', ''));
+    })()`);
+    out.descriptionFirst = out.rowOrder && /pr-tl-description/.test(out.rowOrder[0] || '');
+    out.orderIsCommentCommitsEventReview =
+      out.rowOrder && out.rowOrder.length === 5 &&
+      /comment/.test(out.rowOrder[1]) && /commits/.test(out.rowOrder[2]) &&
+      /event/.test(out.rowOrder[3]) && /review/.test(out.rowOrder[4]);
+
+    // ---- the review card contains its inline thread ------------------------
+    out.reviewHasThread = await browser.evaluate(`(function(){
+      var review = document.querySelector('.pr-tl-review .pr-review-card');
+      return !!review && !!review.querySelector('.pr-thread[data-l], .pr-thread') &&
+        /media\\/prpane\\.js/.test(review.textContent);
+    })()`);
+
+    // ---- earlier items not shown, with a link to GitHub --------------------
+    out.earlierBannerShown = /earlier items/.test(await text('.pr-tl-earlier') || '');
     await clearPosted();
-    await click('[data-tab="comments"]');
-    out.commentsTabOn = /^Comments/.test(await text('.pr-tab.on') || '');
-    const commentsMsg = (await posted()).find((m) => m.type === 'pr:pane');
-    out.commentsTabPosted = commentsMsg && commentsMsg.tab === 'comments' && commentsMsg.open === true;
+    await click('.pr-tl-earlier a');
+    out.earlierOpensGithub = (await posted()).some((m) => m.type === 'pr:open' && m.url === PR_STATE.url);
+
+    // ---- avatars: a real <img> for a known login, a fallback for null -----
+    out.knownAvatarImg = await browser.evaluate(`(function(){
+      var row = document.querySelector('.pr-tl-review .pr-tl-gutter .avatar img');
+      return row ? row.getAttribute('src') : null;
+    })()`) === ANA_AVATAR;
+    out.nullAvatarFallsBack = await browser.evaluate(`(function(){
+      var row = document.querySelector('.pr-tl-commits .pr-commit-list .avatar');
+      return !!row && !row.querySelector('img') && row.getAttribute('data-initial') === 'G';
+    })()`);
+
+    // ---- events render as text, never HTML ---------------------------------
+    out.eventTextIsEscaped = /<script>bad<\/script> label/.test(await text('.pr-tl-event-line') || '');
+
+    // ---- narrow: a compact reviewers/labels row, no sidebar ----------------
+    out.compactRowShownNarrow = !(await hidden('.pr-compact-row'));
+    out.sidebarHiddenNarrow = !(await exists('.pr-sidebar')) || await browser.evaluate(
+      "getComputedStyle(document.querySelector('.pr-sidebar')).display === 'none'"
+    );
+
+    // ---- tabs switch and post the quadruple ------------------------------
+    await clearPosted();
+    await click('[data-tab="threads"]');
+    out.threadsTabOn = /^Threads/.test(await text('.pr-tab.on') || '');
+    const threadsMsg = (await posted()).find((m) => m.type === 'pr:pane');
+    out.threadsTabPosted = threadsMsg && threadsMsg.tab === 'threads' && threadsMsg.open === true && typeof threadsMsg.full === 'boolean';
     out.unresolvedFirst = await browser.evaluate(
       "!document.querySelector('.pr-pane-body > .pr-thread').classList.contains('resolved')"
     );
     out.resolvedCollapsed = await exists('.pr-resolved-group');
     out.threadCommentXssIsText = /<script>bad<\/script>/.test(await text('.pr-thread .pr-comment-body') || '');
+    out.threadAvatarShown = await exists('.pr-thread .pr-comment-head .avatar');
 
     // ---- Ask Claude posts the thread id -------------------------------------
     await clearPosted();
@@ -170,7 +276,15 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     const askMsg = (await posted()).find((m) => m.type === 'pr:askThread');
     out.askThreadSent = askMsg && askMsg.threadId === 'th-1';
 
-    // ---- checks tab: failing first, re-run, ask to fix ----------------------
+    // ---- Commits tab: grouped, with avatars and short shas ------------------
+    await clearPosted();
+    await click('[data-tab="commits"]');
+    out.commitsTabOn = /^Commits/.test(await text('.pr-tab.on') || '');
+    out.commitsGrouped = await exists('.pr-commit-group h5');
+    out.commitShaShown = /abc123d/.test(await text('.pr-commit-group') || '');
+    out.commitHeadlineEscaped = /<script>bad<\/script> commit/.test(await text('.pr-commit-group') || '');
+
+    // ---- Checks tab: failing first, re-run, ask to fix ----------------------
     await clearPosted();
     await click('[data-tab="checks"]');
     out.checksTabFailBadge = /1/.test(await text('.pr-tab.on .pr-tab-badge') || '');
@@ -190,13 +304,45 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     out.diffRendered = await exists('.pr-diff span.add');
     out.diffDelShown = await exists('.pr-diff span.del');
     // Switching away and back must not ask again — the diff is already loaded.
-    await click('[data-tab="overview"]');
+    await click('[data-tab="conversation"]');
     await clearPosted();
     await click('[data-tab="files"]');
     out.diffNotRequestedTwice = (await posted()).filter((m) => m.type === 'pr:diff').length === 0;
 
     // ---- a screenshot of the open pane, for a human to look at -------------
+    await click('[data-tab="conversation"]');
     await browser.shot('/tmp/prpane-open.png');
+
+    // ---- full page: fills the tab, posts full:true, the sidebar appears ----
+    await clearPosted();
+    await click('[data-act="full"]');
+    out.fullClassApplied = await browser.evaluate("document.getElementById('pr-pane').classList.contains('full')");
+    const fullMsg = (await posted()).find((m) => m.type === 'pr:pane');
+    out.fullPosted = fullMsg && fullMsg.full === true;
+    out.sidebarShownFull = await browser.evaluate(
+      "(function(){ var s = document.querySelector('.pr-sidebar'); return !!s && getComputedStyle(s).display !== 'none'; })()"
+    );
+    out.sidebarHasReviewers = /ana/.test(await text('.pr-sidebar') || '');
+    out.sidebarHasLabels = await exists('.pr-sidebar .pr-label-chip');
+    await browser.shot('/tmp/prpane-full.png');
+
+    // ---- exit full page again before the rest of the checks ----------------
+    await click('[data-act="full"]');
+    out.fullClassRemoved = !(await browser.evaluate("document.getElementById('pr-pane').classList.contains('full')"));
+
+    // ---- a long conversation scrolls, with a scroll-to-bottom button --------
+    await post({ type: 'pr:state', prUrl: PR_STATE_LONG.url, loading: false, error: null, state: PR_STATE_LONG });
+    await browser.evaluate("(function(){ var b = document.querySelector('.pr-pane-body'); b.scrollTop = 0; b.dispatchEvent(new Event('scroll')); return true; })()");
+    out.scrollBtnShownWhenScrolledUp = !(await hidden('.pr-scroll-bottom'));
+    await click('.pr-scroll-bottom');
+    out.scrollReachedBottom = await browser.until(`(function(){
+      var b = document.querySelector('.pr-pane-body');
+      return b.scrollHeight - b.scrollTop - b.clientHeight < 40;
+    })()`, 3000);
+    out.scrollBtnHidesAtBottom = await hidden('.pr-scroll-bottom');
+
+    // ---- back to the regular fixture for the rest ---------------------------
+    await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: false, error: null, state: PR_STATE });
 
     // ---- Esc while focus is inside the pane closes it -----------------------
     await browser.evaluate("document.querySelector('.pr-pane-body').focus(); true");
@@ -207,7 +353,7 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
 
     // ---- an action's reply re-enables the buttons, with a message -----------
     await click('#pr-chip');
-    await click('[data-tab="comments"]');
+    await click('[data-tab="threads"]');
     await click('[data-resolve="th-1"]');
     out.resolveSentAndDisabled = await browser.evaluate(
       "document.querySelector('[data-resolve=\\'th-1\\']').disabled"
@@ -229,20 +375,19 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
       "t.value === 'half a reply' && t.selectionStart === 4; })()"
     );
 
-    // ---- meta with prPane.open:true opens it on init -------------------------
+    // ---- meta with prPane.open:true opens it on init, the old tab name maps -
     await post({
       type: 'init', sessionId: 's2', items: [],
-      meta: Object.assign({}, META_LINKED, { prPane: { open: true, tab: 'checks', width: 500 } }),
+      meta: Object.assign({}, META_LINKED, { prPane: { open: true, tab: 'comments', width: 500, full: false } }),
       status: 'idle', stats: {}, queue: [], slashCommands: [], commandArgs: {}, showThinking: true,
       dropped: 0, maxItems: 400
     });
     out.openOnInit = !(await hidden('#pr-pane'));
-    out.openOnInitTab = await text('.pr-tab.on');
-    out.openOnInitTab = /^Checks/.test(out.openOnInitTab || '');
+    out.openOnInitTab = /^Threads/.test(await text('.pr-tab.on') || '');
 
     // ---- no PR linked: the chip is gone, an open pane offers Link a PR ------
     await post({
-      type: 'meta', meta: Object.assign({}, META_LINKED, { prUrl: null, prPane: { open: true, tab: 'overview', width: null } })
+      type: 'meta', meta: Object.assign({}, META_LINKED, { prUrl: null, prPane: { open: true, tab: 'conversation', width: null, full: false } })
     });
     out.chipGoneWithNoPr = await hidden('#pr-chip');
     out.linkButtonShown = await exists('[data-act="link"]');
@@ -262,19 +407,36 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['and shows a red dot for the failing check', out.chipFailDot === true],
     ['and the unresolved thread count', /1/.test(out.chipBubble || '')],
     ['clicking the chip opens the drawer', out.paneOpened === true],
-    ['and tells the host, with the tab', out.paneOpenPosted === true],
+    ['defaulting to the Conversation tab', out.paneOpenPosted === true && out.conversationTabOn === true],
+    ['no "NaNd ago" anywhere — fetchedAt etc. are ISO strings', out.noNaN === true],
     ['the pane head shows the PR title', out.titleShown === true],
-    ['and the branches', out.refsShown === true],
-    ['and its state', out.badgeShown === true],
+    ['its state as a pill', out.stateWordShown === true],
+    ['the "wants to merge ... into ... from ..." line', out.mergeLineShown === true],
+    ["GitHub's five-block change bar", out.changeBarShown === true],
     ['a hostile PR body never runs', out.xssDidNotRun === true],
     ['nor does it leave a script tag in the DOM', out.noScriptTag === true],
     ['ordinary markdown still renders', out.markdownStillWorks === true],
-    ['clicking a tab switches it', out.commentsTabOn === true],
-    ['and posts the whole triple', out.commentsTabPosted === true],
+    ["a markdown table's narrow column isn't shattered letter by letter", out.tableCellNotShattered === true],
+    ['the description card comes first in the timeline', out.descriptionFirst === true],
+    ['then the timeline items in order: comment, commits, event, review', out.orderIsCommentCommitsEventReview === true],
+    ["a review card contains its reviewer's inline thread", out.reviewHasThread === true],
+    ['earlier items not shown are called out', out.earlierBannerShown === true],
+    ['and link to the PR on GitHub', out.earlierOpensGithub === true],
+    ['a known login gets a real avatar image', out.knownAvatarImg === true],
+    ['a null avatar falls back to an initial', out.nullAvatarFallsBack === true],
+    ['event text renders as text, never HTML', out.eventTextIsEscaped === true],
+    ['narrow: a compact reviewers/labels row shows', out.compactRowShownNarrow === true],
+    ['and the full sidebar does not', out.sidebarHiddenNarrow === true],
+    ['clicking a tab switches it', out.threadsTabOn === true],
+    ['and posts the whole state, including full', out.threadsTabPosted === true],
     ['unresolved threads come first', out.unresolvedFirst === true],
     ['resolved ones are collapsed', out.resolvedCollapsed === true],
     ['a hostile thread comment renders as text', out.threadCommentXssIsText === true],
+    ['thread comments show an avatar', out.threadAvatarShown === true],
     ['Ask Claude sends the thread id', out.askThreadSent === true],
+    ['Commits tab groups by day', out.commitsTabOn === true && out.commitsGrouped === true],
+    ['and shows the short sha', out.commitShaShown === true],
+    ['commit headlines render as text, never HTML', out.commitHeadlineEscaped === true],
     ['the Checks tab badges the failing count', out.checksTabFailBadge === true],
     ['failing checks sort first', out.failingCheckFirst === true],
     ['Ask Claude to fix sends the run id and name', out.askCheckSent === true],
@@ -283,13 +445,22 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['the diff renders added lines', out.diffRendered === true],
     ['and removed ones', out.diffDelShown === true],
     ['leaving and returning to Files does not ask again', out.diffNotRequestedTwice === true],
+    ['the full-page toggle fills the tab', out.fullClassApplied === true],
+    ['and posts full:true', out.fullPosted === true],
+    ['which reveals the sidebar', out.sidebarShownFull === true],
+    ['with reviewers', out.sidebarHasReviewers === true],
+    ['and labels', out.sidebarHasLabels === true],
+    ['toggling again exits full page', out.fullClassRemoved === true],
+    ['a long conversation shows the scroll-to-bottom button when scrolled up', out.scrollBtnShownWhenScrolledUp === true],
+    ['clicking it reaches the bottom', out.scrollReachedBottom === true],
+    ['and the button hides once there', out.scrollBtnHidesAtBottom === true],
     ['Escape with focus inside the pane closes it', out.escClosedPane === true],
     ['an action disables its button until the host answers', out.resolveSentAndDisabled === true],
     ['pr:done shows the message', out.doneMessageShown === true],
     ['and re-enables the button', out.reEnabledAfterDone === true],
     ['a refresh mid-reply keeps the text, focus and caret', out.replyKeptAcrossRefresh === true],
     ['meta.prPane.open opens the drawer on init', out.openOnInit === true],
-    ['on the tab it remembered', out.openOnInitTab === true],
+    ["on the tab it remembered, old name 'comments' mapped to Threads", out.openOnInitTab === true],
     ['with no PR linked, the chip disappears', out.chipGoneWithNoPr === true],
     ['but an open pane offers to link one', out.linkButtonShown === true],
     ['which asks the host', out.linkSent === true],
@@ -301,7 +472,7 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     console.log((ok ? 'PASS  ' : 'FAIL  ') + name);
     if (!ok) failed++;
   }
-  console.log('\nScreenshot: /tmp/prpane-open.png');
+  console.log('\nScreenshots: /tmp/prpane-open.png, /tmp/prpane-full.png');
   console.log('\n' + (checks.length - failed) + '/' + checks.length + ' PR pane checks passed');
   process.exit(failed ? 1 : 0);
 })().catch((err) => {
