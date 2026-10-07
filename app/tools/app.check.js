@@ -80,6 +80,12 @@ const shout = (words) => { console.log('  ' + words); return false; };
 
 // SHOTS=1 keeps a picture of the screens a check has just changed, for looking
 // at rather than asserting about: app/screens/, which is never committed.
+/** Polls something on this side until it holds, or gives up. */
+const waitFor = async (test, ms) => {
+  for (const end = Date.now() + ms; Date.now() < end; await wait(50)) if (test()) return true;
+  return !!test();
+};
+
 const shoot = async (phone, name) => {
   if (!process.env.SHOTS) return;
   await phone.shot(path.join(APP, 'screens', 'check-' + name + '.png'));
@@ -201,6 +207,26 @@ const record = (name, ok) => {
     setVips: async () => {}, setEnabled: async () => {}, connect: async () => {}
   });
 
+  // GitHub as the laptop's feed would tell it, without a gh to run.
+  const PR = 'https://github.com/acme/nikui/pull/691';
+  const prFeed = new EventEmitter();
+  prFeed.watched = new Map();
+  prFeed.watch = (key, opts) => prFeed.watched.set(key, opts);
+  prFeed.unwatch = (key) => prFeed.watched.delete(key);
+  prFeed.get = (url) => (url === PR ? {
+    prUrl: PR, loading: false, error: null, state: {
+      url: PR, number: 691, repo: 'acme/nikui', title: 'Read the PR on the phone', state: 'OPEN', isDraft: false,
+      author: 'nik', createdAt: new Date(Date.now() - 900000).toISOString(), headRef: 'pr-phone', baseRef: 'main',
+      additions: 40, deletions: 3, changedFiles: 2, body: 'GitHub, readable, on a phone.',
+      checks: [{ name: 'test', status: 'pass' }], checkSummary: { total: 1, pass: 1, fail: 0, pending: 0 },
+      threads: [], comments: [], files: [], reviewers: [], reviews: [], labels: [], assignees: [], commits: [],
+      timeline: [{ kind: 'review', id: 'r1', author: 'ana', avatar: null, state: 'APPROVED', body: 'Looks **good**',
+        at: new Date(Date.now() - 60000).toISOString() }],
+      fetchedAt: new Date().toISOString()
+    }
+  } : null);
+  prFeed.refresh = () => {};
+
   const laptop = new RemoteServer({
     root: REPO,
     terminals,
@@ -209,7 +235,7 @@ const record = (name, ok) => {
     keepAwake: keeping,
     host: {
       config: () => ({ showThinking: true, promptSnippets: {} }),
-      home: '/home', knownCommands: () => ['status'],
+      home: '/home', knownCommands: () => ['status'], prFeed,
       fleet: () => [session], env: () => ({ vscode: 'app check' }),
       settings: () => prefs.read(setting, {
         awake: keeping.state(),
@@ -1447,6 +1473,35 @@ const record = (name, ok) => {
       /npm run build/.test(await phone.evaluate('document.body.textContent')));
     record('on the laptop, in that instance\u2019s folder', shell && shell.ran === 'npm run build');
     shell.emit('close', 0, null);
+
+    // ---- GitHub, its own screen on the phone -----------------------------------
+    //
+    // Opened and closed here alone: the laptop's pane stays as it was, but the
+    // laptop keeps the PR fresh while the phone is reading it.
+    session.prUrl = PR;
+    session.emit('meta');
+    await phone.navigate(appOrigin + '/conversation.html?session=' + session.id);
+    record('an instance with a PR shows a GitHub button on the phone',
+      await phone.until('!document.getElementById("pr-chip").hidden && !!document.querySelector("#pr-chip svg") && /691/.test(document.getElementById("pr-chip").textContent)', 10000));
+    await phone.evaluate('document.getElementById("pr-chip").click()');
+    record('tapping it opens the pull request as the whole screen',
+      await phone.until(`(() => { const p = document.getElementById('pr-pane'); if (p.hidden) return false;
+        const r = p.getBoundingClientRect();
+        return r.left === 0 && r.top === 0 && r.width === innerWidth && r.height >= innerHeight - 1 &&
+          /Read the PR on the phone/.test(p.textContent) && /Looks good/.test(p.textContent); })()`, 8000));
+    record('without a full-page switch, since it is already the page',
+      !(await phone.evaluate('!!document.querySelector("#pr-pane [data-act=full]")')));
+    record('and the laptop keeps it fresh while the phone reads it',
+      await waitFor(() => prFeed.watched.get(session.id) && prFeed.watched.get(session.id).active === true, 4000));
+    record('without opening the pane on the laptop', !(session.prPane && session.prPane.open));
+    if (process.env.SHOTS) { await wait(300); await shoot(phone, 'github'); }
+    await phone.evaluate('document.querySelector("#pr-pane [data-act=close]").click()');
+    record('closing it goes back to the conversation',
+      await phone.until('document.getElementById("pr-pane").hidden && !!document.getElementById("transcript")', 4000));
+    record('and the laptop stops polling for it',
+      await waitFor(() => prFeed.watched.get(session.id) && prFeed.watched.get(session.id).active === false, 4000));
+    session.prUrl = null;
+    session.emit('meta');
 
     // ---- /settings, typed on the phone ------------------------------------------
     //

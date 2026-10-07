@@ -452,10 +452,12 @@
   // with the click, so in the editor the title carries no href at all.
   const IN_EDITOR = typeof acquireVsCodeApi === 'function';
 
-  // The GitHub pane only makes sense in the editor — the phone has nowhere to
-  // put a side drawer, and window.PrPane is not even loaded there.
-  const prPane = (IN_EDITOR && window.PrPane)
-    ? window.PrPane.mount({ chip: $('pr-chip'), host: $('pr-pane'), split: $('work-split'), send: (m) => vscode.postMessage(m) })
+  // The GitHub pane: a drawer beside the chat in the editor, and on a phone
+  // a screen of its own, since there is no room beside anything there.
+  const prPane = window.PrPane
+    ? window.PrPane.mount({ chip: $('pr-chip'), host: $('pr-pane'), split: $('work-split'), send: (m) => vscode.postMessage(m),
+        // A phone gets GitHub as its own full screen, opened and closed there alone.
+        phone: !IN_EDITOR && window.matchMedia('(max-width: 760px), (pointer: coarse)').matches })
     : null;
 
   if (IN_EDITOR) {

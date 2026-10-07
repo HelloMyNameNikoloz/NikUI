@@ -50,6 +50,17 @@
   box-shadow: none;
 }
 .pr-pane.full .pr-resize { display: none; }
+/* A phone: GitHub is the whole screen, opaque, clear of the notch and the
+   gesture bar, and it has no width to drag. */
+.pr-pane.phone {
+  background: var(--vscode-editor-background);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  height: var(--app-height, 100%);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+}
+.pr-pane.phone .pr-head-actions .icon-only { min-width: 44px; min-height: 44px; }
+.pr-chip .ico { flex: 0 0 auto; }
 
 .pr-resize {
   flex: 0 0 auto;

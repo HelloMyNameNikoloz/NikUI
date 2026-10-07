@@ -382,6 +382,13 @@ class SessionHub {
         break;
       }
 
+      // A phone looking at the PR on its own screen: keep it fresh while it
+      // does, without opening the pane for everybody else.
+      case 'pr:watch':
+        entry.prWatching = msg.on === true;
+        this.syncPr();
+        break;
+
       case 'pr:refresh':
         if (this.host.prFeed && session.prUrl) this.host.prFeed.refresh(session.prUrl);
         break;
@@ -866,8 +873,13 @@ class SessionHub {
     const s = this.session;
     if (!s.prUrl) { feed.unwatch(s.id); return; }
     let visible = false;
-    for (const entry of this.clients.values()) if (entry.ready && !entry.hidden) visible = true;
-    feed.watch(s.id, { url: s.prUrl, cwd: s.cwd, active: !!(s.prPane && s.prPane.open) && visible });
+    let watching = false;
+    for (const entry of this.clients.values()) {
+      if (!entry.ready || entry.hidden) continue;
+      visible = true;
+      if (entry.prWatching) watching = true;
+    }
+    feed.watch(s.id, { url: s.prUrl, cwd: s.cwd, active: (!!(s.prPane && s.prPane.open) && visible) || watching });
   }
 
   dispose() {

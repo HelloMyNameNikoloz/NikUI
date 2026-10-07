@@ -31,7 +31,7 @@ const { renderPage, SCRIPTS } = require(path.join(REPO, 'src', 'page.js'));
 // Everything the client needs, plus the app's own layer. The list is derived
 // rather than typed: whatever the panel loads, the app loads.
 const CLIENT_FILES = SCRIPTS.concat([
-  'panel.css', 'browser.css', 'mobile.js', 'home.js', 'device.js', 'slack.js', 'slack.css'
+  'panel.css', 'prpane.css', 'browser.css', 'mobile.js', 'home.js', 'device.js', 'slack.js', 'slack.css'
 ]);
 
 const SHELL_FILES = ['app.css', 'app.js', 'lock.js', 'notify.js', 'connect.js', 'settings.js',
@@ -85,7 +85,8 @@ function copyClient() {
  */
 const CSP = [
   "default-src 'none'",
-  "img-src 'self' data:",
+  // GitHub avatars in the pull request pane; nothing else is fetched from there.
+  "img-src 'self' data: https://avatars.githubusercontent.com",
   "style-src 'self'",
   "script-src 'self'",
   "font-src 'self'",

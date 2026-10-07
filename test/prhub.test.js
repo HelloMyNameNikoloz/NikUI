@@ -136,6 +136,18 @@ module.exports = async function () {
   await hub.receive('phone', { type: 'pr:comment', body: 'hi' });
   checkEqual('cannot write to the PR', feed.calls.length, calls);
 
+  suite('a phone reading the PR on its own screen');
+  await hub.receive('laptop', { type: 'pr:pane', open: false });
+  checkEqual('with the laptop pane closed, nothing is polled fast', feed.watched.get(session.id).active, false);
+  await hub.receive('phone', { type: 'pr:watch', on: true });
+  checkEqual('a phone looking keeps it fresh, watch-only or not', feed.watched.get(session.id).active, true);
+  checkEqual('without opening the pane for everybody', session.prPane.open, false);
+  await hub.receive('phone', { type: 'visible', on: false });
+  checkEqual('a phone in a pocket does not', feed.watched.get(session.id).active, false);
+  await hub.receive('phone', { type: 'visible', on: true });
+  await hub.receive('phone', { type: 'pr:watch', on: false });
+  checkEqual('and closing it there stops it', feed.watched.get(session.id).active, false);
+
   hub.dispose();
   checkEqual('closing the hub stops watching', feed.watched.size, 0);
 

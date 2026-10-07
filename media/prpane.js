@@ -32,6 +32,7 @@
   const GIT_CLOSED = customIcon('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 9v12"/><path d="M11 6h5"/><path d="m16 4 4 4"/><path d="m20 4-4 4"/>', 13);
   const GIT_COMMIT = customIcon('<path d="M3 12h3"/><circle cx="12" cy="12" r="4"/><path d="M18 12h3"/>', 13);
   const ARROW_DOWN = customIcon('<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', 18);
+  const GITHUB_MARK = '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/>';
   const MINIMIZE_PATH = '<path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10 21 3"/><path d="M3 21l7-7"/>';
   const DOT = '<svg class="ico pr-dot-ico" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>';
   const STATE_ICON = { open: GIT_OPEN, merged: GIT_MERGE, closed: GIT_CLOSED, draft: GIT_OPEN };
@@ -210,12 +211,20 @@
    * @param {HTMLElement} [opts.split] the row splitting chat from the drawer,
    *   measured to decide overlay vs. side-by-side
    * @param {(msg: object) => void} opts.send
+   * @param {boolean} [opts.phone] a phone: the pane is the whole screen, and
+   *   whether it is open is this device's business, not the instance's
    */
   function mount(opts) {
     const chip = opts.chip;
     const host = opts.host;
     const split = opts.split || host.parentElement;
     const send = opts.send || function () {};
+    // On a phone, opening GitHub there must not open it on the laptop (nor the
+    // laptop's pane open itself on the phone), so the view lives here, per PR,
+    // and the host is only told that someone is looking — which keeps it fresh.
+    const phone = !!opts.phone;
+    const PHONE_KEY = 'nikui.prpane.';
+    if (phone) host.classList.add('phone', 'full');
 
     let meta = {};
     let view = { open: false, tab: 'conversation', width: null, full: false }; // mirrors meta.prPane
@@ -256,7 +265,7 @@
       chip.hidden = false;
       const st = prState.state;
       const number = (st && st.number) || (String(meta.prUrl).match(/\/(\d+)$/) || [])[1];
-      const bits = ['<span class="pr-chip-num">#' + esc(number || '?') + '</span>'];
+      const bits = [(phone ? customIcon(GITHUB_MARK, 14) : '') + '<span class="pr-chip-num">#' + esc(number || '?') + '</span>'];
       if (st && st.checkSummary) {
         const cs = st.checkSummary;
         const dotClass = cs.fail > 0 ? 'fail' : (cs.pending > 0 ? 'pending' : (cs.pass > 0 ? 'pass' : ''));
@@ -276,6 +285,11 @@
     let lastSent = null; // what we last told the host, so its echo is not mistaken for someone else's change
 
     function sendPane() {
+      if (phone) {
+        try { localStorage.setItem(PHONE_KEY + meta.prUrl, JSON.stringify({ open: view.open, tab: view.tab })); } catch (_) { /* private mode */ }
+        send({ type: 'pr:watch', on: view.open });
+        return;
+      }
       lastSent = JSON.stringify(view);
       send({ type: 'pr:pane', open: view.open, tab: view.tab, width: view.width, full: !!view.full });
     }
@@ -402,7 +416,7 @@
         parts.push('<span class="pr-title dim">' + (prState.prUrl ? 'Loading the pull request…' : 'No pull request linked') + '</span>');
       }
       parts.push('</div><div class="pr-head-actions">');
-      parts.push('<button class="icon-only" data-act="full" title="' + (view.full ? 'Exit full page' : 'Full page') + '" aria-label="Full page">' +
+      if (!phone) parts.push('<button class="icon-only" data-act="full" title="' + (view.full ? 'Exit full page' : 'Full page') + '" aria-label="Full page">' +
         (view.full ? customIcon(MINIMIZE_PATH, 13) : icon('expand', 13)) + '</button>');
       parts.push('<button class="icon-only pr-refresh' + (refreshing ? ' spinning' : '') + '" data-act="refresh" ' +
         'title="Refresh" aria-label="Refresh">' + (refreshing ? '<span class="spinner"></span>' : icon('refresh', 13)) + '</button>');
@@ -825,7 +839,21 @@
      * instance's saved state on first load.
      */
     function setMeta(next) {
+      const was = meta.prUrl;
       meta = next || {};
+      if (phone) {
+        if (firstMeta || meta.prUrl !== was) {
+          let mine = {};
+          try { mine = JSON.parse(localStorage.getItem(PHONE_KEY + meta.prUrl) || '{}') || {}; } catch (_) { /* nothing saved */ }
+          view = { open: !!(meta.prUrl && mine.open), tab: TABS.some((t) => t.id === normTab(mine.tab)) ? normTab(mine.tab) : 'conversation', width: null, full: true };
+          host.hidden = !view.open;
+          send({ type: 'pr:watch', on: view.open });
+        }
+        firstMeta = false;
+        paintChip();
+        if (view.open) render();
+        return;
+      }
       const incoming = meta.prPane || {};
       const theirs = JSON.stringify({ open: !!incoming.open, tab: normTab(incoming.tab), width: incoming.width || null, full: !!incoming.full });
       if (firstMeta || theirs !== lastSent) {
