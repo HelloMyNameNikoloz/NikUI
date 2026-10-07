@@ -110,10 +110,21 @@
     return h % 360;
   }
   function avatar(login, url, size) {
-    size = size || 24;
-    const style = 'width:' + size + 'px;height:' + size + 'px;--hue:' + hueOf(login) + ';font-size:' + Math.max(9, Math.round(size * 0.5)) + 'px';
+    // Sizes are classes and the colour is set after rendering: the editor's
+    // content-security policy drops every style="" attribute, which left the
+    // circles sized by whatever flexbox gave them.
+    size = [18, 20, 24, 32, 40].includes(size) ? size : 24;
     const img = url ? '<img src="' + esc(url) + '" alt="" loading="lazy">' : '';
-    return '<span class="avatar" data-initial="' + esc(initialOf(login)) + '" style="' + style + '" title="' + esc(login || '') + '">' + img + '</span>';
+    return '<span class="avatar s' + size + '" data-initial="' + esc(initialOf(login)) + '" data-hue="' + hueOf(login) + '" title="' + esc(login || '') + '">' + img + '</span>';
+  }
+
+  /** Colours set through the DOM, which the CSP allows, rather than in markup. */
+  function paintStyles(root) {
+    root.querySelectorAll('[data-hue]').forEach((el) => el.style.setProperty('--hue', el.getAttribute('data-hue')));
+    root.querySelectorAll('[data-bg]').forEach((el) => {
+      const bg = el.getAttribute('data-bg');
+      if (bg) { el.style.background = bg; el.style.color = el.getAttribute('data-fg') || ''; }
+    });
   }
 
   function labelTextColor(hex) {
@@ -125,7 +136,7 @@
   }
   function labelChip(l, small) {
     const hex = String(l.color || '888888').replace(/^#/, '');
-    return '<span class="pr-label-chip' + (small ? ' sm' : '') + '" style="background:#' + esc(hex) + ';color:' + labelTextColor(hex) + '">' + esc(l.name) + '</span>';
+    return '<span class="pr-label-chip' + (small ? ' sm' : '') + '" data-bg="' + esc(/^[0-9a-fA-F]{6}$/.test(String(hex)) ? '#' + hex : '') + '" data-fg="' + labelTextColor(hex) + '">' + esc(l.name) + '</span>';
   }
   function reviewerStateIcon(state) {
     const s = (state || '').toUpperCase();
@@ -254,6 +265,7 @@
       const unresolved = st ? (st.threads || []).filter((t) => !t.resolved).length : 0;
       if (unresolved) bits.push('<span class="pr-chip-bubble">' + BUBBLE + esc(unresolved) + '</span>');
       chip.innerHTML = bits.join('');
+      paintStyles(chip);
       chip.title = (view.open ? 'Close' : 'Open') + ' the pull request panel' +
         (st ? ' — ' + (STATE_WORD[st.state] || st.state) + (st.isDraft ? ' (draft)' : '') : '');
       chip.setAttribute('aria-expanded', String(view.open));
@@ -697,6 +709,7 @@
         '<button class="pr-scroll-bottom" data-act="scrollBottom" hidden title="Scroll to latest" aria-label="Scroll to latest">' + ARROW_DOWN + '</button>' +
         '</div>' +
         '</div>';
+      paintStyles(host);
       const newBody = host.querySelector('.pr-pane-body');
       if (newBody && oldBody) newBody.scrollTop = scrollTop;
       if (caret) {

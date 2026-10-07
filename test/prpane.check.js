@@ -195,6 +195,19 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     // ISO strings on the wire) ------------------------------------------
     out.noNaN = !/NaN/.test(await bodyText());
 
+    // ---- avatars are round at every size, without style="" in the markup:
+    // the editor's CSP drops those, and this harness does not apply it -------
+    out.avatarsSquare = await browser.evaluate(`(function(){
+      var all = [].slice.call(document.querySelectorAll('#pr-pane .avatar'));
+      return all.length > 0 && all.every(function (a) {
+        var r = a.getBoundingClientRect(), m = /\\bs(\\d+)\\b/.exec(a.className);
+        if (!r.width && !r.height) return true;  // in a collapsed section
+        return m && Math.round(r.width) === +m[1] && Math.round(r.height) === +m[1];
+      });
+    })()`);
+    out.noInlineStyleMarkup = await browser.evaluate(
+      `!/\\sstyle="/.test(document.getElementById('pr-pane').innerHTML.replace(/\\sstyle="(--hue:[^"]*|background:[^"]*)"/g, ''))`);
+
     // ---- the pane head ----------------------------------------------------
     out.titleShown = /Add the PR pane/.test(await text('.pr-title') || '');
     out.stateWordShown = /Open/.test(await text('.pr-state-pill') || '');
@@ -401,6 +414,8 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
   }
 
   const checks = [
+    ['avatars are as wide as they are tall, at the size they ask for', out.avatarsSquare === true],
+    ['the pane writes no style="" into its markup', out.noInlineStyleMarkup === true],
     ['the chip shows the number before pr:state answers', out.chipShownBeforeData === true && out.chipNumberBeforeData === '#691'],
     ['the pane starts closed', out.paneClosedInitially === true],
     ['once pr:state answers, the chip keeps the number', out.chipNumber === '#691'],

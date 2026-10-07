@@ -10,8 +10,8 @@
   const $ = (id) => document.getElementById(id);
 
   // What has to survive VS Code throwing this webview away while the tab is
-  // hidden: which instance it belongs to, what was half-typed, and where the
-  // reader had scrolled to. The conversation itself comes back from the host.
+  // hidden: which instance it belongs to, what was half-typed (images
+  // included), and where the reader had scrolled to. The conversation itself comes back from the host.
   const saved = vscode.getState() || {};
   let sessionId = saved.sessionId || null;
   let rememberTimer = null;
@@ -21,6 +21,7 @@
     vscode.setState({
       sessionId: sessionId,
       draft: input.value,
+      attachments: attachments.map((a) => ({ name: a.name, mediaType: a.mediaType, data: a.data })),
       scrollTop: scroller.scrollTop,
       follow: follow
     });
@@ -969,6 +970,7 @@
         '<img src="data:' + esc(a.mediaType) + ';base64,' + a.data + '" alt="' + esc(a.name) + '">' +
         '<button class="drop" title="Remove" data-drop="' + a.id + '">' + icon('x', 12) + '</button></div>';
     }).join('');
+    remember();
   }
 
   attachBar.addEventListener('click', function (e) {
@@ -1829,6 +1831,10 @@
         // A panel that was hidden long enough to be thrown away comes back with
         // the draft still typed and the reader still where they left off.
         if (saved.draft && !input.value) { input.value = saved.draft; autoGrow(); }
+        if (Array.isArray(saved.attachments) && saved.attachments.length && !attachments.length) {
+          attachments = saved.attachments.map((a) => ({ id: 'a' + (attachSeq++), name: a.name, mediaType: a.mediaType, data: a.data }));
+          paintAttachments();
+        }
         follow = saved.follow !== false;
         jump.hidden = follow;
         if (follow) scrollDown();

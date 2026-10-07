@@ -539,13 +539,24 @@ const drive = `
       const composer = document.getElementById('input');
       composer.value = 'half typed thought';
       composer.dispatchEvent(new Event('input', { bubbles: true }));
-      window.dispatchEvent(new Event('pagehide'));
-      const last = window.__state[window.__state.length - 1] || {};
-      out.draftSaved = last.draft === 'half typed thought';
-      out.stateKeepsSession = !!last.sessionId;
-      out.scrollSaved = typeof last.scrollTop === 'number';
-      out.errors = window.__errors;
-      document.title = JSON.stringify(out);
+      // So does an image pasted and not yet sent. The reader is made
+      // synchronous: under the virtual clock a real one never finishes.
+      window.FileReader = function () {
+        this.readAsDataURL = (f) => { this.result = 'data:' + f.type + ';base64,AAAA'; this.onload(); };
+      };
+      const dt = new DataTransfer();
+      dt.items.add(new File(['x'], 'shot.png', { type: 'image/png' }));
+      composer.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+      setTimeout(() => {
+        window.dispatchEvent(new Event('pagehide'));
+        const last = window.__state[window.__state.length - 1] || {};
+        out.draftSaved = last.draft === 'half typed thought';
+        out.imageSaved = !!(last.attachments && last.attachments.length === 1 && last.attachments[0].mediaType === 'image/png' && last.attachments[0].data);
+        out.stateKeepsSession = !!last.sessionId;
+        out.scrollSaved = typeof last.scrollTop === 'number';
+        out.errors = window.__errors;
+        document.title = JSON.stringify(out);
+      }, 100);
     }, 420);
   }, 80);
 </script>`;
@@ -578,6 +589,7 @@ const checks = [
   ['and what it means for what is above it', /only a summary/.test(out.compactExplained || '')],
   ['and that Claude still saw all of it', /given all of it/.test(out.clipNotice || '')],
   ['a half-typed draft is saved before the page goes away', out.draftSaved === true],
+  ['and so is an image pasted but not sent', out.imageSaved === true],
   ['and where the reader was', out.scrollSaved === true],
   ['the saved state still names the instance', out.stateKeepsSession === true],
   ['the permission mode is stated in the header', out.permissionChip === 'tools run without asking'],
