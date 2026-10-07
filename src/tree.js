@@ -154,11 +154,11 @@ class SessionTree {
     let folderId = null;
     if (target && target.__folder) folderId = target.id;
     else if (target) {
-      const owner = this.folders.folderOf(target.id);
+      const owner = this.folders.folderOf(target);
       folderId = owner ? owner.id : null;
     }
 
-    for (const id of ids) this.folders.place(id, folderId);
+    for (const id of ids) this.folders.place(this.manager.list.find((s) => s.id === id) || id, folderId);
     this.refresh();
   }
 
@@ -191,13 +191,13 @@ class SessionTree {
   userFolders(sessions) {
     const defs = this.folders.list();
     const key = 'f:' + defs.map((f) => f.id + ':' + f.name).join(',') + '|' +
-      sessions.map((s) => s.id + '>' + (this.folders.folderOf(s.id) || { id: '' }).id).join(',');
+      sessions.map((s) => s.id + '>' + (this.folders.folderOf(s) || { id: '' }).id).join(',');
     return this.cached(key, () => defs.map((def) => ({
       __folder: true,
       id: def.id,
       label: def.name,
       sessions: sessions.filter((s) => {
-        const owner = this.folders.folderOf(s.id);
+        const owner = this.folders.folderOf(s);
         return owner && owner.id === def.id;
       })
     })));
@@ -218,7 +218,7 @@ class SessionTree {
     const folders = this.userFolders(all);
 
     // Without user folders nothing changes: project grouping as before.
-    const loose = folders.length ? all.filter((s) => !this.folders.folderOf(s.id)) : all;
+    const loose = folders.length ? all.filter((s) => !this.folders.folderOf(s)) : all;
     const groups = this.projectGroups(loose);
     const rest = this.shouldGroup(groups.length) ? groups : loose;
     return folders.concat(rest);
@@ -306,10 +306,10 @@ class SessionTree {
   getParent(element) {
     if (!element || element.__group || element.__folder) return null;
     const all = this.manager.list;
-    const owner = this.folders.folderOf(element.id);
+    const owner = this.folders.folderOf(element);
     if (owner) return this.userFolders(all).find((f) => f.id === owner.id) || null;
     const folders = this.userFolders(all);
-    const loose = folders.length ? all.filter((s) => !this.folders.folderOf(s.id)) : all;
+    const loose = folders.length ? all.filter((s) => !this.folders.folderOf(s)) : all;
     const groups = this.projectGroups(loose);
     if (!this.shouldGroup(groups.length)) return null;
     return groups.find((g) => g.sessions.includes(element)) || null;

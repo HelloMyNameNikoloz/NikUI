@@ -141,6 +141,16 @@ class SessionManager extends EventEmitter {
     // the reset time does not care whether VS Code was open.
     this.pause = context.globalState.get(PAUSE_KEY, null);
     this._resumeTimer = null;
+    this.durable = null;
+  }
+
+  /**
+   * An empty window is keyed by a window id that changes every reopen, so
+   * workspaceState alone loses a window with no folder open. Given a durable,
+   * persist() also writes there, and restorable() falls back to reading it.
+   */
+  useDurable(durable) {
+    this.durable = durable || null;
   }
 
   get list() {
@@ -458,10 +468,23 @@ class SessionManager extends EventEmitter {
         unread: !!s.unread
       }));
     this.context.workspaceState.update(STORAGE_KEY, data.slice(-KEEP));
+    if (this.durable) this.durable.set(STORAGE_KEY, data.slice(-KEEP));
   }
 
+  /**
+   * workspaceState first, since it is what a reload of the same window just
+   * wrote — but an empty window's workspaceState is wiped by the time it
+   * comes back, so a non-empty durable value for the same place is the
+   * fallback rather than starting from nothing.
+   */
   restorable() {
-    return this.context.workspaceState.get(STORAGE_KEY, []);
+    const here = this.context.workspaceState.get(STORAGE_KEY, []);
+    if (Array.isArray(here) && here.length) return here;
+    if (this.durable) {
+      const remembered = this.durable.get(STORAGE_KEY);
+      if (Array.isArray(remembered)) return remembered;
+    }
+    return [];
   }
 
   /**

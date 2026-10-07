@@ -139,6 +139,12 @@ module.exports = async function () {
   checkEqual('the instance being reported on is marked',
     r.fleet.filter((f) => f.active).map((f) => f.label), ['1327']);
   checkEqual('a missing transcript is reported, not thrown', r.transcript.exists, false);
+  checkEqual('lifetime is null unless a ledger is wired in', r.lifetime, null);
+
+  const lifetime = { cost: 12.5, tokens: 900000, turns: 40, instances: 9, projects: 3, since: NOW - 86400000 };
+  const withLifetime = buildReport({ session, fleet: [session, other], env: {}, lifetime, now: NOW });
+  checkEqual('a given lifetime is carried through untouched', withLifetime.lifetime, lifetime);
+  checkEqual('the open-window totals are unaffected by lifetime being present', withLifetime.totals.cost, session.totalCost);
   checkEqual('the report says how much of the conversation it could see',
     r.window, { kept: session.items.length, dropped: 0, limit: 0 });
   checkEqual('the queue is reported', r.queue.length, 0);

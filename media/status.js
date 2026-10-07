@@ -461,16 +461,26 @@
     const f = r.fleetTotals || {};
     const rows = r.fleet || [];
     const mine = rows.find((m) => m.active);
+    const life = r.lifetime || null;
+
+    // Open instances may not have flushed to the ledger yet, so the hero
+    // never claims less than what is visibly spending right now.
+    const heroCost = life ? Math.max(life.cost, f.cost) : f.cost;
+    const since = life && life.since ? new Date(life.since).toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
 
     const hero =
       '<div class="hero">' +
       '<div class="hero-main">' +
-      '<div class="hero-label">Everything running in this window</div>' +
-      '<div class="hero-value">' + esc(fmt.money(f.cost)) + '</div>' +
-      '<div class="hero-sub">' + esc(
-        fmt.count(f.instances) + ' instance' + (f.instances === 1 ? '' : 's') +
-        ' across ' + fmt.count(f.projects) + ' project' + (f.projects === 1 ? '' : 's') + ' · ' +
-        fmt.tokens(f.tokens) + ' tokens · ' + fmt.ms(f.workedMs) + ' of model time') + '</div>' +
+      '<div class="hero-label">' + esc(life ? 'Everything NikUI has run' : 'Everything running in this window') + '</div>' +
+      '<div class="hero-value">' + esc(fmt.money(heroCost)) + '</div>' +
+      '<div class="hero-sub">' + esc(life
+        ? fmt.count(life.instances) + ' instance' + (life.instances === 1 ? '' : 's') +
+          ' across ' + fmt.count(life.projects) + ' project' + (life.projects === 1 ? '' : 's') +
+          (since ? ' since ' + since : '') + ' · ' +
+          fmt.money(f.cost) + ' in the ' + fmt.count(f.instances) + ' open now'
+        : fmt.count(f.instances) + ' instance' + (f.instances === 1 ? '' : 's') +
+          ' across ' + fmt.count(f.projects) + ' project' + (f.projects === 1 ? '' : 's') + ' · ' +
+          fmt.tokens(f.tokens) + ' tokens · ' + fmt.ms(f.workedMs) + ' of model time') + '</div>' +
       '</div>' +
       '<div class="hero-side">' +
       '<div class="pill ' + (f.working ? 'working' : 'idle') + '">' + dot(f.working ? 'working' : 'idle') +
@@ -484,7 +494,9 @@
       tile('Instances', fmt.count(f.instances), f.asleep ? f.asleep + ' asleep' : 'all awake') +
       tile('Working', fmt.count(f.working), f.waiting ? f.waiting + ' need you' : 'none blocked',
         { klass: f.waiting ? 'bad' : '' }) +
-      tile('Fleet cost', fmt.money(f.cost), fmt.money(f.instances ? f.cost / f.instances : 0) + ' each') +
+      (life
+        ? tile('All-time cost', fmt.money(heroCost), fmt.money(life.instances ? life.cost / life.instances : 0) + ' each, ever')
+        : tile('Fleet cost', fmt.money(f.cost), fmt.money(f.instances ? f.cost / f.instances : 0) + ' each')) +
       tile('Tokens', fmt.tokens(f.tokens), fmt.tokens(f.output) + ' written') +
       tile('Turns', fmt.count(f.turns), f.turns ? fmt.money(f.cost / f.turns) + ' a turn' : 'none yet') +
       tile('Tool calls', fmt.count(f.toolCalls), f.toolErrors ? f.toolErrors + ' failed' : 'all clean',

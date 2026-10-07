@@ -9,6 +9,8 @@ const { SessionManager, readConfig } = require('./manager');
 const { projectRoot } = require('./tree');
 const { SessionTree } = require('./tree');
 const { FolderStore } = require('./folders');
+const { Durable, placeOf } = require('./durable');
+const { Ledger } = require('./ledger');
 const { SessionPanel } = require('./panel');
 const { DoneNotifier, banner: plainBanner, chime } = require('./done');
 const { CiWatcher } = require('./ci');
@@ -40,10 +42,28 @@ const { Voice } = require('./voice');
 const { startSlack } = require('./slackHome');
 
 let manager;
+let ledger = null;
 
 function activate(context) {
   manager = new SessionManager(context);
-  const folders = new FolderStore(context);
+  // A copy of the open instances and the folders that outlives this window's
+  // own storage, which an empty window loses the moment its process does.
+  const memoryDir = context.globalStorageUri && context.globalStorageUri.fsPath;
+  const durable = memoryDir ? new Durable({ dir: memoryDir, place: placeOf(vscode.workspace) }) : null;
+  if (durable) manager.useDurable(durable);
+  const folders = new FolderStore(context, durable);
+  // Every instance this machine has run and what it cost, for /status.
+  ledger = memoryDir ? new Ledger({ dir: memoryDir }) : null;
+  let remembering = null;
+  manager.on('changed', () => {
+    if (remembering) return;
+    remembering = setTimeout(() => {
+      remembering = null;
+      if (ledger) ledger.record(manager.list);
+      for (const s of manager.list) folders.remember(s);
+    }, 2000);
+  });
+  context.subscriptions.push({ dispose: () => { if (remembering) clearTimeout(remembering); if (ledger) { ledger.record(manager.list); ledger.flush(); } } });
   const tree = new SessionTree(manager, folders);
   context.subscriptions.push(tree);
 
@@ -137,7 +157,7 @@ function activate(context) {
     const cwd = await pickFolder(manager);
     if (!cwd) return;
     const session = manager.create({ cwd: cwd.path });
-    folders.place(session.id, folder.id);
+    folders.place(session, folder.id);
     tree.refresh();
     SessionPanel.show(session, context, manager).focusInput();
   });
@@ -380,7 +400,7 @@ function activate(context) {
     if (!folder) return;
     // Deleting a folder never touches the instances inside it — but a folder
     // with things in it looks like it would, so it says what happens to them.
-    const inside = manager.list.filter((s) => (folders.folderOf(s.id) || {}).id === id).length;
+    const inside = manager.list.filter((s) => (folders.folderOf(s) || {}).id === id).length;
     if (inside) {
       const go = await vscode.window.showWarningMessage(
         `Delete the folder "${folder.name}"?`,
@@ -397,7 +417,7 @@ function activate(context) {
   register('nikui.moveToFolder', async (arg) => {
     const session = await pickSession(arg);
     if (!session) return;
-    const current = folders.folderOf(session.id);
+    const current = folders.folderOf(session);
     const items = folders.list().map((f) => ({
       label: (current && current.id === f.id ? '$(check) ' : '$(folder) ') + f.name,
       folderId: f.id
@@ -410,9 +430,9 @@ function activate(context) {
       const name = await vscode.window.showInputBox({ prompt: 'Name for the new folder' });
       if (!name || !name.trim()) return;
       const made = folders.create(name);
-      folders.place(session.id, made.id);
+      folders.place(session, made.id);
     } else {
-      folders.place(session.id, choice.folderId);
+      folders.place(session, choice.folderId);
     }
     tree.refresh();
   });
@@ -732,7 +752,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
 
   const audience = new Audience();
 
-  const served = installHost(createHost(context, manager, { devices, awake: awakeState || null }));
+  const served = installHost(createHost(context, manager, { devices, awake: awakeState || null, ledger }));
   served.audience = audience;
 
   /**
@@ -788,7 +808,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       return buildReport({
         session,
         fleet: open,
-        env: served.env ? served.env(session) : {}
+        env: served.env ? served.env(session) : {},
+        lifetime: ledger ? ledger.totals() : null
       });
     },
     devices,
@@ -1889,6 +1910,7 @@ function folderIdOf(node) {
 function deactivate() {
   forgetHost();
   closeAllHubs();
+  if (ledger) { ledger.record(manager ? manager.list : []); ledger.flush(); }
   if (manager) manager.disposeAll();
 }
 

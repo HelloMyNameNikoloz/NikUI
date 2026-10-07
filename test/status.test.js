@@ -6,7 +6,7 @@ const charts = require('../media/charts.js');
 
 const NOW = Date.UTC(2026, 8, 15, 12, 0, 0);
 
-function report(extra) {
+function report(extra, opts) {
   const session = Object.assign({
     id: 'nik-a', label: '1327', ticket: '1327', customTitle: null,
     status: 'working', isBusy: true, isRunning: true,
@@ -32,7 +32,7 @@ function report(extra) {
       { kind: 'tool', name: 'Read', input: { file_path: '/repo/src/session.js' }, status: 'done' }
     ]
   }, extra || {});
-  return buildReport({ session, fleet: [session], env: { vscode: '1.100.0', node: '26.7.0' }, now: NOW });
+  return buildReport(Object.assign({ session, fleet: [session], env: { vscode: '1.100.0', node: '26.7.0' }, now: NOW }, opts || {}));
 }
 
 module.exports = async function () {
@@ -80,6 +80,26 @@ module.exports = async function () {
   check('it lists every instance in detail', /Every instance/.test(fleet));
   check('and names the records across the window', /Across the fleet/.test(fleet));
   check('a wide table can scroll instead of crushing its columns', /class="grid-scroll"/.test(fleet));
+
+  suite('the lifetime cost, when a ledger is wired in');
+
+  const lifetime = report({}, { lifetime: { cost: 50.84, tokens: 9000000, turns: 900, instances: 41, projects: 6, since: NOW - 4 * 86400000 } });
+  const lifetimeFleet = sheet.renderSheet(lifetime, 'fleet');
+  check('the hero names the lifetime total', /Everything NikUI has run/.test(lifetimeFleet));
+  check('and gives up the open-window label', !/Everything running in this window/.test(lifetimeFleet));
+  check('the hero names how many instances and projects, ever', /41 instances across 6 projects/.test(lifetimeFleet));
+  check('and since when', /since \w+ \d+/.test(lifetimeFleet));
+  check('and still says what the open ones cost', /\$0\.55 in the 1 open now/.test(lifetimeFleet));
+  check('the tile is renamed to the all-time cost', /All-time cost/.test(lifetimeFleet));
+  check('and phrases it as a lifetime average', /each, ever/.test(lifetimeFleet));
+
+  const bigOpenFleet = report({ totalCost: 999 }, {
+    lifetime: { cost: 5, tokens: 100, turns: 2, instances: 1, projects: 1, since: NOW }
+  });
+  check('the hero never shows less than what is openly spending right now',
+    sheet.renderSheet(bigOpenFleet, 'fleet').indexOf(sheet.fmt.money(999)) > 0);
+
+  check('without a ledger the sheet renders exactly as before', sheet.renderSheet(r, 'fleet') === fleet);
 
   suite('what is left of the plan');
 

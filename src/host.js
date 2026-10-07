@@ -20,6 +20,7 @@ const openUrl = {};
 function createHost(context, manager, extras) {
   const devices = (extras && extras.devices) || null;
   const awake = (extras && extras.awake) || null;
+  const ledger = (extras && extras.ledger) || null;
   return {
     // Whose window this is. A host belongs to one manager, and handing a hub
     // somebody else's would give it the wrong fleet — which is exactly what a
@@ -29,6 +30,8 @@ function createHost(context, manager, extras) {
     home: os.homedir(),
     knownCommands: () => (manager ? manager.knownCommands() : []),
     fleet: () => (manager ? manager.list : []),
+    // What every instance this machine has run has cost, not only the open ones.
+    lifetime: () => (ledger ? ledger.totals() : null),
     env: (session) => describeEnv(context, manager, session, devices, awake),
     openFile: (req) => openFile(req),
     // To the tab already showing it if there is one, else a new one.

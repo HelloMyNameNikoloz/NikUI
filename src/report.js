@@ -298,7 +298,7 @@ function loggedCost(turns) {
   return turns.reduce((sum, t) => sum + (t.costUsd || 0), 0);
 }
 
-function buildReport({ session, fleet = [], env = {}, now = Date.now() } = {}) {
+function buildReport({ session, fleet = [], env = {}, lifetime = null, now = Date.now() } = {}) {
   const turns = session.turnLog || [];
   const items = session.items || [];
   const read = readItems(items);
@@ -467,6 +467,9 @@ function buildReport({ session, fleet = [], env = {}, now = Date.now() } = {}) {
       })()
     },
     projects: byProject(members),
+    // Every instance NikUI has ever run, not just the ones open in this
+    // window — null until a ledger is wired in to say otherwise.
+    lifetime,
     // What is left of the plan's own five-hour and weekly windows. Account-wide
     // and reported by the CLI, so it is the same figure whichever instance asks.
     limits: env.limits || session.limits || null,

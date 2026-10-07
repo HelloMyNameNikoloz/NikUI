@@ -706,7 +706,8 @@ class SessionHub {
     return buildReport({
       session: this.session,
       fleet: typeof this.host.fleet === 'function' ? this.host.fleet() : [this.session],
-      env: typeof this.host.env === 'function' ? this.host.env(this.session) : {}
+      env: typeof this.host.env === 'function' ? this.host.env(this.session) : {},
+      lifetime: typeof this.host.lifetime === 'function' ? this.host.lifetime() : null
     });
   }
 

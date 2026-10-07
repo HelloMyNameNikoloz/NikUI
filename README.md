@@ -265,6 +265,15 @@ owns the whole surface.
   disk, so there is nothing there to move into, and that gesture used to quietly
   unfile the instance instead. Folders and their contents persist across
   reloads; deleting a folder never touches the instances in it.
+- **Remembered past a crash.** A window with no folder open gets fresh storage
+  every time its process dies, so the folders and open instances are also kept
+  in a file in the extension's global storage (`remembered.json`), one entry per
+  place — workspace, folder set, or "empty". A window whose own storage is empty
+  adopts it. Folder membership is also remembered by Claude conversation, so a
+  conversation reopened later lands back in its folder.
+- **All-time cost.** `/status` shows what every instance this machine has ever
+  run has cost, not only the open ones, from `ledger.json` in the same place.
+  Each instance's total only grows, and every window merges into one file.
 - **The sidebar follows the tab.** Switching instances from the editor tabs
   selects the same row in the sidebar, not just the other way round; a collapsed
   project or folder expands to show it, and a hidden sidebar is left alone.
@@ -1139,6 +1148,8 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     src/extension.js   activation, commands, folder picker
     src/session.js     one instance: process, stream parsing, state machine
     src/manager.js     collection of instances, config, persistence
+    src/durable.js     the copy that survives a window losing its storage
+    src/ledger.js      every instance ever run and what it cost
     src/tree.js        sidebar provider with coloured status icons
     src/hub.js         one instance, many clients: the protocol, no VS Code in it
     src/panel.js       the webview client of that hub: tab title, icon, editor jobs
