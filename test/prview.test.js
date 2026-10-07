@@ -142,10 +142,27 @@ module.exports = async function () {
   checkEqual('a commit status has no workflow nor run id', [s.checks[3].workflow, s.checks[3].runId], [null, null]);
   checkEqual('checkSummary counts pass/fail/pending only', s.checkSummary, { total: 4, pass: 1, fail: 1, pending: 1 });
 
-  checkEqual('a requested reviewer who has not reviewed is PENDING',
-    s.reviewers.find((r) => r.login === 'bots'), { login: 'bots', state: 'PENDING', avatar: null });
-  checkEqual('one who has reviewed shows their state',
-    s.reviewers.find((r) => r.login === 'bob'), { login: 'bob', state: 'CHANGES_REQUESTED', avatar: null });
+  checkEqual('a requested team that has not reviewed is PENDING',
+    s.reviewers.find((r) => r.login === 'bots'),
+    { login: 'bots', state: 'PENDING', avatar: null, at: null, team: true, stale: false, rerequested: false });
+  checkEqual('one who has reviewed shows their state, and changes asked for and since answered are stale',
+    s.reviewers.find((r) => r.login === 'bob'),
+    { login: 'bob', state: 'CHANGES_REQUESTED', avatar: null, at: '2026-10-04T13:03:23Z', team: false, stale: true, rerequested: false });
+  checkEqual('an approval is not made stale by a comment after it', s.reviewers.find((r) => r.login === 'carol').stale, false);
+  {
+    const moved = JSON.parse(JSON.stringify(FIXTURE));
+    const pr = moved.data.repository.pullRequest;
+    pr.comments.nodes = [];
+    pr.reviewThreads.nodes = pr.reviewThreads.nodes.map((t) => Object.assign(t, { comments: { nodes: t.comments.nodes.filter((c) => c.author.login === 'bob') } }));
+    pr.reviewRequests.nodes.push({ requestedReviewer: { login: 'bob' } });
+    const quiet = normalize(moved);
+    checkEqual('changes requested with only the reviewer talking since are not stale', quiet.reviewers.find((r) => r.login === 'bob').stale, false);
+    checkEqual('asked again after reviewing is a re-request', quiet.reviewers.find((r) => r.login === 'bob').rerequested, true);
+    checkEqual('and they are listed once', quiet.reviewers.filter((r) => r.login === 'bob').length, 1);
+    pr.recentCommits.nodes.push({ commit: { oid: 'c3', messageHeadline: 'fix', committedDate: '2026-10-04T16:00:00Z', author: { user: { login: 'ada' }, name: 'ada' } } });
+    const pushed = normalize(moved);
+    checkEqual('a commit after them makes both stale', ['bob', 'carol'].map((l) => pushed.reviewers.find((r) => r.login === l).stale), [true, true]);
+  }
   checkEqual('only reviews with a body are kept', s.reviews.map((r) => r.author), ['bob']);
 
   checkEqual('unresolved threads come first', s.threads.map((t) => t.id), ['T2', 'T1']);

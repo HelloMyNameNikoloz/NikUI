@@ -160,6 +160,37 @@
   white-space: nowrap; /* a branch name never breaks at its hyphen */
 }
 
+/* The merge line on the left, where every reviewer stands on the right; on
+   a narrow pane or a phone the reviewers drop under it. */
+.pr-head-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s2) var(--s4); }
+.pr-head-row .pr-head-sub { flex: 1 1 260px; min-width: 0; }
+.pr-head-reviews {
+  list-style: none; margin: var(--s2) 0 0 auto; padding: 0;
+  display: flex; flex-direction: column; gap: 4px;
+  flex: 0 1 auto; min-width: 0;
+  font-size: var(--fs-small);
+}
+.pr-pane.phone .pr-head-reviews, .pr-pane:not(.wide) .pr-head-reviews { flex-basis: 100%; margin-left: 0; }
+.pr-rv { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pr-rv-login { font-weight: 590; color: var(--vscode-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pr-pane.phone .pr-rv-login, .pr-pane:not(.wide) .pr-rv-login { flex: 1 1 auto; }
+.pr-rv-again { display: inline-flex; color: var(--vscode-descriptionForeground); }
+.pr-rv-state {
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
+  padding: 1px 7px; border-radius: var(--r-chip);
+  background: var(--fill-2); color: var(--vscode-descriptionForeground); white-space: nowrap;
+}
+.pr-rv.approved .pr-rv-state { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.pr-rv.changes_requested .pr-rv-state { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+.pr-rv.pending .pr-rv-state { color: #d29922; }
+/* Stale: still on the record, no longer the last word. */
+.pr-rv.stale .pr-rv-state { opacity: 0.6; }
+.pr-rv-stale {
+  flex: 0 0 auto; padding: 0 6px; border-radius: var(--r-chip);
+  border: 0.5px solid #d29922; color: #d29922;
+  font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.04em;
+}
+
 .pr-compact-row { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); flex-wrap: wrap; }
 .pr-compact-reviewers { display: flex; gap: 2px; }
 .pr-compact-reviewers .avatar { margin-left: -4px; border: 1.5px solid var(--glass-bg); }

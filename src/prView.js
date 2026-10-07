@@ -76,7 +76,7 @@ query($owner:String!,$name:String!,$number:Int!){
         nodes { commit { oid messageHeadline committedDate author { user { login } name avatarUrl(size:80) } } }
       }
       reviewRequests(first:20) {
-        nodes { requestedReviewer { ... on User { login avatarUrl(size:80) } ... on Team { name } } }
+        nodes { requestedReviewer { ... on User { login avatarUrl(size:80) } ... on Team { name avatarUrl(size:80) } } }
       }
       latestReviews(first:20) {
         nodes { author { ${ACTOR_FIELDS} } state body submittedAt url }
@@ -269,15 +269,23 @@ function normalize(json) {
   const reviewed = new Map(); // login → {state, avatar}, latest review wins
   for (const n of (pr.latestReviews && pr.latestReviews.nodes) || []) {
     const login = n && n.author && n.author.login;
-    if (login) reviewed.set(login, { state: n.state || null, avatar: (n.author && n.author.avatarUrl) || null });
+    if (login) reviewed.set(login, { state: n.state || null, avatar: (n.author && n.author.avatarUrl) || null, at: n.submittedAt || null });
   }
+  // `stale` is filled in below, once the commits and comments are read.
   const reviewers = [];
+  const asked = new Set(); // asked to review (again, if they already have)
   for (const n of (pr.reviewRequests && pr.reviewRequests.nodes) || []) {
     const who = n && n.requestedReviewer;
     const login = who && (who.login || who.name);
-    if (login && !reviewed.has(login)) reviewers.push({ login, state: 'PENDING', avatar: who.avatarUrl || null });
+    if (!login) continue;
+    asked.add(login);
+    if (!reviewed.has(login)) {
+      reviewers.push({ login, state: 'PENDING', avatar: who.avatarUrl || null, at: null, team: !who.login, stale: false, rerequested: false });
+    }
   }
-  for (const [login, r] of reviewed) reviewers.push({ login, state: r.state, avatar: r.avatar });
+  for (const [login, r] of reviewed) {
+    reviewers.push({ login, state: r.state, avatar: r.avatar, at: r.at, team: false, stale: false, rerequested: asked.has(login) });
+  }
   for (const r of reviewers) if (r.avatar) avatars[r.login] = r.avatar;
 
   const reviews = ((pr.latestReviews && pr.latestReviews.nodes) || [])
@@ -316,6 +324,22 @@ function normalize(json) {
 
   const commits = (((pr.recentCommits && pr.recentCommits.nodes) || [])).map(readCommit);
   for (const c of commits) if (c.avatar) avatars[c.author] = c.avatar;
+
+  // A review is stale once the pull request has moved on without its reviewer:
+  // a commit after it, or somebody else commenting after it (the author
+  // answering the requested changes, typically). Their own later comments
+  // are still their review talking, so those do not count. An approval goes
+  // stale only with new code, as GitHub's own dismissal does: a comment after
+  // it does not take back what was approved.
+  const moves = commits.map((c) => ({ who: null, at: Date.parse(c.at) }))
+    .concat(comments.map((c) => ({ who: c.author, at: Date.parse(c.at) })))
+    .concat(...threads.map((t) => t.comments.map((c) => ({ who: c.author, at: Date.parse(c.at) }))))
+    .filter((m) => Number.isFinite(m.at));
+  for (const r of reviewers) {
+    const at = Date.parse(r.at);
+    if (r.state === 'PENDING' || !Number.isFinite(at)) continue;
+    r.stale = moves.some((m) => m.at > at && (r.state === 'APPROVED' ? m.who === null : m.who !== r.login));
+  }
 
   const timeline = readTimeline(pr.timelineItems && pr.timelineItems.nodes, avatars);
 

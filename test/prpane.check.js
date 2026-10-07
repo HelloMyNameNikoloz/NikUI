@@ -97,7 +97,8 @@ const PR_STATE = {
     '| Property | Value |\n| --- | --- |\n| dimensions | 1200 x 800 x 600 mm |\n',
   labels: [{ name: 'enhancement', color: 'a2eeef' }, { name: 'bug', color: 'd73a4a' }],
   assignees: [{ login: 'nik', avatar: NIK_AVATAR }],
-  reviewers: [{ login: 'ana', state: 'APPROVED', avatar: ANA_AVATAR }, { login: 'ghost', state: 'PENDING', avatar: null }],
+  reviewers: [{ login: 'ana', state: 'APPROVED', avatar: ANA_AVATAR }, { login: 'ghost', state: 'PENDING', avatar: null, team: true },
+    { login: 'bob', state: 'CHANGES_REQUESTED', avatar: null, at: iso(-300000), stale: true, rerequested: true }],
   avatars: { nik: NIK_AVATAR, ana: ANA_AVATAR },
   checks: [
     { name: 'build', workflow: 'CI', status: 'fail', url: 'https://github.com/acme/nikui/actions/runs/1', startedAt: NOW - 60000, completedAt: NOW - 30000, runId: 'run-1' },
@@ -263,6 +264,11 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
 
     // ---- events render as text, never HTML ---------------------------------
     out.eventTextIsEscaped = /<script>bad<\/script> label/.test(await text('.pr-tl-event-line') || '');
+
+    // ---- every reviewer in the header, what blocks the merge first --------
+    out.headReviews = await browser.evaluate(`[...document.querySelectorAll('.pr-pane-head .pr-head-reviews .pr-rv')].map((li) =>
+      li.querySelector('.pr-rv-login').textContent + ':' + li.querySelector('.pr-rv-state').textContent +
+      (li.querySelector('.pr-rv-stale') ? ':stale' : '') + (li.querySelector('.pr-rv-again') ? ':again' : '')).join('|')`);
 
     // ---- narrow: a compact reviewers/labels row, no sidebar ----------------
     out.compactRowShownNarrow = !(await hidden('.pr-compact-row'));
@@ -441,6 +447,8 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['a null avatar falls back to an initial', out.nullAvatarFallsBack === true],
     ['event text renders as text, never HTML', out.eventTextIsEscaped === true],
     ['narrow: a compact reviewers/labels row shows', out.compactRowShownNarrow === true],
+    ['the header lists every reviewer, changes requested first, stale and re-requested marked',
+      out.headReviews === 'bob:Changes requested:stale:again|ana:Approved|ghost:Awaiting review'],
     ['and the full sidebar does not', out.sidebarHiddenNarrow === true],
     ['clicking a tab switches it', out.threadsTabOn === true],
     ['and posts the whole state, including full', out.threadsTabPosted === true],

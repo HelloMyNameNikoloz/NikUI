@@ -147,6 +147,35 @@
     return DOT; // pending
   }
 
+  const REVIEW_ORDER = { CHANGES_REQUESTED: 0, APPROVED: 1, COMMENTED: 2, DISMISSED: 3, PENDING: 4 };
+  const REVIEW_WORD = {
+    CHANGES_REQUESTED: 'Changes requested', APPROVED: 'Approved', COMMENTED: 'Commented',
+    DISMISSED: 'Dismissed', PENDING: 'Awaiting review'
+  };
+
+  /** Where each reviewer stands, the way GitHub's Reviewers box says it: one
+   *  line each, what blocks the merge first. Stale and re-requested say so. */
+  function reviewSummary(reviewers) {
+    if (!reviewers || !reviewers.length) return '';
+    const sorted = reviewers.slice().sort((a, b) =>
+      (REVIEW_ORDER[a.state] == null ? 5 : REVIEW_ORDER[a.state]) - (REVIEW_ORDER[b.state] == null ? 5 : REVIEW_ORDER[b.state]));
+    return '<ul class="pr-head-reviews" aria-label="Reviewers">' + sorted.map((r) => {
+      const state = (r.state || 'PENDING').toUpperCase();
+      const word = REVIEW_WORD[state] || state.toLowerCase().replace(/_/g, ' ');
+      const why = r.stale
+        ? (state === 'APPROVED' ? 'New commits since this approval' : 'The pull request has moved on since: new commits or replies after it')
+        : '';
+      const when = r.at ? ' · ' + fmtAgo(r.at) : '';
+      return '<li class="pr-rv ' + esc(state.toLowerCase()) + (r.stale ? ' stale' : '') + '" title="' + esc(r.login + ': ' + word + when + (why ? ' — ' + why : '')) + '">' +
+        avatar(r.login, r.avatar, 20) +
+        '<span class="pr-rv-login">' + esc(r.login) + '</span>' +
+        (r.rerequested ? '<span class="pr-rv-again" title="Asked to review again">' + icon('refresh', 11) + '</span>' : '') +
+        '<span class="pr-rv-state">' + reviewerStateIcon(state) + esc(word) + '</span>' +
+        (r.stale ? '<span class="pr-rv-stale">stale</span>' : '') +
+        '</li>';
+    }).join('') + '</ul>';
+  }
+
   function changeBar(adds, dels) {
     const total = (adds || 0) + (dels || 0);
     const blocks = [];
@@ -413,11 +442,10 @@
     // ── rendering: head ──────────────────────────────────────
 
     function renderCompactRow(st) {
-      const reviewers = st.reviewers || [];
+      // The reviewers are in the header now; this row is what is left.
       const labels = st.labels || [];
-      if (!reviewers.length && !labels.length) return '';
+      if (!labels.length) return '';
       let html = '<div class="pr-compact-row">';
-      if (reviewers.length) html += '<span class="pr-compact-reviewers">' + reviewers.map((r) => avatar(r.login, r.avatar, 18)).join('') + '</span>';
       if (labels.length) html += '<span class="pr-compact-labels">' + labels.map((l) => labelChip(l, true)).join('') + '</span>';
       html += '</div>';
       return html;
@@ -435,11 +463,11 @@
         const commitWord = n != null ? (n + ' commit' + (n === 1 ? '' : 's')) : 'commits';
         const verb = merged ? 'merged' : 'wants to merge';
         parts.push('<h1 class="pr-title"><a href="' + esc(st.url) + '">' + esc(st.title || '') + '</a> <span class="pr-number">#' + esc(st.number) + '</span></h1>');
-        parts.push('<div class="pr-head-sub">' +
+        parts.push('<div class="pr-head-row"><div class="pr-head-sub">' +
           '<span class="pr-state-pill ' + stateKey + '">' + (STATE_ICON[stateKey] || '') + esc(stateLabel) + '</span>' +
           '<span class="pr-merge-line"><b>' + esc(st.author || '') + '</b> ' + esc(verb) + ' ' + esc(commitWord) +
           ' into <code>' + esc(st.baseRef || '') + '</code> from <code>' + esc(st.headRef || '') + '</code></span>' +
-          '</div>');
+          '</div>' + reviewSummary(st.reviewers) + '</div>');
         parts.push(renderCompactRow(st));
       } else {
         parts.push('<span class="pr-title dim">' + (prState.prUrl ? 'Loading the pull request…' : 'No pull request linked') + '</span>');
@@ -684,6 +712,7 @@
       if (reviewers.length) {
         html += '<div class="pr-side-section"><h5>Reviewers</h5><ul class="pr-side-list">' +
           reviewers.map((r) => '<li>' + avatar(r.login, r.avatar, 20) + '<span class="pr-side-login">' + esc(r.login) + '</span>' +
+            (r.stale ? '<span class="pr-rv-stale" title="The pull request has moved on since this review">stale</span>' : '') +
             '<span class="pr-review-state-icon ' + esc((r.state || '').toLowerCase()) + '">' + reviewerStateIcon(r.state) + '</span></li>').join('') +
           '</ul></div>';
       }
