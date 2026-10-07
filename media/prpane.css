@@ -50,6 +50,32 @@
   box-shadow: none;
 }
 .pr-pane.full .pr-resize { display: none; }
+
+/* Moving in and out on Apple's navigation spring. `entering`/`leaving` are
+   the off-screen end; `moving` is the transition between. As a drawer it also
+   gives back its width, so the chat beside it widens with it. */
+.pr-pane.moving {
+  transition: transform 0.48s cubic-bezier(0.32, 0.72, 0, 1), margin-right 0.48s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+.pr-pane.moving.leaving { transition-duration: 0.38s; }
+.pr-pane.entering, .pr-pane.leaving { transform: translateX(100%); }
+.pr-pane.entering:not(.overlay):not(.full), .pr-pane.leaving:not(.overlay):not(.full) { margin-right: calc(-1 * var(--pr-w, 420px)); }
+.pr-pane.full.moving, .pr-pane.full.dragging, .pr-pane.overlay.moving { box-shadow: -10px 0 30px rgba(0, 0, 0, 0.28); }
+
+/* What the page covers slides a quarter of the way left and dims, as the page
+   under an iOS push does — and follows the finger during a drag back. */
+body.pr-moving > header, body.pr-moving #work-main {
+  transition: transform 0.48s cubic-bezier(0.32, 0.72, 0, 1), filter 0.48s cubic-bezier(0.32, 0.72, 0, 1);
+}
+body.pr-pushed > header, body.pr-pushed #work-main { transform: translateX(-25%); filter: brightness(0.7); }
+body.pr-dragging > header, body.pr-dragging #work-main {
+  transform: translateX(calc(-25% * (1 - var(--pr-drag, 0))));
+  filter: brightness(calc(0.7 + 0.3 * var(--pr-drag, 0)));
+}
+@media (prefers-reduced-motion: reduce) {
+  .pr-pane.moving, body.pr-moving > header, body.pr-moving #work-main { transition: none; }
+}
 /* A phone: GitHub is the whole screen, opaque, clear of the notch and the
    gesture bar, and it has no width to drag. */
 .pr-pane.phone {

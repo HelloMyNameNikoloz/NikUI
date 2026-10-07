@@ -560,6 +560,8 @@
     // that happens to be first in history.
     if (plugins.App && plugins.App.addListener) {
       plugins.App.addListener('backButton', ({ canGoBack }) => {
+        // Something open over the page (the GitHub pull request) closes first.
+        if ((window.NikBack || []).some((close) => close())) return;
         if (canGoBack && window.history.length > 1) window.history.back();
         else if (plugins.App.exitApp) plugins.App.exitApp();
       });

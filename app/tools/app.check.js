@@ -1512,6 +1512,43 @@ const record = (name, ok) => {
     record('swiping right goes back', (await swipe(100, 300, 500)) === 'threads');
     record('a short drag does not', (await swipe(200, 170, 500)) === 'threads');
     await swipe(100, 300, 500);
+    // From the left edge the page follows the finger, as an iOS page does.
+    const drag = (toX, ms) => phone.evaluate(`(async () => {
+      const el = document.querySelector('#pr-pane .pr-pane-body'), host = document.getElementById('pr-pane');
+      const at = (x) => new Touch({ identifier: 2, target: el, clientX: x, clientY: 400 });
+      el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [at(10)], changedTouches: [at(10)] }));
+      let followed = true;
+      for (let i = 1; i <= 6; i++) {
+        const x = 10 + (${toX} - 10) * i / 6;
+        el.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, touches: [at(x)], changedTouches: [at(x)] }));
+        followed = followed && Math.abs(host.getBoundingClientRect().left - (x - 10)) < 1;
+        await new Promise((r) => setTimeout(r, ${ms} / 6));
+      }
+      const pushed = document.body.classList.contains('pr-dragging');
+      el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [at(${toX})] }));
+      return followed && pushed && !document.querySelector('#pr-pane .pr-tab.on').dataset.tab.startsWith('x');
+    })()`);
+    const settled = '(() => { const p = document.getElementById("pr-pane"); return !p.classList.contains("moving") && !p.style.transform && !/pr-/.test(document.body.className); })()';
+    record('dragging from the left edge moves the page with the finger', (await drag(90, 300)) === true);
+    record('and a short, slow drag springs back open',
+      await phone.until(settled, 2000) && await phone.evaluate('!document.getElementById("pr-pane").hidden && document.getElementById("pr-pane").getBoundingClientRect().left === 0'));
+    record('an edge drag does not change the tab', (await phone.evaluate('document.querySelector("#pr-pane .pr-tab.on").dataset.tab')) === 'conversation');
+    await drag(250, 300);
+    record('past a third of the way it lets go and closes',
+      await phone.until('document.getElementById("pr-pane").hidden', 2000) && await phone.until(settled, 1000));
+    await phone.evaluate('document.getElementById("pr-chip").click()');
+    record('opening slides it in from the right while the chat moves aside',
+      await phone.evaluate(`(() => { const p = document.getElementById('pr-pane');
+        return !p.hidden && p.classList.contains('moving') && document.body.classList.contains('pr-pushed') &&
+          getComputedStyle(p).transitionTimingFunction.includes('0.32, 0.72, 0, 1'); })()`));
+    record('and it comes to rest covering the screen',
+      await phone.until(settled, 2000) && await phone.evaluate('document.getElementById("pr-pane").getBoundingClientRect().left === 0'));
+    record('Android\'s back button closes the pull request first',
+      await phone.evaluate('(window.NikBack || []).some((close) => close())') === true &&
+      await phone.until('document.getElementById("pr-pane").hidden', 2000));
+    record('and with it closed, back is left for the app', await phone.evaluate('(window.NikBack || []).some((close) => close())') === false);
+    await phone.evaluate('document.getElementById("pr-chip").click()');
+    await phone.until(settled, 2000);
     await phone.evaluate('document.querySelector("#pr-pane [data-act=close]").click()');
     record('closing it goes back to the conversation',
       await phone.until('document.getElementById("pr-pane").hidden && !!document.getElementById("transcript")', 4000));

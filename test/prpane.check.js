@@ -384,7 +384,10 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     await browser.evaluate(
       "document.getElementById('pr-pane').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))"
     );
+    out.escSlidesOut = await browser.evaluate("(() => { const h = document.getElementById('pr-pane'); return !h.hidden && h.classList.contains('leaving') && getComputedStyle(h).transitionDuration.startsWith('0.38'); })()");
+    await new Promise((r) => setTimeout(r, 600));
     out.escClosedPane = await hidden('#pr-pane');
+    out.escSettled = await browser.evaluate("(() => { const h = document.getElementById('pr-pane'); return !h.classList.contains('moving') && !h.classList.contains('leaving') && !h.style.transform && !document.body.className.includes('pr-'); })()");
 
     // ---- an action's reply re-enables the buttons, with a message -----------
     await click('#pr-chip');
@@ -496,7 +499,9 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['a long conversation shows the scroll-to-bottom button when scrolled up', out.scrollBtnShownWhenScrolledUp === true],
     ['clicking it reaches the bottom', out.scrollReachedBottom === true],
     ['and the button hides once there', out.scrollBtnHidesAtBottom === true],
+    ['Escape slides the pane out on the closing spring', out.escSlidesOut === true],
     ['Escape with focus inside the pane closes it', out.escClosedPane === true],
+    ['and leaves nothing of the slide behind', out.escSettled === true],
     ['an action disables its button until the host answers', out.resolveSentAndDisabled === true],
     ['pr:done shows the message', out.doneMessageShown === true],
     ['and re-enables the button', out.reEnabledAfterDone === true],

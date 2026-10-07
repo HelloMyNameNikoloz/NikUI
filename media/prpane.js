@@ -323,14 +323,73 @@
       send({ type: 'pr:pane', open: view.open, tab: view.tab, width: view.width, full: !!view.full });
     }
 
-    function setOpen(open) {
+    // ── moving in and out, the way iOS pushes a page ──────────
+    // On a phone or as a full page the PR slides in from the right on Apple's
+    // spring curve while what was there slides a quarter left and dims; as a
+    // drawer it slides in while the chat makes room. Closing runs it backwards.
+    // `pr-pushed` on <body> exists only while something moves: a transform
+    // left on the chat would trap its fixed-position pieces.
+
+    const OPEN_MS = 480;
+    const CLOSE_MS = 380;
+    let moveTimer = null;
+    const still = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const covers = () => host.classList.contains('full') || phone;
+
+    function settle() {
+      clearTimeout(moveTimer);
+      moveTimer = null;
+      host.classList.remove('moving', 'entering', 'leaving', 'dragging');
+      host.style.transform = '';
+      document.body.classList.remove('pr-moving', 'pr-pushed', 'pr-dragging');
+      document.body.style.removeProperty('--pr-drag');
+    }
+
+    function slideIn() {
+      settle();
+      host.hidden = false;
+      if (still()) return;
+      host.style.setProperty('--pr-w', host.offsetWidth + 'px');
+      host.classList.add('entering');
+      void host.offsetWidth; // the start has to be drawn before the move
+      host.classList.add('moving');
+      if (covers()) document.body.classList.add('pr-moving', 'pr-pushed');
+      host.classList.remove('entering');
+      moveTimer = setTimeout(settle, OPEN_MS + 40);
+    }
+
+    function slideOut(from) {
+      if (host.hidden || still()) { settle(); host.hidden = true; return; }
+      clearTimeout(moveTimer);
+      host.style.setProperty('--pr-w', host.offsetWidth + 'px');
+      if (covers()) {
+        // Start from where the page under it would be, then let it come back.
+        if (!from) { document.body.classList.add('pr-pushed'); void document.body.offsetWidth; }
+        document.body.classList.add('pr-moving');
+        document.body.classList.remove('pr-pushed', 'pr-dragging');
+        document.body.style.removeProperty('--pr-drag');
+      }
+      host.classList.remove('dragging');
+      host.style.transform = '';
+      host.classList.add('moving', 'leaving');
+      moveTimer = setTimeout(function () { settle(); if (!view.open) host.hidden = true; }, CLOSE_MS + 40);
+    }
+
+    function setOpen(open, how) {
       if (view.open === open) return;
       view.open = open;
-      host.hidden = !open;
-      if (open) { measure(); applyWidth(); measureWide(); if (!diff.loaded && view.tab === 'files') requestDiff(); }
+      if (open) {
+        // Laid out and filled before it moves, so what slides in is the page.
+        host.hidden = false;
+        measure(); applyWidth(); measureWide();
+        if (!diff.loaded && view.tab === 'files') requestDiff();
+        render();
+        slideIn();
+      } else {
+        slideOut(how);
+      }
       sendPane();
       paintChip();
-      render();
     }
 
     function toggle() { setOpen(!view.open); }
@@ -375,9 +434,58 @@
     // table, the tab row) or while typing, and only when the finger
     // moved clearly more across than down, so reading never flips a tab.
     if (phone) {
+      // Android's back button closes the PR before it leaves the conversation.
+      (window.NikBack = window.NikBack || []).push(function () {
+        if (!view.open) return false;
+        setOpen(false);
+        return true;
+      });
+
+      // From the left edge the page follows the finger, and lets go the way
+      // iOS does: past a third of the way, or flicked, it closes; otherwise
+      // it springs back.
+      let edge = null;
+      host.addEventListener('touchstart', function (e) {
+        const t = e.touches[0];
+        edge = (e.touches.length === 1 && t.clientX <= 24 && !still()) ? { x: t.clientX, y: t.clientY, at: Date.now(), dx: 0, live: false } : null;
+      }, { passive: true });
+      host.addEventListener('touchmove', function (e) {
+        if (!edge) return;
+        const t = e.touches[0];
+        const dx = Math.max(0, t.clientX - edge.x);
+        if (!edge.live) {
+          if (Math.abs(t.clientY - edge.y) > 12 && Math.abs(t.clientY - edge.y) > dx) { edge = null; return; }
+          if (dx < 8) return;
+          edge.live = true;
+          settle();
+          host.classList.add('dragging');
+          document.body.classList.add('pr-dragging');
+        }
+        edge.dx = dx;
+        edge.lastAt = Date.now();
+        host.style.transform = 'translateX(' + dx + 'px)';
+        document.body.style.setProperty('--pr-drag', String(Math.min(1, dx / host.offsetWidth)));
+      }, { passive: true });
+      host.addEventListener('touchend', function () {
+        if (!edge || !edge.live) { edge = null; return; }
+        const speed = edge.dx / Math.max(1, Date.now() - edge.at);
+        const away = edge.dx > host.offsetWidth / 3 || (speed > 0.6 && edge.dx > 40);
+        edge = null;
+        if (away) { setOpen(false, 'drag'); return; }
+        // Spring back to where it was.
+        host.classList.remove('dragging');
+        host.classList.add('moving');
+        host.style.transform = '';
+        document.body.classList.remove('pr-dragging');
+        document.body.style.removeProperty('--pr-drag');
+        clearTimeout(moveTimer);
+        moveTimer = setTimeout(settle, OPEN_MS);
+      }, { passive: true });
+
       let start = null;
       host.addEventListener('touchstart', function (e) {
         const t = e.touches[0];
+        if (t.clientX <= 24) { start = null; return; } // the edge is for going back
         const own = e.target.closest('pre, table, textarea, input, .pr-tabs');
         start = (e.touches.length === 1 && !own) ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
       }, { passive: true });
@@ -970,6 +1078,7 @@
       if (firstMeta || theirs !== lastSent) {
         view = JSON.parse(theirs);
         lastSent = theirs;
+        if (host.hidden === view.open) settle(); // another window moved it: no half-finished slide
         host.hidden = !view.open;
         host.classList.toggle('full', view.full);
       }
