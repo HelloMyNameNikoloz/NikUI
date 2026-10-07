@@ -196,6 +196,20 @@
         "icon": "$(folder)"
       },
       {
+        "command": "nikui.togglePrPane",
+        "title": "NikUI: Show or Hide the GitHub Pane",
+        "icon": "$(github)"
+      },
+      {
+        "command": "nikui.linkPr",
+        "title": "NikUI: Link a Pull Request...",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "nikui.unlinkPr",
+        "title": "NikUI: Unlink the Pull Request"
+      },
+      {
         "command": "nikui.remoteStart",
         "title": "NikUI: Start the local server",
         "icon": "$(broadcast)"
@@ -371,6 +385,21 @@
           "command": "nikui.moveToFolder",
           "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
           "group": "2_organise@1"
+        },
+        {
+          "command": "nikui.togglePrPane",
+          "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
+          "group": "3_github@1"
+        },
+        {
+          "command": "nikui.linkPr",
+          "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
+          "group": "3_github@2"
+        },
+        {
+          "command": "nikui.unlinkPr",
+          "when": "view == nikui.sessions && (viewItem == running || viewItem == idle)",
+          "group": "3_github@3"
         },
         {
           "command": "nikui.newSessionInFolder",

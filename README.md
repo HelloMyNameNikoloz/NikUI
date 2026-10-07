@@ -265,6 +265,19 @@ owns the whole surface.
   disk, so there is nothing there to move into, and that gesture used to quietly
   unfile the instance instead. Folders and their contents persist across
   reloads; deleting a folder never touches the instances in it.
+- **The pull request beside the conversation.** An instance with a PR shows a
+  chip by its title — `#691`, a dot for its checks, a count of unresolved review
+  threads. Click it (or Cmd/Ctrl+Shift+G in the tab) for a drawer on the right:
+  Overview (description, reviewers, conversation, a comment box), Comments
+  (threads, unresolved first, with reply and resolve), Checks (failing first,
+  re-run failed) and Files (the diff). "Ask Claude" on a review thread or a
+  failing check puts it — with the code, or the failing log — into the message
+  box for you to send. Open or closed, which tab and how wide are remembered per
+  instance. It is all `gh`: one GraphQL query per refresh, every 15 s while
+  checks run and 60 s otherwise, only while the pane is open in a visible tab;
+  closed, it fetches now and then for the chip. The PR is found automatically;
+  Link a Pull Request... on the instance's right-click menu picks one by hand,
+  and a hand-picked one is never replaced.
 - **Remembered past a crash.** A window with no folder open gets fresh storage
   every time its process dies, so the folders and open instances are also kept
   in a file in the extension's global storage (`remembered.json`), one entry per
@@ -1150,6 +1163,8 @@ when no Chrome is installed (`CHROME=/path/to/chrome` to point them at one).
     src/manager.js     collection of instances, config, persistence
     src/durable.js     the copy that survives a window losing its storage
     src/ledger.js      every instance ever run and what it cost
+    src/prView.js      a pull request through gh: fetch, refresh, reply, re-run
+    media/prpane.js    the GitHub drawer and the chip in an instance's header
     src/tree.js        sidebar provider with coloured status icons
     src/hub.js         one instance, many clients: the protocol, no VS Code in it
     src/panel.js       the webview client of that hub: tab title, icon, editor jobs

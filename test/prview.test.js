@@ -1,0 +1,337 @@
+'use strict';
+const { PrFeed, normalize, QUERY, parsePrUrl, threadPrompt, checkPrompt } = require('../src/prView.js');
+
+// A shortened, sanitized version of a real `gh api graphql` response (verified
+// against PR peuka/frontend#1172, trimmed and renamed for the test).
+const FIXTURE = {
+  data: {
+    repository: {
+      pullRequest: {
+        url: 'https://github.com/o/r/pull/42',
+        number: 42,
+        title: 'Carry the error message through logout',
+        state: 'OPEN',
+        isDraft: false,
+        author: { login: 'ada' },
+        headRefName: 'fix/logout-message',
+        baseRefName: 'main',
+        headRefOid: 'deadbeef',
+        mergeable: 'MERGEABLE',
+        reviewDecision: 'CHANGES_REQUESTED',
+        additions: 40,
+        deletions: 12,
+        changedFiles: 3,
+        updatedAt: '2026-10-04T13:28:08Z',
+        body: 'Fixes the lost error message after logout.',
+        commits: { nodes: [{ commit: { oid: 'deadbeef', statusCheckRollup: { state: 'FAILURE', contexts: { nodes: [
+          { __typename: 'CheckRun', name: 'Run Tests', status: 'COMPLETED', conclusion: 'FAILURE',
+            detailsUrl: 'https://github.com/o/r/actions/runs/1/job/1', startedAt: '2026-10-05T03:39:33Z',
+            completedAt: '2026-10-05T03:40:47Z', checkSuite: { workflowRun: { databaseId: 1, workflow: { name: 'Test & Deploy' } } } },
+          { __typename: 'CheckRun', name: 'Build', status: 'IN_PROGRESS', conclusion: null,
+            detailsUrl: 'https://github.com/o/r/actions/runs/2/job/2', startedAt: '2026-10-05T03:41:00Z',
+            completedAt: null, checkSuite: { workflowRun: { databaseId: 2, workflow: { name: 'Test & Deploy' } } } },
+          { __typename: 'CheckRun', name: 'auto-merge', status: 'COMPLETED', conclusion: 'SKIPPED',
+            detailsUrl: 'https://github.com/o/r/actions/runs/3/job/3', startedAt: '2026-10-05T03:26:08Z',
+            completedAt: '2026-10-05T03:26:08Z', checkSuite: { workflowRun: { databaseId: 3, workflow: { name: 'Dependabot Auto-merge' } } } },
+          { __typename: 'StatusContext', context: 'ci/legacy', state: 'SUCCESS', targetUrl: 'https://ci.example/1', createdAt: '2026-10-05T03:00:00Z' }
+        ] } } } }] },
+        reviewRequests: { nodes: [{ requestedReviewer: { name: 'bots' } }] },
+        latestReviews: { nodes: [
+          { author: { login: 'bob' }, state: 'CHANGES_REQUESTED', body: 'Please fix this.', submittedAt: '2026-10-04T13:03:23Z', url: 'https://github.com/o/r/pull/42#pullrequestreview-1' },
+          { author: { login: 'carol' }, state: 'APPROVED', body: '', submittedAt: '2026-10-04T14:00:00Z', url: 'https://github.com/o/r/pull/42#pullrequestreview-2' }
+        ] },
+        reviewThreads: { nodes: [
+          { id: 'T1', isResolved: true, isOutdated: true, path: 'pages/account-delete.jsx', line: null, originalLine: 88, diffSide: 'RIGHT',
+            comments: { nodes: [
+              { id: 'C1', databaseId: 1001, author: { login: 'bob' }, body: 'Preserve the error across logout', createdAt: '2026-10-04T13:03:23Z',
+                url: 'https://github.com/o/r/pull/42#discussion_r1', diffHunk: '@@ -1,2 +1,3 @@\n a\n+b\n c' }
+            ] } },
+          { id: 'T2', isResolved: false, isOutdated: false, path: 'pages/login.jsx', line: 10, originalLine: 10, diffSide: 'RIGHT',
+            comments: { nodes: [
+              { id: 'C2', databaseId: 1002, author: { login: 'carol' }, body: 'nit', createdAt: '2026-10-04T15:00:00Z',
+                url: 'https://github.com/o/r/pull/42#discussion_r2', diffHunk: '@@ -5,3 +5,4 @@\n x\n+y\n z' }
+            ] } }
+        ] },
+        comments: { nodes: [
+          { id: 'IC1', author: { login: 'dave' }, body: 'Looks fine overall.', createdAt: '2026-10-05T18:48:33Z', url: 'https://github.com/o/r/pull/42#issuecomment-1' }
+        ] },
+        files: { nodes: [
+          { path: 'pages/account-delete.jsx', additions: 30, deletions: 10 },
+          { path: 'pages/login.jsx', additions: 10, deletions: 2 }
+        ] }
+      }
+    }
+  }
+};
+
+/** A fake `run`, and a clock the test moves by hand. */
+function fakeClock(start) {
+  let t = Date.parse(start);
+  return { now: () => t, advance: (ms) => { t += ms; } };
+}
+
+/** Fake setTimeout/clearTimeout: synchronous registry, fired by the test. */
+function fakeTimers() {
+  let id = 0;
+  const pending = new Map();
+  const setTimeout = (fn, ms) => { const h = ++id; pending.set(h, { fn, ms }); return h; };
+  const clearTimeout = (h) => { pending.delete(h); };
+  // Fires every timer due within `ms` of "now", advancing the test clock as it goes.
+  return {
+    setTimeout, clearTimeout,
+    fire: async (clock) => {
+      const due = [...pending.entries()];
+      pending.clear();
+      for (const [, { fn }] of due) await fn();
+    },
+    count: () => pending.size,
+    msFor: (h) => pending.get(h) && pending.get(h).ms
+  };
+}
+
+function okCheck(stdout) { return { ok: true, stdout, stderr: '' }; }
+
+module.exports = async function () {
+  suite('parsing a pull URL');
+  checkEqual('owner, repo, number', parsePrUrl('https://github.com/o/r/pull/123'), { owner: 'o', repo: 'r', number: 123 });
+  checkEqual('with a trailing path', parsePrUrl('https://github.com/o/r/pull/123/files'), { owner: 'o', repo: 'r', number: 123 });
+  checkEqual('with a fragment', parsePrUrl('https://github.com/o/r/pull/123#discussion_r1'), { owner: 'o', repo: 'r', number: 123 });
+  checkEqual('not a pull URL', parsePrUrl('https://github.com/o/r/issues/9'), null);
+  checkEqual('not a URL at all', parsePrUrl('nonsense'), null);
+  check('QUERY asks for a single PR', QUERY.includes('pullRequest(number:$number)'));
+
+  suite('normalizing a PR');
+  const s = normalize(FIXTURE);
+  checkEqual('the basics', [s.url, s.number, s.repo, s.title, s.state, s.isDraft, s.author],
+    ['https://github.com/o/r/pull/42', 42, 'o/r', 'Carry the error message through logout', 'OPEN', false, 'ada']);
+  checkEqual('refs and sha', [s.headRef, s.baseRef, s.headSha], ['fix/logout-message', 'main', 'deadbeef']);
+  checkEqual('size and decision', [s.additions, s.deletions, s.changedFiles, s.mergeable, s.reviewDecision],
+    [40, 12, 3, 'MERGEABLE', 'CHANGES_REQUESTED']);
+
+  checkEqual('checks: failing first, then pending, then the rest, alphabetical within',
+    s.checks.map((c) => [c.name, c.status]),
+    [['Run Tests', 'fail'], ['Build', 'pending'], ['auto-merge', 'skipped'], ['ci/legacy', 'pass']]);
+  checkEqual('a check keeps its workflow and run id', [s.checks[0].workflow, s.checks[0].runId], ['Test & Deploy', 1]);
+  checkEqual('a commit status has no workflow nor run id', [s.checks[3].workflow, s.checks[3].runId], [null, null]);
+  checkEqual('checkSummary counts pass/fail/pending only', s.checkSummary, { total: 4, pass: 1, fail: 1, pending: 1 });
+
+  checkEqual('a requested reviewer who has not reviewed is PENDING',
+    s.reviewers.find((r) => r.login === 'bots'), { login: 'bots', state: 'PENDING' });
+  checkEqual('one who has reviewed shows their state',
+    s.reviewers.find((r) => r.login === 'bob'), { login: 'bob', state: 'CHANGES_REQUESTED' });
+  checkEqual('only reviews with a body are kept', s.reviews.map((r) => r.author), ['bob']);
+
+  checkEqual('unresolved threads come first', s.threads.map((t) => t.id), ['T2', 'T1']);
+  checkEqual('a thread carries its latest line and diff hunk', [s.threads[1].line, s.threads[1].diffHunk.includes('+b')], [88, true]);
+  checkEqual('comments and files pass through', [s.comments.length, s.files.length], [1, 2]);
+
+  suite('normalizing partial data');
+  checkEqual('no PR at all', normalize({ data: { repository: { pullRequest: null } } }), null);
+  checkEqual('missing nested fields never throw', (() => {
+    const partial = normalize({ data: { repository: { pullRequest: { url: 'https://github.com/o/r/pull/1', number: 1 } } } });
+    return [partial.title, partial.checks, partial.reviewers, partial.threads, partial.files];
+  })(), [null, [], [], [], []]);
+
+  suite('prompts for the composer');
+  const tp = threadPrompt(s.threads[0], s);
+  check('names the PR and the place', tp.includes('PR #42') && tp.includes('pages/login.jsx:10'));
+  check('fences the diff', tp.includes('```diff') && tp.includes('+y'));
+  check('quotes the comment', tp.includes('carol: nit'));
+  check('ends with the instruction', tp.trim().endsWith('Address this review comment.'));
+
+  const cp = checkPrompt(s.checks[0], 'line1\nline2\nFAILED: boom', s);
+  check('names the failing check and its URL', cp.includes('Run Tests') && cp.includes(s.checks[0].url));
+  check('fences the log tail', cp.includes('```\n') && cp.includes('FAILED: boom'));
+  check('ends with the instruction', cp.trim().endsWith('Find why this check fails and fix it.'));
+  check('caps the log to the last ~80 lines', (() => {
+    const long = Array.from({ length: 200 }, (_, i) => 'l' + i).join('\n');
+    const p = checkPrompt({ name: 'x', url: 'u' }, long, s);
+    return !p.includes('l0\n') && p.includes('l199');
+  })());
+
+  suite('PrFeed: one fetcher per URL, shared by keys');
+  {
+    const clock = fakeClock('2026-10-06T10:00:00Z');
+    const timers = fakeTimers();
+    const calls = [];
+    const run = async (file, args, opts) => {
+      calls.push([file, ...args, opts && opts.cwd]);
+      return okCheck(JSON.stringify(FIXTURE));
+    };
+    const feed = new PrFeed({ run, now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    const states = [];
+    feed.on('state', (url, st) => states.push([url, st.loading, !!st.state, st.error]));
+
+    feed.watch('instanceA', { url: 'https://github.com/o/r/pull/42', cwd: '/repo', active: true });
+    feed.watch('instanceB', { url: 'https://github.com/o/r/pull/42', cwd: '/repo', active: true });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+    checkEqual('one `gh` call for two watchers of the same URL', calls.filter((c) => c[2] === 'graphql').length, 1);
+    checkEqual('both see loading then loaded', states.filter((s2) => s2[0] === 'https://github.com/o/r/pull/42').map((s2) => s2[1]), [true, false]);
+    check('get() returns the last state', feed.get('https://github.com/o/r/pull/42').state.number === 42);
+  }
+
+  suite('PrFeed: cadence');
+  {
+    const clock = fakeClock('2026-10-06T10:00:00Z');
+    const timers = fakeTimers();
+    let stdout = JSON.stringify(FIXTURE); // has one pending check
+    const run = async () => okCheck(stdout);
+    const feed = new PrFeed({ run, now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    const url = 'https://github.com/o/r/pull/42';
+    feed.watch('k1', { url, cwd: '/repo', active: true });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    const e = feed.entries.get(url);
+    checkEqual('active with a pending check refreshes in 15s', timers.msFor(e.timer), 15000);
+
+    // Make the fixture all-settled, then let the scheduled refresh fire.
+    const settled = JSON.parse(JSON.stringify(FIXTURE));
+    settled.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[1].status = 'COMPLETED';
+    settled.data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[1].conclusion = 'SUCCESS';
+    stdout = JSON.stringify(settled);
+    clock.advance(15000);
+    await timers.fire();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('once everything passes, it slows to 60s', timers.msFor(e.timer), 60000);
+
+    feed.watch('k2', { url, cwd: '/repo', active: false });
+    feed.unwatch('k1');
+    checkEqual('no active watcher left: the timer stops', e.timer, null);
+
+    feed.unwatch('k2');
+  }
+
+  suite('PrFeed: inactive watchers');
+  {
+    const clock = fakeClock('2026-10-06T10:00:00Z');
+    const timers = fakeTimers();
+    let n = 0;
+    const run = async () => { n++; return okCheck(JSON.stringify(FIXTURE)); };
+    const feed = new PrFeed({ run, now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    const url = 'https://github.com/o/r/pull/99';
+    feed.watch('k1', { url, cwd: '/repo', active: false });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('no data yet: it fetches once anyway', n, 1);
+    checkEqual('but sets no timer', feed.entries.get(url).timer, null);
+
+    clock.advance(30000); // under 2 minutes
+    feed.watch('k1', { url, cwd: '/repo', active: false });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('fresh data: re-registering does not fetch again', n, 1);
+
+    clock.advance(2 * 60000 + 1);
+    feed.watch('k1', { url, cwd: '/repo', active: false });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('stale data: re-registering fetches once more', n, 2);
+  }
+
+  suite('PrFeed: becoming active');
+  {
+    const clock = fakeClock('2026-10-06T10:00:00Z');
+    const timers = fakeTimers();
+    let n = 0;
+    const run = async () => { n++; return okCheck(JSON.stringify(FIXTURE)); };
+    const feed = new PrFeed({ run, now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    const url = 'https://github.com/o/r/pull/7';
+    feed.watch('k1', { url, cwd: '/repo', active: false });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('one fetch to seed the chip', n, 1);
+
+    clock.advance(5000); // fresher than 10s
+    feed.watch('k1', { url, cwd: '/repo', active: true });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('fresh enough: no immediate refetch, but a timer starts', [n, !!feed.entries.get(url).timer], [1, true]);
+
+    feed.unwatch('k1');
+    clock.advance(20000); // now older than 10s
+    feed.watch('k2', { url, cwd: '/repo', active: true });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('stale: becoming active refetches right away', n, 2);
+  }
+
+  suite('PrFeed: errors');
+  {
+    const clock = fakeClock('2026-10-06T10:00:00Z');
+    const timers = fakeTimers();
+    const missing = new PrFeed({ run: async () => ({ ok: false, missing: true, stdout: '', stderr: '' }),
+      now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    missing.watch('k', { url: 'https://github.com/o/r/pull/1', cwd: '/repo', active: true });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('gh missing', missing.get('https://github.com/o/r/pull/1').error, 'The GitHub CLI (gh) is not installed.');
+
+    const loggedOut = new PrFeed({ run: async () => ({ ok: false, stdout: '', stderr: 'run gh auth login to authenticate' }),
+      now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    loggedOut.watch('k', { url: 'https://github.com/o/r/pull/1', cwd: '/repo', active: true });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('gh not logged in', loggedOut.get('https://github.com/o/r/pull/1').error, 'gh is not logged in: run gh auth login.');
+
+    const other = new PrFeed({ run: async () => ({ ok: false, stdout: '', stderr: 'some other failure\nmore detail' }),
+      now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    other.watch('k', { url: 'https://github.com/o/r/pull/1', cwd: '/repo', active: true });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    checkEqual('else the first line of stderr', other.get('https://github.com/o/r/pull/1').error, 'some other failure');
+  }
+
+  suite('PrFeed: actions');
+  {
+    const clock = fakeClock('2026-10-06T10:00:00Z');
+    const timers = fakeTimers();
+    const calls = [];
+    const run = async (file, args, opts) => {
+      calls.push([file, ...args]);
+      if (args[0] === 'api') return okCheck(JSON.stringify(FIXTURE));
+      return okCheck('');
+    };
+    const feed = new PrFeed({ run, now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    const url = 'https://github.com/o/r/pull/42';
+    feed.watch('k', { url, cwd: '/repo', active: true });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    calls.length = 0;
+
+    const r1 = await feed.reply(url, 'T2', 'thanks, fixed');
+    check('reply mutates the thread and says so', r1.ok && r1.message === 'Replied.');
+    check('reply builds addPullRequestReviewThreadReply with the thread id and body', calls[0].some((a) => String(a).includes('addPullRequestReviewThreadReply')) &&
+      calls[0].includes('id=T2') && calls[0].includes('body=thanks, fixed'));
+    check('and refreshes afterwards', calls.some((c) => c[2] === 'graphql' && c.join(' ').includes('pullRequest(number')));
+
+    calls.length = 0;
+    const r2 = await feed.resolve(url, 'T2', true);
+    check('resolve calls resolveReviewThread', r2.ok && calls[0].some((a) => String(a).includes('resolveReviewThread')));
+    calls.length = 0;
+    const r3 = await feed.resolve(url, 'T2', false);
+    check('unresolve calls unresolveReviewThread', r3.ok && calls[0].some((a) => String(a).includes('unresolveReviewThread')));
+
+    calls.length = 0;
+    const r4 = await feed.comment(url, 'LGTM');
+    checkEqual('comment runs gh pr comment', calls[0], ['gh', 'pr', 'comment', url, '--body', 'LGTM']);
+    check('and says so', r4.ok && r4.message === 'Commented.');
+
+    calls.length = 0;
+    const r5 = await feed.rerunFailed(url);
+    checkEqual('rerunFailed dedupes run ids and reruns each once', calls.filter((c) => c[1] === 'run' && c[2] === 'rerun').map((c) => c[2 + 1]), ['1']);
+    check('and reports how many', r5.ok && r5.message.includes('1'));
+
+    const log = await feed.failedLog(url, 1);
+    check('failedLog runs gh run view --log-failed', calls.some((c) => c[0] === 'gh' && c[1] === 'run' && c[2] === 'view' && c.includes('--log-failed')));
+    check('and keeps the tail', log.ok);
+
+    const diffRun = async (file, args) => (args[0] === 'pr' && args[1] === 'diff') ? { ok: true, stdout: 'diff --git a b\n+x', stderr: '' } : okCheck('');
+    const feed2 = new PrFeed({ run: diffRun, now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    const d = await feed2.diff(url);
+    checkEqual('diff runs gh pr diff', d.diff, 'diff --git a b\n+x');
+  }
+
+  suite('PrFeed: never throws out of a timer');
+  {
+    const clock = fakeClock('2026-10-06T10:00:00Z');
+    const timers = fakeTimers();
+    const feed = new PrFeed({ run: async () => { throw new Error('boom'); },
+      now: clock.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+    let threw = false;
+    try {
+      feed.watch('k', { url: 'https://github.com/o/r/pull/1', cwd: '/repo', active: true });
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    } catch (e) { threw = true; }
+    check('a thrown run() lands in the error, not an exception', !threw && feed.get('https://github.com/o/r/pull/1').error === 'boom');
+  }
+};

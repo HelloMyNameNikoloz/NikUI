@@ -32,6 +32,10 @@ function createHost(context, manager, extras) {
     fleet: () => (manager ? manager.list : []),
     // What every instance this machine has run has cost, not only the open ones.
     lifetime: () => (ledger ? ledger.totals() : null),
+    // The GitHub pane: the shared feed, and choosing the PR by hand.
+    prFeed: (extras && extras.prFeed) || null,
+    pickPr: (extras && extras.pickPr) || null,
+    setPr: (extras && extras.setPr) || null,
     env: (session) => describeEnv(context, manager, session, devices, awake),
     openFile: (req) => openFile(req),
     // To the tab already showing it if there is one, else a new one.

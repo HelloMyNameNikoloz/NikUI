@@ -22,6 +22,9 @@ const STEERING = new Set([
   'editQueued', 'clearQueue', 'openFile', 'switch', 'runInTerminal',
   // Stopping a command it is running is the same as interrupting it.
   'stopTask',
+  // Writing to the pull request — a reply, a resolved thread, a re-run — is
+  // done as the laptop's GitHub account, so it is steering too.
+  'pr:reply', 'pr:resolve', 'pr:comment', 'pr:rerun', 'pr:unlink',
   // /watch hands out permission to push, which is steering if anything is.
   'watch',
   // A setting changes what every instance does next, and whether the laptop
@@ -84,7 +87,20 @@ class SessionHub {
     on('meta', () => {
       this.broadcast(this.metaMessage());
       this.emitHost('chrome');
+      this.syncPr();
     });
+
+    // The pull request beside the conversation: one feed for the whole window,
+    // shared by every instance that names the same PR.
+    const feed = this.host.prFeed || null;
+    if (feed) {
+      const onPr = (url, state) => {
+        if (url && url === this.session.prUrl) this.broadcast(Object.assign({ type: 'pr:state' }, state));
+      };
+      feed.on('state', onPr);
+      this.listeners.push(() => feed.removeListener('state', onPr));
+      this.listeners.push(() => feed.unwatch(this.session.id));
+    }
     on('background', () => {
       this.broadcastStats();
       this.refreshStatus();
@@ -210,6 +226,7 @@ class SessionHub {
     if (entry.statusTimer) clearTimeout(entry.statusTimer);
     this.clients.delete(clientId);
     this.broadcastPresence();
+    this.syncPr();
     return true;
   }
 
@@ -345,7 +362,88 @@ class SessionHub {
       case 'visible':
         entry.hidden = msg.on === false;
         this.seenElsewhere();
+        this.syncPr();
         break;
+
+      case 'pr:pane': {
+        const tabs = ['overview', 'comments', 'checks', 'files'];
+        const was = session.prPane || {};
+        session.prPane = {
+          open: !!msg.open,
+          tab: tabs.includes(msg.tab) ? msg.tab : (was.tab || 'overview'),
+          width: Number.isFinite(msg.width) ? Math.max(280, Math.min(2000, Math.round(msg.width))) : (was.width || null)
+        };
+        // Everyone sees the same pane on this instance, and it is remembered.
+        session.emit('meta');
+        break;
+      }
+
+      case 'pr:refresh':
+        if (this.host.prFeed && session.prUrl) this.host.prFeed.refresh(session.prUrl);
+        break;
+
+      case 'pr:diff':
+        if (this.host.prFeed && session.prUrl) {
+          const r = await this.host.prFeed.diff(session.prUrl);
+          if (r.ok) this.send(clientId, { type: 'pr:diff', diff: r.diff, truncated: !!r.truncated });
+          else this.send(clientId, { type: 'pr:done', action: 'diff', ok: false, message: r.message });
+        }
+        break;
+
+      case 'pr:reply':
+      case 'pr:resolve':
+      case 'pr:comment':
+      case 'pr:rerun': {
+        const feed = this.host.prFeed;
+        if (!feed || !session.prUrl) break;
+        const url = session.prUrl;
+        let r;
+        if (msg.type === 'pr:reply') r = await feed.reply(url, String(msg.threadId || ''), String(msg.body || ''));
+        else if (msg.type === 'pr:resolve') r = await feed.resolve(url, String(msg.threadId || ''), msg.resolved !== false);
+        else if (msg.type === 'pr:comment') r = await feed.comment(url, String(msg.body || ''));
+        else r = await feed.rerunFailed(url);
+        this.send(clientId, { type: 'pr:done', action: msg.type.slice(3), ok: !!(r && r.ok), message: (r && r.message) || '' });
+        break;
+      }
+
+      // "Ask Claude": the comment or the failing log goes into this client's
+      // composer, not straight to Claude — it is still yours to send.
+      case 'pr:askThread':
+      case 'pr:askCheck': {
+        const feed = this.host.prFeed;
+        const known = feed && session.prUrl ? feed.get(session.prUrl) : null;
+        const snap = known && known.state;
+        if (!snap) break;
+        const { threadPrompt, checkPrompt } = require('./prView');
+        if (msg.type === 'pr:askThread') {
+          const thread = (snap.threads || []).find((t) => t.id === msg.threadId);
+          if (thread) this.send(clientId, { type: 'editPrompt', text: threadPrompt(thread, snap) });
+        } else {
+          const check = (snap.checks || []).find((c) => String(c.runId) === String(msg.runId) && (!msg.name || c.name === msg.name)) ||
+            (snap.checks || []).find((c) => String(c.runId) === String(msg.runId));
+          if (!check) break;
+          const r = check.runId ? await feed.failedLog(session.prUrl, check.runId) : { ok: false };
+          this.send(clientId, { type: 'editPrompt', text: checkPrompt(check, r.ok ? r.log : '', snap) });
+        }
+        break;
+      }
+
+      // Picking a PR is a quick pick on the laptop; a phone has nowhere to show it.
+      case 'pr:link':
+        if (this.isLocal(entry) && typeof this.host.pickPr === 'function') await this.host.pickPr(session);
+        break;
+
+      case 'pr:unlink':
+        if (typeof this.host.setPr === 'function') this.host.setPr(session, null);
+        break;
+
+      case 'pr:open': {
+        const url = String(msg.url || '');
+        if (/^https:\/\/github\.com\//.test(url) && this.isLocal(entry) && typeof this.host.openUrl === 'function') {
+          await this.host.openUrl(url);
+        }
+        break;
+      }
 
       case 'send':
         session.submit(msg.text, msg.attachments, { sent: msg.sent, snippets: msg.snippets });
@@ -573,6 +671,11 @@ class SessionHub {
     entry.statusOpen = false;
     if (entry.statusTimer) { clearTimeout(entry.statusTimer); entry.statusTimer = null; }
     safePost(entry.client, this.initMessage(entry.client.id));
+    this.syncPr();
+    if (this.host.prFeed && session.prUrl) {
+      const known = this.host.prFeed.get(session.prUrl);
+      if (known) safePost(entry.client, Object.assign({ type: 'pr:state' }, known));
+    }
     // Everyone learns who else turned up, including whoever just did.
     this.broadcastPresence();
     if (entry.pendingStatus) {
@@ -598,6 +701,8 @@ class SessionHub {
       cost: s.totalCost,
       ticket: s.ticket,
       prUrl: s.prUrl || null,
+      prPinned: !!s.prPinned,
+      prPane: s.prPane || { open: false, tab: 'overview', width: null },
       effort: s.effort || null,
       // Bypassing permissions means every tool runs without asking. That is the
       // default here, so it has to be visible in the panel, not buried in
@@ -744,6 +849,21 @@ class SessionHub {
     if (clientId) return this.send(clientId, { type: 'focus' });
     this.broadcast({ type: 'focus' });
     return true;
+  }
+
+  /**
+   * Tell the feed whether anyone is looking at this instance's PR: fetched
+   * often while its pane is open in a visible tab, now and then otherwise
+   * (enough for the chip in the header), not at all without a PR.
+   */
+  syncPr() {
+    const feed = this.host.prFeed;
+    if (!feed) return;
+    const s = this.session;
+    if (!s.prUrl) { feed.unwatch(s.id); return; }
+    let visible = false;
+    for (const entry of this.clients.values()) if (entry.ready && !entry.hidden) visible = true;
+    feed.watch(s.id, { url: s.prUrl, cwd: s.cwd, active: !!(s.prPane && s.prPane.open) && visible });
   }
 
   dispose() {

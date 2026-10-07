@@ -203,7 +203,8 @@ class SessionManager extends EventEmitter {
   }
 
   create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage, turnLog, startedAt,
-    turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt, queue, cutByLimit, unread }) {
+    turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt, queue, cutByLimit, unread,
+    prPane, prPinned, prUrl }) {
     const cfg = this.config;
     const session = new Session({
       id,
@@ -263,6 +264,8 @@ class SessionManager extends EventEmitter {
     });
 
     if (usage) Object.assign(session.usage, usage);
+    if (prPane && typeof prPane === 'object') session.prPane = { open: !!prPane.open, tab: prPane.tab || 'overview', width: prPane.width || null };
+    if (prPinned && prUrl) { session.prPinned = true; session.prUrl = prUrl; }
     this.sessions.set(session.id, session);
     this._applyPause(session);
     if (autoStart !== false) session.start();
@@ -449,6 +452,9 @@ class SessionManager extends EventEmitter {
       .filter((s) => s.claudeSessionId)
       .map((s) => ({
         id: s.id, cwd: s.cwd, customTitle: s.customTitle, autoLabel: s.autoLabel, ticket: s.ticket,
+        // The GitHub pane: open or not, which tab, how wide — per instance. A
+        // PR picked by hand is kept too; a detected one is simply found again.
+        prPane: s.prPane || null, prPinned: !!s.prPinned, prUrl: s.prPinned ? s.prUrl : null,
         claudeSessionId: s.claudeSessionId, totalCost: s.totalCost, usage: s.usage,
         // The running totals are remembered, so the charts that explain them
         // have to be remembered too — a real cost above an empty chart is worse
@@ -507,6 +513,9 @@ class SessionManager extends EventEmitter {
         title: entry.customTitle,
         ticket: entry.ticket,
         autoLabel: entry.autoLabel,
+        prPane: entry.prPane,
+        prPinned: entry.prPinned,
+        prUrl: entry.prUrl,
         resume: entry.claudeSessionId,
         totalCost: entry.totalCost,
         usage: entry.usage,

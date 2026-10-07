@@ -450,6 +450,13 @@
   // VS Code opens every clicked <a href> in a new tab whatever the page does
   // with the click, so in the editor the title carries no href at all.
   const IN_EDITOR = typeof acquireVsCodeApi === 'function';
+
+  // The GitHub pane only makes sense in the editor — the phone has nowhere to
+  // put a side drawer, and window.PrPane is not even loaded there.
+  const prPane = (IN_EDITOR && window.PrPane)
+    ? window.PrPane.mount({ chip: $('pr-chip'), host: $('pr-pane'), split: $('work-split'), send: (m) => vscode.postMessage(m) })
+    : null;
+
   if (IN_EDITOR) {
     const openPr = (e) => {
       if (!meta.prUrl) return;
@@ -489,6 +496,7 @@
         esc(PERMISSION_WORD[meta.permissionMode] || meta.permissionMode) + '</span>';
     }
     $('crumbs').innerHTML = html;
+    if (prPane) prPane.setMeta(meta);
   }
 
   function setStatus(next) {
@@ -1889,6 +1897,12 @@
         break;
       }
       case 'openStatus': askForStatus(); break;
+
+      // The GitHub pane: all of it is prpane.js's business once the message
+      // is handed over.
+      case 'pr:state': if (prPane) prPane.onState(msg); break;
+      case 'pr:diff': if (prPane) prPane.onDiff(msg); break;
+      case 'pr:done': if (prPane) prPane.onDone(msg); break;
     }
   });
 

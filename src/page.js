@@ -15,7 +15,8 @@ const crypto = require('crypto');
 // wires them together, and transport.js must exist before panel.js asks for it.
 const SCRIPTS = [
   'icons.js', 'markdown.js', 'runnable.js', 'prompts.js', 'snippets.js', 'palette.js',
-  'charts.js', 'status.js', 'prefs.js', 'commands.js', 'device.js', 'secure.js', 'transport.js', 'boot.js', 'suggest.js', 'panel.js'
+  'charts.js', 'status.js', 'prefs.js', 'commands.js', 'device.js', 'secure.js', 'transport.js', 'boot.js', 'suggest.js',
+  'prpane.js', 'panel.js'
 ];
 
 /**
@@ -41,6 +42,7 @@ function renderPage(opts) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <link rel="stylesheet" href="${asset('panel.css')}">
+<link rel="stylesheet" href="${asset('prpane.css')}">
 <title>NikUI</title>
 ${head}</head>
 <body>
@@ -49,6 +51,7 @@ ${head}</head>
     <div class="title-group">
       <span id="dot" class="dot idle"></span>
       <a class="title" id="title" target="_blank" rel="noopener">Claude</a>
+      <button class="pr-chip" id="pr-chip" type="button" hidden></button>
     </div>
     <div class="stats" id="stats"></div>
     <div class="ctx" id="ctx" hidden><div class="ctx-bar"><i></i></div><span class="ctx-label"></span></div>
@@ -69,39 +72,44 @@ ${head}</head>
     <span class="find-note" id="find-note" hidden></span>
   </div>
 
-  <div id="transcript">
-    <div class="stream" id="stream"><div class="empty">Ask Claude anything to start.</div></div>
-  </div>
+  <div class="work-split" id="work-split">
+    <div class="work-main" id="work-main">
+      <div id="transcript">
+        <div class="stream" id="stream"><div class="empty">Ask Claude anything to start.</div></div>
+      </div>
 
-  <footer>
-    <div class="composer-wrap">
-      <button class="jump" id="jump" hidden>Jump to latest</button>
-      <div class="esc-hint" id="esc-hint" hidden>Press <kbd>Esc</kbd> again to interrupt this turn</div>
-      <div class="slash" id="slash" hidden></div>
-      <div class="queue" id="queue" hidden></div>
-      <div class="watching" id="watching" hidden>Watching only — this device has not been granted control.</div>
-      <div class="attachments" id="attachments"></div>
-      <div class="composer">
-        <textarea id="input" rows="1" placeholder="Message Claude…"></textarea>
-        <div class="composer-actions">
-          <button class="icon-only" id="attach" title="Attach an image"></button>
-          <button class="ghost" id="stop" disabled>Stop</button>
-          <button id="send">Send</button>
+      <footer>
+        <div class="composer-wrap">
+          <button class="jump" id="jump" hidden>Jump to latest</button>
+          <div class="esc-hint" id="esc-hint" hidden>Press <kbd>Esc</kbd> again to interrupt this turn</div>
+          <div class="slash" id="slash" hidden></div>
+          <div class="queue" id="queue" hidden></div>
+          <div class="watching" id="watching" hidden>Watching only — this device has not been granted control.</div>
+          <div class="attachments" id="attachments"></div>
+          <div class="composer">
+            <textarea id="input" rows="1" placeholder="Message Claude…"></textarea>
+            <div class="composer-actions">
+              <button class="icon-only" id="attach" title="Attach an image"></button>
+              <button class="ghost" id="stop" disabled>Stop</button>
+              <button id="send">Send</button>
+            </div>
+          </div>
+          <div class="hint">
+            <span><kbd>Enter</kbd> send</span>
+            <span><kbd>Shift</kbd>+<kbd>Enter</kbd> newline</span>
+            <span><kbd>/</kbd> commands</span>
+            <span><kbd>↑</kbd> previous prompt</span>
+            <span><kbd>/status</kbd> dashboard</span>
+            <span><kbd>⌘F</kbd> find</span>
+            <span><kbd>Esc</kbd> <kbd>Esc</kbd> interrupt</span>
+            <span>send while busy to queue</span>
+            <span>paste or drop an image</span>
+          </div>
         </div>
-      </div>
-      <div class="hint">
-        <span><kbd>Enter</kbd> send</span>
-        <span><kbd>Shift</kbd>+<kbd>Enter</kbd> newline</span>
-        <span><kbd>/</kbd> commands</span>
-        <span><kbd>↑</kbd> previous prompt</span>
-        <span><kbd>/status</kbd> dashboard</span>
-        <span><kbd>⌘F</kbd> find</span>
-        <span><kbd>Esc</kbd> <kbd>Esc</kbd> interrupt</span>
-        <span>send while busy to queue</span>
-        <span>paste or drop an image</span>
-      </div>
+      </footer>
     </div>
-  </footer>
+    <aside class="pr-pane" id="pr-pane" hidden></aside>
+  </div>
 
   <div class="sheet" id="status" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden></div>
   <div class="tip" id="tip" hidden></div>

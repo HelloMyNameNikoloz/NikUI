@@ -15,6 +15,7 @@ const { SessionPanel } = require('./panel');
 const { DoneNotifier, banner: plainBanner, chime } = require('./done');
 const { CiWatcher } = require('./ci');
 const { PrLinks } = require('./prlink');
+const { PrFeed } = require('./prView');
 const { MacNotifier } = require('./notifier');
 const { closeHub, closeAllHubs, eachHub } = require('./hub');
 const { HistoryTree } = require('./historyTree');
@@ -43,6 +44,8 @@ const { startSlack } = require('./slackHome');
 
 let manager;
 let ledger = null;
+// The GitHub pane's feed and PR picker, for the host the server builds.
+let github = {};
 
 function activate(context) {
   manager = new SessionManager(context);
@@ -116,7 +119,15 @@ function activate(context) {
   followFocus(view, manager);
   watchForTrouble(manager, (session) => SessionPanel.show(session, context, manager));
   watchForCi(manager, context, watchForDone(manager, context));
-  context.subscriptions.push({ dispose: new PrLinks().attach(manager) });
+  const prLinks = new PrLinks();
+  context.subscriptions.push({ dispose: prLinks.attach(manager) });
+  // One feed of pull request state for the window, shared by every instance's
+  // GitHub pane; it only polls while a pane is open in a visible tab.
+  const prFeed = new PrFeed();
+  context.subscriptions.push({ dispose: () => prFeed.dispose() });
+  const setPr = (session, url) => prLinks.pin(session, url);
+  const pickPr = (session) => pickPullRequest(session, setPr);
+  github = { prFeed, pickPr, setPr };
   watchForCrowding(manager);
   watchForQuota(manager);
 
@@ -412,6 +423,32 @@ function activate(context) {
     folders.remove(id);
     tree.refresh();
     vscode.window.setStatusBarMessage(`NikUI: removed folder "${folder.name}"`, 2500);
+  });
+
+  register('nikui.linkPr', async (arg) => {
+    const session = await pickSession(arg);
+    if (session) await pickPr(session);
+  });
+
+  register('nikui.unlinkPr', async (arg) => {
+    const session = await pickSession(arg);
+    if (session) setPr(session, null);
+  });
+
+  // Open or close the GitHub pane in that instance's tab, opening the tab if
+  // it is not already showing.
+  register('nikui.togglePrPane', async (arg) => {
+    const session = await pickSession(arg);
+    if (!session) return;
+    if (!session.prUrl) {
+      const pick = await vscode.window.showInformationMessage(`${session.label} has no pull request yet.`, 'Link a PR…');
+      if (pick) await pickPr(session);
+      if (!session.prUrl) return;
+    }
+    const was = session.prPane || {};
+    session.prPane = { open: !was.open, tab: was.tab || 'overview', width: was.width || null };
+    session.emit('meta');
+    SessionPanel.show(session, context, manager);
   });
 
   register('nikui.moveToFolder', async (arg) => {
@@ -752,7 +789,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
 
   const audience = new Audience();
 
-  const served = installHost(createHost(context, manager, { devices, awake: awakeState || null, ledger }));
+  const served = installHost(createHost(context, manager, Object.assign({ devices, awake: awakeState || null, ledger }, github)));
   served.audience = audience;
 
   /**
@@ -1905,6 +1942,47 @@ function folderIdOf(node) {
   if (node.__folder) return node.id;
   if (typeof node.id === 'string' && node.id.startsWith('folder:')) return node.id.slice(7);
   return null;
+}
+
+/**
+ * Choose the PR for an instance by hand: the open PRs of its repository, or a
+ * URL or number typed in. A number is looked up in the instance's folder.
+ */
+async function pickPullRequest(session, setPr) {
+  const { execFile } = require('child_process');
+  const gh = (args) => new Promise((resolve) => {
+    execFile('gh', args, { cwd: session.cwd, timeout: 20000 }, (err, stdout, stderr) =>
+      resolve({ ok: !err, stdout: String(stdout || ''), stderr: String(stderr || (err && err.message) || '') }));
+  });
+  const listed = await gh(['pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,title,url,headRefName,author']);
+  let prs = [];
+  try { prs = listed.ok ? JSON.parse(listed.stdout) : []; } catch (_) { prs = []; }
+  const items = prs.map((p) => ({
+    label: `#${p.number} ${p.title}`,
+    description: `${p.headRefName}${p.author && p.author.login ? ' · ' + p.author.login : ''}`,
+    url: p.url
+  }));
+  items.push({ label: '$(link) Paste a URL or number…', type: true });
+  if (session.prUrl) items.push({ label: '$(close) Unlink the current PR', unlink: true });
+  const choice = await vscode.window.showQuickPick(items, {
+    placeHolder: listed.ok ? `Pull request for ${session.label}` : `Couldn't list PRs here (${listed.stderr.split('\n')[0]}). Paste a URL instead.`,
+    matchOnDescription: true
+  });
+  if (!choice) return;
+  if (choice.unlink) return setPr(session, null);
+  let url = choice.url || null;
+  if (choice.type) {
+    const typed = await vscode.window.showInputBox({ prompt: 'Pull request URL, or its number in this repository', placeHolder: 'https://github.com/owner/repo/pull/123' });
+    if (!typed || !typed.trim()) return;
+    const text = typed.trim();
+    if (/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(text)) url = text.replace(/[#?].*$/, '').replace(/(\/pull\/\d+).*$/, '$1');
+    else if (/^#?\d+$/.test(text)) {
+      const found = await gh(['pr', 'view', text.replace('#', ''), '--json', 'url']);
+      try { url = found.ok ? JSON.parse(found.stdout).url : null; } catch (_) { url = null; }
+      if (!url) return vscode.window.showWarningMessage(`No PR ${text} in ${session.cwd}.`);
+    } else return vscode.window.showWarningMessage('That is not a GitHub pull request URL or number.');
+  }
+  if (url) setPr(session, url);
 }
 
 function deactivate() {

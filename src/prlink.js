@@ -47,6 +47,8 @@ class PrLinks {
 
   /** Sets session.prUrl, now if it is known, later if GitHub has to be asked. */
   link(session) {
+    // Picked by hand: nothing found in the conversation overrides that.
+    if (session.prPinned) return;
     const ticket = session.ticket || null;
     if (fits(session.prUrl, ticket)) return;
     const ci = session.ci && session.ci.pr;
@@ -66,6 +68,14 @@ class PrLinks {
       // The ticket may have moved on while GitHub answered.
       if ((session.ticket || null) === ticket) this.set(session, url);
     });
+  }
+
+  /** A PR chosen by hand, or null to go back to finding it. */
+  pin(session, url) {
+    session.prPinned = !!url;
+    if (url) return this.set(session, url);
+    this.set(session, null);
+    return this.link(session);
   }
 
   set(session, url) {
