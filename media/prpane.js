@@ -463,12 +463,20 @@
         const commitWord = n != null ? (n + ' commit' + (n === 1 ? '' : 's')) : 'commits';
         const verb = merged ? 'merged' : 'wants to merge';
         parts.push('<h1 class="pr-title"><a href="' + esc(st.url) + '">' + esc(st.title || '') + '</a> <span class="pr-number">#' + esc(st.number) + '</span></h1>');
-        parts.push('<div class="pr-head-row"><div class="pr-head-sub">' +
+        parts.push('<div class="pr-head-more"><div class="pr-head-row"><div class="pr-head-sub">' +
           '<span class="pr-state-pill ' + stateKey + '">' + (STATE_ICON[stateKey] || '') + esc(stateLabel) + '</span>' +
           '<span class="pr-merge-line"><b>' + esc(st.author || '') + '</b> ' + esc(verb) + ' ' + esc(commitWord) +
           ' into <code>' + esc(st.baseRef || '') + '</code> from <code>' + esc(st.headRef || '') + '</code></span>' +
           '</div>' + reviewSummary(st.reviewers) + '</div>');
         parts.push(renderCompactRow(st));
+        parts.push('<div class="pr-head-meta">' +
+          changeBar(st.additions || 0, st.deletions || 0) +
+          '<span class="pr-stat add">+' + esc(st.additions || 0) + '</span>' +
+          '<span class="pr-stat del">-' + esc(st.deletions || 0) + '</span>' +
+          '<span class="dim">' + esc(st.changedFiles || 0) + ' files changed</span>' +
+          (st.updatedAt ? '<span class="dim">updated ' + esc(fmtAgo(st.updatedAt)) + '</span>' :
+            (st.fetchedAt ? '<span class="dim">fetched ' + esc(fmtAgo(st.fetchedAt)) + '</span>' : '')) +
+          '</div></div>');
       } else {
         parts.push('<span class="pr-title dim">' + (prState.prUrl ? 'Loading the pull request…' : 'No pull request linked') + '</span>');
       }
@@ -479,16 +487,6 @@
         'title="Refresh" aria-label="Refresh">' + (refreshing ? '<span class="spinner"></span>' : icon('refresh', 13)) + '</button>');
       parts.push('<button class="icon-only" data-act="close" title="Close (Esc)" aria-label="Close">' + icon('x', 13) + '</button>');
       parts.push('</div></div>');
-      if (st) {
-        parts.push('<div class="pr-head-meta">' +
-          changeBar(st.additions || 0, st.deletions || 0) +
-          '<span class="pr-stat add">+' + esc(st.additions || 0) + '</span>' +
-          '<span class="pr-stat del">-' + esc(st.deletions || 0) + '</span>' +
-          '<span class="dim">' + esc(st.changedFiles || 0) + ' files changed</span>' +
-          (st.updatedAt ? '<span class="dim">updated ' + esc(fmtAgo(st.updatedAt)) + '</span>' :
-            (st.fetchedAt ? '<span class="dim">fetched ' + esc(fmtAgo(st.fetchedAt)) + '</span>' : '')) +
-          '</div>');
-      }
       if (prState.error) {
         parts.push('<div class="pr-error-banner">' + icon('alert', 13) + '<span>' + esc(prState.error) + '</span></div>');
       }
@@ -796,8 +794,63 @@
           if (e.key === 'ArrowRight') { view.width = Math.max(MIN_WIDTH, (view.width || DEFAULT_WIDTH) - 16); applyWidth(); sendPane(); }
         });
       }
-      if (newBody) newBody.addEventListener('scroll', updateScrollBtn);
+      if (newBody) {
+        newBody.addEventListener('scroll', updateScrollBtn);
+        newBody.addEventListener('scroll', followHead);
+        headLastTop = newBody.scrollTop;
+      }
+      applyHead();
       updateScrollBtn();
+    }
+
+    // ── the header gives way to what is being read ───────────
+    // Everything between the title and the tabs (state, merge line,
+    // reviewers, labels, size) folds away as the body scrolls down, pixel for
+    // pixel, and comes back the same way on the way up — the way a phone
+    // browser's address bar does. At the top of the page it is always open.
+
+    let headHidden = 0; // px of .pr-head-more currently folded away
+    let headLastTop = 0;
+    let headSettling = false;
+
+    function headFull() {
+      const more = host.querySelector('.pr-head-more');
+      if (!more) return 0;
+      const was = more.style.height;
+      more.style.height = '';
+      const h = more.scrollHeight;
+      more.style.height = was;
+      return h;
+    }
+
+    function applyHead() {
+      const more = host.querySelector('.pr-head-more');
+      if (!more) return;
+      const full = headFull();
+      headHidden = Math.max(0, Math.min(full, headHidden));
+      more.style.height = headHidden ? (full - headHidden) + 'px' : '';
+      more.style.opacity = full && headHidden ? String(Math.max(0, 1 - (headHidden / full) * 1.4)) : '';
+      host.classList.toggle('head-folded', headHidden >= full && full > 0);
+    }
+
+    function followHead(e) {
+      const body = e.currentTarget;
+      const top = body.scrollTop;
+      const delta = top - headLastTop;
+      headLastTop = top;
+      // A fold changes the body's height, and the browser may move scrollTop
+      // to fit; that move is not the reader scrolling.
+      if (headSettling) return;
+      const before = headHidden;
+      if (top <= 0) headHidden = 0;
+      else if (delta) headHidden += delta;
+      // Pulled against the bottom the browser bounces scrollTop back; do not
+      // read that as scrolling up.
+      if (delta < 0 && top + body.clientHeight >= body.scrollHeight - 2) headHidden = before;
+      if (headHidden === before) return;
+      applyHead();
+      headSettling = true;
+      requestAnimationFrame(function () { headSettling = false; headLastTop = body.scrollTop; });
     }
 
     // ── events inside the pane ───────────────────────────────

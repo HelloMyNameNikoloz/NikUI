@@ -207,7 +207,7 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
       });
     })()`);
     out.noInlineStyleMarkup = await browser.evaluate(
-      `!/\\sstyle="/.test(document.getElementById('pr-pane').innerHTML.replace(/\\sstyle="(--hue:[^"]*|background:[^"]*)"/g, ''))`);
+      `!/\\sstyle="/.test(document.getElementById('pr-pane').innerHTML.replace(/\\sstyle="(--hue:[^"]*|background:[^"]*|height:[^"]*|opacity:[^"]*)"/g, ''))`);
 
     // ---- the pane head ----------------------------------------------------
     out.titleShown = /Add the PR pane/.test(await text('.pr-title') || '');
@@ -360,6 +360,22 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     })()`, 3000);
     out.scrollBtnHidesAtBottom = await hidden('.pr-scroll-bottom');
 
+    // ---- the header folds away with the scroll, and comes back with it ------
+    const scrollTo = async (y) => {
+      await browser.evaluate(`(function(){ var b = document.querySelector('.pr-pane-body'); b.scrollTop = ${y}; b.dispatchEvent(new Event('scroll')); return true; })()`);
+      await new Promise((r) => setTimeout(r, 60));
+      return browser.evaluate("Math.round(document.querySelector('.pr-head-more').getBoundingClientRect().height)");
+    };
+    await scrollTo(0); // lets the smooth scroll to the bottom above finish
+    const headOpen = await scrollTo(0);
+    const headPart = await scrollTo(40);
+    const headGone = await scrollTo(700);
+    out.titleStaysFolded = /Add the PR pane/.test(await text('.pr-title') || '') &&
+      await browser.evaluate("document.querySelector('.pr-title').getBoundingClientRect().height > 0");
+    const headBack = await scrollTo(670);
+    const headTop = await scrollTo(0);
+    out.headFold = [headOpen > 60, Math.abs(headPart - (headOpen - 40)) <= 2, headGone === 0, Math.abs(headBack - 30) <= 2, headTop === headOpen];
+
     // ---- back to the regular fixture for the rest ---------------------------
     await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: false, error: null, state: PR_STATE });
 
@@ -447,6 +463,9 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['a null avatar falls back to an initial', out.nullAvatarFallsBack === true],
     ['event text renders as text, never HTML', out.eventTextIsEscaped === true],
     ['narrow: a compact reviewers/labels row shows', out.compactRowShownNarrow === true],
+    ['scrolling down folds the header as far as it scrolled, up brings it back as far, the top opens it all',
+      JSON.stringify(out.headFold) === '[true,true,true,true,true]'],
+    ['folded, the title is still there', out.titleStaysFolded === true],
     ['the header lists every reviewer, changes requested first, stale and re-requested marked',
       out.headReviews === 'bob:Changes requested:stale:again|ana:Approved|ghost:Awaiting review'],
     ['and the full sidebar does not', out.sidebarHiddenNarrow === true],

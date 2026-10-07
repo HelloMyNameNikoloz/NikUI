@@ -162,6 +162,9 @@
 
 /* The merge line on the left, where every reviewer stands on the right; on
    a narrow pane or a phone the reviewers drop under it. */
+.pr-head-more { overflow: hidden; }
+.pr-pane-head { transition: padding 0.12s; }
+.pr-pane.head-folded .pr-pane-head { padding-bottom: var(--s1); }
 .pr-head-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s2) var(--s4); }
 .pr-head-row .pr-head-sub { flex: 1 1 260px; min-width: 0; }
 .pr-head-reviews {
