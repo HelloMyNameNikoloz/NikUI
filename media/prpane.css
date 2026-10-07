@@ -59,7 +59,10 @@
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   box-sizing: border-box;
 }
-.pr-pane.phone .pr-head-actions .icon-only { min-width: 44px; min-height: 44px; }
+.pr-pane.phone .pr-head-actions .icon-only {
+  width: 44px; height: 44px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .pr-chip .ico { flex: 0 0 auto; }
 
 .pr-resize {

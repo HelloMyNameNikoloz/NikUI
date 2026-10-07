@@ -1495,6 +1495,23 @@ const record = (name, ok) => {
       await waitFor(() => prFeed.watched.get(session.id) && prFeed.watched.get(session.id).active === true, 4000));
     record('without opening the pane on the laptop', !(session.prPane && session.prPane.open));
     if (process.env.SHOTS) { await wait(300); await shoot(phone, 'github'); }
+    record('the close and refresh buttons have their icons in the middle',
+      (await phone.evaluate(`[...document.querySelectorAll('#pr-pane .pr-head-actions .icon-only')].every((b) => {
+        const r = b.getBoundingClientRect(), i = b.querySelector('svg, .spinner').getBoundingClientRect();
+        return Math.abs((r.left + r.width / 2) - (i.left + i.width / 2)) < 1.5 && Math.abs((r.top + r.height / 2) - (i.top + i.height / 2)) < 1.5;
+      })`)) === true);
+    const swipe = (fromX, toX, y) => phone.evaluate(`(() => {
+      const el = document.querySelector('#pr-pane .pr-pane-body');
+      const at = (x) => new Touch({ identifier: 1, target: el, clientX: x, clientY: ${y} });
+      el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [at(${fromX})], changedTouches: [at(${fromX})] }));
+      el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [at(${toX})] }));
+      return document.querySelector('#pr-pane .pr-tab.on').dataset.tab;
+    })()`);
+    record('swiping left moves to the next tab', (await swipe(300, 120, 500)) === 'threads');
+    record('and again to the one after', (await swipe(300, 120, 500)) === 'commits');
+    record('swiping right goes back', (await swipe(100, 300, 500)) === 'threads');
+    record('a short drag does not', (await swipe(200, 170, 500)) === 'threads');
+    await swipe(100, 300, 500);
     await phone.evaluate('document.querySelector("#pr-pane [data-act=close]").click()');
     record('closing it goes back to the conversation',
       await phone.until('document.getElementById("pr-pane").hidden && !!document.getElementById("transcript")', 4000));

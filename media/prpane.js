@@ -314,6 +314,10 @@
       const body = host.querySelector('.pr-pane-body');
       if (body) body.scrollTop = 0; // a new tab starts at its top
       render();
+      // On a phone the tab row is wider than the screen; keep the one you
+      // swiped to in sight.
+      const on = phone && host.querySelector('.pr-tab.on');
+      if (on && on.scrollIntoView) on.scrollIntoView({ inline: 'center', block: 'nearest' });
     }
 
     function setFull(full) {
@@ -336,6 +340,31 @@
     // ── chip & global wiring ────────────────────────────────────
 
     chip.addEventListener('click', toggle);
+
+    // A phone swipes between tabs, left for the next and right for the one
+    // before. Not from inside anything that scrolls sideways itself (code, a
+    // table, the tab row) or while typing, and only when the finger
+    // moved clearly more across than down, so reading never flips a tab.
+    if (phone) {
+      let start = null;
+      host.addEventListener('touchstart', function (e) {
+        const t = e.touches[0];
+        const own = e.target.closest('pre, table, textarea, input, .pr-tabs');
+        start = (e.touches.length === 1 && !own) ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
+      }, { passive: true });
+      host.addEventListener('touchend', function (e) {
+        if (!start) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - start.x;
+        const dy = t.clientY - start.y;
+        const quick = Date.now() - start.at < 700;
+        start = null;
+        if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        const i = TABS.findIndex((tab) => tab.id === view.tab);
+        const next = TABS[i + (dx < 0 ? 1 : -1)];
+        if (next) setTab(next.id);
+      }, { passive: true });
+    }
     chip.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
     });
