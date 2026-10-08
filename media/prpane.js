@@ -549,6 +549,26 @@
 
     // ── rendering: head ──────────────────────────────────────
 
+    // The header and body's shape before anything has arrived: the shimmer
+    // tells the reader something is coming, rather than a single dim line.
+    function renderHeadSkeleton() {
+      return '<div class="pr-skel pr-skel-head" aria-hidden="true">' +
+        '<div class="pr-skel-line pr-skel-title"></div>' +
+        '<div class="pr-skel-row"><div class="pr-skel-pill"></div><div class="pr-skel-line pr-skel-sub"></div></div>' +
+        '<div class="pr-skel-avatars"><span class="pr-skel-avatar"></span><span class="pr-skel-avatar"></span><span class="pr-skel-avatar"></span></div>' +
+        '<div class="pr-skel-line pr-skel-meta"></div>' +
+        '</div>';
+    }
+
+    function renderBodySkeleton() {
+      let html = '<div class="pr-skel pr-skel-body" aria-hidden="true">';
+      for (let i = 0; i < 4; i++) {
+        html += '<div class="pr-skel-block"><span class="pr-skel-avatar"></span>' +
+          '<div class="pr-skel-card"><div class="pr-skel-line w60"></div><div class="pr-skel-line w90"></div><div class="pr-skel-line w40"></div></div></div>';
+      }
+      return html + '</div>';
+    }
+
     function renderCompactRow(st) {
       // The reviewers are in the header now; this row is what is left.
       const labels = st.labels || [];
@@ -585,6 +605,8 @@
           (st.updatedAt ? '<span class="dim">updated ' + esc(fmtAgo(st.updatedAt)) + '</span>' :
             (st.fetchedAt ? '<span class="dim">fetched ' + esc(fmtAgo(st.fetchedAt)) + '</span>' : '')) +
           '</div></div>');
+      } else if (prState.prUrl && !prState.error) {
+        parts.push(renderHeadSkeleton());
       } else {
         parts.push('<span class="pr-title dim">' + (prState.prUrl ? 'Loading the pull request…' : 'No pull request linked') + '</span>');
       }
@@ -845,7 +867,8 @@
           '<button data-act="link">Link a PR…</button></div>';
       }
       if (!st) {
-        return '<div class="pr-empty-tab dim">' + (prState.loading ? 'Loading…' : 'Nothing to show yet.') + '</div>';
+        if (prState.loading) return renderBodySkeleton();
+        return '<div class="pr-empty-tab dim">Nothing to show yet.</div>';
       }
       if (view.tab === 'conversation') return renderConversation(st);
       if (view.tab === 'threads') return renderComments(st);
@@ -864,49 +887,125 @@
       btn.hidden = !(remaining > body.clientHeight);
     }
 
-    function render() {
-      if (!view.open) return;
-      const st = prState.state;
-      // A refresh lands every few seconds while checks run: keep the reader's
-      // place and the reply they are halfway through typing.
-      const oldBody = host.querySelector('.pr-pane-body');
-      const scrollTop = oldBody ? oldBody.scrollTop : 0;
-      const typing = document.activeElement && host.contains(document.activeElement) &&
-        document.activeElement.matches('textarea[data-draft]') ? document.activeElement : null;
-      const caret = typing ? { key: typing.getAttribute('data-draft'), start: typing.selectionStart, end: typing.selectionEnd } : null;
-      const sidebarHtml = st && view.tab === 'conversation' ? renderSidebar(st) : '';
+    // ── render: the pane is rebuilt once, then patched region by region ────
+    // Data lands every few seconds while checks run; replacing the whole
+    // pane on every one of those flashed every avatar and lost the reader's
+    // place. Instead the static shell (resize handle, header, tabs, body,
+    // sidebar, scroll button) is built exactly once, and each region's
+    // markup is only written back when its own string actually changed —
+    // nothing touches a region whose data didn't move, so its nodes (an
+    // avatar <img>, say) stay exactly what they were.
+    let shellBuilt = false;
+    let lastHead, lastTabs, lastBody, lastSidebar; // last markup string written to each region
+    let contentShown = false; // real content drawn since the last skeleton, so the fade-in runs once
+
+    function ensureShell() {
+      if (shellBuilt && host.querySelector('.pr-pane-inner')) return;
+      // The tab nav and the sidebar come and go (no PR linked, a narrow pane,
+      // a tab with nothing to show beside it) and are inserted or removed as
+      // whole elements below; the header and body never do, so they are the
+      // only two built here and kept for the life of the pane.
       host.innerHTML =
         '<div class="pr-resize" data-resize tabindex="0" role="separator" aria-orientation="vertical" ' +
         'aria-label="Resize the pull request pane"></div>' +
         '<div class="pr-pane-inner">' +
-        '<header class="pr-pane-head">' + renderHead(st) + '</header>' +
-        (meta.prUrl ? renderTabs(st) : '') +
+        '<header class="pr-pane-head"></header>' +
         '<div class="pr-pane-main">' +
-        '<div class="pr-pane-body" tabindex="-1">' + renderBody() + '</div>' +
-        sidebarHtml +
+        '<div class="pr-pane-body" tabindex="-1"></div>' +
         '<button class="pr-scroll-bottom" data-act="scrollBottom" hidden title="Scroll to latest" aria-label="Scroll to latest">' + ARROW_DOWN + '</button>' +
         '</div>' +
         '</div>';
-      paintStyles(host);
-      const newBody = host.querySelector('.pr-pane-body');
-      if (newBody && oldBody) newBody.scrollTop = scrollTop;
-      if (caret) {
-        const again = Array.from(host.querySelectorAll('textarea[data-draft]')).find((t) => t.getAttribute('data-draft') === caret.key);
-        if (again) { again.focus(); try { again.setSelectionRange(caret.start, caret.end); } catch (_) { /* gone */ } }
-      }
+      shellBuilt = true;
+      lastHead = lastTabs = lastBody = lastSidebar = undefined; // force every region to fill once
+      contentShown = false;
       const handle = host.querySelector('[data-resize]');
-      if (handle) {
-        handle.addEventListener('mousedown', startDrag);
-        handle.addEventListener('keydown', function (e) {
-          if (e.key === 'ArrowLeft') { view.width = Math.min((view.width || DEFAULT_WIDTH) + 16, Math.round(split.clientWidth * 0.7)); applyWidth(); sendPane(); }
-          if (e.key === 'ArrowRight') { view.width = Math.max(MIN_WIDTH, (view.width || DEFAULT_WIDTH) - 16); applyWidth(); sendPane(); }
-        });
+      handle.addEventListener('mousedown', startDrag);
+      handle.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowLeft') { view.width = Math.min((view.width || DEFAULT_WIDTH) + 16, Math.round(split.clientWidth * 0.7)); applyWidth(); sendPane(); }
+        if (e.key === 'ArrowRight') { view.width = Math.max(MIN_WIDTH, (view.width || DEFAULT_WIDTH) - 16); applyWidth(); sendPane(); }
+      });
+      // The body element now survives every update; its scroll listeners
+      // are only ever attached this once, not on every patch.
+      const body = host.querySelector('.pr-pane-body');
+      body.addEventListener('scroll', updateScrollBtn);
+      body.addEventListener('scroll', followHead);
+      headLastTop = body.scrollTop;
+    }
+
+    function render() {
+      if (!view.open) return;
+      const st = prState.state;
+      ensureShell();
+
+      const header = host.querySelector('.pr-pane-head');
+      const body = host.querySelector('.pr-pane-body');
+      const scrollBtn = host.querySelector('.pr-scroll-bottom');
+      const loading = !st && prState.loading && !!prState.prUrl && !prState.error;
+
+      // A refresh lands every few seconds while checks run: keep the reader's
+      // place and the reply they are halfway through typing — only ever at
+      // risk from the body region, which is the only one a draft lives in.
+      const scrollTop = body.scrollTop;
+      const typing = document.activeElement && host.contains(document.activeElement) &&
+        document.activeElement.matches('textarea[data-draft]') ? document.activeElement : null;
+      const caret = typing ? { key: typing.getAttribute('data-draft'), start: typing.selectionStart, end: typing.selectionEnd } : null;
+
+      if (loading) contentShown = false;
+      const revealing = !!st && !contentShown; // the first render where real content replaces the skeleton
+      if (st) contentShown = true;
+
+      const headHtml = renderHead(st);
+      if (headHtml !== lastHead) {
+        header.innerHTML = headHtml;
+        lastHead = headHtml;
+        paintStyles(header);
       }
-      if (newBody) {
-        newBody.addEventListener('scroll', updateScrollBtn);
-        newBody.addEventListener('scroll', followHead);
-        headLastTop = newBody.scrollTop;
+      header.setAttribute('aria-busy', String(loading));
+
+      const tabsHtml = meta.prUrl ? renderTabs(st) : '';
+      if (tabsHtml !== lastTabs) {
+        let nav = host.querySelector('.pr-tabs');
+        if (tabsHtml) {
+          if (nav) nav.outerHTML = tabsHtml;
+          else header.insertAdjacentHTML('afterend', tabsHtml);
+          paintStyles(host.querySelector('.pr-tabs'));
+        } else if (nav) {
+          nav.remove();
+        }
+        lastTabs = tabsHtml;
       }
+
+      const bodyHtml = renderBody();
+      if (bodyHtml !== lastBody) {
+        body.innerHTML = bodyHtml;
+        lastBody = bodyHtml;
+        paintStyles(body);
+        body.scrollTop = scrollTop;
+        if (caret) {
+          const again = Array.from(body.querySelectorAll('textarea[data-draft]')).find((t) => t.getAttribute('data-draft') === caret.key);
+          if (again) { again.focus(); try { again.setSelectionRange(caret.start, caret.end); } catch (_) { /* gone */ } }
+        }
+      }
+      body.setAttribute('aria-busy', String(loading));
+
+      const sidebarHtml = st && view.tab === 'conversation' ? renderSidebar(st) : '';
+      if (sidebarHtml !== lastSidebar) {
+        let aside = host.querySelector('.pr-sidebar');
+        if (sidebarHtml) {
+          if (aside) aside.outerHTML = sidebarHtml;
+          else scrollBtn.insertAdjacentHTML('beforebegin', sidebarHtml);
+          paintStyles(host.querySelector('.pr-sidebar'));
+        } else if (aside) {
+          aside.remove();
+        }
+        lastSidebar = sidebarHtml;
+      }
+
+      if (revealing && !still()) {
+        header.classList.add('pr-content-reveal');
+        body.classList.add('pr-content-reveal');
+      }
+
       applyHead();
       updateScrollBtn();
     }

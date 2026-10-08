@@ -177,6 +177,14 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     out.chipNumberBeforeData = await text('.pr-chip-num');
     out.paneClosedInitially = await hidden('#pr-pane');
 
+    // ---- while the pull request is loading, the pane shows a skeleton the
+    // shape of the real header and body, not a single dim line -------------
+    await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: true, error: null, state: null });
+    await post({ type: 'meta', meta: Object.assign({}, META_LINKED, { prPane: { open: true, tab: 'conversation', width: null, full: false } }) });
+    out.loadingSkeletonShown = await exists('.pr-pane-head .pr-skel-head') && await exists('.pr-pane-body .pr-skel-body');
+    out.loadingAriaBusy = (await attr('.pr-pane-head', 'aria-busy')) === 'true' && (await attr('.pr-pane-body', 'aria-busy')) === 'true';
+    await post({ type: 'meta', meta: Object.assign({}, META_LINKED, { prPane: { open: false, tab: 'conversation', width: null, full: false } }) });
+
     // ---- the chip, once pr:state answers --------------------------------
     await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: false, error: null, state: PR_STATE });
     out.chipNumber = await text('.pr-chip-num');
@@ -360,6 +368,17 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     })()`, 3000);
     out.scrollBtnHidesAtBottom = await hidden('.pr-scroll-bottom');
 
+    // ---- an update with identical data touches nothing: the body element
+    // and its scroll position survive untouched -----------------------------
+    await browser.evaluate(
+      "(() => { var b = document.querySelector('.pr-pane-body'); b.scrollTop = 123; b.__sameBodyNode = true; return true; })()"
+    );
+    await post({ type: 'pr:state', prUrl: PR_STATE_LONG.url, loading: false, error: null, state: PR_STATE_LONG });
+    out.bodyNodeUntouchedOnIdenticalUpdate = await browser.evaluate(
+      "(() => { var b = document.querySelector('.pr-pane-body'); return !!b && b.__sameBodyNode === true; })()"
+    );
+    out.bodyScrollTopUntouchedOnIdenticalUpdate = (await browser.evaluate("document.querySelector('.pr-pane-body').scrollTop")) === 123;
+
     // ---- the header folds away with the scroll, and comes back with it ------
     const scrollTo = async (y) => {
       await browser.evaluate(`(function(){ var b = document.querySelector('.pr-pane-body'); b.scrollTop = ${y}; b.dispatchEvent(new Event('scroll')); return true; })()`);
@@ -377,6 +396,26 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     out.headFold = [headOpen > 60, Math.abs(headPart - (headOpen - 40)) <= 2, headGone === 0, Math.abs(headBack - 30) <= 2, headTop === headOpen];
 
     // ---- back to the regular fixture for the rest ---------------------------
+    await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: false, error: null, state: PR_STATE });
+
+    // ---- an update that only changes the checks leaves the header alone:
+    // a reviewer's avatar <img> in it is the very same node afterwards -------
+    await browser.evaluate(
+      "(() => { var img = document.querySelector('.pr-pane-head .pr-head-reviews .avatar img'); if (img) img.__sameNode = true; return !!img; })()"
+    );
+    const PR_STATE_CHECKS_ONLY = Object.assign({}, PR_STATE, {
+      checks: [
+        { name: 'build', workflow: 'CI', status: 'fail', url: 'https://github.com/acme/nikui/actions/runs/1', startedAt: NOW - 60000, completedAt: NOW - 10000, runId: 'run-1' },
+        { name: 'lint', workflow: 'CI', status: 'pass', url: 'https://github.com/acme/nikui/actions/runs/2', startedAt: NOW - 60000, completedAt: NOW - 40000, runId: 'run-2' },
+        { name: 'typecheck', workflow: 'CI', status: 'pending', url: 'https://github.com/acme/nikui/actions/runs/3', runId: 'run-3' }
+      ],
+      checkSummary: { total: 3, pass: 1, fail: 1, pending: 1 }
+    });
+    await post({ type: 'pr:state', prUrl: PR_STATE_CHECKS_ONLY.url, loading: false, error: null, state: PR_STATE_CHECKS_ONLY });
+    out.headAvatarSameNodeAfterChecksOnlyUpdate = await browser.evaluate(
+      "(() => { var img = document.querySelector('.pr-pane-head .pr-head-reviews .avatar img'); return !!img && img.__sameNode === true; })()"
+    );
+    // revert, so the rest of the checks run against the original fixture
     await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: false, error: null, state: PR_STATE });
 
     // ---- Esc while focus is inside the pane closes it -----------------------
@@ -443,6 +482,8 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['the pane writes no style="" into its markup', out.noInlineStyleMarkup === true],
     ['the chip shows the number before pr:state answers', out.chipShownBeforeData === true && out.chipNumberBeforeData === '#691'],
     ['the pane starts closed', out.paneClosedInitially === true],
+    ['while loading, the header and body show their skeleton', out.loadingSkeletonShown === true],
+    ['and mark themselves aria-busy', out.loadingAriaBusy === true],
     ['once pr:state answers, the chip keeps the number', out.chipNumber === '#691'],
     ['and shows a red dot for the failing check', out.chipFailDot === true],
     ['and the unresolved thread count', /1/.test(out.chipBubble || '')],
@@ -469,6 +510,7 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['scrolling down folds the header as far as it scrolled, up brings it back as far, the top opens it all',
       JSON.stringify(out.headFold) === '[true,true,true,true,true]'],
     ['folded, the title is still there', out.titleStaysFolded === true],
+    ['an update that only changes the checks leaves a header avatar the same node', out.headAvatarSameNodeAfterChecksOnlyUpdate === true],
     ['the header lists every reviewer, changes requested first, stale and re-requested marked',
       out.headReviews === 'bob:Changes requested:stale:again|ana:Approved|ghost:Awaiting review'],
     ['and the full sidebar does not', out.sidebarHiddenNarrow === true],
@@ -499,6 +541,8 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['a long conversation shows the scroll-to-bottom button when scrolled up', out.scrollBtnShownWhenScrolledUp === true],
     ['clicking it reaches the bottom', out.scrollReachedBottom === true],
     ['and the button hides once there', out.scrollBtnHidesAtBottom === true],
+    ['an update with identical data leaves the body element alone', out.bodyNodeUntouchedOnIdenticalUpdate === true],
+    ["and its scroll position", out.bodyScrollTopUntouchedOnIdenticalUpdate === true],
     ['Escape slides the pane out on the closing spring', out.escSlidesOut === true],
     ['Escape with focus inside the pane closes it', out.escClosedPane === true],
     ['and leaves nothing of the slide behind', out.escSettled === true],

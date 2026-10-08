@@ -503,6 +503,43 @@ button.link:disabled { opacity: 0.4; cursor: default; text-decoration: none; }
 
 .dim { color: var(--vscode-descriptionForeground); }
 
+/* ── loading skeleton: the header and body's shape before data arrives ──── */
+.pr-skel-line, .pr-skel-pill, .pr-skel-avatar, .pr-skel-card {
+  background: linear-gradient(90deg, var(--fill-2) 25%, var(--fill-3) 37%, var(--fill-2) 63%);
+  background-size: 400% 100%;
+  animation: pr-shimmer 1.4s ease infinite;
+  border-radius: var(--r-ctrl);
+}
+.pr-skel-head { padding-top: 2px; }
+.pr-skel-title { height: 17px; width: 60%; margin-bottom: var(--s2); }
+.pr-skel-row { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
+.pr-skel-pill { height: 20px; width: 64px; border-radius: var(--r-chip); flex: 0 0 auto; }
+.pr-skel-sub { height: 12px; flex: 1 1 auto; max-width: 240px; }
+.pr-skel-avatars { display: flex; gap: 4px; margin-bottom: var(--s2); }
+.pr-skel-avatar { width: 20px; height: 20px; border-radius: 50%; flex: 0 0 auto; }
+.pr-skel-meta { height: 11px; width: 45%; }
+.pr-skel-body { display: flex; flex-direction: column; gap: var(--s4); }
+.pr-skel-block { display: flex; gap: var(--s3); }
+.pr-skel-block .pr-skel-avatar { width: 40px; height: 40px; }
+.pr-skel-card { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3); border-radius: var(--r-card); }
+.pr-skel-card .pr-skel-line { height: 10px; }
+.pr-skel-card .pr-skel-line.w60 { width: 60%; }
+.pr-skel-card .pr-skel-line.w90 { width: 90%; }
+.pr-skel-card .pr-skel-line.w40 { width: 40%; }
+@keyframes pr-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* Real content fading in over the skeleton, the first time it arrives. */
+.pr-content-reveal { animation: pr-content-in 0.22s ease; }
+@keyframes pr-content-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pr-pane { transition: none; }
+  .pr-skel-line, .pr-skel-pill, .pr-skel-avatar, .pr-skel-card { animation: none; }
+  .pr-content-reveal { animation: none; }
 }
