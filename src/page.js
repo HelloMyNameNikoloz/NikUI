@@ -75,7 +75,9 @@ ${head}</head>
   <div class="work-split" id="work-split">
     <div class="work-main" id="work-main">
       <div id="transcript">
-        <div class="stream" id="stream"><div class="empty">Ask Claude anything to start.</div></div>
+        <div class="stream" id="stream"><div class="skeleton" aria-busy="true">
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+        </div></div>
       </div>
 
       <footer>

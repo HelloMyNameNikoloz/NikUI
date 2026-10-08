@@ -301,12 +301,12 @@ const drive = `
 
     const beforeClose = window.__posted.length;
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    out.settingsClosed = pane.hidden;
+    out.settingsClosed = (pane.hidden || pane.classList.contains("closing"));
     out.settingsCloseSaid = window.__posted.slice(beforeClose).some((m) => m.type === 'settingsOpen' && m.open === false);
 
     // A change made somewhere else, while nobody here asked, opens nothing.
     post({ type: 'settings', mayChange: true, local: true, settings: SETTINGS(false) });
-    out.unaskedOpensNothing = pane.hidden;
+    out.unaskedOpensNothing = (pane.hidden || pane.classList.contains("closing"));
 
     // A phone that may only watch sees the settings and cannot touch them.
     input.value = '/settings';
@@ -386,7 +386,7 @@ const drive = `
     out.commandsEscapeCancels = !pane.hidden && !pane.querySelector('#cmd-prompt');
     const beforeCommandsClose = window.__posted.length;
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    out.commandsClosed = pane.hidden &&
+    out.commandsClosed = (pane.hidden || pane.classList.contains("closing")) &&
       window.__posted.slice(beforeCommandsClose).some((m) => m.type === 'commandsOpen' && m.open === false);
     // Typed, and for a phone that only watches.
     input.value = '/commands';
@@ -414,6 +414,9 @@ const drive = `
     out.statusRequests = window.__posted.filter((m) => m.type === 'status').length;
     out.sentToCli = window.__posted.filter((m) => m.type === 'send').length - sendsBeforeStatus;
     out.composerCleared = input.value === '';
+    const sheetNow = document.getElementById('status');
+    out.sheetBeforeReport = !sheetNow.hidden && !!sheetNow.querySelector('.skeleton[aria-busy="true"]');
+    out.streamSkeletonGone = !document.querySelector('#stream .skeleton');
 
     post({ type: 'statusReport', report: REPORT });
 
@@ -443,7 +446,10 @@ const drive = `
       out.refreshAsksAgain = window.__posted.filter((m) => m.type === 'status').length;
 
       key(window, 'Escape');
-      out.sheetClosed = sheet.hidden;
+      out.sheetClosed = (sheet.hidden || sheet.classList.contains("closing"));
+      out.sheetFadesOut = !sheet.hidden && sheet.classList.contains('closing');
+      await new Promise((r) => setTimeout(r, 320));
+      out.sheetGoneAfterFade = sheet.hidden && !sheet.classList.contains('closing') && sheet.innerHTML === '';
       out.interruptedByEscape = window.__posted.filter((m) => m.type === 'interrupt').length;
 
       // Escape while a turn is running: armed first, acted on second.
@@ -614,7 +620,12 @@ const checks = [
   ['arrows move through the sections', out.arrowedOn === 'system'],
   ['and 1 goes back to the fleet', out.keyedBackToFleet === 'fleet'],
   ['refresh asks for a fresh report', out.refreshAsksAgain === 2],
+  ['/status opens the sheet at once, on a skeleton, before the report', out.sheetBeforeReport === true],
+  ['the conversation skeleton is gone once the history arrives', out.streamSkeletonGone === true],
   ['escape closes the sheet', out.sheetClosed === true],
+  ['by fading it out rather than vanishing', out.sheetFadesOut === true],
+  ['and it is gone once the fade ends', out.sheetGoneAfterFade === true],
+  ['the page ships a skeleton, not "Ask Claude anything", before the history', /id="stream"><div class="skeleton" aria-busy="true">/.test(html) && !/id="stream"><div class="empty">/.test(html)],
   ['escape did not interrupt the turn instead', out.interruptedByEscape === 0],
   ['escape arms itself before abandoning a turn', out.escArmed === true],
   ['and the first press interrupts nothing', out.escQuietOnFirstPress === 0],

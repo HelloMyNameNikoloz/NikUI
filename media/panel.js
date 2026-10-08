@@ -9,6 +9,40 @@
   const vscode = window.nikTransport();
   const $ = (id) => document.getElementById(id);
 
+  /**
+   * Plays an element's entry animation in reverse, then hides it -- so a
+   * sheet or lightbox that opened with a flourish does not just vanish.
+   * Guards against a second close while the first is still playing, and
+   * falls back to a timeout in case `animationend` never fires (reduced
+   * motion shortens it to nearly nothing rather than skipping it).
+   */
+  function closeAnimated(el, cls, after) {
+    if (el.hidden || el.classList.contains(cls)) return;
+    const gen = (el.__closeGen = (el.__closeGen || 0) + 1);
+    let done = false;
+    const finish = function () {
+      // A reopen while this was still playing bumped the generation; that
+      // reopen owns `hidden` now, not this stale close.
+      if (done || el.__closeGen !== gen) return;
+      done = true;
+      el.removeEventListener('animationend', onEnd);
+      el.classList.remove(cls);
+      el.hidden = true;
+      if (after) after();
+    };
+    const onEnd = function (e) { if (e.target === el) finish(); };
+    el.addEventListener('animationend', onEnd);
+    el.classList.add(cls);
+    setTimeout(finish, 260);
+  }
+
+  /** Reopening while a close animation is still running wins: the stale
+   * close must not hide it out from under the new open. */
+  function cancelClosing(el) {
+    el.__closeGen = (el.__closeGen || 0) + 1;
+    el.classList.remove('closing');
+  }
+
   // What has to survive VS Code throwing this webview away while the tab is
   // hidden: which instance it belongs to, what was half-typed (images
   // included), and where the reader had scrolled to. The conversation itself comes back from the host.
@@ -206,33 +240,80 @@
 
   // ── header ───────────────────────────────────────────────────
 
+  /**
+   * Rebuilt every second while a turn is running (the clock), so a chip that
+   * is already on screen is updated in place rather than replaced -- a
+   * fresh node every tick would replay its entry animation every tick too.
+   * Only a chip nobody has seen before (`.stat-in`, panel.css) gets one.
+   */
   function paintStats() {
     const running = statsBase.running;
     const elapsed = running ? statsBase.elapsedMs + (Date.now() - statsBase.at) : statsBase.elapsedMs;
-    const bits = [];
+    const specs = [];
     if (elapsed > 0 || running) {
-      bits.push('<span class="stat' + (running ? ' live' : '') + '">' + icon('clock', 12) +
-        esc(fmtDuration(elapsed)) + '</span>');
+      specs.push(['clock', function (s) {
+        s.className = 'stat' + (running ? ' live' : '');
+        s.removeAttribute('title');
+        s.innerHTML = icon('clock', 12) + esc(fmtDuration(elapsed));
+      }]);
     }
     // Agents it started can outlive the turn, and they are why a turn with
     // nobody asking may start later.
     if (statsBase.background > 0) {
-      bits.push('<span class="stat live" title="Agents this instance started, still running in the background">' +
-        icon('cpu', 12) + esc(statsBase.background + (statsBase.background === 1 ? ' agent' : ' agents')) + '</span>');
+      specs.push(['agents', function (s) {
+        s.className = 'stat live';
+        s.title = 'Agents this instance started, still running in the background';
+        s.innerHTML = icon('cpu', 12) + esc(statsBase.background + (statsBase.background === 1 ? ' agent' : ' agents'));
+      }]);
     }
     if (statsBase.shells > 0) {
-      bits.push('<span class="stat live shells" tabindex="0" role="button" aria-haspopup="true">' +
-        icon('terminal', 12) + esc(statsBase.shells + (statsBase.shells === 1 ? ' command' : ' commands')) + '</span>');
+      specs.push(['shells', function (s) {
+        s.className = 'stat live shells';
+        s.removeAttribute('title');
+        s.setAttribute('tabindex', '0');
+        s.setAttribute('role', 'button');
+        s.setAttribute('aria-haspopup', 'true');
+        s.innerHTML = icon('terminal', 12) + esc(statsBase.shells + (statsBase.shells === 1 ? ' command' : ' commands'));
+      }]);
     }
     const headline = (statsBase.input || 0) + (statsBase.output || 0);
     if (statsBase.total > 0) {
-      bits.push('<span class="stat" title="' + esc(tokenTitle()) + '">' + icon('hash', 12) +
-        esc(fmtTokens(headline)) + '</span>');
+      specs.push(['tokens', function (s) {
+        s.className = 'stat';
+        s.title = tokenTitle();
+        s.innerHTML = icon('hash', 12) + esc(fmtTokens(headline));
+      }]);
     }
     if (statsBase.cost > 0) {
-      bits.push('<span class="stat">$' + statsBase.cost.toFixed(3) + '</span>');
+      specs.push(['cost', function (s) {
+        s.className = 'stat';
+        s.removeAttribute('title');
+        s.textContent = '$' + statsBase.cost.toFixed(3);
+      }]);
     }
-    $('stats').innerHTML = bits.join('');
+
+    const bar = $('stats');
+    const existing = new Map();
+    Array.prototype.forEach.call(bar.children, function (el) { existing.set(el.dataset.stat, el); });
+    const order = specs.map(function (spec) {
+      const key = spec[0], fill = spec[1];
+      let el = existing.get(key);
+      if (el) {
+        existing.delete(key);
+      } else {
+        el = document.createElement('span');
+        el.dataset.stat = key;
+        el.classList.add('stat-in');
+      }
+      fill(el);
+      return el;
+    });
+    // Whatever is left in `existing` is a stat that just went away (the
+    // background shells count dropping to zero, say).
+    existing.forEach(function (el) { el.remove(); });
+    order.forEach(function (el, i) {
+      if (bar.children[i] !== el) bar.insertBefore(el, bar.children[i] || null);
+    });
   }
 
   function tokenTitle() {
@@ -502,7 +583,8 @@
     if (prPane) prPane.setMeta(meta);
   }
 
-  function setStatus(next) {
+  function setStatus(next, initial) {
+    const was = status;
     status = next;
     paintReplies();
     if (next !== 'working' && next !== 'waiting') disarmEscape();
@@ -511,6 +593,12 @@
     // Sending to a stopped instance revives it with --resume, so this stays
     // enabled; disabling it left the panel a dead end after a crash.
     $('send').disabled = false;
+    // A buzz for the moment a turn actually finishes -- not on load (this
+    // status may already be "done" from history), and not on every echo of
+    // an unchanged status, just busy turning idle.
+    const wasBusy = was === 'working' || was === 'waiting';
+    const stillBusy = next === 'working' || next === 'waiting';
+    if (!initial && wasBusy && !stillBusy && window.NikHaptic) window.NikHaptic('success');
   }
 
   // ── items ────────────────────────────────────────────────────
@@ -528,12 +616,21 @@
           }).join('') + '</div>';
         }
         if (item.images && item.images.length) {
+          // Width/height are rarely known ahead of decoding, so most shots
+          // get a placeholder box instead (panel.css) -- dropped on load,
+          // so the transcript does not jump by the image's height right as
+          // it appears.
           html += '<div class="shots">' + item.images.map(function (im) {
-            return '<img src="data:' + esc(im.mediaType) + ';base64,' + im.data + '" alt="' + esc(im.name || 'image') + '">';
+            const known = im.width && im.height;
+            const dims = known ? ' width="' + im.width + '" height="' + im.height + '"' : ' class="loading"';
+            return '<img src="data:' + esc(im.mediaType) + ';base64,' + im.data + '" alt="' + esc(im.name || 'image') + '"' + dims + '>';
           }).join('') + '</div>';
         }
         html += clockTag(item.at, 'sent-at', 'Sent');
         el.innerHTML = html;
+        el.querySelectorAll('.shots img.loading').forEach(function (img) {
+          img.addEventListener('load', function () { img.classList.remove('loading'); }, { once: true });
+        });
         break;
       }
 
@@ -593,6 +690,7 @@
             '<button class="ghost" data-act="deny">Deny</button></div>';
           el.querySelectorAll('button').forEach(function (b) {
             b.addEventListener('click', function () {
+              if (window.NikHaptic) window.NikHaptic('medium');
               vscode.postMessage({ type: 'permission', requestId: item.requestId, allow: b.dataset.act === 'allow' });
             });
           });
@@ -1019,8 +1117,8 @@
 
   // ── lightbox ─────────────────────────────────────────────────
 
-  function openLightbox(src) { lbImg.src = src; lightbox.hidden = false; }
-  function closeLightbox() { lightbox.hidden = true; lbImg.src = ''; }
+  function openLightbox(src) { cancelClosing(lightbox); lbImg.src = src; lightbox.hidden = false; }
+  function closeLightbox() { closeAnimated(lightbox, 'closing', function () { lbImg.src = ''; }); }
 
   stream.addEventListener('click', function (e) {
     const ref = e.target.closest('.fileref');
@@ -1110,6 +1208,7 @@
   function send() {
     const text = input.value.trim();
     if (!text && !attachments.length) return;
+    if (window.NikHaptic) window.NikHaptic('light');
     // /status is answered here, from what the host measured, rather than being
     // passed to the CLI — the sheet knows things the CLI cannot see.
     // Only the bare command is ours; "/status something" belongs to the CLI.
@@ -1217,7 +1316,7 @@
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); return; }
     if (e.key === 'Escape') {
       if (!lightbox.hidden) { closeLightbox(); return; }
-      if (!sheet.hidden) { closeSheet(); return; }
+      if (sheetUp()) { closeSheet(); return; }
       escapePressed();
     }
   });
@@ -1411,13 +1510,39 @@
   // One sheet on screen at a time: /status, /settings or /commands.
   let sheetKind = null;
 
-  function askForStatus() { vscode.postMessage({ type: 'status' }); }
+  /**
+   * /status answers from a report the host has to measure first, which
+   * takes a moment the sheet should not spend looking like nothing
+   * happened. The sheet opens now, on a skeleton; `showSheet` fills it in
+   * once the report lands, in place, however long that takes.
+   */
+  function askForStatus() {
+    openStatusSkeleton();
+    vscode.postMessage({ type: 'status' });
+  }
+
+  function openStatusSkeleton() {
+    if (sheetUp()) return; // /settings or /commands already has the sheet
+    cancelClosing(sheet);
+    sheetKind = 'status';
+    report = null;
+    section = sheetApi.SECTIONS[0].id; // a fresh open always starts at the top
+    focusBeforeSheet = document.activeElement;
+    setBackgroundInert(true);
+    vscode.postMessage({ type: 'statusOpen', open: true });
+    sheet.innerHTML = '<div class="sheet-content skeleton" aria-busy="true" tabindex="-1">' +
+      '<span class="bar"></span><span class="bar"></span><span class="bar"></span></div>';
+    sheet.hidden = false;
+    sheet.querySelector('.sheet-content').focus();
+  }
 
   function paintSheet(opening) {
     if (!report) return;
     // A redraw throws away the element that had focus, so it is put back —
-    // but only if it was in the sheet to begin with.
+    // but only if it was in the sheet to begin with (the skeleton, while the
+    // report was still on its way, counts).
     const refocus = sheet.contains(document.activeElement);
+    cancelClosing(sheet);
     sheet.innerHTML = sheetApi.renderSheet(report, section);
     sheet.hidden = false;
     const content = sheet.querySelector('.sheet-content');
@@ -1441,10 +1566,15 @@
     if (footer) { if (on) footer.setAttribute('inert', ''); else footer.removeAttribute('inert'); }
   }
 
+  /** On screen and staying there: a sheet playing its close animation is
+   * still drawn, but as far as anything deciding what to do is concerned it is
+   * already gone. */
+  function sheetUp() { return !sheet.hidden && !sheet.classList.contains('closing'); }
+
   function showSheet(next) {
     // A report for a sheet that has since become /settings is not wanted.
-    if (!sheet.hidden && sheetKind !== 'status') return;
-    const opening = sheet.hidden;
+    if (sheetUp() && sheetKind !== 'status') return;
+    const opening = !sheetUp();
     if (opening) {
       sheetKind = 'status';
       section = sheetApi.SECTIONS[0].id; // a fresh open always starts at the top
@@ -1464,19 +1594,24 @@
   }
 
   function closeSheet() {
-    if (!sheet.hidden && sheetKind === 'settings') vscode.postMessage({ type: 'settingsOpen', open: false });
-    else if (!sheet.hidden && sheetKind === 'commands') vscode.postMessage({ type: 'commandsOpen', open: false });
-    else if (!sheet.hidden) vscode.postMessage({ type: 'statusOpen', open: false });
+    // Already closed, or already closing: a second Escape must not post a
+    // second close message, nor restart the animation.
+    if (!sheetUp()) return;
+    if (sheetKind === 'settings') vscode.postMessage({ type: 'settingsOpen', open: false });
+    else if (sheetKind === 'commands') vscode.postMessage({ type: 'commandsOpen', open: false });
+    else vscode.postMessage({ type: 'statusOpen', open: false });
     sheetKind = null;
     prefsWaiting = false;
-    sheet.hidden = true;
-    sheet.innerHTML = '';
     tip.hidden = true;
     setBackgroundInert(false);
     const back = focusBeforeSheet;
     focusBeforeSheet = null;
     if (back && back.focus && document.contains(back)) back.focus();
     else input.focus();
+    // It opened with a flourish, so closing plays it in reverse rather than
+    // just vanishing — the content stays up till the animation (or its
+    // fallback) says `hidden` is now true.
+    closeAnimated(sheet, 'closing', function () { sheet.innerHTML = ''; });
   }
 
   /**
@@ -1485,7 +1620,7 @@
    * landing nowhere, so the ends are joined up by hand.
    */
   function trapTab(e) {
-    if (sheet.hidden || e.key !== 'Tab') return;
+    if (!sheetUp() || e.key !== 'Tab') return;
     const stops = sheet.querySelectorAll('button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"]), input, textarea, a[href]');
     if (!stops.length) return;
     const first = stops[0];
@@ -1515,7 +1650,7 @@
   function askForSettings() { prefsAsked = true; vscode.postMessage({ type: 'settings' }); }
 
   function onSettings(message) {
-    const open = !sheet.hidden && sheetKind === 'settings';
+    const open = sheetUp() && sheetKind === 'settings';
     if (!open && !prefsAsked) return;
     prefsAsked = false;
     prefsNow = message;
@@ -1550,6 +1685,7 @@
     const where = opening || !list ? 0 : list.scrollTop;
     const keep = opening ? null : focusKey();
     sheet.innerHTML = prefsApi.render(prefsNow);
+    cancelClosing(sheet);
     sheet.hidden = false;
     const now = sheet.querySelector('.prefs');
     if (now) now.scrollTop = where;
@@ -1607,14 +1743,14 @@
   function askForCommands() { cmdAsked = true; vscode.postMessage({ type: 'commands' }); }
 
   function onCommands(message) {
-    const open = !sheet.hidden && sheetKind === 'commands';
+    const open = sheetUp() && sheetKind === 'commands';
     if (!open && !cmdAsked) return;
     cmdAsked = false;
     cmdNow = message;
     if (!open) {
       // Reached from /settings, which it replaces rather than sits on top of.
-      if (!sheet.hidden && sheetKind === 'settings') vscode.postMessage({ type: 'settingsOpen', open: false });
-      else if (!sheet.hidden && sheetKind === 'status') vscode.postMessage({ type: 'statusOpen', open: false });
+      if (sheetUp() && sheetKind === 'settings') vscode.postMessage({ type: 'settingsOpen', open: false });
+      else if (sheetUp() && sheetKind === 'status') vscode.postMessage({ type: 'statusOpen', open: false });
       else { focusBeforeSheet = document.activeElement; setBackgroundInert(true); }
       sheetKind = 'commands';
       Object.assign(cmdView, { active: null, editing: null, confirm: null, refused: null, saving: false });
@@ -1645,6 +1781,7 @@
     const keep = inSheet ? (on.id ? '#' + on.id : focusKey()) : null;
     const caret = inSheet && on.id && typeof on.selectionStart === 'number' ? [on.selectionStart, on.selectionEnd] : null;
     sheet.innerHTML = cmdApi.render(cmdNow, cmdView);
+    cancelClosing(sheet);
     sheet.hidden = false;
     const now = sheet.querySelector('.sheet-content');
     if (now) now.scrollTop = where;
@@ -1825,7 +1962,7 @@
         upsert(msg.items);
         paintDropped();
         setMeta(msg.meta);
-        setStatus(msg.status);
+        setStatus(msg.status, true);
         setStats(msg.stats);
         queued = msg.queue || [];
         drainAt = msg.drainAt || null;
@@ -1921,9 +2058,9 @@
       return;
     }
     trapTab(e);
-    if (e.key === 'Escape' && !findBar.hidden && sheet.hidden) { closeFind(); return; }
+    if (e.key === 'Escape' && !findBar.hidden && !sheetUp()) { closeFind(); return; }
     if (e.key === 'Escape' && !lightbox.hidden) { closeLightbox(); return; }
-    if (sheet.hidden) return;
+    if (!sheetUp()) return;
     // In the form, Escape puts the draft down rather than the whole page, and
     // Cmd/Ctrl+Enter saves it.
     if (sheetKind === 'commands' && cmdView.editing) {

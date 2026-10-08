@@ -95,6 +95,9 @@ header {
   backdrop-filter: saturate(180%) blur(20px);
   position: relative;
   z-index: 5;
+  /* Stats pop in as a turn runs; a fixed floor keeps the whole header from
+     growing a pixel the moment the first chip appears. */
+  min-height: 44px;
 }
 
 .title-group { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
@@ -132,6 +135,11 @@ a.title.linked:hover { color: var(--accent, var(--vscode-textLink-foreground)); 
   white-space: nowrap;
 }
 .stat.live { color: var(--orange); background: color-mix(in srgb, var(--orange) 12%, transparent); }
+/* Only a chip that was not on screen a moment ago plays this -- one that is
+   just being updated (the clock ticking) is never re-created, so it never
+   replays it either. */
+.stat-in { animation: stat-in 160ms ease-out; }
+@keyframes stat-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: none; } }
 .stat .ico { opacity: 0.75; }
 
 .stat.shells { cursor: default; }
@@ -147,6 +155,7 @@ a.title.linked:hover { color: var(--accent, var(--vscode-textLink-foreground)); 
   font-size: var(--fs-small);
 }
 .shells-pop[hidden] { display: none; }
+.shells-pop { animation: pop-in 140ms ease-out; }
 .shells-head {
   padding: 4px 8px 6px;
   color: var(--vscode-descriptionForeground);
@@ -214,6 +223,10 @@ body.read-only .shell-stop { display: none; }
   cursor: zoom-in;
   display: block;
 }
+/* No width/height is known for a pasted image ahead of time, so a box is
+   reserved and dropped the moment it decodes (panel.js) -- otherwise the
+   transcript jumps by the image's height right as it appears. */
+.turn-user .shots img.loading { width: 160px; height: 120px; background: var(--fill-1); object-fit: cover; }
 
 .msg-text { word-break: break-word; }
 .msg-text > :first-child { margin-top: 0; }
@@ -296,6 +309,16 @@ body.read-only .shell-stop { display: none; }
 .msg-text td code { white-space: pre-wrap; }
 
 /* ── Thinking ──────────────────────────────────────────────── */
+/* A click toggling an already-painted <details> animates its height; a
+   streamed repaint replaces the element outright (see panel.js paint()), so
+   it never has a "from" state to animate out of -- new or updated tool and
+   thinking blocks always just appear at their resting height. */
+.thinking details, .tool details {
+  interpolate-size: allow-keywords;
+}
+.thinking details::details-content, .tool details::details-content {
+  transition: height 180ms ease-out, content-visibility 180ms allow-discrete;
+}
 .thinking > details > summary {
   display: inline-flex; align-items: center; gap: 6px;
   color: var(--vscode-descriptionForeground);
@@ -429,6 +452,14 @@ body.read-only .shell-stop { display: none; }
   z-index: 15;
 }
 .jump[hidden] { display: none !important; }
+/* Its own keyframes, not the shared pop-in: .jump is already centred by a
+   transform, and pop-in's final "transform: none" would un-centre it for
+   the length of the animation. */
+.jump { animation: jump-in 140ms ease-out; }
+@keyframes jump-in {
+  from { opacity: 0; transform: translateX(-50%) scale(0.97) translateY(4px); }
+  to   { opacity: 1; transform: translateX(-50%); }
+}
 .jump .ico { transform: rotate(180deg); }
 
 /* ── Permission ────────────────────────────────────────────── */
@@ -487,6 +518,30 @@ body.read-only .shell-stop { display: none; }
   padding: 18vh 0;
   font-size: var(--fs-body);
   opacity: 0.6;
+}
+
+/* Shown until `init` says whether there is history -- a placeholder, not a
+   claim that the conversation is empty, so it must not say "Ask Claude
+   anything" for the one tick before the real items arrive. Reused inside
+   the status sheet while its first report is still in flight. */
+.skeleton { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s5); }
+.skeleton .bar {
+  height: 14px;
+  border-radius: var(--r-chip);
+  background: linear-gradient(90deg, var(--fill-1) 25%, var(--fill-2) 50%, var(--fill-1) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.skeleton .bar:nth-child(1) { width: 62%; }
+.skeleton .bar:nth-child(2) { width: 84%; }
+.skeleton .bar:nth-child(3) { width: 48%; }
+.skeleton .bar:nth-child(4) { width: 70%; }
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton .bar { animation: none; background: var(--fill-1); }
 }
 
 /* ── Composer ──────────────────────────────────────────────── */
@@ -548,7 +603,7 @@ button {
   padding: 6px 14px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 5px;
   background: var(--accent); color: #fff;
-  transition: filter 0.15s ease, background 0.15s ease;
+  transition: filter 0.15s ease, background 0.15s ease, transform 0.1s ease-out;
 }
 button:hover { filter: brightness(1.08); }
 button:active { filter: brightness(0.94); }
@@ -557,6 +612,17 @@ button.ghost:hover { background: var(--fill-3); filter: none; }
 button.icon-only { padding: 6px; border-radius: 50%; background: var(--fill-2); color: var(--vscode-foreground); }
 button.icon-only:hover { background: var(--fill-3); filter: none; }
 button:disabled { opacity: 0.35; cursor: default; filter: none; }
+/* A press that is not also a hover -- a touch, mostly -- gets its own
+   feedback, since there is no hover state to have already shown one. */
+@media (hover: none) {
+  button:not(:disabled):active { transform: scale(0.97); }
+}
+/* Rows that act like buttons but are not one: queued prompts, sheet rows,
+   the settings/commands rail. */
+.queue-row:active, .nav-item:active, .hbar[data-action]:active,
+.grid tr[data-action]:active td {
+  background: var(--fill-2);
+}
 
 .hint {
   display: flex; gap: var(--s4); justify-content: center;
@@ -587,6 +653,7 @@ kbd {
   z-index: 20;
 }
 .slash[hidden] { display: none !important; }
+.slash { animation: pop-in 140ms ease-out; }
 .slash .row {
   display: flex; align-items: center; gap: var(--s2);
   padding: 7px 10px; border-radius: var(--r-ctrl);
@@ -621,6 +688,15 @@ kbd {
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+/* The close is the open in reverse, played once by JS before it sets
+   [hidden] -- an instant close would read as a glitch next to this open. */
+.lightbox.closing { animation: fade-out 140ms ease-out forwards; pointer-events: none; }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* A quick settle for the small popovers -- the slash palette above, the
+   shells popover, the find bar and the jump button below. Closing these
+   stays instant; only appearing gets the flourish. */
+@keyframes pop-in { from { opacity: 0; transform: scale(0.97) translateY(4px); } to { opacity: 1; transform: none; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
@@ -864,8 +940,15 @@ body.vscode-light, body.vscode-high-contrast-light {
   from { opacity: 0; transform: scale(1.012) translateY(10px); filter: blur(6px); }
   to { opacity: 1; transform: none; filter: none; }
 }
+/* The reverse, played by JS before [hidden] is set -- it opened with a
+   flourish, so it should not just vanish. */
+.sheet.closing { animation: sheet-out 180ms cubic-bezier(0.32, 0.72, 0, 1) forwards; pointer-events: none; }
+@keyframes sheet-out {
+  from { opacity: 1; transform: none; filter: none; }
+  to { opacity: 0; transform: scale(1.012) translateY(10px); filter: blur(6px); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .sheet { animation: none; }
+  .sheet, .sheet.closing { animation: none; }
 }
 
 .sheet-head {
@@ -930,6 +1013,9 @@ body.vscode-light, body.vscode-high-contrast-light {
   align-content: start;
 }
 .sheet-content:focus { outline: none; }
+/* The sheet opens before its first report arrives, so it needs a body that
+   is not the two-column grid the real content uses. */
+.sheet-content.skeleton { display: flex; flex-direction: column; padding: var(--s6) var(--s5); }
 .sheet-foot {
   flex: 0 0 auto; position: relative; z-index: 2;
   padding: 7px var(--s5);
@@ -1271,6 +1357,7 @@ body.vscode-high-contrast-light .tip, body.vscode-high-contrast-light .pill {
   z-index: 4;
 }
 .find[hidden] { display: none !important; }
+.find { animation: pop-in 140ms ease-out; }
 .find input {
   flex: 0 1 320px; min-width: 0;
   padding: 5px 10px;
