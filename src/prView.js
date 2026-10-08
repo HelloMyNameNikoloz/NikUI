@@ -399,6 +399,10 @@ function errorFor(result) {
  * One watched PR. Several instances (watchers, keyed by their id) may watch
  * the same URL; there is one fetcher per URL, shared between them.
  */
+// Who can be mentioned changes when somebody joins the repository, which is
+// rare enough that ten minutes stale is never noticed.
+const MENTION_TTL_MS = 10 * 60 * 1000;
+
 class PrFeed extends EventEmitter {
   constructor(o) {
     super();
@@ -564,6 +568,66 @@ class PrFeed extends EventEmitter {
     const res = await this.run('gh', ['pr', 'comment', url, '--body', body], { cwd });
     if (res.ok) this.refresh(url);
     return { ok: res.ok, message: res.ok ? 'Commented.' : errorFor(res) };
+  }
+
+  /**
+   * Who can be @mentioned on this pull request's repository — the list GitHub
+   * itself suggests from — plus the organisation's teams when there is one
+   * and the token may read them, and who "you" are so you are not suggested
+   * to yourself. Read-only, and cached per repository: the list barely moves,
+   * and it is asked for every time somebody types an @.
+   *
+   * With a `query` the search runs on GitHub's side, for repositories with
+   * more people than one page holds; without one it is the first page, and
+   * `complete` says whether that page was everybody.
+   */
+  async mentionables(url, query) {
+    const parts = parsePrUrl(url);
+    if (!parts) return { ok: false, users: [], teams: [], viewer: null, complete: true, message: 'Not a pull request.' };
+    const q = String(query || '').replace(/^@/, '').trim().slice(0, 60);
+    const key = parts.owner + '/' + parts.repo + '\n' + q.toLowerCase();
+    if (!this.mentionCache) this.mentionCache = new Map();
+    const hit = this.mentionCache.get(key);
+    if (hit && this.now() - hit.at < MENTION_TTL_MS) return hit.value;
+
+    const e = this.entries.get(url);
+    const cwd = (e && e.cwd) || (e && e.watchers.size ? e.watchers.values().next().value.cwd : undefined);
+    const PAGE = 100;
+    const users = await this.run('gh', ['api', 'graphql',
+      '-f', 'query=query($owner:String!,$name:String!,$q:String){viewer{login} repository(owner:$owner,name:$name){' +
+        'mentionableUsers(first:' + PAGE + ',query:$q){totalCount nodes{login name avatarUrl(size:64)}}}}',
+      '-f', 'owner=' + parts.owner, '-f', 'name=' + parts.repo].concat(q ? ['-f', 'q=' + q] : []), { cwd });
+    if (!users.ok) return { ok: false, users: [], teams: [], viewer: null, complete: true, message: errorFor(users) };
+    let data = null;
+    try { data = JSON.parse(users.stdout).data; } catch (_) { data = null; }
+    const found = data && data.repository && data.repository.mentionableUsers;
+    const list = ((found && found.nodes) || []).filter((n) => n && n.login)
+      .map((n) => ({ login: n.login, name: n.name || null, avatar: n.avatarUrl || null }));
+
+    // "@org/fro" is looking for a team called fro…, so the org is not part of the search.
+    const teamQ = q.includes('/') ? q.slice(q.indexOf('/') + 1) : q;
+    // Teams only exist on an organisation, and reading them needs read:org —
+    // a token without it, or a personal repository, simply has none to offer.
+    const teamsRes = await this.run('gh', ['api', 'graphql',
+      '-f', 'query=query($owner:String!,$q:String){organization(login:$owner){teams(first:50,query:$q){nodes{slug name}}}}',
+      '-f', 'owner=' + parts.owner].concat(teamQ ? ['-f', 'q=' + teamQ] : []), { cwd });
+    let teams = [];
+    if (teamsRes.ok) {
+      try {
+        const org = JSON.parse(teamsRes.stdout).data.organization;
+        teams = ((org && org.teams && org.teams.nodes) || []).filter((t) => t && t.slug)
+          .map((t) => ({ login: parts.owner + '/' + t.slug, name: t.name || null, avatar: null, team: true }));
+      } catch (_) { teams = []; }
+    }
+
+    const value = {
+      ok: true, users: list, teams,
+      viewer: (data && data.viewer && data.viewer.login) || null,
+      complete: !found || (found.totalCount || 0) <= list.length
+    };
+    this.mentionCache.set(key, { at: this.now(), value });
+    if (this.mentionCache.size > 200) this.mentionCache.delete(this.mentionCache.keys().next().value);
+    return value;
   }
 
   async rerunFailed(url) {

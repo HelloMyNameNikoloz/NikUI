@@ -16,7 +16,7 @@ const crypto = require('crypto');
 const SCRIPTS = [
   'icons.js', 'markdown.js', 'runnable.js', 'prompts.js', 'snippets.js', 'palette.js',
   'charts.js', 'status.js', 'prefs.js', 'commands.js', 'device.js', 'secure.js', 'transport.js', 'boot.js', 'suggest.js',
-  'prpane.js', 'panel.js'
+  'mentions.js', 'prpane.js', 'panel.js'
 ];
 
 /**

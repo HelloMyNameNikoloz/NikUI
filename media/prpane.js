@@ -378,6 +378,7 @@
     function setOpen(open, how) {
       if (view.open === open) return;
       view.open = open;
+      if (!open) closePicker();
       if (open) {
         // Laid out and filled before it moves, so what slides in is the page.
         host.hidden = false;
@@ -986,6 +987,7 @@
           if (again) { again.focus(); try { again.setSelectionRange(caret.start, caret.end); } catch (_) { /* gone */ } }
         }
       }
+      rebindPicker();
       body.setAttribute('aria-busy', String(loading));
 
       const sidebarHtml = st && view.tab === 'conversation' ? renderSidebar(st) : '';
@@ -1092,6 +1094,7 @@
             if (!body) return;
             busy = true;
             send({ type: 'pr:comment', body: body });
+            rememberMentions(body);
             drafts.delete('');
             render();
             return;
@@ -1120,6 +1123,7 @@
         if (!body) return;
         busy = true;
         send({ type: 'pr:reply', threadId: id, body: body });
+        rememberMentions(body);
         drafts.delete(id);
         render();
       }
@@ -1129,10 +1133,314 @@
       const ta = e.target.closest('[data-draft]');
       if (!ta) return;
       drafts.set(ta.dataset.draft, ta.value);
+      updatePicker(ta);
       // Only the Comment/Reply button beside this box needs to flip.
       const btn = ta.parentElement.querySelector('button');
       if (btn) btn.disabled = busy || !ta.value.trim();
     });
+
+    // ── @mentions ────────────────────────────────────────────
+    //
+    // Typing @ in any comment box opens a list straight away — everybody,
+    // with who you mention most on top and a word on why each person is where
+    // they are — and every key after it narrows it. ↑↓ move, Enter or Tab puts
+    // the name in, Esc puts the list away without closing the pane. The list
+    // lives outside the pane body, because a refresh replaces the body every
+    // few seconds while checks run; it finds its box again by draft key.
+
+    const M = root.NikMentions;
+    let people = { url: null, loaded: false, asked: false, viewer: null, users: [], teams: [], complete: false, error: null, byQuery: new Map() };
+    let picker = null; // { key, start, query, items, index }
+    let pickerEl = null;
+    let queryTimer = null;
+
+    function storage() { try { return window.localStorage; } catch (_) { return null; } }
+
+    function draftBox(key) {
+      return Array.from(host.querySelectorAll('textarea[data-draft]')).find((t) => t.getAttribute('data-draft') === key) || null;
+    }
+
+    function askPeople(query) {
+      if (!meta.prUrl) return;
+      if (people.url !== meta.prUrl) people = { url: meta.prUrl, loaded: false, asked: false, viewer: null, users: [], teams: [], complete: false, error: null, byQuery: new Map() };
+      if (!query) {
+        if (people.asked) return;
+        people.asked = true;
+        send({ type: 'pr:mentions', query: '' });
+        return;
+      }
+      // Everyone already came with the first answer: nothing to ask GitHub.
+      if (people.complete || !people.loaded || people.byQuery.has(query.toLowerCase())) return;
+      if (queryTimer) clearTimeout(queryTimer);
+      queryTimer = setTimeout(function () {
+        queryTimer = null;
+        people.byQuery.set(query.toLowerCase(), null); // asked, not answered
+        send({ type: 'pr:mentions', query: query });
+      }, 150);
+    }
+
+    function rankFor(query) {
+      const st = prState.state;
+      const repo = st && st.repo;
+      const extra = people.byQuery.get(String(query).toLowerCase());
+      const all = (repo && storage() ? M.loadHistory(storage())[repo] : null) || {};
+      return M.rank({
+        query: query,
+        everyone: people.users.concat(extra ? extra.users : [], people.teams, extra ? extra.teams : []),
+        parts: M.participants(st, Date.now()),
+        avatars: (st && st.avatars) || {},
+        history: all,
+        viewer: people.viewer,
+        now: Date.now(),
+        limit: query ? 20 : 50
+      });
+    }
+
+    function closePicker() {
+      picker = null;
+      if (pickerEl) { pickerEl.remove(); pickerEl = null; }
+      const ta = host.querySelector('textarea[aria-controls="pr-mention-list"]');
+      if (ta) { ta.removeAttribute('aria-controls'); ta.removeAttribute('aria-activedescendant'); ta.removeAttribute('aria-expanded'); }
+    }
+
+    function updatePicker(ta) {
+      if (!M || !ta || ta.selectionStart !== ta.selectionEnd) { closePicker(); return; }
+      const hit = M.trigger(ta.value, ta.selectionStart);
+      if (!hit) { closePicker(); return; }
+      const key = ta.getAttribute('data-draft');
+      const same = picker && picker.key === key && picker.start === hit.start;
+      const keep = same && picker.items[picker.index] ? picker.items[picker.index].login : null;
+      askPeople('');
+      askPeople(hit.query);
+      const items = rankFor(hit.query);
+      // The same person stays selected while the list narrows around them;
+      // a new query that drops them starts again from the best match.
+      let index = keep ? items.findIndex((p) => p.login === keep) : -1;
+      if (index < 0 || (same && hit.query !== picker.query)) index = 0;
+      picker = { key: key, start: hit.start, query: hit.query, items: items, index: index };
+      drawPicker(ta);
+    }
+
+    function marked(text, hits) {
+      if (!hits || !hits.length) return esc(text);
+      const set = new Set(hits);
+      let out = '';
+      for (let i = 0; i < text.length; i++) out += set.has(i) ? '<mark>' + esc(text[i]) + '</mark>' : esc(text[i]);
+      return out.replace(/<\/mark><mark>/g, '');
+    }
+
+    const SECTION = { recent: 'You mention', pr: 'In this pull request', everyone: 'Everyone' };
+
+    function drawPicker(ta) {
+      if (!picker) return;
+      if (!pickerEl) {
+        pickerEl = document.createElement('div');
+        pickerEl.className = 'pr-mention' + (phone ? ' phone' : '');
+        pickerEl.id = 'pr-mention-list';
+        pickerEl.setAttribute('role', 'listbox');
+        pickerEl.setAttribute('aria-label', 'People to mention');
+        // Keep focus (and the caret) in the box: a click in the list must not blur it.
+        pickerEl.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        pickerEl.addEventListener('mousemove', function (e) {
+          const row = e.target.closest('[data-mention]');
+          if (!row || !picker) return;
+          const i = Number(row.dataset.mention);
+          if (i !== picker.index) { picker.index = i; paintSelection(); }
+        });
+        pickerEl.addEventListener('click', function (e) {
+          const row = e.target.closest('[data-mention]');
+          if (row && picker) pick(Number(row.dataset.mention));
+        });
+        document.body.appendChild(pickerEl);
+      }
+      const items = picker.items;
+      let html = '';
+      if (!items.length) {
+        const waiting = !people.loaded || people.byQuery.get(picker.query.toLowerCase()) === null;
+        html = '<div class="pr-mention-empty">' + (waiting ? '<span class="pr-mention-spin"></span>Looking for people…'
+          : people.error ? esc(people.error) : 'Nobody called “' + esc(picker.query) + '” can be mentioned here') + '</div>';
+      } else {
+        let section = null;
+        html = '<div class="pr-mention-list">';
+        items.forEach(function (p, i) {
+          if (!picker.query && p.section !== section) {
+            section = p.section;
+            html += '<div class="pr-mention-section" role="presentation">' + esc(SECTION[section]) + '</div>';
+          }
+          html += '<div class="pr-mention-row" role="option" id="pr-mention-' + i + '" data-mention="' + i + '" aria-selected="' + (i === picker.index) + '">' +
+            avatar(p.login, p.avatar, 20) +
+            '<span class="pr-mention-who"><span class="pr-mention-login">' + marked(p.login, p.hits.login) + '</span>' +
+            (p.name ? '<span class="pr-mention-name">' + marked(p.name, p.hits.name) + '</span>' : '') + '</span>' +
+            (p.reason ? '<span class="pr-mention-why">' + esc(p.reason) + '</span>' : '') +
+            '</div>';
+        });
+        html += '</div>';
+      }
+      html += '<div class="pr-mention-foot">' + (phone ? 'Tap a name to mention them'
+        : '<span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>↵</kbd> or <kbd>Tab</kbd> mention</span><span><kbd>Esc</kbd> dismiss</span>') + '</div>';
+      pickerEl.innerHTML = html;
+      paintStyles(pickerEl);
+      ta.setAttribute('aria-controls', 'pr-mention-list');
+      ta.setAttribute('aria-expanded', 'true');
+      paintSelection();
+      placePicker(ta);
+    }
+
+    function paintSelection() {
+      if (!pickerEl || !picker) return;
+      pickerEl.querySelectorAll('[data-mention]').forEach((row) => row.setAttribute('aria-selected', String(Number(row.dataset.mention) === picker.index)));
+      const row = pickerEl.querySelector('[data-mention="' + picker.index + '"]');
+      const ta = draftBox(picker.key);
+      if (ta) ta.setAttribute('aria-activedescendant', row ? row.id : '');
+      if (row) row.scrollIntoView({ block: 'nearest' });
+    }
+
+    // Where the caret is on screen: a hidden copy of the box with the same
+    // text up to the caret, and a marker where it ends.
+    function caretPoint(ta, pos) {
+      const cs = getComputedStyle(ta);
+      const mirror = document.createElement('div');
+      ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth',
+        'borderBottomWidth', 'borderLeftWidth', 'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize']
+        .forEach((p) => { mirror.style[p] = cs[p]; });
+      mirror.style.position = 'fixed';
+      mirror.style.visibility = 'hidden';
+      mirror.style.whiteSpace = 'pre-wrap';
+      mirror.style.overflowWrap = 'break-word';
+      mirror.style.left = '-9999px';
+      mirror.style.top = '0';
+      mirror.textContent = ta.value.slice(0, pos);
+      const mark = document.createElement('span');
+      mark.textContent = '​';
+      mirror.appendChild(mark);
+      document.body.appendChild(mirror);
+      const box = ta.getBoundingClientRect();
+      const x = box.left + mark.offsetLeft - ta.scrollLeft;
+      const top = box.top + mark.offsetTop - ta.scrollTop;
+      const height = mark.offsetHeight || parseFloat(cs.lineHeight) || 16;
+      mirror.remove();
+      return { x: x, top: top, bottom: top + height, box: box };
+    }
+
+    function placePicker(ta) {
+      if (!pickerEl || !picker) return;
+      const at = caretPoint(ta, picker.start);
+      const vv = window.visualViewport;
+      const viewH = vv ? vv.height : window.innerHeight;
+      const viewW = window.innerWidth;
+      const width = phone ? Math.min(viewW - 16, at.box.width) : Math.min(360, viewW - 16);
+      pickerEl.style.width = width + 'px';
+      const left = phone ? Math.max(8, at.box.left) : Math.max(8, Math.min(at.x - 12, viewW - width - 8));
+      pickerEl.style.left = left + 'px';
+      const below = viewH - at.bottom - 8;
+      const above = at.top - 8;
+      const want = Math.min(pickerEl.scrollHeight, 340);
+      // Below the caret, as GitHub does — unless it fits better above, which on
+      // a phone (keyboard up, box at the bottom) it nearly always does.
+      const up = below < want && above > below;
+      const room = Math.max(120, (up ? above : below) - 4);
+      pickerEl.style.maxHeight = Math.min(340, room) + 'px';
+      pickerEl.classList.toggle('up', up);
+      if (up) { pickerEl.style.top = ''; pickerEl.style.bottom = (window.innerHeight - at.top + 4) + 'px'; }
+      else { pickerEl.style.bottom = ''; pickerEl.style.top = (at.bottom + 4) + 'px'; }
+    }
+
+    function pick(i) {
+      if (!picker) return;
+      const p = picker.items[i];
+      const ta = draftBox(picker.key);
+      if (!p || !ta) { closePicker(); return; }
+      const end = picker.start + 1 + picker.query.length;
+      const after = ta.value.slice(end);
+      const glue = /^\s/.test(after) ? '' : ' ';
+      ta.value = ta.value.slice(0, picker.start) + '@' + p.login + glue + after;
+      const caret = picker.start + 1 + p.login.length + 1;
+      closePicker();
+      ta.focus();
+      ta.setSelectionRange(caret, caret);
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function rememberMentions(text) {
+      const st = prState.state;
+      if (!M || !st || !st.repo) return;
+      M.remember(storage(), st.repo, M.mentioned(text), Date.now());
+    }
+
+    // Capturing, so the pane's own Escape (close the pane) never sees an Escape
+    // that was only meant for the list.
+    host.addEventListener('keydown', function (e) {
+      if (!picker || !e.target.matches || !e.target.matches('textarea[data-draft]')) return;
+      const n = picker.items.length;
+      const step = (d) => { picker.index = (picker.index + d + n) % n; paintSelection(); };
+      let handled = true;
+      if (e.key === 'Escape') closePicker();
+      else if (!n || e.altKey || e.metaKey) handled = false;
+      else if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) step(1);
+      else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) step(-1);
+      else if (e.key === 'PageDown') step(Math.min(5, n - 1 - picker.index) || 0);
+      else if (e.key === 'PageUp') step(-Math.min(5, picker.index) || 0);
+      else if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && !e.ctrlKey && !e.isComposing) pick(picker.index);
+      else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
+
+    host.addEventListener('focusin', function (e) {
+      if (e.target.matches && e.target.matches('textarea[data-draft]')) askPeople('');
+    });
+    host.addEventListener('focusout', function (e) {
+      if (!picker || !e.target.matches || !e.target.matches('textarea[data-draft]')) return;
+      // A tap in the list blurs the box on a phone before its click arrives.
+      setTimeout(function () {
+        const ta = picker && draftBox(picker.key);
+        if (picker && document.activeElement !== ta) closePicker();
+      }, 250);
+    });
+    ['click', 'keyup'].forEach(function (type) {
+      host.addEventListener(type, function (e) {
+        if (!e.target.matches || !e.target.matches('textarea[data-draft]')) return;
+        if (type === 'keyup' && !/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) return;
+        updatePicker(e.target);
+      });
+    });
+    host.addEventListener('scroll', function () {
+      const ta = picker && draftBox(picker.key);
+      if (ta) placePicker(ta);
+    }, true);
+    window.addEventListener('resize', function () {
+      const ta = picker && draftBox(picker.key);
+      if (ta) placePicker(ta);
+    });
+
+    // After a re-render the box is a new element: point at it again, or let go.
+    function rebindPicker() {
+      if (!picker) return;
+      const ta = draftBox(picker.key);
+      if (!ta || document.activeElement !== ta) { closePicker(); return; }
+      ta.setAttribute('aria-controls', 'pr-mention-list');
+      ta.setAttribute('aria-expanded', 'true');
+      placePicker(ta);
+    }
+
+    function onMentions(msg) {
+      if (!msg || msg.url !== people.url) return;
+      const q = String(msg.query || '').toLowerCase();
+      const got = { users: msg.users || [], teams: msg.teams || [] };
+      if (!q) {
+        people.loaded = true;
+        people.error = msg.ok === false ? (msg.message || 'Could not ask GitHub who is here') : null;
+        if (msg.ok !== false) {
+          people.users = got.users;
+          people.teams = got.teams;
+          people.viewer = msg.viewer || people.viewer;
+          people.complete = !!msg.complete;
+        }
+      } else {
+        people.byQuery.set(q, got);
+      }
+      const ta = picker && draftBox(picker.key);
+      if (ta) updatePicker(ta);
+    }
 
     // ── messages from the host ───────────────────────────────
 
@@ -1210,7 +1518,7 @@
     host.hidden = true;
     paintChip();
 
-    return { setMeta, onState, onDiff, onDone };
+    return { setMeta, onState, onDiff, onDone, onMentions };
   }
 
   const api = { mount };

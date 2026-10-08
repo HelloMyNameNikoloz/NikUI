@@ -452,6 +452,58 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
       "t.value === 'half a reply' && t.selectionStart === 4; })()"
     );
 
+    // ---- @ in a reply: the people picker -----------------------------------
+    // Only fake pr:mentions answers come back; nothing reaches GitHub. (The
+    // box was focused above, which is when the pane asks.)
+    const typeIn = (value) => browser.evaluate(
+      "(() => { const t = document.querySelector('textarea[data-draft=\\'th-1\\']'); t.focus(); t.value = " + JSON.stringify(value) +
+      "; t.setSelectionRange(t.value.length, t.value.length); t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()"
+    );
+    const key = (k, extra) => browser.evaluate(
+      "(() => { const t = document.activeElement; t.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ key: " + JSON.stringify(k) +
+      ", bubbles: true, cancelable: true }, " + JSON.stringify(extra || {}) + "))); return true; })()"
+    );
+    const rows = () => browser.evaluate("[...document.querySelectorAll('.pr-mention-row')].map((r) => r.querySelector('.pr-mention-login').textContent + '|' + r.getAttribute('aria-selected'))");
+    await typeIn('thanks @');
+    out.mentionAsked = (await posted()).some((m) => m.type === 'pr:mentions' && m.query === '');
+    out.mentionOpensAtOnce = await exists('.pr-mention');
+    await post({ type: 'pr:mentions', url: PR_STATE.url, query: '', ok: true, viewer: 'nik', complete: true, teams: [{ login: 'acme/web', name: 'Web', team: true }],
+      users: [{ login: 'zoe', name: 'Zoe Q' }, { login: 'ana', name: 'Ana B', avatar: ANA_AVATAR }, { login: 'peuka-bob', name: 'Bob' }, { login: 'nik', name: 'Nik' }] });
+    const first = await rows();
+    out.mentionEveryone = first.length >= 4 && !first.some((r) => r.startsWith('nik|'));
+    out.mentionPrPeopleFirst = first[0] === 'bob|true' && first[1] === 'ana|false';
+    out.mentionReason = /Review requested/.test(await text('.pr-mention-row .pr-mention-why') || '');
+    out.mentionSections = await browser.evaluate("[...document.querySelectorAll('.pr-mention-section')].map((s) => s.textContent).join(',')");
+    await key('ArrowDown');
+    out.mentionArrowMoves = (await rows())[1].endsWith('|true');
+    await key('ArrowUp'); await key('ArrowUp');
+    out.mentionArrowWraps = (await rows()).slice(-1)[0].endsWith('|true');
+    await typeIn('thanks @peuka');
+    out.mentionNarrows = JSON.stringify(await rows()) === JSON.stringify(['peuka-bob|true']);
+    out.mentionHighlights = await browser.evaluate("(document.querySelector('.pr-mention-row mark') || {}).textContent === 'peuka'");
+    await new Promise((r) => setTimeout(r, 200)); // past the list's fade-in
+    await browser.shot('/tmp/prpane-mention.png');
+    await key('Enter');
+    out.mentionInserted = await browser.evaluate("(() => { const t = document.activeElement; return t.value === 'thanks @peuka-bob ' && t.selectionStart === t.value.length; })()");
+    out.mentionClosedAfter = !(await exists('.pr-mention'));
+    await typeIn('and @a');
+    await key('Escape');
+    out.mentionEscKeepsPane = !(await exists('.pr-mention')) && !(await hidden('#pr-pane'));
+    await typeIn('@');
+    await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: false, error: null, state: Object.assign({}, PR_STATE, { updatedAt: iso(-1000) }) });
+    out.mentionSurvivesRefresh = await exists('.pr-mention') && await browser.evaluate("document.activeElement.getAttribute('aria-controls') === 'pr-mention-list'");
+    await key('ArrowDown');
+    await key('Tab');
+    await clearPosted();
+    await click('[data-reply="th-1"]');
+    out.mentionRemembered = await browser.evaluate("(() => { const h = JSON.parse(localStorage.getItem('nikui:mentions:v1') || '{}')['acme/nikui'] || {}; return !!h.ana; })()");
+    await post({ type: 'pr:done', action: 'reply', ok: true, message: 'Replied.' });
+    await typeIn('@');
+    const after = await rows();
+    out.mentionRecentFirst = after[0] === 'ana|true' && /You mentioned/.test(await text('.pr-mention-row .pr-mention-why') || '');
+    await key('Escape');
+    await typeIn('');
+
     // ---- meta with prPane.open:true opens it on init, the old tab name maps -
     await post({
       type: 'init', sessionId: 's2', items: [],
@@ -550,6 +602,22 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['pr:done shows the message', out.doneMessageShown === true],
     ['and re-enables the button', out.reEnabledAfterDone === true],
     ['a refresh mid-reply keeps the text, focus and caret', out.replyKeptAcrossRefresh === true],
+    ['typing @ asks who can be mentioned', out.mentionAsked === true],
+    ['and opens the list at once', out.mentionOpensAtOnce === true],
+    ['everyone is offered, never yourself', out.mentionEveryone === true],
+    ['people in this PR come first, the first selected', out.mentionPrPeopleFirst === true],
+    ['each says why it is there', out.mentionReason === true],
+    ['in sections when nothing is typed', /In this pull request/.test(out.mentionSections || '') && /Everyone/.test(out.mentionSections || '')],
+    ['↓ moves the selection', out.mentionArrowMoves === true],
+    ['↑ from the top wraps to the bottom', out.mentionArrowWraps === true],
+    ['typing narrows the list', out.mentionNarrows === true],
+    ['and marks what matched', out.mentionHighlights === true],
+    ['Enter puts the name in, with a space after', out.mentionInserted === true],
+    ['and the list goes away', out.mentionClosedAfter === true],
+    ['Escape closes the list, not the pane', out.mentionEscKeepsPane === true],
+    ['a refresh mid-mention keeps the list', out.mentionSurvivesRefresh === true],
+    ['sending remembers who was mentioned', out.mentionRemembered === true],
+    ['so they come first next time, saying so', out.mentionRecentFirst === true],
     ['meta.prPane.open opens the drawer on init', out.openOnInit === true],
     ["on the tab it remembered, old name 'comments' mapped to Threads", out.openOnInitTab === true],
     ['with no PR linked, the chip disappears', out.chipGoneWithNoPr === true],
@@ -563,7 +631,7 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     console.log((ok ? 'PASS  ' : 'FAIL  ') + name);
     if (!ok) failed++;
   }
-  console.log('\nScreenshots: /tmp/prpane-open.png, /tmp/prpane-full.png');
+  console.log('\nScreenshots: /tmp/prpane-open.png, /tmp/prpane-full.png, /tmp/prpane-mention.png');
   console.log('\n' + (checks.length - failed) + '/' + checks.length + ' PR pane checks passed');
   process.exit(failed ? 1 : 0);
 })().catch((err) => {

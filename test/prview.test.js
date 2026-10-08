@@ -409,4 +409,39 @@ module.exports = async function () {
     } catch (e) { threw = true; }
     check('a thrown run() lands in the error, not an exception', !threw && feed.get('https://github.com/o/r/pull/1').error === 'boom');
   }
+
+  suite('PrFeed: who can be mentioned');
+  {
+    const clock = fakeClock('2026-10-06T10:00:00Z');
+    const calls = [];
+    let teamsFail = false;
+    const run = async (file, args) => {
+      calls.push(args);
+      const query = args[args.indexOf('-f') + 1];
+      if (query.includes('organization(')) {
+        if (teamsFail) return { ok: false, stdout: '', stderr: 'INSUFFICIENT_SCOPES read:org' };
+        return okCheck(JSON.stringify({ data: { organization: { teams: { nodes: [{ slug: 'web', name: 'Web' }] } } } }));
+      }
+      return okCheck(JSON.stringify({ data: { viewer: { login: 'me' }, repository: { mentionableUsers: { totalCount: 2, nodes: [
+        { login: 'peuka-ada', name: 'Ada L', avatarUrl: 'https://a/ada' }, { login: 'bob', name: null, avatarUrl: null }] } } } }));
+    };
+    const feed = new PrFeed({ run, now: clock.now });
+    const url = 'https://github.com/o/r/pull/42';
+    const r = await feed.mentionables(url, '');
+    checkEqual('users with names and avatars', r.users, [{ login: 'peuka-ada', name: 'Ada L', avatar: 'https://a/ada' }, { login: 'bob', name: null, avatar: null }]);
+    checkEqual('teams carry the org', r.teams, [{ login: 'o/web', name: 'Web', avatar: null, team: true }]);
+    check('the viewer, and everyone came in one page', r.viewer === 'me' && r.complete === true && r.ok === true);
+    check('no query, no q', !calls[0].some((a) => /^q=/.test(a)) && calls[0].includes('owner=o') && calls[0].includes('name=r'));
+    const before = calls.length;
+    await feed.mentionables(url, '');
+    checkEqual('asked again within ten minutes: from the cache', calls.length, before);
+    teamsFail = true;
+    const q = await feed.mentionables(url, '@Peuka');
+    check('a query is passed on, without its @', calls[before].includes('q=Peuka'));
+    check('teams that cannot be read are just none', q.ok && q.teams.length === 0 && q.users.length === 2);
+    await feed.mentionables(url, 'o/we');
+    check('a team query searches the slug, not the org', calls[calls.length - 1].includes('q=we'));
+    const bad = await new PrFeed({ run: async () => ({ ok: false, stdout: '', stderr: 'gh: not logged in' }), now: clock.now }).mentionables(url, '');
+    check('a failure says so', bad.ok === false && !!bad.message && bad.users.length === 0);
+  }
 };

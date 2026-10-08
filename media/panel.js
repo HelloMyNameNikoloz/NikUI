@@ -2048,6 +2048,7 @@
       case 'pr:state': if (prPane) prPane.onState(msg); break;
       case 'pr:diff': if (prPane) prPane.onDiff(msg); break;
       case 'pr:done': if (prPane) prPane.onDone(msg); break;
+      case 'pr:mentions': if (prPane && prPane.onMentions) prPane.onMentions(msg); break;
     }
   });
 

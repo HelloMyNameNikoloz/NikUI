@@ -401,6 +401,15 @@ class SessionHub {
         }
         break;
 
+      // Who an @ in a comment can name. Reading, not writing: watching is enough.
+      case 'pr:mentions':
+        if (this.host.prFeed && session.prUrl && this.host.prFeed.mentionables) {
+          const query = String(msg.query || '').slice(0, 60);
+          const r = await this.host.prFeed.mentionables(session.prUrl, query);
+          this.send(clientId, Object.assign({ type: 'pr:mentions', query, url: session.prUrl }, r));
+        }
+        break;
+
       case 'pr:reply':
       case 'pr:resolve':
       case 'pr:comment':
