@@ -136,11 +136,19 @@ module.exports = async function () {
     const grouped = new RemoteServer({
       root: ROOT, host, localKey: auth,
       sessions: { list: () => [first, second] },
-      folders: { list: () => [
-        { id: 'f1', name: 'Phone epic', sessions: [first.id] },
-        { id: 'f2', name: 'Someday', sessions: [] }
-      ] },
+      // FolderStore.list() returns bare `{id,name}` pairs — it is `folderOf`,
+      // not a `sessions` array hung off the folder, that says which instance
+      // sits where. A fleetMessage that reads the list the other way round
+      // sees every instance as unfiled.
+      folders: {
+        list: () => [{ id: 'f1', name: 'Phone epic' }, { id: 'f2', name: 'Someday' }],
+        folderOf: (sessionOrId) => {
+          const id = typeof sessionOrId === 'string' ? sessionOrId : sessionOrId && sessionOrId.id;
+          return id === first.id ? { id: 'f1', name: 'Phone epic' } : null;
+        }
+      },
       projectRoot: (cwd) => '/Users/me/Codes/thing',
+      projects: () => [{ path: '/Users/me/Codes/elsewhere', name: 'elsewhere' }],
       history: async (ask) => [
         { sessionId: 'past-1', label: '1327', title: 'the sealed channel',
           cwd: '/Users/me/Codes/thing', branch: 'main', modified: new Date(), asked: ask }
@@ -156,6 +164,12 @@ module.exports = async function () {
       [alpha.project.name, beta.project.name], ['thing', 'thing']);
     checkEqual('a folder with nothing in it is still a folder',
       message.folders.map((f) => f.name).sort(), ['Phone epic', 'Someday']);
+    checkEqual('each says when it last did anything', typeof alpha.activeAt, 'number');
+    check('which is at least when it started', alpha.activeAt >= first.startedAt);
+    checkEqual('and its place in the manager\'s own list', [alpha.order, beta.order], [0, 1]);
+    checkEqual('projects are this window\'s own folders, plus where open instances live',
+      message.projects.map((p) => p.path).sort(),
+      ['/Users/me/Codes/elsewhere', '/Users/me/Codes/thing']);
 
     const empty = new RemoteServer({ root: ROOT, host, localKey: auth, sessions: { list: () => [first] } });
     const plain = empty.fleetMessage();
@@ -582,6 +596,86 @@ module.exports = async function () {
   if (fleetChanged) fleetChanged();
   const again = await fleet.next('fleet');
   check('and the list is sent again when the window changes', !!again);
+
+  suite('a phone starting or filing an instance steers the window, so it needs control');
+
+  {
+    const created = [];
+    const placedCalls = [];
+    const refreshed = [];
+    const steerSessions = [quietSession('gamma')];
+    const steerFolders = {
+      list: () => [{ id: 'f1', name: 'Inbox' }],
+      get: (gid) => (gid === 'f1' ? { id: 'f1', name: 'Inbox' } : null),
+      folderOf: () => null,
+      place: (sessionOrId, folderId) => {
+        placedCalls.push({ id: typeof sessionOrId === 'string' ? sessionOrId : sessionOrId.id, folderId });
+      }
+    };
+    const steer = new RemoteServer({
+      root: ROOT, host, localKey: auth,
+      sessions: { list: () => steerSessions, get: (sid) => steerSessions.find((s) => s.id === sid) || null },
+      folders: steerFolders,
+      projectRoot: (cwd) => cwd,
+      projects: () => [{ path: '/Users/me/Codes/thing', name: 'thing' }],
+      createInstance: async ({ cwd, folderId }) => {
+        const made = quietSession('new-one');
+        made.cwd = cwd;
+        steerSessions.push(made);
+        created.push({ cwd, folderId });
+        return { id: made.id };
+      },
+      refreshTree: () => refreshed.push(true)
+    });
+
+    const posts = [];
+    const watchOnly = {
+      id: 'c1', open: true, post: (m) => posts.push(m),
+      device: { kind: 'device', id: 'd1', name: 'Phone', control: false }
+    };
+    const controlling = {
+      id: 'c2', open: true, post: (m) => posts.push(m),
+      device: { kind: 'device', id: 'd2', name: 'Other phone', control: true }
+    };
+    steer.fleetClients.add(watchOnly);
+    steer.fleetClients.add(controlling);
+
+    await steer.newInstanceFor(watchOnly, { id: 'r1', cwd: '/Users/me/Codes/thing' });
+    const refusedNoControl = posts.find((m) => m.type === '@refused');
+    checkEqual('watching but not steering is refused', refusedNoControl && refusedNoControl.what, 'instance:new');
+    checkEqual('and nothing was started', created.length, 0);
+
+    posts.length = 0;
+    await steer.newInstanceFor(controlling, { id: 'r2', cwd: '/not/one/of/the/projects' });
+    const refusedBadCwd = posts.find((m) => m.type === '@refused');
+    checkEqual('a directory the phone made up is refused', refusedBadCwd && refusedBadCwd.what, 'instance:new');
+    checkEqual('never reaching createInstance', created.length, 0);
+
+    posts.length = 0;
+    await steer.newInstanceFor(controlling, { id: 'r3', cwd: '/Users/me/Codes/thing', folderId: 'f1' });
+    checkEqual('a real project starts one', created.length, 1);
+    checkEqual('with the cwd asked for', created[0].cwd, '/Users/me/Codes/thing');
+    checkEqual('and the folder asked for', created[0].folderId, 'f1');
+    const createdReply = posts.find((m) => m.type === 'instance:created');
+    check('the reply carries the request id', !!createdReply && createdReply.id === 'r3');
+    check('and the new instance id', !!createdReply && createdReply.instance === steerSessions[1].id);
+    check('and the fleet goes out to everyone watching', posts.some((m) => m.type === 'fleet'));
+
+    const madeId = steerSessions[1].id;
+    posts.length = 0;
+    await steer.placeInstanceFor(watchOnly, { id: 'r4', instance: madeId, folderId: 'f1' });
+    const refusedPlace = posts.find((m) => m.type === '@refused');
+    checkEqual('moving one is refused the same way', refusedPlace && refusedPlace.what, 'instance:place');
+    checkEqual('and nothing moved', placedCalls.length, 0);
+
+    posts.length = 0;
+    await steer.placeInstanceFor(controlling, { id: 'r5', instance: madeId, folderId: null });
+    check('a device with control can file it', placedCalls.some((p) => p.id === madeId && p.folderId === null));
+    check('the sidebar tree is told to redraw', refreshed.length > 0);
+    const placedReply = posts.find((m) => m.type === 'instance:placed');
+    check('and the reply carries the request id', !!placedReply && placedReply.id === 'r5');
+    check('with the fleet sent fresh too', posts.some((m) => m.type === 'fleet'));
+  }
 
   suite('a socket that misbehaves is not fatal');
 

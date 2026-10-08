@@ -101,6 +101,10 @@ class Session extends EventEmitter {
     // What /status reports on: one record per finished turn, plus the running
     // tallies that cannot be recovered from the items list.
     this.startedAt = opts.startedAt || Date.now();
+    // Last time a turn started, waited or finished — bumped in `_setStatus`.
+    // Restored instances have it from their newest item instead (see
+    // `lastActiveAt`), since coming back as idle after a reload is not activity.
+    this.activeAt = 0;
     this.processStartedAt = null;
     // Restored from the last window when there is one: the totals above came
     // back, and these are what explain them.
@@ -1360,6 +1364,8 @@ class Session extends EventEmitter {
     if (this.status === status) return;
     const was = this.status;
     this.status = status;
+    if (status === STATUS.WORKING || status === STATUS.WAITING ||
+      (status === STATUS.DONE && (was === STATUS.WORKING || was === STATUS.WAITING))) this.activeAt = Date.now();
     // Before the event, so whoever is looking can take it straight back off.
     if (status === STATUS.DONE && (was === STATUS.WORKING || was === STATUS.WAITING)) this.unread = true;
     else if (status === STATUS.WORKING || status === STATUS.WAITING) this.unread = false;

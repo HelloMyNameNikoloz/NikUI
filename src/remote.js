@@ -50,6 +50,15 @@ const MAX_BACKLOG_BYTES = 8 * 1024 * 1024;
 // A pairing body is a name, a public key and a signature. Nothing here is large.
 const MAX_BODY_BYTES = 8 * 1024;
 
+function lastActiveAt(session) {
+  const items = session.items || [];
+  let newest = 0;
+  for (let i = items.length - 1; i >= 0 && i >= items.length - 20; i--) {
+    if (items[i] && items[i].at > newest) newest = items[i].at;
+  }
+  return Math.max(session.activeAt || 0, newest) || session.startedAt || 0;
+}
+
 class RemoteServer {
   /**
    * @param {object} deps
@@ -66,6 +75,10 @@ class RemoteServer {
    * @param {() => boolean} [deps.appOnly] serve the app only, never a page
    * @param {object} [deps.folders] the user's own folders, so a phone sees the same ones
    * @param {(cwd: string) => string} [deps.projectRoot] which project a directory belongs to
+   * @param {() => Array} [deps.projects] this window's workspace folders, as {path,name} or bare paths
+   * @param {(opts: {cwd: string, folderId?: string}) => Promise<{id: string}>} [deps.createInstance]
+   *   start a new instance the same way the editor's own "new instance" command does
+   * @param {() => void} [deps.refreshTree] redraw the sidebar tree, as the tree's own drag-drop does
    * @param {(opts: object) => Promise<Array>} [deps.history] past conversations on this machine
    * @param {() => object} [deps.report] exactly what /status draws
    * @param {(line: string) => void} [deps.log]
@@ -102,6 +115,9 @@ class RemoteServer {
     // Slack, for the phone's Slack page: who is looking, and what each may do.
     this.slack = deps.slack || (() => null);
     this.projectRoot = deps.projectRoot || null;
+    this.projects = deps.projects || null;
+    this.createInstance = deps.createInstance || null;
+    this.refreshTree = deps.refreshTree || null;
     this.history = deps.history || null;
     this.report = deps.report || null;
     this.requireSealed = deps.requireSealed || (() => true);
@@ -985,6 +1001,8 @@ ${this.appHead(nonce)}</head>
           if (message.type.indexOf('term:') === 0) return void this.terminalFor(client, message);
           if (message.type === 'voice' || message.type === 'voice:state') return void (await this.voiceMessage(client, message));
           if (message.type.indexOf('slack:') === 0) return void (await this.slackFor(client, message));
+          if (message.type === 'instance:new') return void (await this.newInstanceFor(client, message));
+          if (message.type === 'instance:place') return void (await this.placeInstanceFor(client, message));
         } catch (err) {
           // A handler that throws used to answer nothing at all, and nothing at
           // all is the one answer a phone cannot act on: it waits, and then it
@@ -1014,8 +1032,12 @@ ${this.appHead(nonce)}</head>
 
   fleetMessage() {
     const placed = this.folders ? this.folders.list() : [];
-    const instances = this.sessions.list().map((session) => {
-      const folder = placed.find((f) => (f.sessions || []).includes(session.id)) || null;
+    const list = this.sessions.list();
+    const instances = list.map((session, index) => {
+      // `folderOf` takes the session itself, not just its id: a folder chosen
+      // before the instance had a claudeSessionId is still found afterwards by
+      // conversation, which `placed.find` over `{id,name}` pairs never could.
+      const folder = this.folders ? this.folders.folderOf(session) : null;
       const root = this.projectRoot ? this.projectRoot(session.cwd) : '';
       return {
         id: session.id,
@@ -1027,6 +1049,13 @@ ${this.appHead(nonce)}</head>
         paused: !!session.isPaused,
         asleep: !!session.isAsleep,
         unread: !!session.unread,
+        // When this instance last did anything, for the phone's Recent list:
+        // a turn moving, or failing that its newest item — which is what a
+        // restored instance has, since coming back after a reload is not use.
+        activeAt: lastActiveAt(session),
+        // Where it sits in the manager's own list, so the phone can match the
+        // editor's order rather than invent one from whatever arrives.
+        order: index,
         // Where the editor files it: a folder somebody made, or the project its
         // directory belongs to. Sent rather than guessed from the path, because
         // a worktree belongs to its project and a path does not say so.
@@ -1034,13 +1063,98 @@ ${this.appHead(nonce)}</head>
         project: root ? { path: root, name: root.split(/[\\/]/).filter(Boolean).pop() || root } : null
       };
     });
+    // Every path an instance could be started in: the workspace's own folders,
+    // plus the project root of each instance already open — deduped, since a
+    // worktree's root and a workspace folder are often the same path.
+    const seen = new Set();
+    const projects = [];
+    const addProject = (path) => {
+      if (!path || seen.has(path)) return;
+      seen.add(path);
+      projects.push({ path, name: path.split(/[\\/]/).filter(Boolean).pop() || path });
+    };
+    if (this.projects) {
+      for (const p of this.projects() || []) addProject(p && p.path ? p.path : p);
+    }
+    for (const session of list) {
+      addProject(this.projectRoot ? this.projectRoot(session.cwd) : session.cwd);
+    }
     return {
       type: 'fleet',
       instances,
       // Folders that exist but have nothing in them are still folders.
       folders: placed.map((f) => ({ id: f.id, name: f.name })),
+      projects,
       at: Date.now()
     };
+  }
+
+  /**
+   * Steering this window takes control, same as sending a prompt or a
+   * terminal command does: the editor's own browser on loopback (and anyone
+   * holding the local key) is this machine and needs nothing extra, while a
+   * paired device needs the grant.
+   */
+  _mayControl(client) {
+    const seat = client.device;
+    return !(seat && seat.kind === 'device' && !seat.control);
+  }
+
+  /**
+   * A new instance, asked for from the phone.
+   *
+   * `cwd` is never trusted as a bare string: it must be one of the paths this
+   * window already offered in `projects`, the same discipline `term:open`
+   * uses for a working directory — a device never gets to name an arbitrary
+   * folder on this machine.
+   */
+  async newInstanceFor(client, message) {
+    const id = message.id;
+    const refuse = (reason) => client.post({ type: '@refused', id, what: 'instance:new', reason });
+    if (!this._mayControl(client)) {
+      this.note(client.device, 'instance:new', String(message.cwd || ''), false);
+      return void refuse('This device can watch but not start instances. Grant it control in the editor.');
+    }
+    if (!this.createInstance) return void refuse('This window is not offering that.');
+    const allowed = new Set((this.fleetMessage().projects || []).map((p) => p.path));
+    const cwd = typeof message.cwd === 'string' ? message.cwd : '';
+    if (!cwd || !allowed.has(cwd)) {
+      return void refuse('That is not one of this window\'s projects.');
+    }
+    try {
+      const created = await this.createInstance({ cwd, folderId: message.folderId || null });
+      if (!created || !created.id) return void refuse('That could not be started.');
+      client.post({ type: 'instance:created', id, instance: created.id });
+      this.broadcastFleet();
+    } catch (err) {
+      this.log(`${client.id} asked instance:new and it threw: ${(err && err.message) || err}`);
+      refuse('That went wrong on the laptop: ' + ((err && err.message) || 'unknown error'));
+    }
+  }
+
+  /**
+   * Moving an instance into, or out of, a folder — the same thing the tree's
+   * own drag-and-drop does, asked for from the phone instead.
+   */
+  async placeInstanceFor(client, message) {
+    const id = message.id;
+    const refuse = (reason) => client.post({ type: '@refused', id, what: 'instance:place', reason });
+    if (!this._mayControl(client)) {
+      this.note(client.device, 'instance:place', String(message.instance || ''), false);
+      return void refuse('This device can watch but not move instances. Grant it control in the editor.');
+    }
+    if (!this.folders) return void refuse('This window is not offering folders.');
+    const session = this.sessions.get(message.instance);
+    if (!session) return void refuse('That instance is gone.');
+    try {
+      this.folders.place(session, message.folderId || null);
+      if (this.refreshTree) this.refreshTree();
+      this.broadcastFleet();
+      client.post({ type: 'instance:placed', id });
+    } catch (err) {
+      this.log(`${client.id} asked instance:place and it threw: ${(err && err.message) || err}`);
+      refuse('That went wrong on the laptop: ' + ((err && err.message) || 'unknown error'));
+    }
   }
 
   /**

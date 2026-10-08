@@ -573,7 +573,7 @@ function activate(context) {
   // is asked whether it is listening only once there is one to ask.
   let server = null;
   const awake = keepAwake(context, manager, () => server);
-  server = serveLocally(context, manager, awake, folders);
+  server = serveLocally(context, manager, awake, folders, { refreshTree: () => tree.refresh() });
   useSwitch('nikui.lidClosed', (on) => awake.switchLid(on));
   if (server.onState) context.subscriptions.push({ dispose: server.onState(() => awake.reconsider()) });
   awake.reconsider();
@@ -834,6 +834,21 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // looking at this window rather than at a list of what happens to be in it.
     folders,
     projectRoot,
+    // This window's own workspace folders — the only places a phone may ask
+    // for a new instance to be started, never an arbitrary path it names.
+    projects: () => (vscode.workspace.workspaceFolders || []).map((f) => ({
+      path: f.uri.fsPath, name: f.name
+    })),
+    // The same path `nikui.newSession` takes, without opening a panel: a
+    // phone starting an instance should not steal the editor's focus.
+    createInstance: async ({ cwd, folderId }) => {
+      const session = manager.create({ cwd });
+      const folder = folderId ? folders.get(folderId) : null;
+      if (folder) folders.place(session, folder.id);
+      if (deps && deps.refreshTree) deps.refreshTree();
+      return { id: session.id };
+    },
+    refreshTree: () => { if (deps && deps.refreshTree) deps.refreshTree(); },
     history: (ask) => require('./history').listSessions(ask),
     // What /status draws, built exactly as the hub builds it — the instance
     // somebody is most likely asking about, with the rest as its fleet.
