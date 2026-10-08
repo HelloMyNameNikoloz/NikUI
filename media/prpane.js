@@ -1385,6 +1385,16 @@
       if (handled) { e.preventDefault(); e.stopPropagation(); }
     }, true);
 
+    // Enter sends, Shift+Enter is a new line — as in the composer. (An open
+    // mention list has already taken its Enter above.)
+    host.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.isComposing || e.keyCode === 229) return;
+      if (!e.target.matches || !e.target.matches('textarea[data-draft]')) return;
+      e.preventDefault();
+      const btn = e.target.parentElement.querySelector('button');
+      if (btn && !btn.disabled) btn.click();
+    });
+
     host.addEventListener('focusin', function (e) {
       if (e.target.matches && e.target.matches('textarea[data-draft]')) askPeople('');
     });

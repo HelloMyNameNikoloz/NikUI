@@ -504,6 +504,20 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     await key('Escape');
     await typeIn('');
 
+    // ---- Enter sends, Shift+Enter is a new line ------------------------------
+    await typeIn('line one');
+    await clearPosted();
+    await key('Enter', { shiftKey: true });
+    out.shiftEnterNotSent = !(await posted()).some((m) => m.type === 'pr:reply');
+    await key('Enter');
+    out.enterSends = (await posted()).some((m) => m.type === 'pr:reply' && m.threadId === 'th-1' && m.body === 'line one');
+    await post({ type: 'pr:done', action: 'reply', ok: true, message: 'Replied.' });
+    await clearPosted();
+    await typeIn('   ');
+    await key('Enter');
+    out.enterEmptyNothing = !(await posted()).some((m) => m.type === 'pr:reply');
+    await typeIn('');
+
     // ---- meta with prPane.open:true opens it on init, the old tab name maps -
     await post({
       type: 'init', sessionId: 's2', items: [],
@@ -618,6 +632,9 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['a refresh mid-mention keeps the list', out.mentionSurvivesRefresh === true],
     ['sending remembers who was mentioned', out.mentionRemembered === true],
     ['so they come first next time, saying so', out.mentionRecentFirst === true],
+    ['Shift+Enter in a reply does not send', out.shiftEnterNotSent === true],
+    ['Enter sends it', out.enterSends === true],
+    ['and an empty box sends nothing', out.enterEmptyNothing === true],
     ['meta.prPane.open opens the drawer on init', out.openOnInit === true],
     ["on the tab it remembered, old name 'comments' mapped to Threads", out.openOnInitTab === true],
     ['with no PR linked, the chip disappears', out.chipGoneWithNoPr === true],
