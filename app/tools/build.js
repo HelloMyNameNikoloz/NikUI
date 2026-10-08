@@ -35,7 +35,7 @@ const CLIENT_FILES = SCRIPTS.concat([
 ]);
 
 const SHELL_FILES = ['app.css', 'app.js', 'lock.js', 'notify.js', 'connect.js', 'settings.js',
-  'history.js', 'status.js', 'terminal.js', 'voice.js', 'slack.js'];
+  'history.js', 'status.js', 'terminal.js', 'voice.js', 'slack.js', 'pull.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -219,7 +219,7 @@ function homePage() {
   </main>
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
     scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
-      'media/transport.js', 'media/home.js']
+      'media/transport.js', 'pull.js', 'media/home.js']
   });
 }
 
@@ -294,7 +294,7 @@ function statusPage() {
   <main class="screen" id="screen"></main>
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
     scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
-      'media/transport.js', 'media/charts.js', 'media/markdown.js', 'media/status.js', 'status.js'],
+      'media/transport.js', 'pull.js', 'media/charts.js', 'media/markdown.js', 'media/status.js', 'status.js'],
     // The sheet is the panel's own markup, so it needs the panel's own styles.
     css: ['media/panel.css']
   });
@@ -348,7 +348,7 @@ function historyPage() {
   <main class="screen" id="screen"></main>
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
     scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
-      'media/transport.js', 'history.js']
+      'media/transport.js', 'pull.js', 'history.js']
   });
 }
 

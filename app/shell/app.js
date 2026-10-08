@@ -119,7 +119,22 @@
 
   const params = () => new URLSearchParams(window.location.search);
 
-  function go(page, query) {
+  const NAV_DIR = 'nikui.app.navdir';
+
+  /**
+   * How the screen that is about to load should look like it arrived:
+   * pushed in from the right ('forward'), undoing that ('back'), or a
+   * crossfade between peers ('tab'). Each screen here is its own document, so
+   * there is no way to ask the next one anything once this one has gone —
+   * the only thing that survives the navigation is `sessionStorage`, read
+   * back on `pagereveal` in `wireTransitions` below.
+   */
+  function setNavDirection(dir) {
+    try { window.sessionStorage.setItem(NAV_DIR, dir); } catch (_) { /* no storage, no transition */ }
+  }
+
+  function go(page, query, dir) {
+    setNavDirection(dir || 'forward');
     const search = query ? '?' + new URLSearchParams(query).toString() : '';
     window.location.assign(page + search);
   }
@@ -153,14 +168,50 @@
   function wireChrome() {
     tabs();
     swipeScreens();
+    wireTransitions();
 
     // The client's own back link points at the server's root; in a bundle the
     // fleet is a page rather than a path.
     const back = document.getElementById('back');
     if (back && back.tagName === 'A') back.setAttribute('href', 'index.html');
 
+    // Anything that reads as "go back" — a chevron button, a link to the
+    // fleet — says so before the navigation happens, in the one place that
+    // still exists to say it in: this is a capture listener so it runs ahead
+    // of the browser's own handling of the click, including the default
+    // navigation an anchor is about to do.
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('.back, #back, a[href="index.html"]')) setNavDirection('back');
+    }, true);
+
     const onWayIn = /connect\.html$/.test(window.location.pathname);
     if (!onWayIn && !laptop()) window.location.replace('connect.html');
+  }
+
+  /**
+   * Forward slides in, back slides out the same way in reverse, and a tab
+   * switch crossfades rather than either — the direction is decided before
+   * the page unloads (`go`, the back-link listener above, the back gesture
+   * below) and read back here, on `pagereveal`, which fires on the document
+   * that is arriving at the moment the browser is deciding how to animate the
+   * crossing it is already doing because of `@view-transition` in app.css.
+   *
+   * Nothing here is required for the transition to happen at all — that is
+   * the stylesheet's doing, and a WebView too old to fire `pagereveal` is a
+   * WebView too old to animate the crossing either, so there is nothing to
+   * mis-set the direction of.
+   */
+  function wireTransitions() {
+    if (!('onpagereveal' in window)) return;
+    window.addEventListener('pagereveal', (event) => {
+      if (!event.viewTransition) return;
+      let dir = 'forward';
+      try { dir = window.sessionStorage.getItem(NAV_DIR) || 'forward'; } catch (_) { /* default stands */ }
+      try { window.sessionStorage.removeItem(NAV_DIR); } catch (_) { /* nothing to clean up */ }
+      document.documentElement.classList.toggle('nav-back', dir === 'back');
+      document.documentElement.classList.toggle('nav-tab', dir === 'tab');
+      try { event.viewTransition.types.add(dir); } catch (_) { /* types is newer than the rest of this */ }
+    });
   }
 
   // The three screens that are peers rather than a hierarchy: what is running,
@@ -448,7 +499,7 @@
         return;
       }
       const next = index;
-      arrive = () => go(TABS[next].page);
+      arrive = () => go(TABS[next].page, null, 'tab');
       buzz();
       settled(next, true);
     };
@@ -469,7 +520,7 @@
         // A tap has no throw of its own, so it is given one: the capsule leaves
         // with a push rather than easing away from a standstill.
         v = (index > at ? 1 : -1) * 620;
-        arrive = () => go(TABS[index].page);
+        arrive = () => go(TABS[index].page, null, 'tab');
         buzz();
         settled(index, true);
       });
@@ -532,20 +583,54 @@
       const next = at + (dx < 0 ? 1 : -1);
       if (next < 0 || next >= TABS.length) return;
       buzz();
-      go(TABS[next].page);
+      go(TABS[next].page, null, 'tab');
     };
 
     screen.addEventListener('pointerup', done);
     screen.addEventListener('pointercancel', () => { tracking = false; });
   }
 
-  /** The small knock that makes a selection feel like it happened. */
-  function buzz() {
+  /**
+   * The small knock a touch becomes, everywhere on the phone this matters:
+   * `light` for a tab taken or a tap that merely selected something, `medium`
+   * for a pull that reached its threshold, `success` and `warning` for the
+   * same two outcomes the rest of the product already has words for.
+   *
+   * The plugin first, because that is the real thing — a distinct, tuned
+   * knock rather than a buzz. A plain `vibrate` under it for a phone with no
+   * such plugin (a browser, an iPhone before the plugin is wired there), and
+   * nothing at all under that: a phone that cannot buzz is not a bug.
+   */
+  function haptic(kind) {
     const plugins = native();
     const haptics = plugins && plugins.Haptics;
-    if (!haptics || !haptics.selectionChanged) return;
-    const call = haptics.selectionChanged();
-    if (call && call.catch) call.catch(function () {});
+    if (haptics) {
+      try {
+        if ((kind === 'success' || kind === 'warning') && haptics.notification) {
+          const said = haptics.notification({ type: kind === 'success' ? 'SUCCESS' : 'WARNING' });
+          if (said && said.catch) said.catch(() => {});
+          return;
+        }
+        if (haptics.impact) {
+          const said = haptics.impact({ style: kind === 'medium' ? 'MEDIUM' : 'LIGHT' });
+          if (said && said.catch) said.catch(() => {});
+          return;
+        }
+      } catch (_) { /* fall through to a plain vibration */ }
+    }
+    if (navigator.vibrate) {
+      try { navigator.vibrate(kind === 'medium' || kind === 'warning' ? 16 : 10); } catch (_) { /* nothing left to try */ }
+    }
+  }
+
+  // Loaded on every screen, including the conversation — which is where
+  // another hand uses it for the other half of this: a reply arriving, a
+  // turn finishing. Here, it is the tab bar and a pull that just let go.
+  window.NikHaptic = haptic;
+
+  /** The small knock that makes a selection feel like it happened. */
+  function buzz() {
+    haptic('light');
   }
 
   function wireNative() {
@@ -562,7 +647,7 @@
       plugins.App.addListener('backButton', ({ canGoBack }) => {
         // Something open over the page (the GitHub pull request) closes first.
         if ((window.NikBack || []).some((close) => close())) return;
-        if (canGoBack && window.history.length > 1) window.history.back();
+        if (canGoBack && window.history.length > 1) { setNavDirection('back'); window.history.back(); }
         else if (plugins.App.exitApp) plugins.App.exitApp();
       });
     }

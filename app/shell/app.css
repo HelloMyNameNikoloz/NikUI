@@ -2472,3 +2472,208 @@ html:not(.plat-ios) body.app-conversation .composer {
   background: var(--app-raised);
   border: 0.5px solid var(--app-hairline);
 }
+
+/* ---- moving between screens -------------------------------------------------
+
+   Each screen here is its own document, so what looks like one app changing
+   what it shows is really the WebView loading a new page — and a browser can
+   animate that crossing on its own, across the document boundary, if asked.
+   `navigation: auto` is the ask. Android's WebView is Chromium and has known
+   what to do with it since 126; anything older simply does not see the
+   at-rule and keeps the hard cut it always had, which is the whole of what
+   "nothing breaks where unsupported" needs to mean here.
+
+   Which way it moves is decided in app.js, before the navigation happens: a
+   push toward something new is "forward", a way back is "back", and a tap on
+   the tab bar is "tab" — carried across in `sessionStorage` because the
+   outgoing document is gone by the time the incoming one can ask it anything,
+   and read on `pagereveal`, the moment the browser is about to start the very
+   transition it is deciding the shape of. */
+@view-transition {
+  navigation: auto;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-group(root) {
+    animation-duration: 350ms;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  /* Forward: a push, the new screen sliding in from the right over the one
+     it is covering — which drifts left and dims rather than just sitting
+     there, so it reads as *underneath* rather than as having not moved. */
+  ::view-transition-old(root) {
+    animation: nik-vt-out-left 350ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  ::view-transition-new(root) {
+    animation: nik-vt-in-right 350ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+
+  /* Back: the same push, run the other way — not a different motion, or it
+     would not read as undoing the first one. */
+  html.nav-back::view-transition-old(root) {
+    animation-name: nik-vt-out-right;
+  }
+  html.nav-back::view-transition-new(root) {
+    animation-name: nik-vt-in-left;
+  }
+
+  /* Tab to tab: a crossfade rather than a slide. Instances, Status, Terminal,
+     History and Settings are peers, not a hierarchy, and a slide says one of
+     them is "deeper" than the other — which none of them is. */
+  html.nav-tab::view-transition-old(root),
+  html.nav-tab::view-transition-new(root) {
+    animation-name: nik-vt-fade;
+    animation-duration: 220ms;
+  }
+}
+
+@keyframes nik-vt-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes nik-vt-out-left { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-28%); opacity: 0.55; } }
+@keyframes nik-vt-in-left { from { transform: translateX(-28%); opacity: 0.55; } to { transform: translateX(0); opacity: 1; } }
+@keyframes nik-vt-out-right { from { transform: translateX(0); } to { transform: translateX(100%); } }
+@keyframes nik-vt-fade { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(root),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}
+
+/* The tab bar is the one piece of chrome every screen shares, and it should
+   never look like it moved: named on its own so the browser keeps it out of
+   the root snapshot that is sliding, and told not to animate at all. */
+.tabs {
+  view-transition-name: nik-tabs;
+}
+::view-transition-group(nik-tabs) {
+  animation: none;
+}
+
+/* ---- skeletons ---------------------------------------------------------------
+
+   Shaped like the row that is coming, not a generic grey bar: a shimmer that
+   already has the outline of a name, a path and a cost reads as "this is
+   loading"; a blank line saying "Looking…" reads as "nothing is here", which
+   is a different sentence and the wrong one. */
+.skeleton-chip {
+  display: inline-block;
+  min-height: 0.9em;
+  border-radius: 5px;
+  background: linear-gradient(100deg,
+    var(--app-raised) 30%, var(--app-raised-2) 50%, var(--app-raised) 70%);
+  background-size: 300% 100%;
+  color: transparent !important;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton-chip { animation: nik-shimmer 1.3s ease-in-out infinite; }
+}
+
+@keyframes nik-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* The fleet's own rows, dressed as a skeleton rather than drawn empty. */
+body.app.home .row-skeleton .sdot.skeleton-chip { width: 9px; height: 9px; border-radius: 50%; }
+body.app.home .row-skeleton .row-name.skeleton-chip { width: 55%; height: 13px; }
+body.app.home .row-skeleton .row-cwd.skeleton-chip { width: 72%; height: 11px; }
+body.app.home .row-skeleton .row-cost.skeleton-chip { width: 38px; height: 12px; }
+
+/* History's rows, the same idea. */
+.hrow-skeleton .hrow-name.skeleton-chip { width: 48%; height: 13px; }
+.hrow-skeleton .hrow-when.skeleton-chip { width: 48px; height: 11px; }
+.hrow-skeleton .hrow-where.skeleton-chip { width: 58%; height: 11px; }
+
+/* Status's tiles and cards. */
+.tile.skeleton .tile-value.skeleton-chip,
+.tile.skeleton .tile-label.skeleton-chip {
+  display: block;
+  margin: 0 auto;
+}
+.tile.skeleton .tile-value.skeleton-chip { width: 58%; height: 20px; margin-bottom: 6px; }
+.tile.skeleton .tile-label.skeleton-chip { width: 78%; height: 10px; }
+.card.skeleton .skeleton-line { display: block; width: 36%; height: 12px; margin-bottom: 10px; }
+.card.skeleton .skeleton-block { display: block; width: 100%; height: 54px; }
+
+/* ---- a new row arriving, a gone one leaving ---------------------------------
+
+   A fleet message every few seconds updates the rows that changed and leaves
+   the rest of the DOM alone (see media/home.js); what is actually new or gone
+   gets the one thing a silent swap cannot: a moment of motion that says so. */
+body.app.home .rows .row,
+body.app.home .rows-card,
+body.app.home .rows-head {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+body.app.home .row-enter { opacity: 0; transform: translateY(5px); }
+body.app.home .row-leave,
+body.app.home .rows-card.row-leave,
+body.app.home .rows-head.row-leave { opacity: 0; transform: scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+  body.app.home .rows .row,
+  body.app.home .rows-card,
+  body.app.home .rows-head {
+    transition: none;
+  }
+}
+
+/* ---- pull to refresh ---------------------------------------------------------
+
+   One rubber band, one spinner, shared by every screen that has something to
+   refresh (see app/shell/pull.js). It sits inside the same scrolling element
+   it pulls — `.pull-host` only gives it somewhere to be positioned against —
+   so it rides along at the top rather than floating over content that has
+   nothing to do with it. */
+.pull-host {
+  position: relative;
+}
+
+.pull-spinner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.pull-spinner.snap {
+  transition: transform 220ms ease, opacity 220ms ease;
+}
+
+.pull-spin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--app-raised-2);
+  border-top-color: var(--app-dim);
+}
+
+.pull-spinner.ready .pull-spin { border-top-color: var(--app-accent); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .pull-spinner.spinning .pull-spin { animation: nik-pull-spin 0.7s linear infinite; }
+}
+
+@keyframes nik-pull-spin { to { transform: rotate(360deg); } }
+
+/* ---- pressed, not just hovered -----------------------------------------------
+
+   The grey flash Chromium gives every tap by default is turned off wherever
+   these screens give their own feedback instead (see `body.app` above, which
+   does it once for the whole app); what is here is that feedback itself, on
+   the controls that did not already have it. */
+.tab:active {
+  opacity: 0.6;
+  transform: scale(0.95);
+}

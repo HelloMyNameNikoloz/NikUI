@@ -429,6 +429,19 @@ const record = (name, ok) => {
     record('and what crosses it is an envelope, not a message',
       sockets.length > 0 && JSON.stringify(sockets[0].box.seal('{"type":"fleet"}')).indexOf('fleet') < 0);
 
+    // A row that changes status is the same element with new paint, not a
+    // torn-down-and-rebuilt one — losing identity there would also lose
+    // whatever the browser was mid-animating, mid-focusing or mid-scrolling on.
+    await phone.evaluate(`document.querySelector('.rows .row').__markIdentity = 'kept'`);
+    const statusBefore = session.status;
+    session.status = 'working';
+    laptop.broadcastFleet();
+    await phone.until('document.querySelector(".rows .row").dot.className.indexOf("working") >= 0', 6000);
+    record('a fleet update changes the row in place rather than replacing it',
+      (await phone.evaluate(`document.querySelector('.rows .row').__markIdentity`)) === 'kept');
+    session.status = statusBefore; // the conversation below expects the finished turn it had
+    laptop.broadcastFleet();
+
     // ---- the conversation, the same client as the editor's ------------------
     // Finished and not yet opened anywhere: blue in the editor's list.
     session.unread = true;
@@ -1672,7 +1685,7 @@ const record = (name, ok) => {
       await phone.asPhone(390, 844);
     }
     await phone.evaluate(`document.querySelector('.cmd-nav').closest('.sheet').querySelector('[data-act="close"]').click()`);
-    record('and it closes', (await phone.evaluate(`document.getElementById('status').hidden`)) === true);
+    record('and it closes', await phone.until(`document.getElementById('status').hidden`, 2000));
     commandsHeld.mine = {};
     commandsHeld.mineSaid = {};
     saved.showThinking = true;
@@ -2115,6 +2128,40 @@ const record = (name, ok) => {
         await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 8000);
         return (await phone.evaluate('document.querySelector(".lock") === null')) === true;
       })());
+
+    // ---- skeletons, pull to refresh, haptics and page transitions -----------
+    // A drag that starts at the very top of a list and clears the threshold
+    // releases into the same spinner every one of these screens shares.
+    const pull = (dy) => phone.evaluate(`(() => {
+      const el = document.querySelector('.screen');
+      el.scrollTop = 0;
+      const at = (y) => new Touch({ identifier: 1, target: el, clientX: 40, clientY: y });
+      el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [at(80)], changedTouches: [at(80)] }));
+      el.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, touches: [at(80 + ${dy})], changedTouches: [at(80 + ${dy})] }));
+      el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [at(80 + ${dy})] }));
+      const spinner = document.querySelector('.pull-spinner');
+      return !!spinner && spinner.classList.contains('spinning');
+    })()`);
+
+    await phone.navigate(appOrigin + '/history.html');
+    record('history shows a skeleton before its first answer',
+      (await phone.evaluate('document.querySelectorAll(".hrow-skeleton, .skeleton-chip").length')) > 0);
+    record('pulling down past the threshold refreshes history', await pull(160));
+
+    await phone.navigate(appOrigin + '/status.html');
+    record('status shows a skeleton before its first answer',
+      (await phone.evaluate('document.querySelectorAll(".tile.skeleton, .card.skeleton").length')) > 0);
+    record('pulling down past the threshold refreshes status', await pull(160));
+
+    await phone.navigate(appOrigin + '/index.html');
+    await phone.until('document.querySelectorAll(".rows .row").length >= 1', 8000);
+    record('pulling down past the threshold refreshes the fleet', await pull(160));
+
+    record('every screen can ask the phone to buzz',
+      (await phone.evaluate('typeof window.NikHaptic')) === 'function');
+
+    record('every page opts into cross-document view transitions',
+      await phone.evaluate(`fetch('app.css').then((r) => r.text()).then((t) => /@view-transition/.test(t))`));
 
     record('and nothing threw on any screen',
       (await phone.evaluate('window.__errors ? window.__errors.length : 0')) === 0);

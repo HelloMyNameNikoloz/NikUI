@@ -32,12 +32,64 @@
 
   // ---- drawing ---------------------------------------------------------------
 
+  /**
+   * The sheet, before the laptop has said anything: three tiles and two cards
+   * shaped like the ones that are about to replace them, shimmering rather
+   * than a bare "Looking…" — which told you something was expected without
+   * any idea what.
+   */
+  function skeleton() {
+    const wrap = document.createElement('div');
+    wrap.className = 'skeleton-status';
+    const tiles = document.createElement('div');
+    tiles.className = 'tiles';
+    for (let i = 0; i < 3; i++) {
+      const tile = document.createElement('div');
+      tile.className = 'tile skeleton';
+      const value = document.createElement('div');
+      value.className = 'tile-value skeleton-chip';
+      const label = document.createElement('div');
+      label.className = 'tile-label skeleton-chip';
+      tile.append(value, label);
+      tiles.appendChild(tile);
+    }
+    wrap.appendChild(tiles);
+    for (let i = 0; i < 2; i++) {
+      const card = document.createElement('div');
+      card.className = 'card skeleton';
+      const heading = document.createElement('div');
+      heading.className = 'skeleton-chip skeleton-line';
+      const body = document.createElement('div');
+      body.className = 'skeleton-chip skeleton-block';
+      card.append(heading, body);
+      wrap.appendChild(card);
+    }
+    withSpinnerKept(() => screen.replaceChildren(wrap));
+  }
+
+  /**
+   * Do `fn`, which is free to clear or replace `screen` wholesale, without
+   * losing the pull-to-refresh spinner that lives at its top: lifted out
+   * before and put back after, rather than taught to every place that redraws
+   * this screen.
+   */
+  function withSpinnerKept(fn) {
+    const spinner = screen.querySelector(':scope > .pull-spinner');
+    if (spinner) spinner.remove();
+    fn();
+    if (spinner) screen.insertBefore(spinner, screen.firstChild);
+  }
+
   function draw() {
     if (!state.report) {
-      const said = document.createElement('p');
-      said.className = 'lede';
-      said.textContent = state.trouble || 'Looking…';
-      screen.replaceChildren(said);
+      if (state.trouble) {
+        const said = document.createElement('p');
+        said.className = 'lede';
+        said.textContent = state.trouble;
+        withSpinnerKept(() => screen.replaceChildren(said));
+      } else {
+        skeleton();
+      }
       return;
     }
 
@@ -63,11 +115,13 @@
   function paint(html) {
     const next = document.createElement('div');
     next.innerHTML = html;
-    if (!screen.firstElementChild) {
-      screen.replaceChildren.apply(screen, Array.prototype.slice.call(next.childNodes));
-      return;
-    }
-    morph(screen, next);
+    withSpinnerKept(() => {
+      if (!screen.firstElementChild) {
+        screen.replaceChildren.apply(screen, Array.prototype.slice.call(next.childNodes));
+        return;
+      }
+      morph(screen, next);
+    });
   }
 
   /**
@@ -236,6 +290,17 @@
   let asking = null;
 
   const ask = () => transport.postMessage({ type: 'status' });
+
+  // A pull at the top of the sheet asks again, the same question the refresh
+  // button already does. The spinner is given a moment to be seen even when
+  // the answer comes back at once — a refresh that is over before the finger
+  // has lifted does not read as having happened.
+  if (window.NikPull) {
+    window.NikPull.attach(screen, () => new Promise((resolve) => {
+      ask();
+      setTimeout(resolve, 500);
+    }));
+  }
 
   window.addEventListener('message', (event) => {
     const message = event.data;

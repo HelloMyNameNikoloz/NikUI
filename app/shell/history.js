@@ -58,11 +58,34 @@
       .some((field) => String(field).toLowerCase().indexOf(needle) >= 0);
   }
 
+  /** A handful of rows shaped like past conversations, shimmering while the
+   * real ones are still on their way over the socket. */
+  function skeleton() {
+    const card = el('div', 'rows-card skeleton');
+    screen.appendChild(card);
+    for (let i = 0; i < 6; i++) {
+      const row = el('div', 'hrow hrow-skeleton');
+      const top = el('div', 'hrow-top');
+      top.appendChild(el('span', 'hrow-name skeleton-chip'));
+      top.appendChild(el('span', 'hrow-when skeleton-chip'));
+      row.appendChild(top);
+      const feet = el('div', 'hrow-feet');
+      feet.appendChild(el('span', 'hrow-where skeleton-chip'));
+      row.appendChild(feet);
+      card.appendChild(row);
+    }
+  }
+
   function draw() {
+    // The pull-to-refresh spinner lives in this same element, so a redraw
+    // keeps it rather than clearing it out along with everything else.
+    const spinner = screen.querySelector(':scope > .pull-spinner');
     screen.textContent = '';
+    if (spinner) screen.appendChild(spinner);
 
     if (state.entries === null) {
-      screen.appendChild(el('p', 'lede', state.trouble || 'Looking…'));
+      if (state.trouble) screen.appendChild(el('p', 'lede', state.trouble));
+      else skeleton();
       return;
     }
     if (state.trouble) {
@@ -130,12 +153,24 @@
   window.NIKUI_REMOTE = app.remote(null);
   const transport = window.nikTransport();
 
+  const requestHistory = () => transport.postMessage({ type: 'history', limit: 200 });
+
+  // A pull at the top of the list asks the laptop again. Given a moment
+  // before it lets go, so a reply that is already in flight still reads as
+  // the refresh that just happened rather than one that was already done.
+  if (window.NikPull) {
+    window.NikPull.attach(screen, () => new Promise((resolve) => {
+      requestHistory();
+      setTimeout(resolve, 500);
+    }));
+  }
+
   window.addEventListener('message', (event) => {
     const message = event.data;
     if (!message || typeof message.type !== 'string') return;
     if (message.type === '@welcome' || message.type === '@device') {
       state.connected = true;
-      transport.postMessage({ type: 'history', limit: 200 });
+      requestHistory();
       return;
     }
     if (message.type !== 'history') return;

@@ -87,9 +87,46 @@
     } catch (_) { return null; }
   }
 
+  /**
+   * One entry per group, kept across redraws rather than rebuilt by them: the
+   * head and the card are the same two nodes for as long as the group exists,
+   * and each group remembers the row nodes inside it the same way. A fleet
+   * message every few seconds used to mean wiping `.rows` and building it
+   * again from nothing — every row's node torn down and a new one put in its
+   * place, which is what made a status dot blink by disappearing rather than
+   * changing colour, and what threw away any transition a row was mid-way
+   * through. Keyed by id, nothing is rebuilt unless it is actually new.
+   */
+  const groupNodes = new Map();
+
+  /** Put `node` immediately after `anchor` (or first, if there is none). */
+  function placeAfter(node, anchor, parent) {
+    if (anchor) { if (anchor.nextSibling !== node) anchor.after(node); }
+    else if (parent.firstChild !== node) parent.prepend(node);
+  }
+
+  /** A row (or a group's head) leaving the list fades rather than vanishing. */
+  function fadeOutRemove(node) {
+    if (!node) return;
+    node.classList.add('row-leave');
+    const done = () => { if (node.parentNode) node.parentNode.removeChild(node); };
+    node.addEventListener('transitionend', done, { once: true });
+    // Belt and braces: reduced motion, or a transition that for whatever
+    // reason never fires, must not leave a dead row on the screen forever.
+    setTimeout(done, 260);
+  }
+
   function draw(instances, folders) {
-    rows.textContent = '';
+    // The skeleton shown while the first message was still in flight is not
+    // one of the groups below — it was never tracked in `groupNodes` — so it
+    // has to be swept out by hand, or the first real row would land next to
+    // four rows shaped like one.
+    const placeholder = rows.querySelector('.rows-card.skeleton');
+    if (placeholder) placeholder.remove();
+
     if (!instances.length) {
+      rows.textContent = '';
+      groupNodes.clear();
       lede.textContent = 'No instances are open in the editor yet.';
       return;
     }
@@ -100,68 +137,154 @@
     // needs — so it is only drawn when there is more than one thing to tell
     // apart.
     const headed = groups.length > 1;
+    const seen = new Set();
+    let anchor = null;
 
     for (const set of groups) {
-      if (headed) {
-        const head = document.createElement('div');
-        head.className = 'rows-head ' + set.kind;
-        const name = document.createElement('span');
-        name.className = 'rows-head-name';
-        name.textContent = set.name;
-        head.appendChild(name);
-        const count = document.createElement('span');
-        count.className = 'rows-head-count';
-        count.textContent = set.instances.length
-          ? String(set.instances.length)
-          : 'empty';
-        head.appendChild(count);
-        rows.appendChild(head);
+      seen.add(set.key);
+      let entry = groupNodes.get(set.key);
+      if (!entry) {
+        entry = { head: null, card: null, rowNodes: new Map() };
+        groupNodes.set(set.key, entry);
       }
-      if (!set.instances.length) continue;
-      const card = document.createElement('div');
-      card.className = 'rows-card';
-      rows.appendChild(card);
-      drawRows(card, set.instances);
+
+      if (headed) {
+        if (!entry.head) {
+          entry.head = document.createElement('div');
+          const name = document.createElement('span');
+          name.className = 'rows-head-name';
+          entry.head.appendChild(name);
+          const count = document.createElement('span');
+          count.className = 'rows-head-count';
+          entry.head.appendChild(count);
+        }
+        entry.head.className = 'rows-head ' + set.kind;
+        entry.head.firstChild.textContent = set.name;
+        entry.head.lastChild.textContent = set.instances.length ? String(set.instances.length) : 'empty';
+        placeAfter(entry.head, anchor, rows);
+        anchor = entry.head;
+      } else if (entry.head) {
+        entry.head.remove();
+        entry.head = null;
+      }
+
+      if (!set.instances.length) {
+        if (entry.card) { entry.card.remove(); entry.card = null; entry.rowNodes.clear(); }
+        continue;
+      }
+      if (!entry.card) {
+        entry.card = document.createElement('div');
+        entry.card.className = 'rows-card';
+      }
+      placeAfter(entry.card, anchor, rows);
+      anchor = entry.card;
+      drawRows(entry.card, entry.rowNodes, set.instances);
+    }
+
+    // A group that is simply gone this time — its folder emptied into another,
+    // say — leaves the way a row does: fading rather than snapping away.
+    for (const [key, entry] of groupNodes) {
+      if (seen.has(key)) continue;
+      fadeOutRemove(entry.head);
+      fadeOutRemove(entry.card);
+      groupNodes.delete(key);
     }
   }
 
-  function drawRows(into, instances) {
+  /** What a row shows, written into the nodes it already has. */
+  function paintRow(row, instance) {
+    row.href = ((window.NIKUI_REMOTE || {}).conversation || '/s/') + encodeURIComponent(instance.id);
+    row.dataset.instance = instance.id;
+
+    row.dot.className = 'sdot ' + String(instance.status || 'idle').replace(/[^a-z]/g, '') +
+      (instance.asleep ? ' asleep' : '') + (instance.unread ? ' unread' : '');
+    row.classList.toggle('unread', !!instance.unread);
+    if (instance.unread) row.dot.title = 'Finished, not opened since';
+    else row.dot.removeAttribute('title');
+
+    row.nameEl.textContent = instance.label || instance.id;
+
+    const notes = [];
+    if (instance.queued) notes.push(instance.queued + ' queued');
+    if (instance.paused) notes.push('waiting for the quota');
+    row.whereEl.textContent = shortPath(instance.cwd) + (notes.length ? ' · ' + notes.join(' · ') : '');
+
+    row.costEl.textContent = money(instance.cost);
+  }
+
+  function buildRow(instance) {
+    const row = document.createElement('a');
+    row.className = 'row';
+    row.dot = document.createElement('span');
+    row.appendChild(row.dot);
+    row.nameEl = document.createElement('span');
+    row.nameEl.className = 'row-name';
+    row.appendChild(row.nameEl);
+    row.whereEl = document.createElement('span');
+    row.whereEl.className = 'row-cwd';
+    row.appendChild(row.whereEl);
+    row.costEl = document.createElement('span');
+    row.costEl.className = 'row-cost';
+    row.appendChild(row.costEl);
+    paintRow(row, instance);
+    return row;
+  }
+
+  /**
+   * Fill `into` with these instances, keeping the node for a given instance
+   * id across calls: a status that changes is a class and three lines of text
+   * changing on the row that was already there, not a new row replacing it —
+   * which is what made the fleet's own identity (which `<a>` is "that
+   * instance") survive a redraw, rather than resetting with every one.
+   */
+  function drawRows(into, rowNodes, instances) {
+    const seen = new Set();
+    let anchor = null;
     for (const instance of instances) {
-      const row = document.createElement('a');
-      row.className = 'row';
-      // A path on the laptop when it served this page; a page in the bundle
-      // when an app did. The list does not need to know which.
-      row.href = ((window.NIKUI_REMOTE || {}).conversation || '/s/') + encodeURIComponent(instance.id);
-
-      const dot = document.createElement('span');
-      dot.className = 'sdot ' + String(instance.status || 'idle').replace(/[^a-z]/g, '') +
-        (instance.asleep ? ' asleep' : '') + (instance.unread ? ' unread' : '');
-      row.appendChild(dot);
-      if (instance.unread) {
-        row.classList.add('unread');
-        dot.title = 'Finished, not opened since';
+      seen.add(instance.id);
+      let row = rowNodes.get(instance.id);
+      if (!row) {
+        row = buildRow(instance);
+        rowNodes.set(instance.id, row);
+        row.classList.add('row-enter');
+        // Added in a frame of its own: a class set and removed in the same
+        // tick never triggers the transition it names.
+        requestAnimationFrame(() => row.classList.remove('row-enter'));
+      } else {
+        paintRow(row, instance);
       }
-
-      const name = document.createElement('span');
-      name.className = 'row-name';
-      name.textContent = instance.label || instance.id;
-      row.appendChild(name);
-
-      const where = document.createElement('span');
-      where.className = 'row-cwd';
-      const notes = [];
-      if (instance.queued) notes.push(instance.queued + ' queued');
-      if (instance.paused) notes.push('waiting for the quota');
-      where.textContent = shortPath(instance.cwd) + (notes.length ? ' · ' + notes.join(' · ') : '');
-      row.appendChild(where);
-
-      const cost = document.createElement('span');
-      cost.className = 'row-cost';
-      cost.textContent = money(instance.cost);
-      row.appendChild(cost);
-
-      into.appendChild(row);
+      placeAfter(row, anchor, into);
+      anchor = row;
     }
+    for (const [id, row] of rowNodes) {
+      if (seen.has(id)) continue;
+      rowNodes.delete(id);
+      fadeOutRemove(row);
+    }
+  }
+
+  /** Four rows shaped like the real thing, shimmering while nothing has
+   * arrived yet — shown only when there is no cached fleet to show instead. */
+  function skeletonRows(count) {
+    rows.textContent = '';
+    groupNodes.clear();
+    const card = document.createElement('div');
+    card.className = 'rows-card skeleton';
+    for (let i = 0; i < count; i++) {
+      const row = document.createElement('div');
+      row.className = 'row row-skeleton';
+      const dot = document.createElement('span');
+      dot.className = 'sdot skeleton-chip';
+      const name = document.createElement('span');
+      name.className = 'row-name skeleton-chip';
+      const where = document.createElement('span');
+      where.className = 'row-cwd skeleton-chip';
+      const cost = document.createElement('span');
+      cost.className = 'row-cost skeleton-chip';
+      row.append(dot, name, where, cost);
+      card.appendChild(row);
+    }
+    rows.appendChild(card);
   }
 
   function live(instances, folders) {
@@ -221,12 +344,22 @@
     else if (message.type === '@denied') refused(message);
   });
 
-  // Something to look at while the socket is still shaking hands.
+  // Something to look at while the socket is still shaking hands: the cached
+  // fleet if there is one, or rows shaped like what is about to arrive if
+  // there is not. Either beats a blank list and the word "Connecting…".
   const saved = remembered();
   if (saved) {
     document.body.classList.add('stale');
     draw(saved.instances, saved.folders);
     lede.textContent = 'Last seen ' + ago(saved.at) + '. Reconnecting…';
+  } else {
+    skeletonRows(4);
+  }
+
+  // A pull at the top of the list asks the laptop again, the same way the
+  // "Try again" button does.
+  if (window.NikPull) {
+    window.NikPull.attach(document.querySelector('.screen'), () => transport.retry());
   }
 
   /**
