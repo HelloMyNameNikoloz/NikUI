@@ -41,8 +41,17 @@
 
     const setPull = (amount) => {
       const clamped = Math.max(0, Math.min(MAX, amount));
-      spinner.style.transform = 'translateY(' + clamped + 'px)';
-      spinner.style.opacity = String(Math.min(1, clamped / THRESHOLD));
+      if (clamped <= 0) {
+        // Cleared rather than set to translateY(0): an inline transform left
+        // behind is indistinguishable to the eye but not to anything checking
+        // that a spinner at rest really is at rest, rather than merely at the
+        // position rest happens to look like.
+        spinner.style.transform = '';
+        spinner.style.opacity = '0';
+      } else {
+        spinner.style.transform = 'translateY(' + clamped + 'px)';
+        spinner.style.opacity = String(Math.min(1, clamped / THRESHOLD));
+      }
       spinner.classList.toggle('ready', clamped >= THRESHOLD);
     };
 
@@ -90,8 +99,13 @@
       };
       let result = null;
       try { result = onRefresh(); } catch (_) { /* a refresh that throws still has to let go */ }
-      if (result && typeof result.then === 'function') result.then(done, done);
-      else setTimeout(done, 600);
+      const refreshed = (result && typeof result.then === 'function') ? result : Promise.resolve();
+      // Whatever a refresh is actually waiting on — a reply that may itself
+      // never come, say — this cannot wait on it forever: 2.5s is long enough
+      // for a real answer and short enough that a stuck one reads as a
+      // glitch rather than a spinner that never lets go (#seen on device).
+      const capped = new Promise((resolve) => setTimeout(resolve, 2500));
+      Promise.race([refreshed, capped]).then(done, done);
     };
 
     scrollHost.addEventListener('touchend', release, { passive: true });

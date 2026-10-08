@@ -107,6 +107,21 @@ const record = (name, ok) => {
   session._upsert({ id: 'u1', kind: 'user', text: 'what the app should show', images: [], at: Date.now() - 95000 });
   session._upsert({ id: 't0', kind: 'text', text: 'Committed on the branch. Tell me once it\'s pushed.' });
   session._upsert({ id: 'r1', kind: 'result', durationMs: 92000, costUsd: 0.4123, at: Date.now() - 3000 });
+  session.activeAt = Date.now() - 300000;
+
+  /** A second and third fixture, for the fleet screen's folders and ordering —
+   * same shape as `session`, a quiet session nothing runs on. */
+  const fixtureSession = (title, activeAt) => {
+    const s = new Session({ cwd: REPO });
+    s.customTitle = title;
+    s.start = function () { this.everStarted = true; };
+    s._write = function () {};
+    Object.defineProperty(s, 'isRunning', { get: () => true });
+    s.activeAt = activeAt;
+    return s;
+  };
+  const session2 = fixtureSession('second instance', Date.now() - 60000);
+  const session3 = fixtureSession('third instance', Date.now() - 5000);
 
   const devices = new DeviceStore(memoryState());
   const identity = loadIdentity(memoryState());
@@ -227,6 +242,22 @@ const record = (name, ok) => {
   } : null);
   prFeed.refresh = () => {};
 
+  // The folders the fake window has made, and which instance sits in which —
+  // mutated by `place`, read by `folderOf` and `list`, same as the real store.
+  const folderList = [{ id: 'f1', name: 'Phone epic' }, { id: 'f2', name: 'Other folder' }];
+  // `f2` is deliberately never assigned anyone: a folder somebody made and
+  // then emptied, which the phone must file away rather than show as a card.
+  const folderAssign = { [session.id]: 'f1', [session2.id]: 'f1' };
+  const folderPlacements = []; // every `place` call, for a check to read back
+  // Only `session` to begin with — session2 and session3 are added to this
+  // later, right before the checks that need more than one instance to tell
+  // apart, so the earlier "exactly one row" checks stay true to the name.
+  const baseSessions = [session];
+  const extraSessions = [];
+  // Set by a check just before it drags or taps something it expects the
+  // laptop to refuse; read (and cleared) the one time `createInstance` runs.
+  let createInstanceRefuse = null;
+
   const laptop = new RemoteServer({
     root: REPO,
     terminals,
@@ -236,7 +267,7 @@ const record = (name, ok) => {
     host: {
       config: () => ({ showThinking: true, promptSnippets: {} }),
       home: '/home', knownCommands: () => ['status'], prFeed,
-      fleet: () => [session], env: () => ({ vscode: 'app check' }),
+      fleet: () => [...baseSessions, ...extraSessions], env: () => ({ vscode: 'app check' }),
       settings: () => prefs.read(setting, {
         awake: keeping.state(),
         models: [{ value: 'claude-opus-5-5', label: 'Opus 5.5' },
@@ -252,12 +283,48 @@ const record = (name, ok) => {
       removeCommand: changeCommands('remove'),
       restoreCommand: changeCommands('restore')
     },
-    sessions: { list: () => [session], get: (id) => (id === session.id ? session : null) },
+    sessions: {
+      list: () => [...baseSessions, ...extraSessions],
+      get: (id) => [...baseSessions, ...extraSessions].find((s) => s.id === id) || null
+    },
     devices, identity, pairing, localKey: new LocalKey(),
     // The window as the editor files it, so the phone is checked against the
-    // shape it will actually be sent rather than a flat list.
-    folders: { list: () => [{ id: 'f1', name: 'Phone epic', sessions: [session.id] }] },
+    // shape it will actually be sent rather than a flat list. Kept small and
+    // mutable rather than a real FolderStore, but shaped the same way:
+    // list/get/place/folderOf, the same four methods src/folders.js offers.
+    folders: {
+      list: () => folderList,
+      get: (id) => folderList.find((f) => f.id === id) || null,
+      place: (sessionOrId, folderId) => {
+        const id = typeof sessionOrId === 'string' ? sessionOrId : sessionOrId && sessionOrId.id;
+        if (!id) return;
+        if (folderId && folderList.some((f) => f.id === folderId)) folderAssign[id] = folderId;
+        else delete folderAssign[id];
+        folderPlacements.push({ id, folderId: folderId || null });
+      },
+      folderOf: (sessionOrId) => {
+        const id = typeof sessionOrId === 'string' ? sessionOrId : sessionOrId && sessionOrId.id;
+        const folderId = id && folderAssign[id];
+        return folderId ? folderList.find((f) => f.id === folderId) || null : null;
+      }
+    },
     projectRoot: (cwd) => cwd,
+    // Every path this window could start a fresh instance in: the fake
+    // workspace folders, which the phone's "+" sheet lists.
+    projects: () => [{ path: REPO, name: 'NikUI' }, { path: '/tmp/nikui-other', name: 'nikui-other' }],
+    // Starting an instance the way the editor's own "new instance" command
+    // does — a second fake session, appended to the fleet it answers from.
+    createInstance: async ({ cwd, folderId }) => {
+      if (createInstanceRefuse) { const reason = createInstanceRefuse; createInstanceRefuse = null; throw new Error(reason); }
+      const created = new Session({ cwd: cwd || REPO });
+      created.customTitle = 'started from the phone';
+      created.start = function () { this.everStarted = true; };
+      created._write = function () {};
+      Object.defineProperty(created, 'isRunning', { get: () => true });
+      extraSessions.push(created);
+      if (folderId) folderAssign[created.id] = folderId;
+      return { id: created.id };
+    },
     history: async () => [{
       sessionId: 'past-1', label: 'an earlier turn', title: 'what happened before',
       cwd: REPO, branch: 'main', modified: new Date()
@@ -1880,6 +1947,170 @@ const record = (name, ok) => {
     await phone.until("document.querySelector('.ns-thread').getBoundingClientRect().left === 0", 2000);
     await shoot(phone, 'slack-thread');
 
+    const pull = (dy) => phone.evaluate(`(() => {
+      const el = document.querySelector('.screen');
+      el.scrollTop = 0;
+      const at = (y) => new Touch({ identifier: 1, target: el, clientX: 40, clientY: y });
+      el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [at(80)], changedTouches: [at(80)] }));
+      el.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, touches: [at(80 + ${dy})], changedTouches: [at(80 + ${dy})] }));
+      el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [at(80 + ${dy})] }));
+      const spinner = document.querySelector('.pull-spinner');
+      return !!spinner && spinner.classList.contains('spinning');
+    })()`);
+
+    await phone.navigate(appOrigin + '/index.html');
+    await phone.until('document.querySelectorAll(".rows .row").length === 1', 8000);
+    record('a pull that never gets an answer still lets go of the spinner', await (async () => {
+      // transport.retry() would normally reconnect and get a fresh fleet —
+      // nikLink is the one socket home.js itself holds (see media/transport.js),
+      // so replacing its retry is replacing the one this page actually calls.
+      await phone.evaluate('window.nikLink.retry = () => {};');
+      await pull(160);
+      const start = Date.now();
+      let atRest = false;
+      while (Date.now() - start < 3000 && !atRest) {
+        // The spinner's own state rather than its computed style: a headless
+        // page that is never painted freezes transitions mid-flight.
+        atRest = await phone.evaluate(`(() => {
+          const s = document.querySelector('.pull-spinner');
+          return !s.classList.contains('spinning') && s.style.opacity === '0' && !s.style.transform;
+        })()`);
+        if (!atRest) await wait(100);
+      }
+      return atRest;
+    })());
+    await phone.navigate(appOrigin + '/index.html');
+    await phone.until('document.querySelectorAll(".rows .row").length === 1', 8000);
+
+    // ---- the fleet, grown up: folders that stay empty, Folders vs Recent,
+    // rearranging by hand, and starting an instance from the phone -----------
+    baseSessions.push(session2, session3);
+    laptop.broadcastFleet();
+    await phone.until('document.querySelectorAll(".rows .row").length === 3', 8000);
+
+    record('an empty folder is never shown',
+      !/Other folder/.test(await phone.evaluate('document.body.textContent')) &&
+      (await phone.evaluate('document.querySelectorAll(".rows-head").length')) === 2);
+
+    await phone.evaluate(`document.getElementById('viewSwitch').querySelector('[data-view="recent"]').click()`);
+    // Whatever the laptop says each was last used — `session` has been talked
+    // to by everything above, so it is not necessarily the oldest.
+    const newestFirst = laptop.fleetMessage().instances
+      .slice().sort((a, b) => b.activeAt - a.activeAt).map((i) => i.id);
+    record('Recent orders every instance by activeAt, newest first', await phone.until(`(() => {
+      const ids = [...document.querySelectorAll('.rows .row')].map((r) => r.dataset.instance);
+      return JSON.stringify(ids) === ${JSON.stringify(JSON.stringify(newestFirst))};
+    })()`, 4000));
+    record('and each row says where it is and how long ago',
+      /ago|now/.test(await phone.evaluate(
+        `document.querySelector('.row[data-instance="${session3.id}"] .row-cwd').textContent`)));
+    record('the choice of view persists across reload', await (async () => {
+      await phone.navigate(appOrigin + '/index.html');
+      await phone.until('document.querySelectorAll(".rows .row").length === 3', 8000);
+      return (await phone.evaluate(
+        `document.getElementById('viewSwitch').querySelector('.seg-btn.on').dataset.view`)) === 'recent';
+    })());
+
+    // Folders, for the rest: rearranging only happens there.
+    await phone.evaluate(`document.getElementById('viewSwitch').querySelector('[data-view="folders"]').click()`);
+    await phone.until('document.querySelectorAll(".rows-head").length === 2', 4000);
+
+    const rowOrder = (groupKey) => phone.evaluate(
+      `[...document.querySelectorAll('.rows-card[data-group="${groupKey}"] .row')].map((r) => r.dataset.instance)`);
+    const dragRow = (id, overId, before) => phone.evaluate(`(() => {
+      const row = document.querySelector('.row[data-instance="${id}"]');
+      const over = document.querySelector('.row[data-instance="${overId}"]');
+      if (!row || !over) return false;
+      row.setPointerCapture = () => {};
+      const handle = row.querySelector('.row-handle');
+      const startBox = handle.getBoundingClientRect();
+      const overBox = over.getBoundingClientRect();
+      // A quarter in from the edge rather than right on it: the card clips its
+      // rounded corners, and a point in one of them hits nothing at all.
+      const targetY = ${before ? 'overBox.top + overBox.height / 4' : 'overBox.bottom - overBox.height / 4'};
+      const at = (y) => ({ clientX: startBox.left + startBox.width / 2, clientY: y,
+        pointerId: 11, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
+      handle.dispatchEvent(new PointerEvent('pointerdown', at(startBox.top + startBox.height / 2)));
+      handle.dispatchEvent(new PointerEvent('pointermove', at(targetY)));
+      handle.dispatchEvent(new PointerEvent('pointerup', at(targetY)));
+      return true;
+    })()`);
+
+    await phone.evaluate(`document.getElementById('edit').click()`);
+    record('Edit turns into Done, and rows grow a handle', await phone.until(`
+      document.getElementById('edit').textContent === 'Done' &&
+      getComputedStyle(document.querySelector('.row-handle')).display !== 'none'
+    `, 3000));
+
+    record('dragging a row within its own group reorders it', await (async () => {
+      await dragRow(session2.id, session.id, true);
+      await wait(300);
+      const order = await rowOrder('f:f1');
+      return JSON.stringify(order) === JSON.stringify([session2.id, session.id]);
+    })());
+    record('and the new order persists across reload', await (async () => {
+      await phone.navigate(appOrigin + '/index.html');
+      await phone.until('document.querySelectorAll(".rows .row").length === 3', 8000);
+      const order = await rowOrder('f:f1');
+      return JSON.stringify(order) === JSON.stringify([session2.id, session.id]);
+    })());
+
+    await phone.evaluate(`document.getElementById('edit').click()`);
+    // Live, not the remembered list drawn while the socket reconnects: a move
+    // asked for offline is refused on the phone and never reaches the laptop.
+    await phone.until(`!document.body.classList.contains('stale') &&
+      document.getElementById('edit').textContent === 'Done'`, 8000);
+    record('a fleet arriving mid-drag leaves the row where the finger has it', await (async () => {
+      const step = (kind, overId) => phone.evaluate(`(() => {
+        const row = document.querySelector('.row[data-instance="${session2.id}"]');
+        row.setPointerCapture = () => {};
+        const handle = row.querySelector('.row-handle');
+        const box = handle.getBoundingClientRect();
+        const over = ${overId ? `document.querySelector('.row[data-instance="${overId}"]').getBoundingClientRect()` : 'null'};
+        const y = over ? over.bottom - over.height / 4 : box.top + box.height / 2;
+        handle.dispatchEvent(new PointerEvent('${kind}', { clientX: box.left + box.width / 2, clientY: y,
+          pointerId: 12, pointerType: 'touch', button: 0, bubbles: true, cancelable: true }));
+      })()`);
+      await step('pointerdown');
+      await step('pointermove', session.id);
+      const moved = JSON.stringify(await rowOrder('f:f1')) === JSON.stringify([session.id, session2.id]);
+      laptop.broadcastFleet();
+      await wait(400);
+      const held = JSON.stringify(await rowOrder('f:f1')) === JSON.stringify([session.id, session2.id]);
+      await step('pointerup', session.id);
+      await wait(100);
+      return moved && held && JSON.stringify(await rowOrder('f:f1')) === JSON.stringify([session.id, session2.id]);
+    })());
+    record('dragging into another group sends instance:place, with the row landing there', await (async () => {
+      await dragRow(session.id, session3.id, false);
+      let placed = false;
+      for (let i = 0; i < 60 && !placed; i++) {
+        placed = folderPlacements.some((p) => p.id === session.id && p.folderId === null);
+        if (!placed) await wait(50);
+      }
+      if (!placed) return false;
+      return phone.until(`(() => {
+        const row = document.querySelector('.row[data-instance="${session.id}"]');
+        const card = row && row.closest('.rows-card');
+        return !!card && card.dataset.group === ${JSON.stringify('p:' + REPO)};
+      })()`, 4000);
+    })());
+    await phone.evaluate(`document.getElementById('edit').click()`);
+
+    // ---- the "+" sheet ------------------------------------------------------
+    await phone.evaluate(`document.getElementById('create').click()`);
+    record('the + sheet lists this window’s projects',
+      await phone.until('document.querySelectorAll(".create-row").length >= 2', 4000));
+    await phone.evaluate(`(() => {
+      const row = [...document.querySelectorAll('.create-row')].find((r) => /NikUI/.test(r.textContent));
+      row.click();
+    })()`);
+    record('tapping one starts an instance there and opens it',
+      await phone.until('!!document.getElementById("transcript")', 8000));
+    record('created the way the editor itself would have', extraSessions.length === 1);
+    await phone.navigate(appOrigin + '/index.html');
+    await phone.until('document.querySelectorAll(".rows .row").length >= 1', 8000);
+
     // ---- the chip loses the key the record points at -------------------------
     //
     // The record is a name; the key is in the chip. Rebuild the app under a
@@ -2132,16 +2363,6 @@ const record = (name, ok) => {
     // ---- skeletons, pull to refresh, haptics and page transitions -----------
     // A drag that starts at the very top of a list and clears the threshold
     // releases into the same spinner every one of these screens shares.
-    const pull = (dy) => phone.evaluate(`(() => {
-      const el = document.querySelector('.screen');
-      el.scrollTop = 0;
-      const at = (y) => new Touch({ identifier: 1, target: el, clientX: 40, clientY: y });
-      el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [at(80)], changedTouches: [at(80)] }));
-      el.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, touches: [at(80 + ${dy})], changedTouches: [at(80 + ${dy})] }));
-      el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [at(80 + ${dy})] }));
-      const spinner = document.querySelector('.pull-spinner');
-      return !!spinner && spinner.classList.contains('spinning');
-    })()`);
 
     await phone.navigate(appOrigin + '/history.html');
     record('history shows a skeleton before its first answer',

@@ -2677,3 +2677,207 @@ body.app.home .rows-head.row-leave { opacity: 0; transform: scale(0.97); }
   opacity: 0.6;
   transform: scale(0.95);
 }
+
+/* ---- Folders / Recent, Edit, "+" — the instance list's own title bar ----------
+
+   Nothing else on the phone needs an Edit button, a way to start an instance,
+   or a switch between two readings of the same list — so these are built by
+   media/home.js rather than templated once for every screen, and styled here
+   for whichever screen that happens to be. */
+
+.bar-button.text {
+  width: auto;
+  height: 44px;
+  padding: 0 10px;
+  font-size: 15px;
+  font-weight: 500;
+  border-radius: 10px;
+}
+
+.bar-button.add { font-size: 24px; font-weight: 400; line-height: 1; }
+
+body.app.home .segmented {
+  display: flex;
+  margin: 2px 16px 10px;
+  padding: 2px;
+  background: var(--app-raised);
+  border-radius: 9px;
+  gap: 2px;
+}
+
+body.app.home .seg-btn {
+  flex: 1 1 0;
+  border: 0;
+  padding: 6px 0;
+  background: transparent;
+  color: var(--app-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 7px;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+body.app.home .seg-btn.on {
+  background: var(--app-raised-2);
+  color: var(--app-text, #fff);
+}
+
+/* The crossfade between Folders and Recent: the rows underneath are the same
+   elements, regrouped — only the list's opacity moves. */
+body.app.home .rows {
+  transition: opacity 150ms ease;
+}
+body.app.home .rows.view-fade { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  body.app.home .rows { transition: none; }
+}
+
+/* ---- rearranging -------------------------------------------------------------
+
+   In edit mode a row stops being a link and grows a handle on its right; a
+   drag lifts it with a shadow, and the rows it passes over slide aside (the
+   animation lives in media/home.js, which knows where things actually moved
+   to; this is only ever the row's resting shape). */
+
+body.app.home .rows .row { position: relative; }
+
+body.app.home .row-handle {
+  display: none;
+  grid-area: cost;
+  justify-self: end;
+  align-self: center;
+  width: 20px;
+  height: 14px;
+  background-image: repeating-linear-gradient(to bottom, var(--app-dim) 0, var(--app-dim) 2px, transparent 2px, transparent 5px);
+  opacity: 0.7;
+}
+
+body.app.home .rows.editing .row-cost { display: none; }
+body.app.home .rows.editing .row-handle { display: block; }
+body.app.home .rows.editing .row { cursor: grab; }
+
+body.app.home .row-dragging {
+  z-index: 20;
+  pointer-events: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  background: var(--app-raised-2);
+  border-radius: var(--app-radius);
+}
+
+/* ---- the "+" sheet: a bottom sheet listing this window's projects ------------ */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  transition: opacity 220ms ease;
+}
+.sheet-backdrop.open { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-backdrop { transition: none; }
+}
+
+.create-sheet {
+  width: 100%;
+  max-height: 72vh;
+  overflow-y: auto;
+  background: var(--app-raised);
+  border-radius: 18px 18px 0 0;
+  padding: 8px 16px calc(20px + var(--app-bottom, 0px));
+  transform: translateY(100%);
+  transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.sheet-backdrop.open .create-sheet { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .create-sheet { transition: none; }
+}
+
+.sheet-grab {
+  width: 36px;
+  height: 5px;
+  margin: 6px auto 10px;
+  border-radius: 999px;
+  background: var(--app-hairline-strong);
+  touch-action: none;
+}
+
+.sheet-h {
+  margin: 0 0 12px;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.folder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.chip {
+  border: 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--app-raised-2);
+  color: var(--app-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+.chip.on { background: var(--app-accent); color: #fff; }
+
+.create-list { display: flex; flex-direction: column; }
+
+.create-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "name spin" "path spin";
+  column-gap: 10px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 12px 4px;
+  border-bottom: 0.5px solid var(--app-hairline);
+  font: inherit;
+  color: inherit;
+}
+.create-row:last-child { border-bottom: 0; }
+.create-row:active { background: var(--app-raised-2); }
+
+.create-name { grid-area: name; font-size: 16px; font-weight: 500; }
+.create-path {
+  grid-area: path;
+  font-size: 13px;
+  color: var(--app-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-spin {
+  grid-area: spin;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--app-raised-2);
+  border-top-color: var(--app-dim);
+  opacity: 0;
+}
+.create-row.busy .create-spin { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .create-row.busy .create-spin { animation: nik-pull-spin 0.7s linear infinite; }
+}
+
+.create-note {
+  margin: 10px 4px 4px;
+  font-size: 13px;
+  color: var(--app-red);
+}
