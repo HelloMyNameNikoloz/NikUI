@@ -2004,6 +2004,18 @@ const record = (name, ok) => {
     record('and each row says where it is and how long ago',
       /ago|now/.test(await phone.evaluate(
         `document.querySelector('.row[data-instance="${session3.id}"] .row-cwd').textContent`)));
+    record('and a laptop that does not know when says nothing, not 1970', await (async () => {
+      const was = session2.activeAt;
+      session2.activeAt = 0;
+      laptop.broadcastFleet();
+      const ok = await phone.until(`(() => {
+        const cwd = document.querySelector('.row[data-instance="${session2.id}"] .row-cwd');
+        return !!cwd && !/ago|now|·/.test(cwd.textContent);
+      })()`, 4000);
+      session2.activeAt = was;
+      laptop.broadcastFleet();
+      return ok;
+    })());
     record('the choice of view persists across reload', await (async () => {
       await phone.navigate(appOrigin + '/index.html');
       await phone.until('document.querySelectorAll(".rows .row").length === 3', 8000);
@@ -2376,6 +2388,11 @@ const record = (name, ok) => {
 
     await phone.navigate(appOrigin + '/index.html');
     await phone.until('document.querySelectorAll(".rows .row").length >= 1', 8000);
+    record('a spinner at rest is not swept up in the page\'s entrance animation',
+      await phone.evaluate(`(() => {
+        const st = getComputedStyle(document.querySelector('.pull-spinner'));
+        return st.animationName === 'none' && st.opacity === '0';
+      })()`));
     record('pulling down past the threshold refreshes the fleet', await pull(160));
 
     record('every screen can ask the phone to buzz',

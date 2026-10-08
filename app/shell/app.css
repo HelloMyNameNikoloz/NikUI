@@ -2647,6 +2647,11 @@ body.app.home .rows-head.row-leave { opacity: 0; transform: scale(0.97); }
   z-index: 3;
 }
 
+/* The first child of `.screen`, so the entrance animation above would fill
+   its opacity to 1 and leave it showing for good: it is not content, and it
+   has its own way of appearing. */
+.screen > .pull-spinner { animation: none; }
+
 .pull-spinner.snap {
   transition: transform 220ms ease, opacity 220ms ease;
 }

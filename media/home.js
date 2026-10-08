@@ -277,7 +277,8 @@
       // whole reason to be looking at this view rather than Folders.
       const where = instance.folder ? instance.folder.name
         : (instance.project ? instance.project.name : 'Everything else');
-      row.whereEl.textContent = where + ' · ' + shortAgo(instance.activeAt);
+      // No time at all rather than 1970 from a laptop that does not know.
+      row.whereEl.textContent = instance.activeAt ? where + ' · ' + shortAgo(instance.activeAt) : where;
     } else {
       const notes = [];
       if (instance.queued) notes.push(instance.queued + ' queued');
