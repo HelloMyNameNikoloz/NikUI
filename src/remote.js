@@ -50,15 +50,6 @@ const MAX_BACKLOG_BYTES = 8 * 1024 * 1024;
 // A pairing body is a name, a public key and a signature. Nothing here is large.
 const MAX_BODY_BYTES = 8 * 1024;
 
-function lastActiveAt(session) {
-  const items = session.items || [];
-  let newest = 0;
-  for (let i = items.length - 1; i >= 0 && i >= items.length - 20; i--) {
-    if (items[i] && items[i].at > newest) newest = items[i].at;
-  }
-  return Math.max(session.activeAt || 0, newest) || session.startedAt || 0;
-}
-
 class RemoteServer {
   /**
    * @param {object} deps
@@ -1049,10 +1040,11 @@ ${this.appHead(nonce)}</head>
         paused: !!session.isPaused,
         asleep: !!session.isAsleep,
         unread: !!session.unread,
-        // When this instance last did anything, for the phone's Recent list:
-        // a turn moving, or failing that its newest item — which is what a
-        // restored instance has, since coming back after a reload is not use.
-        activeAt: lastActiveAt(session),
+        // When this instance last did anything, for the phone's Recent list: a
+        // turn moving, or the restored transcript's own last timestamp — never
+        // when it was restored, since coming back after a reload is not use.
+        // 0 when nothing is known, which the phone shows as no time at all.
+        activeAt: session.activeAt || 0,
         // Where it sits in the manager's own list, so the phone can match the
         // editor's order rather than invent one from whatever arrives.
         order: index,

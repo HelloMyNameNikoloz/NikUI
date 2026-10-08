@@ -165,7 +165,7 @@ module.exports = async function () {
     checkEqual('a folder with nothing in it is still a folder',
       message.folders.map((f) => f.name).sort(), ['Phone epic', 'Someday']);
     checkEqual('each says when it last did anything', typeof alpha.activeAt, 'number');
-    check('which is at least when it started', alpha.activeAt >= first.startedAt);
+    checkEqual('which is its last real activity, not when it was opened', alpha.activeAt, first.activeAt || 0);
     checkEqual('and its place in the manager\'s own list', [alpha.order, beta.order], [0, 1]);
     checkEqual('projects are this window\'s own folders, plus where open instances live',
       message.projects.map((p) => p.path).sort(),

@@ -766,6 +766,10 @@ class Session extends EventEmitter {
     });
 
     for (const entry of window) {
+      // When the conversation last really moved, from its own timestamps:
+      // the items rebuilt here are stamped with now, which is not when.
+      const stamped = Date.parse(entry.timestamp);
+      if (stamped > this.activeAt) this.activeAt = stamped;
       if (entry.type === 'assistant') { this._handleAssistant(entry); continue; }
       const content = entry.message.content;
       const isToolResult = Array.isArray(content) && content.some((b) => b && b.type === 'tool_result');
