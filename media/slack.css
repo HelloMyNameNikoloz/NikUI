@@ -77,7 +77,7 @@ body.vscode-light .nik-slack, body.vscode-high-contrast-light .nik-slack {
   --ns-separator: rgba(60, 60, 67, 0.29);
   --ns-system-fill: rgba(120, 120, 128, 0.2);
 }
-body.vscode-dark .nik-slack, body.vscode-high-contrast .nik-slack {
+body.vscode-dark .nik-slack, body.vscode-high-contrast .nik-slack, body.app .nik-slack {
   --ns-blue: #0a84ff;
   --ns-gray5: #2c2c2e;
   --ns-gray6: #1c1c1e;

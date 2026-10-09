@@ -372,9 +372,9 @@ function settingsPage() {
 /**
  * Slack, read and replied to from the phone.
  *
- * Reached from a notification, from Settings, or from typing `/slack` on the
- * laptop — never from the tab bar, which is why there is no `id="tabs"` here:
- * this is a pushed screen, with its own way back, not a peer of the three.
+ * A tab of its own, after Settings, and also reached from a notification, from
+ * Settings, or from typing `/slack` on the laptop. Being a tab, it has no back
+ * button of its own: the tab bar is the way out.
  */
 function slackPage() {
   page({
@@ -382,13 +382,14 @@ function slackPage() {
     title: 'Slack',
     cls: 'slack',
     body: `  <header class="bar">
-    <div class="bar-left"><button class="bar-button back" id="back" type="button" aria-label="Back"></button></div>
+    <div class="bar-left"></div>
     <span class="bar-title">Slack</span>
     <div class="bar-right">
       <div class="link" id="link" role="status" aria-live="polite" hidden></div>
     </div>
   </header>
-  <main id="slack-root" class="slack-screen"></main>`,
+  <main id="slack-root" class="slack-screen"></main>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
     scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
       'media/transport.js', 'media/slack.js', 'slack.js'],
     css: ['media/slack.css']

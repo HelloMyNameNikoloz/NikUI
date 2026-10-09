@@ -7,9 +7,8 @@
    The conversation itself — the list, the thread, the composer — is NikSlack's
    business, the same way the transcript is the client's on every other screen.
 
-   Reached three ways: a notification about something on Slack, the row in
-   Settings, and typing `/slack` on the laptop. Never the tab bar — it is not a
-   peer of Instances, Status and History, it is a place those send you. */
+   A tab of its own, after Settings; also reached from a notification about
+   something on Slack, the row in Settings, and typing `/slack` on the laptop. */
 (function () {
   'use strict';
 
@@ -26,11 +25,6 @@
   window.NIKUI_REMOTE = app.remote(null);
   const transport = window.nikTransport();
 
-  function goBack() {
-    if (window.history.length > 1) window.history.back();
-    else window.location.replace('index.html');
-  }
-
   /**
    * A link inside a message, opened off the phone rather than inside the app.
    *
@@ -44,7 +38,7 @@
   }
 
   const view = window.NikSlack.mount({
-    root, send: transport.postMessage, back: goBack, openUrl, compact: true
+    root, send: transport.postMessage, openUrl, compact: true
   });
 
   let announced = false;
@@ -89,7 +83,4 @@
     view.receive(message);
     if (message.type === 'slack:state') pickStarting();
   });
-
-  const back = $('back');
-  if (back) back.addEventListener('click', goBack);
 })();

@@ -226,7 +226,8 @@
     { page: 'status.html', label: 'Status', icon: 'activity' },
     { page: 'terminal.html', label: 'Terminal', icon: 'terminal' },
     { page: 'history.html', label: 'History', icon: 'history' },
-    { page: 'settings.html', label: 'Settings', icon: 'settings' }
+    { page: 'settings.html', label: 'Settings', icon: 'settings' },
+    { page: 'slack.html', label: 'Slack', icon: 'message' }
   ];
 
   function tabs() {

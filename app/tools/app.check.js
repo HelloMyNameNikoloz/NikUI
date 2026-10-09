@@ -473,7 +473,7 @@ const record = (name, ok) => {
       await phone.until('document.querySelectorAll(".rows-card").length >= 1', 8000));
     record('every peer screen is reachable from a tab bar',
       (await phone.evaluate(`[...document.querySelectorAll('.tab-label')].map(n => n.textContent).join(',')`))
-        === 'Instances,Status,Terminal,History,Settings');
+        === 'Instances,Status,Terminal,History,Settings,Slack');
     record('the one you are on being the one that is marked',
       (await phone.evaluate(`document.querySelector('.tab.here .tab-label').textContent`)) === 'Instances');
     record('each tab drawn with the product\u2019s own icons',
@@ -1110,10 +1110,11 @@ const record = (name, ok) => {
       const at = (x) => ({ clientX: x, clientY: box.top + box.height / 2, pointerId: 1, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
       tabs.setPointerCapture = () => {};
       tabs.dispatchEvent(new PointerEvent('pointerdown', at(box.left + box.width / 6)));
-      tabs.dispatchEvent(new PointerEvent('pointermove', at(box.left + box.width * 0.84)));
+      // Settings is the fifth of six tabs: three quarters of the way across.
+      tabs.dispatchEvent(new PointerEvent('pointermove', at(box.left + box.width * 0.75)));
       const held = pill.classList.contains('held');
       const moved = pill.getBoundingClientRect().left > box.left + box.width / 3;
-      tabs.dispatchEvent(new PointerEvent('pointerup', at(box.left + box.width * 0.84)));
+      tabs.dispatchEvent(new PointerEvent('pointerup', at(box.left + box.width * 0.75)));
       return held && moved;
     })()`)) === true);
     record('and letting go over another tab goes there',
@@ -1140,12 +1141,13 @@ const record = (name, ok) => {
         const box = tabs.getBoundingClientRect();
         tabs.setPointerCapture = () => {};
         const at = (x) => ({ clientX: x, clientY: box.top + box.height / 2, pointerId: 3, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
-        tabs.dispatchEvent(new PointerEvent('pointerdown', at(box.left + box.width / 8)));
+        const n = document.querySelectorAll('.tabs .tab').length;
+        tabs.dispatchEvent(new PointerEvent('pointerdown', at(box.left + box.width / (2 * n))));
         // Straddling the boundary between the first two tabs.
-        tabs.dispatchEvent(new PointerEvent('pointermove', at(box.left + box.width / 4)));
+        tabs.dispatchEvent(new PointerEvent('pointermove', at(box.left + box.width / n)));
         const lit = [...document.querySelectorAll('.tabs .tab')]
           .map(t => Number(getComputedStyle(t).getPropertyValue('--lit')));
-        tabs.dispatchEvent(new PointerEvent('pointercancel', at(box.left + box.width / 4)));
+        tabs.dispatchEvent(new PointerEvent('pointercancel', at(box.left + box.width / n)));
         const partial = lit.filter(v => v > 0.05 && v < 0.95).length;
         return partial >= 2;
       })()`)) === true);
@@ -1918,6 +1920,15 @@ const record = (name, ok) => {
     await phone.navigate(appOrigin + '/slack.html');
     record('/slack on the phone lists who is waiting',
       await phone.until('[...document.querySelectorAll(".ns-row")].some(r => /Anna Berg/.test(r.textContent))', 12000));
+    await shoot(phone, 'slack-tab');
+    record('Slack is a tab: the bar and the tab bar both show around it', await phone.evaluate(`(() => {
+      const tabs = document.getElementById('tabs').getBoundingClientRect();
+      const chat = document.querySelector('.nik-slack').getBoundingClientRect();
+      const bar = document.querySelector('header.bar').getBoundingClientRect();
+      const here = document.querySelector('.tab.here .tab-label');
+      return tabs.height > 0 && chat.bottom <= tabs.top + 1 && chat.top >= bar.bottom - 1 &&
+        !!here && here.textContent === 'Slack' && !document.getElementById('back');
+    })()`) === true);
     await phone.evaluate(`document.querySelector('.ns-row').click()`);
     record('tapping one opens the conversation',
       await phone.until('/look at the deploy/.test(document.body.textContent)', 8000));

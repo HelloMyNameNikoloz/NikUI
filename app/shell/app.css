@@ -2886,3 +2886,21 @@ body.app.home .row-dragging {
   font-size: 13px;
   color: var(--app-red);
 }
+
+/* ---- Slack, as a tab ---------------------------------------------------------
+   In the editor the chat is pinned to the whole webview so nothing but its two
+   panes can scroll. Here it sits between the bar and the tab bar instead, the
+   way every other screen's content does. */
+body.app.slack .slack-screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.app.slack .nik-slack {
+  position: relative;
+  inset: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
