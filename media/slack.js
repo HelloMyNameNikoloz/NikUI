@@ -7,24 +7,46 @@
    and what the connection pill says; this file only draws what it is told
    and keeps the untrusted half of that — names, titles, last-message text —
    out of innerHTML. The one thing that *is* trusted HTML is a message body,
-   because the laptop has already run it through src/slack/mrkdwn.js. */
+   because the laptop has already run it through src/slack/mrkdwn.js.
+
+   The shape follows Slack's own app — a sidebar of direct messages and
+   channels, the open conversation wide beside it — but drawn to Apple's
+   Human Interface Guidelines: a large title that collapses as the sidebar
+   scrolls, iMessage-style bubbles, a capsule composer. */
 (function (root) {
   'use strict';
 
   const icon = typeof root.icon === 'function' ? root.icon : function () { return ''; };
 
-  // A star for VIPs and a left arrow for "back" — two glyphs icons.js does
-  // not carry, drawn the same way everything in icons.js is: a 24x24 stroke
-  // path in currentColor, so they sit beside it without looking borrowed.
+  // Glyphs icons.js does not carry, drawn the same way everything in it is: a
+  // stroke path in currentColor, so they sit beside it without looking
+  // borrowed.
   const STAR = '<svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
     '<path d="M12 2.5l2.9 6.6 7.1.7-5.4 4.8 1.6 7-6.2-3.8-6.2 3.8 1.6-7-5.4-4.8 7.1-.7z"/></svg>';
   const BACK = '<svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="m15 18-6-6 6-6"/></svg>';
+  const SEARCH = '<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+  const LOCK = '<svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  const OPEN_EXT = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>';
+  const SEND_UP = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M12 19V6"/><path d="m6 11 6-6 6 6"/></svg>';
+  const FILE_ICO = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
 
   const ONE_PANE_WIDTH = 640;
   const GROUP_GAP_MS = 5 * 60 * 1000;
   const PENDING_TICK_MS = 15 * 1000;
+  const LIST_SCROLL_COLLAPSE = 24; // px of list-body scroll before the large title gives way
+  const REFRESH_MIN_GAP_MS = 15 * 1000;
 
   function esc(s) { return root.escapeHtml ? root.escapeHtml(s) : String(s == null ? '' : s); }
 
@@ -39,13 +61,18 @@
       : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + time;
   }
 
-  /** A list row's time: "now", then minutes, then the clock, then a date. */
+  /** A list row's time: "now", then minutes, then the clock, then a weekday or date. */
   function fmtWhen(at, clock) {
     if (!at) return '';
     const diff = Date.now() - at;
     if (diff < 45 * 1000) return 'now';
     if (diff < 3600 * 1000) return Math.max(1, Math.round(diff / 60000)) + 'm';
-    return fmtClock(at, clock);
+    const d = new Date(at);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return fmtClock(at, clock);
+    const dayMs = 24 * 3600 * 1000;
+    if (now - d < 6 * dayMs) return d.toLocaleDateString([], { weekday: 'short' });
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
   /** "waiting 2m", "waiting 1h 12m". */
@@ -64,7 +91,8 @@
     const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
     if (d.toDateString() === now.toDateString()) return 'Today';
     if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+    if (now - d < 6 * 24 * 3600 * 1000) return d.toLocaleDateString([], { weekday: 'long' });
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
   function initialsOf(name) {
@@ -72,6 +100,15 @@
     if (!parts.length) return '?';
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  /** A deterministic hue for a name, so the same person always gets the same
+      colour without a server round trip. */
+  function hueOf(seed) {
+    const s = String(seed || '?');
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h) % 360;
   }
 
   function el(tag, className, attrs) {
@@ -102,7 +139,7 @@
 
     let state = null;              // last slack:state
     let transportUp = true;        // setConnected()
-    let conversations = [];        // state.conversations, sorted
+    let items = [];                // flattened sidebar rows, sorted & sectioned
     let selectedId = null;
     let threadTs = null;           // the thread currently open, or null for the main channel
     let threadData = null;         // the slack:thread payload matching selectedId/threadTs
@@ -118,6 +155,8 @@
     let setupTab = 'app';          // the setup card's chosen method: 'app' | 'session'
     let signInBusy = false;
     let signInError = null;
+    let searchQuery = '';
+    let lastRefreshAt = 0;
     const sessionDraft = { token: '', cookie: '' };
     const drafts = new Map();      // `${conv}\u0000${thread||''}` -> text
 
@@ -128,11 +167,19 @@
       '<div class="ns-panes">' +
         '<section class="ns-list" aria-label="Conversations">' +
           '<header class="ns-head">' +
-            '<button type="button" class="ns-back ghost icon-only" hidden aria-label="Back"></button>' +
-            '<h1>Slack</h1>' +
-            '<span class="ns-pill ns-conn">Checking…</span>' +
-            '<button type="button" class="ns-vipbtn ghost" aria-label="VIPs"></button>' +
-            '<button type="button" class="ns-gear ghost icon-only" aria-label="Settings"></button>' +
+            '<div class="ns-head-bar">' +
+              '<button type="button" class="ns-back ghost icon-only" hidden aria-label="Back"></button>' +
+              '<span class="ns-head-inline-title">Slack</span>' +
+              '<span class="ns-pill ns-conn">Checking…</span>' +
+              '<button type="button" class="ns-refresh ghost icon-only" aria-label="Refresh"></button>' +
+              '<button type="button" class="ns-vipbtn ghost" aria-label="VIPs"></button>' +
+              '<button type="button" class="ns-gear ghost icon-only" aria-label="Settings"></button>' +
+            '</div>' +
+            '<h1 class="ns-head-large">Slack</h1>' +
+            '<div class="ns-search">' +
+              '<span class="ns-search-ico"></span>' +
+              '<input type="search" class="ns-search-input" placeholder="Search" aria-label="Search" autocomplete="off" spellcheck="false">' +
+            '</div>' +
           '</header>' +
           '<div class="ns-list-body"></div>' +
         '</section>' +
@@ -151,12 +198,14 @@
       '</div>';
 
     const live = host.querySelector('.ns-live');
-    const listHead = host.querySelector('.ns-list .ns-head');
     const backBtn = host.querySelector('.ns-back');
     const connPill = host.querySelector('.ns-conn');
+    const refreshBtn = host.querySelector('.ns-refresh');
     const vipBtn = host.querySelector('.ns-vipbtn');
     const gearBtn = host.querySelector('.ns-gear');
+    const listPane = host.querySelector('.ns-list');
     const listBody = host.querySelector('.ns-list-body');
+    const searchInput = host.querySelector('.ns-search-input');
     const threadPane = host.querySelector('.ns-thread');
     const vipSheet = host.querySelector('.ns-vip-sheet');
     const vipChips = host.querySelector('.ns-vip-chips');
@@ -166,6 +215,8 @@
     backBtn.innerHTML = BACK;
     vipBtn.innerHTML = STAR + '<span>VIPs</span>';
     gearBtn.innerHTML = icon('settings');
+    refreshBtn.innerHTML = icon('refresh');
+    host.querySelector('.ns-search-ico').innerHTML = SEARCH;
     host.querySelector('.ns-vip-close').innerHTML = icon('x');
     vipForm.querySelector('button').innerHTML = icon('plus');
 
@@ -198,6 +249,13 @@
     }
     applyLayout();
 
+    // ── the sidebar nav bar: large title collapses as the list scrolls ──
+
+    listBody.addEventListener('scroll', () => {
+      listPane.classList.toggle('scrolled', listBody.scrollTop > LIST_SCROLL_COLLAPSE);
+      listPane.classList.toggle('hairline', listBody.scrollTop > 0);
+    });
+
     // ── connection pill ───────────────────────────────────────
 
     function renderConn() {
@@ -206,25 +264,66 @@
       if (!state) { connPill.classList.add('warn'); connPill.textContent = 'Checking…'; return; }
       if (state.error) { connPill.classList.add('off'); connPill.textContent = state.error; return; }
       if (!state.connected) { connPill.classList.add('off'); connPill.textContent = 'Offline'; return; }
-      if (state.socket === 'live') { connPill.classList.add('on'); connPill.textContent = 'Live'; return; }
+      if (state.socket === 'live' || (state.mode === 'poll' && state.connected)) {
+        connPill.classList.add('on'); connPill.textContent = 'Live'; return;
+      }
       if (state.socket === 'connecting') { connPill.classList.add('warn'); connPill.textContent = 'Checking every 20s'; return; }
       connPill.classList.add('off');
       connPill.textContent = state.socket === 'unavailable' ? 'Unavailable' : 'Offline';
     }
 
-    // ── the list ───────────────────────────────────────────────
+    // ── the sidebar data: the new contract, or built from the old shape ──
 
-    function sortedConversations() {
-      const list = (state && state.conversations || []).slice();
-      list.sort((a, b) => {
-        if (!!a.pending !== !!b.pending) return a.pending ? -1 : 1;
-        return (b.lastAt || 0) - (a.lastAt || 0);
-      });
-      return list;
+    /** state.sidebar.items, or — until the service sends one, or on an old
+        build — a best-effort row built from state.conversations. */
+    function sidebarItems() {
+      if (state && state.sidebar && state.sidebar.loaded && Array.isArray(state.sidebar.items)) {
+        return state.sidebar.items.slice();
+      }
+      const list = (state && state.conversations) || [];
+      return list.map((c) => ({
+        id: c.id,
+        kind: c.kind === 'channel' ? 'channel' : (c.kind === 'group' ? 'group' : 'dm'),
+        title: c.title,
+        private: !!c.private,
+        user: c.with || null,
+        latestAt: c.lastAt,
+        unread: c.unread || (c.pending ? 1 : 0),
+        mentions: c.mentions || 0,
+        last: c.last ? { text: c.last.text, from: c.last.from, mine: !!c.last.mine, at: c.lastAt } : null,
+        pending: !!c.pending,
+        pendingSince: c.pendingSince || null,
+        vip: !!c.vip
+      }));
     }
 
+    function matchesSearch(item, q) {
+      if (!q) return true;
+      const hay = (item.title + ' ' + (item.last ? item.last.text : '')).toLowerCase();
+      return hay.indexOf(q) !== -1;
+    }
+
+    function sections() {
+      const all = sidebarItems().filter((it) => matchesSearch(it, searchQuery));
+      const needsYou = all.filter((it) => it.pending)
+        .sort((a, b) => (a.pendingSince || 0) - (b.pendingSince || 0));
+      // A pending conversation lives in "Needs you" only — showing it again
+      // below would say the same thing twice in two different voices.
+      const dms = all.filter((it) => !it.pending && (it.kind === 'dm' || it.kind === 'group'))
+        .sort((a, b) => (b.latestAt || 0) - (a.latestAt || 0));
+      const channels = all.filter((it) => !it.pending && it.kind === 'channel')
+        .sort((a, b) => (b.latestAt || 0) - (a.latestAt || 0));
+      return [
+        { title: 'Needs you', rows: needsYou },
+        { title: 'Direct messages', rows: dms },
+        { title: 'Channels', rows: channels }
+      ].filter((s) => s.rows.length);
+    }
+
+    // ── the list ───────────────────────────────────────────────
+
     function renderList() {
-      conversations = sortedConversations();
+      items = sidebarItems();
 
       if (!state) {
         listBody.innerHTML = '<div class="ns-empty">Connecting…</div>';
@@ -233,7 +332,7 @@
       if (!state.hasTokens) { renderSetup(); return; }
       if (!state.enabled) { renderDisabled(); return; }
 
-      if (!conversations.length) {
+      if (!items.length) {
         listBody.innerHTML = '';
         const empty = el('div', 'ns-empty');
         empty.textContent = 'Nothing yet. Messages from your VIPs and @mentions appear here.';
@@ -241,50 +340,109 @@
         return;
       }
 
+      const secs = sections();
       listBody.innerHTML = '';
-      const ul = el('ul', 'ns-rows', { role: 'list' });
-      for (const c of conversations) {
-        ul.appendChild(buildRow(c));
+      if (!secs.length) {
+        const empty = el('div', 'ns-empty');
+        empty.textContent = 'No matches.';
+        listBody.appendChild(empty);
+        return;
       }
-      listBody.appendChild(ul);
+      for (const s of secs) {
+        const section = el('div', 'ns-section');
+        const h = el('h2', 'ns-section-title');
+        h.textContent = s.title;
+        section.appendChild(h);
+        const ul = el('ul', 'ns-rows', { role: 'list' });
+        for (const it of s.rows) ul.appendChild(buildRow(it));
+        section.appendChild(ul);
+        listBody.appendChild(section);
+      }
     }
 
-    function buildRow(c) {
-      const li = el('li', null, { role: 'listitem' });
-      const row = el('button', 'ns-row' + (c.id === selectedId ? ' on' : ''), { type: 'button', 'data-id': c.id });
-
-      const avatar = el('span', 'ns-avatar');
-      avatar.textContent = (c.with && c.with.initials) || initialsOf(c.title);
-      if (c.vip) {
+    function buildAvatar(item, starred) {
+      const span = el('span', 'ns-avatar ns-avatar-' + item.kind);
+      if (item.kind === 'dm') {
+        if (item.user && item.user.image) {
+          const img = el('img');
+          img.src = item.user.image;
+          img.alt = '';
+          span.appendChild(img);
+        } else {
+          span.style.background = 'hsl(' + hueOf((item.user && item.user.name) || item.title) + 'deg 52% 40%)';
+          span.style.color = '#fff';
+          const label = el('span');
+          label.textContent = (item.user && item.user.initials) || initialsOf(item.title);
+          span.appendChild(label);
+        }
+      } else if (item.kind === 'channel') {
+        span.innerHTML = item.private ? LOCK : '#';
+      } else {
+        span.style.background = 'hsl(' + hueOf(item.title) + 'deg 42% 34%)';
+        span.style.color = '#fff';
+        const label = el('span');
+        label.textContent = initialsOf(item.title);
+        span.appendChild(label);
+      }
+      if (starred) {
         const star = el('span', 'ns-star');
         star.innerHTML = STAR;
-        avatar.appendChild(star);
+        span.appendChild(star);
       }
-      row.appendChild(avatar);
+      return span;
+    }
+
+    function previewText(item) {
+      if (!item.last) return '';
+      if (item.last.mine) return 'You: ' + item.last.text;
+      if ((item.kind === 'channel' || item.kind === 'group') && item.last.from) {
+        return item.last.from + ': ' + item.last.text;
+      }
+      return item.last.text;
+    }
+
+    function buildRow(item) {
+      const li = el('li', null, { role: 'listitem' });
+      const row = el('button', 'ns-row' + (item.id === selectedId ? ' on' : ''), { type: 'button', 'data-id': item.id });
+
+      const gutter = el('span', 'ns-row-gutter');
+      if (item.unread > 0) gutter.appendChild(el('span', 'ns-dot'));
+      row.appendChild(gutter);
+
+      row.appendChild(buildAvatar(item, item.vip));
 
       const main = el('div', 'ns-row-main');
       const top = el('div', 'ns-row-top');
-      const title = el('span', 'ns-title');
-      title.textContent = c.title;
-      const time = el('span', 'ns-time');
-      time.textContent = fmtWhen(c.lastAt, state.clock);
+      const title = el('span', 'ns-title' + (item.unread > 0 ? ' unread' : ''));
+      title.textContent = item.title;
       top.appendChild(title);
-      top.appendChild(time);
+      // A pending row spends its top-line slot on how long it has waited,
+      // in place of the time — the preview line underneath is one thing
+      // already (what it says), not a second thing fighting it for room.
+      if (item.pending) {
+        const pill = el('span', 'ns-pending');
+        pill.textContent = fmtWaiting(item.pendingSince);
+        top.appendChild(pill);
+      } else {
+        const time = el('span', 'ns-time');
+        time.textContent = fmtWhen(item.latestAt, state.clock);
+        top.appendChild(time);
+      }
 
       const bottom = el('div', 'ns-row-bottom');
       const lastText = el('span', 'ns-last');
-      lastText.textContent = c.last ? c.last.text : '';
+      lastText.textContent = previewText(item);
       bottom.appendChild(lastText);
-      if (c.pending) {
-        const pill = el('span', 'ns-pending');
-        pill.textContent = fmtWaiting(c.pendingSince);
-        bottom.appendChild(pill);
+      if (item.mentions > 0) {
+        const badge = el('span', 'ns-badge');
+        badge.textContent = String(item.mentions);
+        bottom.appendChild(badge);
       }
 
       main.appendChild(top);
       main.appendChild(bottom);
       row.appendChild(main);
-      row.addEventListener('click', () => select(c.id));
+      row.addEventListener('click', () => select(item.id));
       li.appendChild(row);
       return li;
     }
@@ -410,10 +568,25 @@
       listBody.appendChild(card);
     }
 
+    // ── search ───────────────────────────────────────────────
+
+    searchInput.addEventListener('input', () => {
+      searchQuery = searchInput.value.trim().toLowerCase();
+      renderList();
+    });
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (!searchInput.value) return;
+      e.stopPropagation();
+      searchInput.value = '';
+      searchQuery = '';
+      renderList();
+    });
+
     // ── thread ───────────────────────────────────────────────
 
     function findConversation(id) {
-      return conversations.find((c) => c.id === id) || (threadData && threadData.conversation);
+      return items.find((c) => c.id === id) || (threadData && threadData.conversation);
     }
 
     function select(id) {
@@ -447,6 +620,13 @@
 
     function draftKey() { return selectedId + '\u0000' + (threadTs || ''); }
 
+    function subtitleFor(conv) {
+      if (!conv) return '';
+      if (conv.kind === 'channel') return conv.private ? 'Private channel' : 'Channel';
+      if (conv.kind === 'group') return 'Group message';
+      return 'Direct message';
+    }
+
     function renderThread() {
       threadPane.innerHTML = '';
 
@@ -464,23 +644,26 @@
       backHere.addEventListener('click', showList);
       head.appendChild(backHere);
 
-      const avatar = el('span', 'ns-avatar');
-      avatar.textContent = (conv && conv.with && conv.with.initials) || initialsOf(conv && conv.title);
-      head.appendChild(avatar);
+      if (conv) head.appendChild(buildAvatar(conv, false));
 
       const titleWrap = el('div', 'ns-thread-title');
+      const titleRow = el('div', 'ns-thread-title-row');
       const titleText = el('span');
       titleText.textContent = (conv && conv.title) || '';
-      titleWrap.appendChild(titleText);
+      titleRow.appendChild(titleText);
       if (conv && conv.vip) {
         const star = el('span', 'ns-star');
         star.innerHTML = STAR;
-        titleWrap.appendChild(star);
+        titleRow.appendChild(star);
       }
+      titleWrap.appendChild(titleRow);
+      const sub = el('span', 'ns-thread-sub');
+      sub.textContent = subtitleFor(conv);
+      titleWrap.appendChild(sub);
       head.appendChild(titleWrap);
 
-      const openBtn = el('button', 'ghost ns-open-slack', { type: 'button' });
-      openBtn.textContent = 'Open in Slack';
+      const openBtn = el('button', 'ghost icon-only ns-open-slack', { type: 'button', 'aria-label': 'Open in Slack' });
+      openBtn.innerHTML = OPEN_EXT;
       openBtn.addEventListener('click', () => send({
         type: 'slack:link', conversation: selectedId,
         ts: (threadData && threadData.messages && threadData.messages.length)
@@ -516,7 +699,7 @@
       if (loadingThread || !threadData) {
         scroller.innerHTML = '<div class="ns-loading">Loading…</div>';
       } else {
-        renderMessages(scroller, threadData.messages || []);
+        renderMessages(scroller, threadData.messages || [], conv);
       }
 
       threadPane.appendChild(buildComposer());
@@ -524,12 +707,35 @@
       if (followScroll) scroller.scrollTop = scroller.scrollHeight;
     }
 
-    function renderMessages(scroller, messages) {
+    function fileChip(file) {
+      const chip = el('div', 'ns-file');
+      const ico = el('span', 'ns-file-ico');
+      ico.innerHTML = FILE_ICO;
+      chip.appendChild(ico);
+      const label = el('span', 'ns-file-name');
+      label.textContent = (file && (file.name || file.title)) || 'File';
+      chip.appendChild(label);
+      return chip;
+    }
+
+    function reactionsRow(reactions) {
+      const row = el('div', 'ns-reactions');
+      for (const r of reactions) {
+        const chip = el('span', 'ns-reaction' + (r.mine ? ' mine' : ''));
+        chip.textContent = (r.emoji || '') + ' ' + r.count;
+        row.appendChild(chip);
+      }
+      return row;
+    }
+
+    function renderMessages(scroller, messages, conv) {
       scroller.innerHTML = '';
+      const named = conv && (conv.kind === 'channel' || conv.kind === 'group');
       let lastDay = null;
       let lastGroupKey = null;
-      let lastGroupAt = 0;
+      let lastAnyAt = 0;
       let group = null;
+      let lastBubble = null;
 
       for (const m of messages) {
         const day = m.at ? dayLabel(m.at) : lastDay;
@@ -539,28 +745,64 @@
           scroller.appendChild(sep);
           lastDay = day;
           lastGroupKey = null;
+          lastAnyAt = 0;
         }
 
         const key = m.mine ? 'me' : m.user;
-        const fresh = key !== lastGroupKey || (m.at - lastGroupAt) > GROUP_GAP_MS;
+        const gap = lastAnyAt ? m.at - lastAnyAt : Infinity;
+        const fresh = key !== lastGroupKey || gap > GROUP_GAP_MS;
+
+        if (fresh && lastAnyAt && gap > GROUP_GAP_MS) {
+          const timeHead = el('div', 'ns-time-cluster');
+          timeHead.textContent = fmtClock(m.at, state ? state.clock : '24h');
+          scroller.appendChild(timeHead);
+        }
+
         if (fresh) {
           group = el('div', 'ns-group' + (m.mine ? ' mine' : ''));
           scroller.appendChild(group);
-          const headRow = el('div', 'ns-msg-head');
-          const name = el('span', 'ns-msg-name');
-          name.textContent = m.mine ? 'You' : (m.name || m.user || '');
-          const time = el('span', 'ns-msg-time');
-          time.textContent = fmtClock(m.at, state ? state.clock : '24h');
-          headRow.appendChild(name);
-          headRow.appendChild(time);
-          group.appendChild(headRow);
+          lastBubble = null;
+          if (named && !m.mine) {
+            const nameHead = el('div', 'ns-msg-name');
+            nameHead.textContent = m.name || m.user || '';
+            nameHead.style.color = 'hsl(' + hueOf(m.name || m.user) + 'deg 70% 62%)';
+            group.appendChild(nameHead);
+          }
         }
         lastGroupKey = key;
-        lastGroupAt = m.at;
+        lastAnyAt = m.at;
 
-        const bubble = el('div', 'ns-msg');
-        bubble.innerHTML = m.html; // sanitised by the laptop (src/slack/mrkdwn.js)
-        group.appendChild(bubble);
+        const hasText = m.html && /\S/.test(m.html.replace(/<[^>]*>/g, ''));
+        const hasFiles = Array.isArray(m.files) && m.files.length;
+
+        const bubbleWrap = el('div', 'ns-bubble-wrap');
+        if (hasText) {
+          const bubble = el('div', 'ns-msg');
+          bubble.innerHTML = m.html; // sanitised by the laptop (src/slack/mrkdwn.js)
+          if (m.edited) {
+            const edited = el('span', 'ns-edited');
+            edited.textContent = ' (edited)';
+            bubble.appendChild(edited);
+          }
+          bubbleWrap.appendChild(bubble);
+          if (lastBubble) lastBubble.classList.remove('tail');
+          bubble.classList.add('tail');
+          lastBubble = bubble;
+        } else if (hasFiles) {
+          for (const f of m.files) bubbleWrap.appendChild(fileChip(f));
+        } else {
+          const bubble = el('div', 'ns-msg ns-msg-empty');
+          bubble.textContent = '(message)';
+          bubbleWrap.appendChild(bubble);
+          if (lastBubble) lastBubble.classList.remove('tail');
+          bubble.classList.add('tail');
+          lastBubble = bubble;
+        }
+        group.appendChild(bubbleWrap);
+
+        if (Array.isArray(m.reactions) && m.reactions.length) {
+          group.appendChild(reactionsRow(m.reactions));
+        }
 
         if (m.replyCount) {
           const replies = el('button', 'ns-replies', { type: 'button' });
@@ -598,11 +840,15 @@
       });
       textarea.value = drafts.get(draftKey()) || '';
       const sendBtn = el('button', 'ns-send icon-only', { type: 'button', 'aria-label': 'Send' });
-      sendBtn.innerHTML = icon('send');
-      sendBtn.disabled = sending;
+      sendBtn.innerHTML = SEND_UP;
+      sendBtn.disabled = sending || !textarea.value.trim();
 
-      const grow = () => { textarea.style.height = 'auto'; textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px'; };
-      textarea.addEventListener('input', () => { drafts.set(draftKey(), textarea.value); grow(); });
+      const grow = () => { textarea.style.height = 'auto'; textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px'; };
+      textarea.addEventListener('input', () => {
+        drafts.set(draftKey(), textarea.value);
+        grow();
+        sendBtn.disabled = sending || !textarea.value.trim();
+      });
       textarea.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' || e.shiftKey) return;
         // On the phone Enter is a newline; a Send button does the sending.
@@ -696,21 +942,33 @@
 
     gearBtn.addEventListener('click', () => send({ type: 'slack:settings' }));
 
+    // ── refresh: on becoming visible/focused, or asked for — never more
+    //    than once every 15s, since nothing on the other end is waiting on it ──
+
+    function maybeRefresh() {
+      const now = Date.now();
+      if (now - lastRefreshAt < REFRESH_MIN_GAP_MS) return;
+      lastRefreshAt = now;
+      send({ type: 'slack:refresh' });
+    }
+    refreshBtn.addEventListener('click', maybeRefresh);
+
     // ── keyboard ─────────────────────────────────────────────
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         if (vipOpen) { vipOpen = false; vipSheet.hidden = true; return; }
+        if (document.activeElement === searchInput && searchInput.value) return; // handled above
         if (onePane && pane === 'thread') { showList(); return; }
         return;
       }
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && listBody.contains(document.activeElement)) {
         e.preventDefault();
-        const idx = conversations.findIndex((c) => c.id === selectedId);
-        const next = e.key === 'ArrowDown' ? Math.min(conversations.length - 1, idx + 1) : Math.max(0, idx - 1);
-        if (conversations[next]) {
-          select(conversations[next].id);
-          const row = listBody.querySelector('[data-id="' + CSS.escape(conversations[next].id) + '"]');
+        const idx = items.findIndex((c) => c.id === selectedId);
+        const next = e.key === 'ArrowDown' ? Math.min(items.length - 1, idx + 1) : Math.max(0, idx - 1);
+        if (items[next]) {
+          select(items[next].id);
+          const row = listBody.querySelector('[data-id="' + CSS.escape(items[next].id) + '"]');
           if (row) row.focus();
         }
       }
@@ -719,8 +977,11 @@
     // ── visibility ─────────────────────────────────────────────
 
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && selectedId) send({ type: 'slack:open', conversation: selectedId, thread: threadTs || undefined });
+      if (document.hidden) return;
+      if (selectedId) send({ type: 'slack:open', conversation: selectedId, thread: threadTs || undefined });
+      maybeRefresh();
     });
+    window.addEventListener('focus', maybeRefresh);
 
     // ── the live "waiting Xm" pills and relative times ──────────
 
@@ -777,7 +1038,7 @@
           break;
         }
         case 'slack:focus': {
-          const conv = (state && state.conversations || []).find((c) => c.id === message.conversation);
+          const conv = sidebarItems().find((c) => c.id === message.conversation);
           const waited = conv ? fmtWaiting(conv.pendingSince) : 'waiting';
           select(message.conversation);
           banner = {

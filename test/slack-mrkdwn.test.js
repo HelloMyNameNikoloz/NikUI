@@ -39,4 +39,15 @@ module.exports = async function () {
     check('plain truncates to 140 chars with an ellipsis', plain.length === 140 && plain.endsWith('…'));
   }
   checkEqual('short text is untouched by truncation', toPlain('short'), 'short');
+
+  // Emoji shortcodes: converted before any markup is stripped, unknown ones
+  // left exactly as typed, underscores included.
+  checkEqual('a shortcode becomes its emoji in html', toHtml(':slightly_smiling_face: hi'), '🙂 hi');
+  checkEqual('a shortcode becomes its emoji in plain', toPlain(':slightly_smiling_face: hi'), '🙂 hi');
+  checkEqual('an unknown shortcode keeps its underscores in html',
+    toHtml(':totally_unknown_code:'), ':totally_unknown_code:');
+  checkEqual('an unknown shortcode keeps its underscores in plain',
+    toPlain(':totally_unknown_code:'), ':totally_unknown_code:');
+  checkEqual('a skin-tone suffix does not leak into the text',
+    toPlain(':thumbsup::skin-tone-2: nice work'), '👍 nice work');
 };

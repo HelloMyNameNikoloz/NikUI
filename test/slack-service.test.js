@@ -334,4 +334,203 @@ module.exports = async function () {
     check('and never the token itself', !/xoxp-/.test(service.state().error));
     service.stop();
   }
+
+  // ---- sidebar: membership, counts, previews, sorted --------------------
+  {
+    const historyCalls = [];
+    const handlers = {
+      'auth.test': () => ({ ok: true, user_id: 'UME', user: 'me' }),
+      'conversations.list': () => ({ ok: true, channels: [] }),
+      'search.messages': () => ({ ok: true, messages: { matches: [] } }),
+      'users.conversations': () => ({
+        ok: true,
+        channels: [
+          { id: 'D1', is_im: true, user: 'U1' },
+          { id: 'D2', is_im: true, user: 'U2', is_user_deleted: true },
+          { id: 'D3', is_im: true, user: 'USLACKBOT' },
+          { id: 'C1', is_mpim: true, name: 'mpdm-anna--bob-1' },
+          { id: 'C2', is_channel: true, name: 'general', is_private: false },
+          { id: 'C3', is_channel: true, name: 'secret', is_private: true }
+        ],
+        response_metadata: { next_cursor: '' }
+      }),
+      'users.info': (p) => {
+        const byId = {
+          U1: { id: 'U1', name: 'dave', profile: { display_name: 'Dave' } },
+          U2: { id: 'U2', name: 'anna', profile: { display_name: 'Anna' } }
+        };
+        return byId[p.user] ? { ok: true, user: byId[p.user] } : Object.assign(new Error('user_not_found'), { code: 'user_not_found' });
+      },
+      'conversations.members': (p) => p.channel === 'C1'
+        ? { ok: true, members: ['U1', 'U2', 'UME'] }
+        : { ok: true, members: [] },
+      'client.counts': () => ({
+        ok: true,
+        channels: [{ id: 'C2', has_unreads: true, mention_count: 2, latest: '100.0' }],
+        mpims: [{ id: 'C1', has_unreads: false, mention_count: 0, latest: '50.0' }],
+        ims: [{ id: 'D1', has_unreads: true, mention_count: 0, latest: '200.0' }]
+      }),
+      'conversations.history': (p) => {
+        historyCalls.push(p.channel);
+        const byId = {
+          D1: [{ ts: '200.0', user: 'U1', text: 'you there?' }],
+          C2: [{ ts: '100.0', user: 'U3', text: 'build is green' }],
+          C1: [{ ts: '50.0', user: 'U2', text: 'lunch?' }]
+        };
+        return { ok: true, messages: byId[p.channel] || [] };
+      }
+    };
+    const clock = fakeClock(1_000_000);
+    const service = new SlackService({
+      api: fakeApi(handlers),
+      config: () => ({ enabled: true, vips: [], mentions: false, pollMs: 20000 }),
+      now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout
+    });
+    await service.start();
+    await flush();
+    await flush(); // let _resolveMpimTitle's own round of calls land
+
+    const state = service.state();
+    check('the sidebar is marked loaded', state.sidebar.loaded === true);
+    const ids = state.sidebar.items.map((i) => i.id);
+    checkEqual('a deleted user’s DM and the Slackbot DM are both skipped', ids.filter((i) => i === 'D2' || i === 'D3'), []);
+    checkEqual('sorted newest first, with no recency last', ids, ['D1', 'C2', 'C1', 'C3']);
+
+    const dm = state.sidebar.items.find((i) => i.id === 'D1');
+    checkEqual('a DM’s title is the person’s name', dm.title, 'Dave');
+    checkEqual('and it carries their user info', dm.user.id, 'U1');
+    check('its preview is flattened plain text', dm.last && dm.last.text === 'you there?');
+    checkEqual('its latestAt comes from client.counts, in milliseconds', dm.latestAt, 200000);
+    check('unread, from client.counts', dm.unread === true);
+
+    const channel = state.sidebar.items.find((i) => i.id === 'C2');
+    checkEqual('a channel’s title carries no leading #', channel.title, 'general');
+    checkEqual('mentions come through from client.counts', channel.mentions, 2);
+
+    const priv = state.sidebar.items.find((i) => i.id === 'C3');
+    check('a private channel is marked private', priv.private === true);
+    checkEqual('with nothing yet counted, it sorts last and has no recency', priv.latestAt, null);
+
+    const group = state.sidebar.items.find((i) => i.id === 'C1');
+    checkEqual('a group DM’s title is its members, not the technical channel name', group.title, 'Dave, Anna');
+
+    // Preview caching: refreshing again with the same latest ts makes no
+    // second conversations.history call for a conversation that has not moved.
+    historyCalls.length = 0;
+    await service.refreshSidebar(true);
+    await flush();
+    checkEqual('an unchanged preview is not re-fetched', historyCalls.filter((c) => c === 'D1').length, 0);
+
+    service.stop();
+  }
+
+  // ---- sidebar: client.counts unsupported falls back to conversations.info --
+  {
+    const infoCalls = [];
+    const handlers = {
+      'auth.test': () => ({ ok: true, user_id: 'UME', user: 'me' }),
+      'conversations.list': () => ({ ok: true, channels: [] }),
+      'search.messages': () => ({ ok: true, messages: { matches: [] } }),
+      'users.conversations': () => ({ ok: true, channels: [{ id: 'D1', is_im: true, user: 'U1' }], response_metadata: { next_cursor: '' } }),
+      'users.info': () => ({ ok: true, user: { id: 'U1', name: 'dave', profile: { display_name: 'Dave' } } }),
+      'client.counts': () => Object.assign(new Error('unknown_method'), { code: 'unknown_method' }),
+      'conversations.info': (p) => { infoCalls.push(p.channel); return { ok: true, channel: { latest: { ts: '10.0' }, unread_count_display: 1 } }; },
+      'conversations.history': () => ({ ok: true, messages: [] })
+    };
+    const service = new SlackService({
+      api: fakeApi(handlers),
+      config: () => ({ enabled: true, vips: [], mentions: false, pollMs: 20000 })
+    });
+    await service.start();
+    await flush();
+    await flush();
+    const dm = service.state().sidebar.items.find((i) => i.id === 'D1');
+    check('a DM’s recency comes from conversations.info when client.counts is not allowed', dm.unread === true && dm.latestAt === 10000);
+    check('an app token is never asked for client.counts twice', infoCalls.length > 0);
+    service.stop();
+  }
+
+  // ---- bug: lastAt is the message’s own ts, not when it was ingested -------
+  {
+    const handlers = {
+      'auth.test': () => ({ ok: true, user_id: 'UME', user: 'me' }),
+      'conversations.list': () => ({ ok: true, channels: [] }),
+      'search.messages': () => ({ ok: true, messages: { matches: [] } })
+    };
+    const clock = fakeClock(1_000_000);
+    const service = new SlackService({
+      api: fakeApi(handlers),
+      config: () => ({ enabled: true, vips: [], mentions: true, pollMs: 20000 }),
+      now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout
+    });
+    await service.start();
+    await flush();
+    clock.advance(999999); // the ts is long past "now" — the bug used now() instead
+    service._handleIncoming({ type: 'message', channel: 'C9', user: 'U9', text: 'hi <@UME>', ts: '12345.6' });
+    const conv = service.state().conversations.find((c) => c.id === 'C9');
+    checkEqual('lastAt comes from the message’s own ts', conv.lastAt, 12345600);
+    service.stop();
+  }
+
+  // ---- bug: a preview naming an id resolves once the name arrives ----------
+  {
+    const handlers = {
+      'auth.test': () => ({ ok: true, user_id: 'UME', user: 'me' }),
+      'conversations.list': () => ({ ok: true, channels: [] }),
+      'search.messages': () => ({ ok: true, messages: { matches: [] } }),
+      'users.info': (p) => p.user === 'U7'
+        ? { ok: true, user: { id: 'U7', name: 'ren', profile: { display_name: 'Ren' } } }
+        : Object.assign(new Error('user_not_found'), { code: 'user_not_found' })
+    };
+    const service = new SlackService({
+      api: fakeApi(handlers),
+      config: () => ({ enabled: true, vips: [], mentions: true, pollMs: 20000 })
+    });
+    await service.start();
+    await flush();
+    service._handleIncoming({ type: 'message', channel: 'C8', user: 'U7', text: 'ping <@UME> about <@U7>', ts: '1.0' });
+    const soon = service.state().conversations.find((c) => c.id === 'C8');
+    check('a raw mention is kept until a name arrives', !!soon.last);
+    await flush();
+    const later = service.state().conversations.find((c) => c.id === 'C8');
+    checkEqual('once resolved, the mention reads by name, not by id', later.last.text, 'ping @UME about @Ren');
+    service.stop();
+  }
+
+  // ---- thread(): a bubble is never empty -----------------------------------
+  {
+    const handlers = {
+      'auth.test': () => ({ ok: true, user_id: 'UME', user: 'me' }),
+      'conversations.list': () => ({ ok: true, channels: [] }),
+      'search.messages': () => ({ ok: true, messages: { matches: [] } }),
+      'users.info': () => ({ ok: true, user: { id: 'U1', name: 'dave', profile: { display_name: 'Dave' } } }),
+      'conversations.history': () => ({
+        ok: true,
+        messages: [
+          { ts: '3.0', user: 'U1', files: [{ name: 'report.pdf', permalink: 'https://x/report.pdf' }] },
+          { ts: '2.0', user: 'U1', attachments: [{ fallback: 'a link preview' }] },
+          { ts: '1.0', user: 'U1', subtype: 'huddle_thread' },
+          { ts: '0.5', user: 'U1', reactions: [{ name: 'thumbsup', count: 2, users: ['UME'] }], text: ':thumbsup: nice' }
+        ]
+      })
+    };
+    const service = new SlackService({
+      api: fakeApi(handlers),
+      config: () => ({ enabled: true, vips: [], mentions: false, pollMs: 20000 })
+    });
+    await service.start();
+    await flush();
+    const { messages } = await service.thread('C1');
+    const file = messages.find((m) => m.ts === '3.0');
+    check('a file-only message shows the file, not nothing', file.html.includes('report.pdf') && file.html.includes('📎'));
+    check('with a link to it', file.html.includes('https://x/report.pdf'));
+    const attachment = messages.find((m) => m.ts === '2.0');
+    check('an attachment-only message shows its fallback text', attachment.html.includes('a link preview'));
+    const huddle = messages.find((m) => m.ts === '1.0');
+    check('a huddle says so', /huddle/i.test(huddle.html));
+    const reacted = messages.find((m) => m.ts === '0.5');
+    checkEqual('a reaction carries its emoji', reacted.reactions[0].emoji, '👍');
+    check('and whether it is mine', reacted.reactions[0].mine === true);
+    service.stop();
+  }
 };

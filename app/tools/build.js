@@ -86,7 +86,7 @@ function copyClient() {
 const CSP = [
   "default-src 'none'",
   // GitHub avatars in the pull request pane; nothing else is fetched from there.
-  "img-src 'self' data: https://avatars.githubusercontent.com",
+  "img-src 'self' data: https://avatars.githubusercontent.com https://*.slack-edge.com https://secure.gravatar.com",
   "style-src 'self'",
   "script-src 'self'",
   "font-src 'self'",

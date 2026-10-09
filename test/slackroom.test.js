@@ -11,6 +11,7 @@ function fakeService() {
     thread: async (id, thread) => { calls.push(['thread', id, thread]); return { conversation: { id }, messages: [{ ts: '1.0', html: 'hi' }] }; },
     reply: async (id, text, thread) => { calls.push(['reply', id, text, thread]); if (text === 'boom') { const e = new Error('x'); e.code = 'not_in_channel'; throw e; } return { ts: '2.0' }; },
     seenInNikui: (id) => calls.push(['seen', id]),
+    refreshSidebar: async () => calls.push(['refresh']),
     permalink: async (id, ts) => `https://x.slack.com/archives/${id}/p${ts || ''}`
   };
 }
@@ -68,6 +69,13 @@ module.exports = async function () {
 
   await r.handle('w', { type: 'slack:vips', vips: ['x'] });
   check('nor change the VIPs', said.vips === null && watcher.some((m) => m.type === 'slack:refused'));
+
+  service.calls.length = 0;
+  watcher.length = 0;
+  await r.handle('w', { type: 'slack:refresh' });
+  check('any seat may ask for a fresher sidebar, no grant needed', service.calls.some((c) => c[0] === 'refresh'));
+  check('it is told the state again', watcher.some((m) => m.type === 'slack:state'));
+  check('and nothing is written to the trail for it', !audit.some((a) => a.action === 'slack refresh'));
 
   const steering = seat(r, 's', { control: true });
   await r.handle('s', { type: 'slack:open', conversation: 'D1', thread: '1.0' });

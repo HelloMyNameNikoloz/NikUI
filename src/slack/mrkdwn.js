@@ -11,6 +11,8 @@
  * escaped text and never becomes a tag or a clickable href.
  */
 
+const { applyEmoji } = require('./emoji');
+
 const CODE_FENCE = /```([\s\S]*?)```/g;
 const INLINE_CODE = /`([^`\n]+?)`/g;
 const MENTION = /&lt;@([A-Z0-9]+)(?:\|([^&]*?))?&gt;/g;
@@ -66,7 +68,9 @@ function blockquotes(text) {
  * @returns {string} safe HTML for a webview
  */
 function toHtml(text, names) {
-  const { out: protectedText, stash } = protectCode(escapeHtml(text));
+  // Shortcodes become their emoji before anything else touches the text, so
+  // an unknown one's underscores survive the markup rules that follow.
+  const { out: protectedText, stash } = protectCode(escapeHtml(applyEmoji(text)));
   let html = protectedText
     .replace(MENTION, (_, id, label) => '@' + escapeHtml(label || nameFor(names, id)))
     .replace(CHANNEL, (_, _id, label) => '#' + escapeHtml(label))
@@ -88,14 +92,20 @@ function toHtml(text, names) {
  * @param {object} [names]
  */
 function toPlain(text, names) {
-  let plain = String(text == null ? '' : text)
+  // Shortcodes first, same as toHtml, so an unknown one's underscores are
+  // never mistaken for italic markup by what follows.
+  let plain = applyEmoji(String(text == null ? '' : text))
     .replace(MENTION_RAW, (_, id, label) => '@' + (label || nameFor(names, id)))
     .replace(CHANNEL_RAW, (_, _id, label) => '#' + label)
     .replace(LINK_LABELLED_RAW, (_, _url, label) => label)
     .replace(LINK_BARE_RAW, (_, url) => url)
     .replace(/```([\s\S]*?)```/g, '$1')
     .replace(/`([^`\n]+?)`/g, '$1')
-    .replace(/[*_~]/g, '')
+    // Only markup's own paired markers are stripped — never a bare
+    // underscore, which may belong to a word or an unrecognised shortcode.
+    .replace(BOLD_RAW, '$1')
+    .replace(ITALIC_RAW, '$1$2')
+    .replace(STRIKE_RAW, '$1')
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
     .replace(/\s*\n\s*/g, ' ')
     .trim();
@@ -109,5 +119,8 @@ const MENTION_RAW = /<@([A-Z0-9]+)(?:\|([^>]*?))?>/g;
 const CHANNEL_RAW = /<#([A-Z0-9]+)\|([^>]*?)>/g;
 const LINK_LABELLED_RAW = /<((?:https?:\/\/|mailto:)[^|>]*)\|([^>]*?)>/g;
 const LINK_BARE_RAW = /<((?:https?:\/\/|mailto:)[^>]*?)>/g;
+const BOLD_RAW = /\*([^*\n]+?)\*/g;
+const ITALIC_RAW = /(^|[^\w])_([^_\n]+?)_(?!\w)/g;
+const STRIKE_RAW = /~([^~\n]+?)~/g;
 
 module.exports = { toHtml, toPlain, escapeHtml };

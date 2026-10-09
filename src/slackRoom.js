@@ -104,8 +104,8 @@ class SlackRoom {
     const settings = this.deps.settings() || {};
     const live = service ? service.state() : {};
     return Object.assign({
-      connected: false, socket: 'off', error: null, me: null,
-      unresolved: [], vips: [], conversations: []
+      connected: false, socket: 'off', mode: 'poll', error: null, me: null,
+      unresolved: [], vips: [], conversations: [], sidebar: { loaded: false, at: null, items: [] }
     }, live, {
       enabled: !!settings.enabled,
       hasTokens: !!settings.hasTokens,
@@ -199,6 +199,13 @@ class SlackRoom {
           if (other.open === conversation) this.sendThread(other).catch(() => {});
         }
         return;
+      }
+
+      // A nudge, not an act on Slack: any seat may ask for a fresher sidebar,
+      // so it carries no grant check and nothing to write down.
+      case 'slack:refresh': {
+        if (service && typeof service.refreshSidebar === 'function') await service.refreshSidebar();
+        return void this.broadcast();
       }
 
       case 'slack:vips': {

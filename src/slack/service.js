@@ -2,7 +2,8 @@
 
 const { EventEmitter } = require('events');
 const { createEscalator } = require('./escalate');
-const { toHtml, toPlain } = require('./mrkdwn');
+const { toHtml, toPlain, escapeHtml } = require('./mrkdwn');
+const { applyEmoji } = require('./emoji');
 
 /**
  * The laptop side of Slack: signed in once with a user token, it watches for
@@ -70,6 +71,21 @@ class SlackService extends EventEmitter {
     this._lastMentionAt = 0;
     this._searchCursor = null;
     this._polledOnce = false;
+    this._pollOk = false;
+
+    // ---- sidebar: every conversation we are a member of, not only the ones
+    // escalation cares about. See refreshSidebar().
+    this._sidebarMembership = new Map();  // id -> {id, kind, title, private, user}
+    this._mpimMembersKnown = new Set();
+    this._counts = new Map();             // id -> {unread, mentions, latestAt, latestTs}
+    this._countsUnsupported = false;
+    this._previewCache = new Map();       // id -> {ts, raw, from, mine, at}
+    this._membershipAt = 0;
+    this._countsAt = 0;
+    this._sidebarRefreshAt = 0;
+    this._sidebarLoaded = false;
+    this._sidebarAt = null;
+    this._sidebarItems = [];
 
     this.escalator = createEscalator({ popupAfterMs: IGNORED_VIP_DEFAULT_POPUP_MS, alarmAfterMs: IGNORED_VIP_DEFAULT_ALARM_MS });
     this.socket = null;
@@ -113,6 +129,7 @@ class SlackService extends EventEmitter {
     }
 
     if (this._stopping) return; // stop() raced us while we were awaiting Slack
+    if (this.me) this.refreshSidebar(true).catch((err) => this.log('slack: sidebar failed: ' + err.message));
     this._startSocket();
     this._startPollLoop();
     this._armRecheck();
@@ -270,8 +287,9 @@ class SlackService extends EventEmitter {
   _startPollLoop() {
     const tick = async () => {
       if (this._stopping) return;
-      try { await this._pollOnce(); }
-      catch (err) { this.error = humanError(err); this.log('slack: poll failed: ' + err.message); }
+      try { await this._pollOnce(); this._pollOk = true; }
+      catch (err) { this._pollOk = false; this.error = humanError(err); this.log('slack: poll failed: ' + err.message); }
+      await this.refreshSidebar().catch((err) => this.log('slack: sidebar failed: ' + err.message));
       this._scheduleStateEmit();
       if (this._stopping) return;
       this._pollTimer = this.setTimeout(tick, this._effectivePollMs());
@@ -413,15 +431,23 @@ class SlackService extends EventEmitter {
     conv.vip = conv.vip || !!vip;
     if (vip) { conv.title = vip.name; conv.with = this._userCache.get(vip.id) || withInfo; }
     conv.pending = true;
-    conv.lastAt = this.now();
-    conv.last = { text: toPlain(raw.text || '', this._namesMap()), from: raw.user, ts: raw.ts };
+    conv.lastAt = Math.round(Number(raw.ts) * 1000) || this.now();
+    // Kept raw: the user cache may not have a name for everyone mentioned yet.
+    // state() flattens this with whatever names are known by the time it is asked.
+    conv.last = { raw: raw.text || '', from: raw.user, ts: raw.ts };
 
     this.conversations.delete(conversationId);
     this.conversations.set(conversationId, conv);
     this._trimConversations();
 
     this._resolveUserInfo(raw.user);
+    this._resolveMentionedIds(raw.text);
     if (conv.kind !== 'dm') this._resolveChannelTitle(conversationId);
+  }
+
+  /** Any `<@U…>` in text whose name is not yet known, resolved so a later state() fills it in. */
+  _resolveMentionedIds(text) {
+    for (const id of new Set(mentionedIds(text))) this._resolveUserInfo(id);
   }
 
   _trimConversations() {
@@ -465,6 +491,220 @@ class SlackService extends EventEmitter {
     const names = {};
     for (const [id, info] of this._userCache) names[id] = info.name;
     return names;
+  }
+
+  // ---- sidebar -------------------------------------------------------------
+  //
+  // Everything this is a member of, not only the handful of VIPs and mentions
+  // the escalator watches — a directory, the way Slack's own app shows one.
+  // Membership changes rarely so it is cheap to cache; recency and previews
+  // are kept fresher but still budgeted, because this runs on a poll tick.
+
+  /**
+   * @param {boolean} [force] ignore the 15s debounce (used once, right after
+   *   sign-in, so the first screen is not empty for fifteen seconds).
+   */
+  async refreshSidebar(force) {
+    if (!this.me) return;
+    const now = this.now();
+    if (!force && this._sidebarRefreshAt && now - this._sidebarRefreshAt < 15000) return;
+    this._sidebarRefreshAt = now;
+    try {
+      await this._ensureMembership(force);
+      await this._refreshCounts();
+      await this._refreshPreviews();
+      this._rebuildSidebarItems();
+      this._sidebarLoaded = true;
+      this._sidebarAt = this.now();
+    } catch (err) {
+      this.log('slack: could not build the sidebar: ' + err.message);
+    }
+    this._scheduleStateEmit();
+  }
+
+  async _ensureMembership(force) {
+    const now = this.now();
+    if (!force && this._membershipAt && now - this._membershipAt < 5 * 60000) return;
+    const channels = [];
+    let cursor;
+    let pages = 0;
+    do {
+      const page = await this.api.call('users.conversations', Object.assign({
+        types: 'public_channel,private_channel,mpim,im', exclude_archived: true, limit: 200
+      }, cursor ? { cursor } : {}));
+      channels.push(...(page.channels || []));
+      cursor = page.response_metadata && page.response_metadata.next_cursor;
+      pages++;
+    } while (cursor && pages < 5);
+
+    const membership = new Map();
+    for (const ch of channels) {
+      if (ch.is_im) {
+        // A deleted person's DM, or the Slackbot DM, is not a conversation
+        // worth a row — nobody is on the other end of it to reply to.
+        if (ch.is_user_deleted || ch.user === 'USLACKBOT') continue;
+        // Not the name itself: a placeholder lookup may still be running, so
+        // _rebuildSidebarItems reads the cache fresh each time instead.
+        membership.set(ch.id, { id: ch.id, kind: 'dm', userId: ch.user, private: false });
+        this._resolveUserInfo(ch.user);
+      } else if (ch.is_mpim) {
+        const known = this._sidebarMembership.get(ch.id);
+        membership.set(ch.id, { id: ch.id, kind: 'group', title: (known && known.title) || mpimFallbackTitle(ch.name), private: true, user: null });
+        this._resolveMpimTitle(ch.id);
+      } else {
+        membership.set(ch.id, { id: ch.id, kind: 'channel', title: ch.name || ch.id, private: !!ch.is_private, user: null });
+      }
+    }
+    this._sidebarMembership = membership;
+    this._membershipAt = now;
+  }
+
+  /** A group DM's title is its members' names, joined — fetched once per id, like a channel's. */
+  async _resolveMpimTitle(conversationId) {
+    if (this._mpimMembersKnown.has(conversationId)) return;
+    this._mpimMembersKnown.add(conversationId);
+    try {
+      const result = await this.api.call('conversations.members', { channel: conversationId, limit: 200 });
+      const ids = (result.members || []).filter((id) => !this.me || id !== this.me.id);
+      await Promise.all(ids.map((id) => this._resolveUserInfo(id)));
+      const names = this._namesMap();
+      const title = ids.map((id) => names[id] || id).join(', ');
+      const item = this._sidebarMembership.get(conversationId);
+      if (item && title) item.title = title;
+    } catch (_) { /* keep the fallback title */ }
+  }
+
+  /** Recency and unread, cheaply: client.counts where it works, else a capped fallback. */
+  async _refreshCounts() {
+    const now = this.now();
+    if (this._countsAt && now - this._countsAt < 20000) return;
+    this._countsAt = now;
+    if (!this._countsUnsupported) {
+      try {
+        const result = await this.api.call('client.counts', {});
+        const map = new Map();
+        for (const group of ['channels', 'mpims', 'ims']) {
+          for (const c of (result[group] || [])) {
+            map.set(c.id, {
+              unread: !!c.has_unreads,
+              mentions: c.mention_count || 0,
+              latestTs: c.latest || null,
+              latestAt: c.latest ? Math.round(Number(c.latest) * 1000) : null
+            });
+          }
+        }
+        this._counts = map;
+        return;
+      } catch (err) {
+        if (err && (err.code === 'unknown_method' || err.code === 'not_allowed' || err.code === 'method_not_supported')) {
+          this._countsUnsupported = true; // an app token: never try client.counts again
+        } else {
+          this.log('slack: counts failed: ' + err.message);
+          return;
+        }
+      }
+    }
+    await this._refreshCountsFallback();
+  }
+
+  /** conversations.info per DM/group, capped — client.counts not being there is an app token, not a budget to blow. */
+  async _refreshCountsFallback() {
+    const ids = [...this._sidebarMembership.values()]
+      .filter((it) => it.kind === 'dm' || it.kind === 'group')
+      .map((it) => it.id);
+    let budget = 25;
+    for (const id of ids) {
+      if (budget-- <= 0) break;
+      try {
+        const info = await this.api.call('conversations.info', { channel: id });
+        const ch = info.channel || {};
+        const latest = ch.latest && ch.latest.ts;
+        this._counts.set(id, {
+          unread: !!(ch.unread_count_display || ch.unread_count),
+          mentions: 0,
+          latestTs: latest || null,
+          latestAt: latest ? Math.round(Number(latest) * 1000) : null
+        });
+      } catch (err) { this.log('slack: could not read a conversation\'s recency: ' + err.message); }
+    }
+  }
+
+  /** The newest message of whichever conversations moved, newest first, capped. */
+  async _refreshPreviews() {
+    const candidates = [...this._sidebarMembership.keys()]
+      .map((id) => ({ id, counts: this._counts.get(id) }))
+      .filter((x) => x.counts && x.counts.latestTs)
+      .filter((x) => {
+        const cached = this._previewCache.get(x.id);
+        return !cached || cached.ts !== x.counts.latestTs;
+      })
+      .sort((a, b) => Number(b.counts.latestTs) - Number(a.counts.latestTs));
+
+    let budget = 12;
+    for (const { id, counts } of candidates) {
+      if (budget-- <= 0) break;
+      try {
+        const history = await this.api.call('conversations.history', { channel: id, limit: 1 });
+        const m = (history.messages || [])[0];
+        if (!m) continue;
+        await this._resolveUserInfo(m.user);
+        this._previewCache.set(id, {
+          ts: counts.latestTs,
+          raw: m.text || '',
+          from: m.user || null,
+          mine: m.user === (this.me && this.me.id),
+          at: Math.round(Number(m.ts) * 1000)
+        });
+      } catch (err) { this.log('slack: could not read a preview: ' + err.message); }
+    }
+  }
+
+  _rebuildSidebarItems() {
+    const names = this._namesMap();
+    const pendingByConv = new Map();
+    for (const p of this.escalator.pending()) {
+      const at = pendingByConv.get(p.item.conversationId);
+      if (!at || p.arrivedAt < at) pendingByConv.set(p.item.conversationId, p.arrivedAt);
+    }
+    const vipIds = this.vipIds;
+
+    const items = [...this._sidebarMembership.values()].map((m) => {
+      const counts = this._counts.get(m.id) || {};
+      const preview = this._previewCache.get(m.id);
+      const last = preview ? {
+        text: toPlain(preview.raw, names),
+        from: preview.from ? (names[preview.from] || null) : null,
+        mine: preview.mine,
+        at: preview.at
+      } : null;
+      const pendingSince = pendingByConv.get(m.id) || null;
+      // A DM's name may have arrived after the row was first seen — read the
+      // cache fresh each time rather than whatever was known at membership load.
+      const user = m.kind === 'dm' ? (this._userCache.get(m.userId) || this._userInfoSync(m.userId)) : null;
+      const title = m.kind === 'dm' ? user.name : m.title;
+      return {
+        id: m.id,
+        kind: m.kind,
+        title,
+        private: !!m.private,
+        user,
+        latestAt: counts.latestAt != null ? counts.latestAt : null,
+        unread: !!counts.unread,
+        mentions: counts.mentions || 0,
+        last,
+        pending: !!pendingSince,
+        pendingSince,
+        vip: !!(m.kind === 'dm' && user && vipIds.has(user.id))
+      };
+    });
+
+    items.sort((a, b) => {
+      if (a.latestAt == null && b.latestAt == null) return a.title.localeCompare(b.title);
+      if (a.latestAt == null) return 1;
+      if (b.latestAt == null) return -1;
+      return b.latestAt - a.latestAt;
+    });
+    this._sidebarItems = items;
   }
 
   // ---- escalation ---------------------------------------------------------
@@ -582,6 +822,9 @@ class SlackService extends EventEmitter {
       messages = (history.messages || []).slice().reverse();
     }
     for (const m of messages) await this._resolveUserInfo(m.user);
+    // Not just who sent each message: who they mention too, so a name nobody
+    // has looked up yet still has a chance to arrive before this renders.
+    for (const m of messages) await Promise.all([...new Set(mentionedIds(m.text))].map((id) => this._resolveUserInfo(id)));
     const names = this._namesMap();
     const out = messages.slice(-50).map((m) => ({
       ts: m.ts,
@@ -589,7 +832,13 @@ class SlackService extends EventEmitter {
       name: names[m.user] || m.user,
       initials: initialsFor(names[m.user] || m.user || '?'),
       mine: m.user === (this.me && this.me.id),
-      html: toHtml(m.text || '', names),
+      html: messageHtml(m, names),
+      edited: !!m.edited,
+      files: (m.files || []).length,
+      reactions: (m.reactions || []).map((r) => ({
+        name: r.name, emoji: applyEmoji(':' + r.name + ':'), count: r.count || 0,
+        mine: !!(this.me && (r.users || []).includes(this.me.id))
+      })),
       at: Math.round(Number(m.ts) * 1000),
       threadTs: m.thread_ts,
       replyCount: m.reply_count
@@ -642,9 +891,14 @@ class SlackService extends EventEmitter {
       const at = since.get(p.item.conversationId);
       if (!at || p.arrivedAt < at) since.set(p.item.conversationId, p.arrivedAt);
     }
+    const names = this._namesMap();
     return {
       enabled: !!(this.cfg && this.cfg.enabled),
-      connected: !!this.me && !this.error,
+      // Socket mode knows the instant it is live; polling only knows after a
+      // poll has actually gone through, so "connected" does not claim more
+      // than either path has really managed.
+      connected: !!this.me && !this.error && (this.socketState === 'live' || this._pollOk),
+      mode: this.createSocket ? 'socket' : 'poll',
       socket: this.socketState,
       error: this.error || null,
       signedOut: this.error === SIGNED_OUT,
@@ -653,8 +907,14 @@ class SlackService extends EventEmitter {
       vips: this.vips.map((v) => ({ id: v.id, name: v.name, initials: v.initials })),
       conversations: [...this.conversations.values()].slice().reverse().map((c) => {
         const waiting = since.get(c.id);
-        return Object.assign({}, c, { pendingSince: c.pending && waiting ? waiting : null });
-      })
+        const last = c.last ? {
+          text: toPlain(c.last.raw, names),
+          from: c.last.from ? (names[c.last.from] || c.last.from) : null,
+          ts: c.last.ts
+        } : null;
+        return Object.assign({}, c, { last, pendingSince: c.pending && waiting ? waiting : null });
+      }),
+      sidebar: { loaded: this._sidebarLoaded, at: this._sidebarAt, items: this._sidebarItems }
     };
   }
 
@@ -675,6 +935,72 @@ class SlackService extends EventEmitter {
 function mentionsUser(text, id) {
   if (!text || !id) return false;
   return text.includes('<@' + id + '>') || text.includes('<@' + id + '|');
+}
+
+/** Every `<@U…>` a raw message mentions, Slack's own un-escaped form. */
+const MENTION_ID = /<@([A-Z0-9]+)(?:\|[^>]*?)?>/g;
+
+/** Before a group DM's members are known: Slack's own `mpdm-a--b--c-1` name, made a little more readable. */
+function mpimFallbackTitle(name) {
+  if (!name) return 'Group';
+  return String(name).replace(/^mpdm-/, '').replace(/-\d+$/, '').split('--').join(', ');
+}
+
+function mentionedIds(text) {
+  const ids = [];
+  if (!text) return ids;
+  MENTION_ID.lastIndex = 0;
+  let m;
+  while ((m = MENTION_ID.exec(text))) ids.push(m[1]);
+  return ids;
+}
+
+/**
+ * A message's text when it has one; otherwise whatever made it worth showing
+ * — a file, an attachment, a huddle, or rich-text blocks — so a bubble is
+ * never left empty. The last resort is a dim placeholder, never nothing.
+ */
+function messageHtml(m, names) {
+  const text = m && m.text;
+  if (text && String(text).trim()) return toHtml(text, names);
+  if (/huddle/i.test((m && m.subtype) || '')) return 'Huddle';
+
+  const files = (m && m.files) || [];
+  if (files.length) {
+    return files.map((f) => {
+      const label = '📎 ' + escapeHtml(f.title || f.name || 'file');
+      return /^https:\/\//.test(f.permalink || '') ? '<a href="' + escapeHtml(f.permalink) + '">' + label + '</a>' : label;
+    }).join('<br>');
+  }
+
+  const attachments = (m && m.attachments) || [];
+  if (attachments.length) {
+    const pieces = attachments.map((a) => escapeHtml(a.fallback || a.text || a.title || '')).filter(Boolean);
+    if (pieces.length) return pieces.join('<br>');
+  }
+
+  const blocks = (m && m.blocks) || [];
+  const flattened = blocks.length ? flattenRichText(blocks) : '';
+  if (flattened) return toHtml(flattened, names);
+
+  return '<span class="slack-dim">(message)</span>';
+}
+
+/** Rich-text blocks, flattened back to Slack's own mrkdwn tokens so toHtml can read them. */
+function flattenRichText(blocks) {
+  const parts = [];
+  for (const block of blocks) {
+    if (block.type !== 'rich_text') continue;
+    for (const section of block.elements || []) {
+      for (const leaf of section.elements || []) {
+        if (leaf.type === 'text' && leaf.text) parts.push(leaf.text);
+        else if (leaf.type === 'emoji' && leaf.name) parts.push(':' + leaf.name + ':');
+        else if (leaf.type === 'user' && leaf.user_id) parts.push('<@' + leaf.user_id + '>');
+        else if (leaf.type === 'link' && leaf.url) parts.push(leaf.text || leaf.url);
+      }
+    }
+  }
+  return parts.join(' ').trim();
 }
 
 function initialsFor(name) {
