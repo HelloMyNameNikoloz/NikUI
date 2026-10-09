@@ -647,4 +647,47 @@ module.exports = async function () {
     check('a failed prefs read is just an empty mute list', service.isSlackMuted('D1') === false);
     service.stop();
   }
+
+  suite('the Slack service: a dropped network is not forever');
+
+  {
+    // Started with the network down (a laptop just woken): it must ask who it
+    // is again, and say connected once Slack answers, without a restart.
+    let down = true;
+    const net = () => Object.assign(new Error('could not reach Slack'), { code: 'network' });
+    const handlers = {
+      'auth.test': () => down ? net() : { ok: true, user_id: 'UME', user: 'me' },
+      'conversations.list': () => down ? net() : { ok: true, channels: [] },
+      'search.messages': () => down ? net() : { ok: true, messages: { matches: [] } }
+    };
+    const clock = fakeClock(1_000_000);
+    const service = new SlackService({
+      api: fakeApi(handlers),
+      config: () => ({ enabled: true, vips: [], mentions: true, pollMs: 20000 }),
+      now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, log: () => {}
+    });
+    await service.start();
+    await flush();
+    checkEqual('down at start: it says so', service.state().error, 'No connection to Slack.');
+    check('and is not connected', !service.state().connected);
+
+    down = false;
+    clock.advance(60000);
+    await clock.fireAll();
+    check('the next poll signs in again', service.state().me && service.state().me.id === 'UME');
+    checkEqual('and the error is gone', service.state().error, null);
+    check('connected again, with no restart', service.state().connected);
+
+    down = true;
+    clock.advance(60000);
+    await clock.fireAll();
+    checkEqual('a poll that fails later says so again', service.state().error, 'No connection to Slack.');
+
+    down = false;
+    clock.advance(60000);
+    await clock.fireAll();
+    checkEqual('and the first one that goes through clears it', service.state().error, null);
+    check('connected once more', service.state().connected);
+    service.stop();
+  }
 };

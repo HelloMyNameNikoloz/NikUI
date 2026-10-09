@@ -39,7 +39,15 @@ class SlackService extends EventEmitter {
    */
   constructor({ api, createSocket, config, now, setTimeout: setTimeoutFn, clearTimeout: clearTimeoutFn, log }) {
     super();
-    this.api = api;
+    // An error is what the last call that failed said, and stays only until
+    // one goes through: a laptop waking from sleep fails a poll or two, and
+    // that must not read "No connection" for the rest of the day.
+    this.api = Object.create(api);
+    this.api.call = async (...args) => {
+      const result = await api.call(...args);
+      if (this.error) { this.error = null; this._scheduleStateEmit(); }
+      return result;
+    };
     this.createSocket = createSocket || null;
     this.config = config || (() => ({}));
     this.now = now || Date.now;
@@ -133,15 +141,7 @@ class SlackService extends EventEmitter {
     }
 
     this.error = null;
-    try {
-      const auth = await this.api.call('auth.test', {});
-      this.me = { id: auth.user_id, name: auth.user, teamId: auth.team_id, team: auth.team, url: auth.url };
-      await this._resolveVips(cfg.vips);
-      await this._mapVipChannels();
-    } catch (err) {
-      this.error = humanError(err);
-      this.log('slack: ' + this.error);
-    }
+    await this._signIn();
 
     if (this._stopping) return; // stop() raced us while we were awaiting Slack
     if (this.me) this.refreshSidebar(true).catch((err) => this.log('slack: sidebar failed: ' + err.message));
@@ -150,6 +150,19 @@ class SlackService extends EventEmitter {
     this._armRecheck();
     this._armDue();
     this._emitState();
+  }
+
+  /** Who this is, and the VIPs' DMs. Retried from the poll loop until it works. */
+  async _signIn() {
+    try {
+      const auth = await this.api.call('auth.test', {});
+      this.me = { id: auth.user_id, name: auth.user, teamId: auth.team_id, team: auth.team, url: auth.url };
+      await this._resolveVips(this.cfg.vips);
+      await this._mapVipChannels();
+    } catch (err) {
+      this.error = humanError(err);
+      this.log('slack: ' + this.error);
+    }
   }
 
   stop() {
@@ -302,6 +315,13 @@ class SlackService extends EventEmitter {
   _startPollLoop() {
     const tick = async () => {
       if (this._stopping) return;
+      // Started while the network was down: nothing below can work until it
+      // knows who it is, so ask again rather than poll as nobody forever.
+      if (!this.me) {
+        await this._signIn();
+        if (this._stopping) return;
+        if (this.me) this.refreshSidebar(true).catch((err) => this.log('slack: sidebar failed: ' + err.message));
+      }
       try { await this._pollOnce(); this._pollOk = true; }
       catch (err) { this._pollOk = false; this.error = humanError(err); this.log('slack: poll failed: ' + err.message); }
       await this.refreshSidebar().catch((err) => this.log('slack: sidebar failed: ' + err.message));
