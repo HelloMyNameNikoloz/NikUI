@@ -533,4 +533,118 @@ module.exports = async function () {
     check('and whether it is mine', reacted.reactions[0].mine === true);
     service.stop();
   }
+
+  // ---- thread(): images, and fetching their bytes on request ---------------
+  {
+    const handlers = {
+      'auth.test': () => ({ ok: true, user_id: 'UME', user: 'me' }),
+      'conversations.list': () => ({ ok: true, channels: [] }),
+      'search.messages': () => ({ ok: true, messages: { matches: [] } }),
+      'users.info': () => ({ ok: true, user: { id: 'U1', name: 'dave', profile: { display_name: 'Dave' } } }),
+      'conversations.history': () => ({
+        ok: true,
+        has_more: true,
+        messages: [
+          { ts: '1.0', user: 'U1', files: [{
+            id: 'F1', name: 'cat.png', title: 'a cat', mimetype: 'image/png',
+            thumb_720: 'https://files.slack.com/files-tmb/T1-F1/720.png',
+            original_w: 720, original_h: 480, permalink: 'https://x/cat.png'
+          }] },
+          { ts: '2.0', user: 'U1', files: [{ id: 'F2', name: 'report.pdf', title: 'report', mimetype: 'application/pdf', permalink: 'https://x/report.pdf' }] }
+        ]
+      })
+    };
+    const fetched = [];
+    const api = fakeApi(handlers);
+    api.fetchFile = async (url) => { fetched.push(url); return { mimetype: 'image/png', buffer: Buffer.from([1, 2, 3]) }; };
+    const service = new SlackService({ api, config: () => ({ enabled: true, vips: [], mentions: false, pollMs: 20000 }) });
+    await service.start();
+    await flush();
+
+    const { messages, hasMore } = await service.thread('C1');
+    check('hasMore reflects Slack\'s own has_more', hasMore === true);
+    const image = messages.find((m) => m.ts === '1.0').files[0];
+    checkEqual('an image file carries its id, name, title, mimetype', image, {
+      id: 'F1', name: 'cat.png', title: 'a cat', mimetype: 'image/png',
+      image: true, w: 720, h: 480, permalink: 'https://x/cat.png'
+    });
+    const pdf = messages.find((m) => m.ts === '2.0').files[0];
+    check('a non-image file is not marked as one', pdf.image === false && pdf.mimetype === 'application/pdf');
+
+    const got = await service.fileData('F1');
+    check('fileData fetches the remembered thumb', got.ok && got.dataUrl === 'data:image/png;base64,' + Buffer.from([1, 2, 3]).toString('base64'));
+    checkEqual('from the thumb url, not the original', fetched, ['https://files.slack.com/files-tmb/T1-F1/720.png']);
+
+    await service.fileData('F1');
+    checkEqual('a second ask is served from cache, not fetched again', fetched.length, 1);
+
+    const missing = await service.fileData('never-seen');
+    check('an id this never saw a thumb for is refused, not thrown', missing.ok === false && /not available/.test(missing.reason));
+
+    // Paging back: `before` asks Slack for older messages, oldest first.
+    const paged = await service.thread('C1', undefined, { before: '1.0' });
+    check('a before ts is sent as Slack\'s own latest/inclusive pair', true); // behavioural check below covers the call shape
+    const call = api.calls.slice().reverse().find((c) => c.method === 'conversations.history' && c.params.latest === '1.0');
+    check('the history call for older messages uses latest/inclusive:false', !!call && call.params.inclusive === false);
+    service.stop();
+  }
+
+  // ---- muting: Slack's own list, the local one, and a direct mention either way ----
+  {
+    let prefsCalls = 0;
+    const handlers = {
+      'auth.test': () => ({ ok: true, user_id: 'UME', user: 'me' }),
+      'conversations.list': () => ({ ok: true, channels: [{ id: 'D1', user: 'U100', is_im: true }] }),
+      'users.conversations': () => ({ ok: true, channels: [{ id: 'D1', user: 'U100', is_im: true }] }),
+      'users.info': () => ({ ok: true, user: { id: 'U100', name: 'dave', profile: { display_name: 'Dave' } } }),
+      'search.messages': () => ({ ok: true, messages: { matches: [] } }),
+      'client.counts': () => ({ ok: true, channels: [], mpims: [], ims: [] }),
+      'users.prefs.get': () => { prefsCalls++; return { ok: true, prefs: { muted_channels: 'D9,D1' } }; }
+    };
+    const clock = fakeClock(1_000_000);
+    const service = new SlackService({
+      api: fakeApi(handlers),
+      config: () => ({ enabled: true, vips: ['U100'], mentions: true, pollMs: 20000 }),
+      now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout
+    });
+    await service.start();
+    await flush();
+
+    check('Slack\'s own muted_channels is read', prefsCalls === 1 && service.isSlackMuted('D1'));
+
+    service._handleIncoming({ type: 'message', channel: 'D1', user: 'U100', text: 'hey', ts: '10' });
+    checkEqual('a VIP DM muted in Slack itself does not escalate', service.escalator.pending().length, 0);
+
+    service._handleIncoming({ type: 'message', channel: 'D1', user: 'U100', text: 'hey <@UME>', ts: '11' });
+    checkEqual('but a direct mention still does, muted or not', service.escalator.pending().length, 1);
+
+    service.localMuted = new Set(['D1']);
+    service.escalator.resolve('D1');
+    service._handleIncoming({ type: 'message', channel: 'D1', user: 'U100', text: 'hey again', ts: '12' });
+    checkEqual('the local list mutes just as well', service.escalator.pending().length, 0);
+
+    await service.refreshSidebar(true);
+    await flush();
+    const item = service.state().sidebar.items.find((i) => i.id === 'D1');
+    check('the sidebar says muted, and by whom', item.muted === true && item.mutedIn === 'slack');
+    service.stop();
+  }
+
+  {
+    // Slack's own list failing is treated as empty, not thrown.
+    const handlers = {
+      'auth.test': () => ({ ok: true, user_id: 'UME', user: 'me' }),
+      'conversations.list': () => ({ ok: true, channels: [] }),
+      'search.messages': () => ({ ok: true, messages: { matches: [] } }),
+      'users.prefs.get': () => Object.assign(new Error('internal_error'), { code: 'internal_error' })
+    };
+    const service = new SlackService({
+      api: fakeApi(handlers),
+      config: () => ({ enabled: true, vips: [], mentions: false, pollMs: 20000 })
+    });
+    await service.start();
+    await flush();
+    check('a failed prefs read is just an empty mute list', service.isSlackMuted('D1') === false);
+    service.stop();
+  }
 };

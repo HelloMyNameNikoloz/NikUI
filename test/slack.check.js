@@ -123,6 +123,20 @@ const SIDEBAR_ITEMS = [
     latestAt: NOW - 90 * MIN, unread: 1, mentions: 0,
     last: { text: 'go/no-go?', from: 'Priya', mine: false, at: NOW - 90 * MIN },
     pending: true, pendingSince: NOW - 10 * MIN, vip: false
+  },
+  // Two muted rows: one mutable here, one muted in Slack itself (so Unmute
+  // has to be disabled) — both should sort after every other channel.
+  {
+    id: 'c-muted', kind: 'channel', title: 'random', private: false, user: null,
+    latestAt: NOW - 1 * MIN, unread: 3, mentions: 2,
+    last: { text: 'lol', from: 'Jin', mine: false, at: NOW - 1 * MIN },
+    pending: false, pendingSince: null, vip: false, muted: true, mutedIn: null
+  },
+  {
+    id: 'c-muted-slack', kind: 'channel', title: 'announcements', private: false, user: null,
+    latestAt: NOW - 2 * MIN, unread: 0, mentions: 0,
+    last: { text: 'read only', from: 'Bot', mine: false, at: NOW - 2 * MIN },
+    pending: false, pendingSince: null, vip: false, muted: true, mutedIn: 'slack'
   }
 ];
 
@@ -182,8 +196,34 @@ function longThread(n) {
       html: 'message number ' + i, at: NOW - (n - i) * MIN
     });
   }
-  return { conversation: CONV_ANNA, thread: null, messages };
+  return { conversation: CONV_ANNA, thread: null, messages, hasMore: true };
 }
+
+// A real, valid 1x1 PNG — tiny enough to be a literal, real enough that an
+// <img> actually decodes it and the lightbox has something to show.
+const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+// Two image messages — one whose bytes arrive, one the laptop refuses — and
+// hasMore: false, so the quiet "Beginning of conversation" line gets a turn.
+const THREAD_IMAGE = {
+  conversation: CONV_ANNA,
+  thread: null,
+  hasMore: false,
+  messages: [
+    { ts: '20', user: 'U_ANNA', name: 'Anna', initials: 'A', mine: false, html: '',
+      files: [{ id: 'F1', name: 'shot.png', title: 'shot.png', mimetype: 'image/png', image: true, w: 800, h: 400, permalink: 'https://slack.test/f1' }],
+      at: NOW - 3 * MIN },
+    { ts: '21', user: 'U_ANNA', name: 'Anna', initials: 'A', mine: false, html: '',
+      files: [{ id: 'F2', name: 'broken.png', title: 'broken.png', mimetype: 'image/png', image: true, w: 200, h: 200, permalink: 'https://slack.test/f2' }],
+      at: NOW - 2 * MIN }
+  ]
+};
+
+// A page of history older than anything already loaded, oldest-first.
+const OLDER_ANNA = [
+  { ts: '90', user: 'U_ANNA', name: 'Anna', initials: 'A', mine: false, html: 'older message one', at: NOW - 20 * MIN },
+  { ts: '95', user: 'U_ANNA', name: 'Anna', initials: 'A', mine: false, html: 'older message two', at: NOW - 15 * MIN }
+];
 
 (async () => {
   const out = {};
@@ -313,7 +353,7 @@ function longThread(n) {
 
     // ---- thread: loading, then rendered with grouping, reactions, files --
     out.loadingShown = /Loading/.test(await text('.ns-messages') || '');
-    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages });
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true });
     out.groupCount = await count('.ns-group');
     // A DM never names the sender above a group — there are only two people
     // in it, and the thread header already says who.
@@ -344,7 +384,7 @@ function longThread(n) {
     // ---- a channel thread: named senders, a reaction, edited -------------
     await browser.evaluate("window.__posted.length = 0; true");
     await click('.ns-row[data-id="c-team"]');
-    await post({ type: 'slack:thread', conversation: THREAD_TEAM.conversation, thread: null, messages: THREAD_TEAM.messages });
+    await post({ type: 'slack:thread', conversation: THREAD_TEAM.conversation, thread: null, messages: THREAD_TEAM.messages, hasMore: true });
     out.channelShowsNames = (await count('.ns-msg-name')) >= 2;
     out.channelHasReaction = await exists('.ns-reaction');
     out.repliesLinkShown = /3 replies/.test(await text('.ns-replies') || '');
@@ -353,7 +393,7 @@ function longThread(n) {
 
     // ---- back to Anna for the composer / reply checks --------------------
     await click('.ns-row[data-id="c-anna"]');
-    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages });
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true });
 
     // ---- reply: Enter sends, ok clears -----------------------------------
     await browser.evaluate(
@@ -391,11 +431,11 @@ function longThread(n) {
     // ---- focus banner -----------------------------------------------------
     await browser.evaluate("window.__posted.length = 0; true");
     await click('.ns-row[data-id="c-team"]');
-    await post({ type: 'slack:thread', conversation: THREAD_TEAM.conversation, thread: null, messages: THREAD_TEAM.messages });
+    await post({ type: 'slack:thread', conversation: THREAD_TEAM.conversation, thread: null, messages: THREAD_TEAM.messages, hasMore: true });
     await post({ type: 'slack:focus', conversation: 'c-anna', reason: 'popup' });
     out.focusSelected = (await posted()).some((m) => m.type === 'slack:open' && m.conversation === 'c-anna');
     out.bannerShowsWaiting = /waiting/i.test(await text('.ns-banner') || '');
-    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages });
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true });
 
     // ---- VIP sheet: add and remove -----------------------------------------
     await click('.ns-vipbtn');
@@ -435,17 +475,171 @@ function longThread(n) {
     out.refreshThrottled = !(await posted()).some((m) => m.type === 'slack:refresh');
 
     // ---- only the two panes scroll: a long thread never grows the page ----
-    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: longThread(80).messages });
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: longThread(80).messages, hasMore: true });
     await new Promise((r) => setTimeout(r, 350));
     out.onlyPanesScroll = await browser.evaluate('document.scrollingElement.scrollHeight <= window.innerHeight');
-    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages });
 
-    // ---- mayReply: false hides the composer --------------------------------
+    // ---- the page itself never scrolls: focusing the composer, typing, and
+    //      wheeling the transcript all stay inside the two panes -----------
+    const sidebarTopBefore = await browser.evaluate("document.querySelector('.ns-row').getBoundingClientRect().top");
+    await browser.evaluate(
+      `(function(){
+        var ta = document.querySelector('.ns-input');
+        ta.focus({ preventScroll: true });
+        ta.value = 'checking the scroll';
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        var s = document.querySelector('.ns-messages');
+        s.dispatchEvent(new WheelEvent('wheel', { deltaY: -400, bubbles: true }));
+        return true;
+      })()`
+    );
+    await new Promise((r) => setTimeout(r, 60));
+    out.pageUnmovedAfterFocusType = await browser.evaluate('window.scrollY === 0');
+    out.sidebarRowUnmoved = (await browser.evaluate("document.querySelector('.ns-row').getBoundingClientRect().top")) === sidebarTopBefore;
+    // Directly exercising the guard: whatever scrolled an ancestor, it snaps
+    // back the same tick.
+    await browser.evaluate(
+      `(function(){
+        document.documentElement.scrollTop = 500; document.documentElement.dispatchEvent(new Event('scroll'));
+        document.body.scrollTop = 500; document.body.dispatchEvent(new Event('scroll'));
+        document.querySelector('.nik-slack').scrollTop = 500; document.querySelector('.nik-slack').dispatchEvent(new Event('scroll'));
+        window.scrollTo(0, 400); window.dispatchEvent(new Event('scroll'));
+        return true;
+      })()`
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    out.scrollGuardResets = await browser.evaluate(
+      `(function(){
+        return window.scrollY === 0 && document.documentElement.scrollTop === 0 &&
+          document.body.scrollTop === 0 && document.querySelector('.nik-slack').scrollTop === 0;
+      })()`
+    );
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true });
+
+    // ---- opens pinned to the bottom, and stays there as content grows,
+    //      but never yanks a reader who scrolled up -------------------------
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: longThread(40).messages, hasMore: true });
+    await new Promise((r) => setTimeout(r, 80));
+    out.opensAtBottom = await browser.evaluate(
+      "(function(){ var s = document.querySelector('.ns-messages'); return s.scrollHeight - s.scrollTop - s.clientHeight < 2; })()"
+    );
+    // Scrolled well clear of the top (so this does not also trigger a
+    // slack:older request) and of the bottom.
+    const scrollTopScrolledUp = await browser.evaluate(
+      `(function(){
+        var s = document.querySelector('.ns-messages');
+        s.scrollTop = Math.round(s.scrollHeight / 2);
+        s.dispatchEvent(new Event('scroll'));
+        return s.scrollTop;
+      })()`
+    );
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: longThread(41).messages, hasMore: true });
+    await new Promise((r) => setTimeout(r, 60));
+    out.scrolledUpNotYanked = (await browser.evaluate("document.querySelector('.ns-messages').scrollTop")) === scrollTopScrolledUp;
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true });
+
+    // ---- loading older messages, scrolled near the top --------------------
+    await browser.evaluate("window.__posted.length = 0; true");
+    await browser.evaluate(
+      "(function(){ var s = document.querySelector('.ns-messages'); s.scrollTop = 0; s.dispatchEvent(new Event('scroll')); return true; })()"
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    const olderMsg = (await posted()).find((m) => m.type === 'slack:older');
+    out.olderRequested = !!olderMsg && olderMsg.conversation === 'c-anna' && olderMsg.before === THREAD_ANNA.messages[0].ts;
+    out.olderSpinnerShown = await exists('.ns-older-spinner');
+    // In flight already — scrolling near the top again must not ask twice.
+    await browser.evaluate("window.__posted.length = 0; true");
+    await browser.evaluate(
+      "(function(){ var s = document.querySelector('.ns-messages'); s.dispatchEvent(new Event('scroll')); return true; })()"
+    );
+    out.olderNotDoubleRequested = !(await posted()).some((m) => m.type === 'slack:older');
+    const heightBeforeOlder = await browser.evaluate("document.querySelector('.ns-messages-inner').scrollHeight");
+    await post({ type: 'slack:older', conversation: THREAD_ANNA.conversation, thread: null, messages: OLDER_ANNA, hasMore: false });
+    await new Promise((r) => setTimeout(r, 30));
+    out.olderPrepended = await text('.ns-messages');
+    out.olderSpinnerGone = !(await exists('.ns-older-spinner'));
+    out.beginningShown = /Beginning of conversation/.test(await text('.ns-messages') || '');
+    out.olderAnchorKept = (await browser.evaluate("document.querySelector('.ns-messages-inner').scrollHeight")) > heightBeforeOlder;
+    await click('.ns-row[data-id="c-anna"]');
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true });
+
+    // ---- images: a sized placeholder, lazily filled in, a lightbox --------
+    await browser.evaluate("window.__posted.length = 0; true");
+    await post({ type: 'slack:thread', conversation: THREAD_IMAGE.conversation, thread: null, messages: THREAD_IMAGE.messages, hasMore: THREAD_IMAGE.hasMore });
+    await new Promise((r) => setTimeout(r, 60));
+    out.imagePlaceholderSized = await browser.evaluate(
+      "(function(){ var i = document.querySelector('.ns-image'); return !!i && i.style.width !== '' && i.getBoundingClientRect().width <= 320; })()"
+    );
+    const fileReqs = (await posted()).filter((m) => m.type === 'slack:file').map((m) => m.id);
+    out.imageAskedLazily = fileReqs.includes('F1') && fileReqs.includes('F2');
+    await post({ type: 'slack:file', id: 'F1', ok: true, dataUrl: TINY_PNG });
+    await post({ type: 'slack:file', id: 'F2', ok: false });
+    await new Promise((r) => setTimeout(r, 60));
+    out.imageLoadedShowsSrc = (await browser.evaluate(
+      "(function(){ var i = document.querySelector('.ns-image.loaded img'); return i ? i.src.indexOf('data:') === 0 : false; })()"
+    ));
+    out.imageRefusedFallsBackToChip = (await count('.ns-file')) >= 1;
+    await click('.ns-image');
+    out.lightboxOpens = await exists('.ns-lightbox');
+    await browser.evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true");
+    out.lightboxEscCloses = !(await exists('.ns-lightbox'));
+    await new Promise((r) => setTimeout(r, 350));
+    await browser.shot('/tmp/slack-ios-image.png');
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true });
+
+    // ---- mute: dimmed, grey badge, bell glyph, sorted last, a context menu -
+    out.mutedRowDimmed = await browser.evaluate("document.querySelector('.ns-row[data-id=\"c-muted\"]').classList.contains('muted')");
+    out.mutedNoUnreadDot = !(await exists('.ns-row[data-id="c-muted"] .ns-dot'));
+    out.mutedBadgeGrey = await exists('.ns-row[data-id="c-muted"] .ns-badge-muted');
+    out.mutedBellShown = await exists('.ns-row[data-id="c-muted"] .ns-muted-ico');
+    out.mutedSortsLast = (await browser.evaluate(
+      "Array.from(document.querySelectorAll('.ns-section:last-child .ns-row')).pop().dataset.id"
+    )) === 'c-muted-slack';
+    await browser.evaluate(
+      `(function(){
+        var row = document.querySelector('.ns-row[data-id="c-theo"]');
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 200 }));
+        return true;
+      })()`
+    );
+    out.contextMenuOpens = await exists('.ns-ctx-menu');
+    out.contextMenuOffersMute = /Mute/.test(await text('.ns-ctx-menu') || '');
+    await new Promise((r) => setTimeout(r, 350));
+    await browser.shot('/tmp/slack-ios-menu.png');
+    await browser.evaluate("window.__posted.length = 0; true");
+    await click('.ns-ctx-item');
+    const muteMsg = (await posted()).find((m) => m.type === 'slack:mute');
+    out.muteSent = muteMsg && muteMsg.conversation === 'c-theo' && muteMsg.muted === true;
+    out.contextMenuClosedAfterClick = !(await exists('.ns-ctx-menu'));
+    // Muted in Slack itself: Unmute is offered, but disabled, and says why.
+    await browser.evaluate(
+      `(function(){
+        var row = document.querySelector('.ns-row[data-id="c-muted-slack"]');
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 200 }));
+        return true;
+      })()`
+    );
+    out.unmuteDisabledWhenMutedInSlack = await browser.evaluate(
+      "(function(){ var b = document.querySelector('.ns-ctx-item.disabled'); return !!b && /Unmute/.test(b.textContent) && /Muted in Slack/.test(b.textContent); })()"
+    );
+    await browser.evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true");
+    out.contextMenuEscCloses = !(await exists('.ns-ctx-menu'));
+
+    // ---- mayReply: false hides the composer, and the context menu's Mute --
     await post({ type: 'slack:state', state: Object.assign({}, BASE_STATE, { mayReply: false }) });
     out.composerHiddenWhenLocked = !(await exists('.ns-input'));
     out.lockedMessageShown = /watch/.test(await text('.ns-locked') || '');
+    await browser.evaluate(
+      `(function(){
+        var row = document.querySelector('.ns-row[data-id="c-muted"]');
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 200 }));
+        return true;
+      })()`
+    );
+    out.watchOnlyHasNoMute = !/Mute/.test(await text('.ns-ctx-menu') || '') && /Open in Slack/.test(await text('.ns-ctx-menu') || '');
+    await browser.evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true");
     await post({ type: 'slack:state', state: BASE_STATE });
-    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages });
+    await post({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true });
 
     out.errorsWide = (await browser.evaluate('window.__errors')).length;
     await new Promise((r) => setTimeout(r, 350));
@@ -468,7 +662,7 @@ function longThread(n) {
       `(function(){ var e = document.querySelector('.ns-row[data-id="c-anna"]'); if (e) e.click(); return true; })()`
     );
     await lightBrowser.evaluate(
-      `(function(){ window.dispatchEvent(new MessageEvent('message', { data: ${JSON.stringify({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages })} })); return true; })()`
+      `(function(){ window.dispatchEvent(new MessageEvent('message', { data: ${JSON.stringify({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true })} })); return true; })()`
     );
     await new Promise((r) => setTimeout(r, 350));
     await lightBrowser.shot('/tmp/slack-ios-light.png');
@@ -506,7 +700,7 @@ function longThread(n) {
 
     await pclick('.ns-row[data-id="c-anna"]');
     out.narrowOpensThread = await phone.evaluate("document.querySelector('.nik-slack').classList.contains('show-thread')");
-    await ppost({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages });
+    await ppost({ type: 'slack:thread', conversation: THREAD_ANNA.conversation, thread: null, messages: THREAD_ANNA.messages, hasMore: true });
     out.narrowThreadNoOverflow = await noOverflow();
     // The slide-in is a 350ms CSS transition — wait for it to settle so the
     // screenshot shows the thread in place, not mid-slide.
@@ -540,7 +734,7 @@ function longThread(n) {
       JSON.stringify(out.sectionOrder) === JSON.stringify(['Needs you', 'Direct messages', 'Channels'])],
     // 7 items, not 9: a pending conversation (c-anna, c-wait) is drawn once,
     // in "Needs you" — not a second time in Direct messages/Channels too.
-    ['every sidebar row is drawn once, pending or not', out.rowCount === 7],
+    ['every sidebar row is drawn once, pending or not', out.rowCount === 9],
     ['direct-message rows exist', out.dmRowsExist === true],
     ['a group row exists', out.groupRowExists === true],
     ['channel rows exist', out.channelRowsExist === true],
@@ -583,6 +777,36 @@ function longThread(n) {
     ['becoming visible sends slack:refresh', out.refreshSentOnFocus === true],
     ['but not twice within 15s', out.refreshThrottled === true],
     ['only the list and thread panes scroll, never the page', out.onlyPanesScroll === true],
+    ['the page does not move when the composer is focused and typed into', out.pageUnmovedAfterFocusType === true],
+    ['nor does the sidebar', out.sidebarRowUnmoved === true],
+    ['scrolling an ancestor directly is snapped back', out.scrollGuardResets === true],
+    ['a conversation opens scrolled to the newest message', out.opensAtBottom === true],
+    ['scrolled up, a new message does not yank the reader down', out.scrolledUpNotYanked === true],
+    ['scrolling near the top asks for older messages', out.olderRequested === true],
+    ['showing a loading row while it waits', out.olderSpinnerShown === true],
+    ['and not asking again while one is in flight', out.olderNotDoubleRequested === true],
+    ['the older page is prepended', /older message one/.test(out.olderPrepended || '')],
+    ['its spinner is gone', out.olderSpinnerGone === true],
+    ['hasMore: false shows the quiet end of history', out.beginningShown === true],
+    ['prepending keeps the reader anchored, not reset to the top', out.olderAnchorKept === true],
+    ['an image file shows a sized placeholder', out.imagePlaceholderSized === true],
+    ['asked for lazily, by id', out.imageAskedLazily === true],
+    ['a loaded image gets its data: src', out.imageLoadedShowsSrc === true],
+    ['a refused one falls back to the file chip', out.imageRefusedFallsBackToChip === true],
+    ['clicking an image opens a lightbox', out.lightboxOpens === true],
+    ['Esc closes it', out.lightboxEscCloses === true],
+    ['a muted row is dimmed', out.mutedRowDimmed === true],
+    ['with no unread dot', out.mutedNoUnreadDot === true],
+    ['a grey mention badge', out.mutedBadgeGrey === true],
+    ['and a bell-slash glyph', out.mutedBellShown === true],
+    ['muted rows sort to the end of their section', out.mutedSortsLast === true],
+    ['right-click opens a context menu', out.contextMenuOpens === true],
+    ['offering Mute', out.contextMenuOffersMute === true],
+    ['choosing it sends slack:mute', out.muteSent === true],
+    ['and closes the menu', out.contextMenuClosedAfterClick === true],
+    ['muted in Slack itself, Unmute is disabled and says so', out.unmuteDisabledWhenMutedInSlack === true],
+    ['Esc closes the context menu', out.contextMenuEscCloses === true],
+    ['a watch-only seat gets no Mute item', out.watchOnlyHasNoMute === true],
     ['a watch-only phone has no composer', out.composerHiddenWhenLocked === true],
     ['and says why', out.lockedMessageShown === true],
     ['no script errors at desktop width', out.errorsWide === 0],
@@ -601,7 +825,8 @@ function longThread(n) {
     if (!ok) failed++;
   }
   console.log('\nScreenshots: /tmp/slack-ios-wide.png, /tmp/slack-ios-wide-channel.png, ' +
-    '/tmp/slack-ios-narrow-list.png, /tmp/slack-ios-narrow-thread.png, /tmp/slack-ios-light.png');
+    '/tmp/slack-ios-narrow-list.png, /tmp/slack-ios-narrow-thread.png, /tmp/slack-ios-light.png, ' +
+    '/tmp/slack-ios-menu.png, /tmp/slack-ios-image.png');
   console.log('\n' + (checks.length - failed) + '/' + checks.length + ' Slack checks passed');
   process.exit(failed ? 1 : 0);
 })().catch((err) => {

@@ -58,8 +58,9 @@ class SlackRoom {
   /**
    * @param {object} deps
    * @param {() => object|null} deps.service      the running SlackService, or null
-   * @param {() => object} deps.settings          {enabled, hasTokens, vipList, clock}
+   * @param {() => object} deps.settings          {enabled, hasTokens, vipList, mutedList, clock}
    * @param {(list: string[]) => Promise} deps.setVips
+   * @param {(list: string[]) => Promise} deps.setMuted
    * @param {(on: boolean) => Promise} deps.setEnabled
    * @param {() => Promise} [deps.connect]        asks for the tokens, on this laptop
    * @param {(how: {token: string, cookie: string}) => Promise} [deps.connectWith]  keeps a pasted session, on this laptop
@@ -110,6 +111,7 @@ class SlackRoom {
       enabled: !!settings.enabled,
       hasTokens: !!settings.hasTokens,
       vipList: (settings.vipList || []).slice(),
+      mutedList: (settings.mutedList || []).slice(),
       clock: settings.clock === '12h' ? '12h' : '24h',
       mayReply: this.mayAct(seat),
       mayEdit: this.mayAct(seat),
@@ -208,6 +210,56 @@ class SlackRoom {
         return void this.broadcast();
       }
 
+      // Older messages, scrolled to: reading, like slack:open, so any seat that
+      // may read may ask — and it never marks anything seen, because paging
+      // back through history is not the same as having read the newest message.
+      case 'slack:older': {
+        const conversation = text(message.conversation, 40);
+        const thread = text(message.thread, 40) || undefined;
+        const before = text(message.before, 40);
+        if (!conversation || !before || !service) return;
+        try {
+          const got = await service.thread(conversation, thread, { before });
+          return void post({
+            type: 'slack:older', conversation, thread: thread || null,
+            messages: got.messages || [], hasMore: !!got.hasMore
+          });
+        } catch (err) {
+          return void post({ type: 'slack:refused', what: 'slack:older', reason: sayError(err) });
+        }
+      }
+
+      // An image's bytes, fetched only once a bubble asks for them. Reading,
+      // like slack:open — any seat that may read may ask.
+      case 'slack:file': {
+        const id = text(message.id, 100);
+        if (!id) return;
+        if (!service) return void post({ type: 'slack:file', id, ok: false, reason: 'Slack is not connected.' });
+        let result;
+        try { result = await service.fileData(id); }
+        catch (err) { result = { ok: false, reason: sayError(err) }; }
+        return void post(Object.assign({ type: 'slack:file', id }, result));
+      }
+
+      case 'slack:mute': {
+        if (!this.mayAct(seat)) return void refuse('This phone can only watch. Let it send prompts to change what is muted.');
+        const conversation = text(message.conversation, 40);
+        if (!conversation) return;
+        const muted = !!message.muted;
+        if (!muted && service && typeof service.isSlackMuted === 'function' && service.isSlackMuted(conversation)) {
+          this.note(seat, 'slack mute', false, conversation);
+          return void refuse('Muted in Slack itself — unmute it there.');
+        }
+        const settings = this.deps.settings() || {};
+        const list = (settings.mutedList || []).slice();
+        const at = list.indexOf(conversation);
+        if (muted && at === -1) list.push(conversation);
+        if (!muted && at !== -1) list.splice(at, 1);
+        this.note(seat, 'slack mute', true, conversation);
+        await this.deps.setMuted(list);
+        return void this.broadcast();
+      }
+
       case 'slack:vips': {
         if (!this.mayAct(seat)) return void refuse('This phone can only watch. Let it send prompts to change your VIPs.');
         const list = Array.isArray(message.vips) ? message.vips : [];
@@ -291,7 +343,8 @@ class SlackRoom {
         type: 'slack:thread',
         conversation: got.conversation,
         thread: client.thread || null,
-        messages: got.messages || []
+        messages: got.messages || [],
+        hasMore: !!got.hasMore
       });
     } catch (err) {
       client.post({ type: 'slack:refused', what: 'slack:open', reason: sayError(err) });

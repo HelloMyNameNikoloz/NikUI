@@ -44,6 +44,7 @@ function startSlack(context, deps) {
     hasTokens,
     authMode,
     vipList: cfg().get('slack.vips', []) || [],
+    mutedList: cfg().get('slack.muted', []) || [],
     clock: cfg().get('clock', '24h')
   });
 
@@ -52,6 +53,7 @@ function startSlack(context, deps) {
     service: () => service,
     settings,
     setVips: (list) => write('nikui.slack.vips', list),
+    setMuted: (list) => write('nikui.slack.muted', list),
     setEnabled: (on) => write('nikui.slack.enabled', !!on),
     connect: () => vscode.commands.executeCommand('nikui.slack.connect'),
     connectWith: (how) => keepSession(context, how).then((r) => { if (r && r.ok) rebuild(); return r; }),
@@ -81,6 +83,7 @@ function startSlack(context, deps) {
   const config = () => ({
     enabled: cfg().get('slack.enabled', false),
     vips: cfg().get('slack.vips', []) || [],
+    muted: cfg().get('slack.muted', []) || [],
     mentions: cfg().get('slack.mentions', true),
     popupAfterMs: minutes('slack.popupAfterMinutes', 1),
     alarmAfterMs: minutes('slack.alarmAfterMinutes', 3)

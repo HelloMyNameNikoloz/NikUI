@@ -865,6 +865,12 @@
           "default": [],
           "description": "Whose DMs matter: a Slack member ID (U…), an email, or a display name or @handle."
         },
+        "nikui.slack.muted": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Conversation ids muted from NikUI's side: still shown, but a VIP's DM or message there no longer pops up or rings the phone unless it @mentions you directly. Muting in Slack itself mutes it here too."
+        },
         "nikui.slack.mentions": {
           "type": "boolean",
           "default": true,

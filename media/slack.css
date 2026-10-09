@@ -5,6 +5,13 @@
    — everything else here falls back to a value that looks right in a dark VS
    Code theme, so the same file works unedited in both places. */
 
+/* The webview page itself must never move: only the two panes inside it
+   scroll. `html`/`body` are pinned to the viewport and the root is fixed on
+   top of them, so a stray focus()/scrollIntoView() on an ancestor — or the
+   whole document being programmatically scrollable even under
+   `overflow: hidden` — has nowhere to go. */
+html, body { height: 100%; margin: 0; overflow: hidden; }
+
 .nik-slack {
   --ns-s1: 4px; --ns-s2: 8px; --ns-s3: 12px; --ns-s4: 16px; --ns-s5: 24px;
   --ns-radius: 10px;
@@ -33,10 +40,10 @@
   --ns-separator: rgba(84, 84, 88, 0.65);
   --ns-system-fill: rgba(120, 120, 128, 0.36);
 
-  position: relative;
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
   overflow: hidden; /* only the two panes below ever scroll */
   font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif);
@@ -522,6 +529,11 @@ button.ns-row.on { background: var(--ns-active); filter: none; }
   overflow-y: auto;
   min-height: 0;
   -webkit-overflow-scrolling: touch;
+}
+/* The content wrapper, not the scrolling box above it, is what a
+   ResizeObserver watches to notice the transcript growing — the scroller's
+   own box is fixed by flex and never resizes as children are appended. */
+.ns-messages-inner {
   padding: var(--ns-s3) var(--ns-s4);
   display: flex;
   flex-direction: column;
@@ -741,6 +753,107 @@ button.ns-replies:hover { background: var(--ns-fill-1); }
   padding: 7px 10px;
   font: inherit;
 }
+
+/* ---- images: a sized placeholder, lazily filled in -------------------------- */
+
+.ns-image {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--ns-gray5);
+  cursor: pointer;
+}
+.ns-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.ns-image.loaded img { opacity: 1; }
+
+.ns-lightbox {
+  position: fixed; inset: 0;
+  z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--ns-s5);
+  background: rgba(0, 0, 0, 0.78);
+  cursor: zoom-out;
+}
+.ns-lightbox img {
+  max-width: 100%; max-height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- older messages: a loading row, and the quiet end of history ------------ */
+
+.ns-older-spinner {
+  align-self: center;
+  padding: var(--ns-s2) 0;
+}
+.ns-spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--ns-fill-2);
+  border-top-color: var(--ns-label-2);
+  animation: ns-spin 0.7s linear infinite;
+}
+@keyframes ns-spin { to { transform: rotate(360deg); } }
+
+.ns-begin {
+  align-self: center;
+  margin-bottom: var(--ns-s2);
+  font-size: 11px;
+  color: var(--ns-label-3);
+}
+
+/* ---- the sidebar row context menu: an iOS blurred, rounded panel ------------ */
+
+.ns-ctx-menu {
+  position: fixed;
+  min-width: 200px;
+  padding: 4px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ns-rail-bg) 94%, transparent);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  border: 0.5px solid var(--ns-hairline);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+}
+.nik-slack button.ns-ctx-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vscode-foreground, #ccc);
+  text-align: left;
+}
+.nik-slack button.ns-ctx-item:hover { background: var(--ns-hover); filter: none; }
+.nik-slack button.ns-ctx-item.disabled,
+.nik-slack button.ns-ctx-item:disabled { opacity: 0.45; cursor: default; }
+.nik-slack button.ns-ctx-item.disabled:hover,
+.nik-slack button.ns-ctx-item:disabled:hover { background: none; }
+.ns-ctx-sub { font-size: 11px; color: var(--ns-label-3); }
+.ns-ctx-sep { height: 1px; margin: 4px 6px; background: var(--ns-hairline); }
+
+/* ---- muted sidebar rows: dimmed, no unread treatment, a bell-slash --------- */
+
+button.ns-row.muted { opacity: 0.55; }
+.ns-muted-ico { display: inline-flex; flex: 0 0 auto; color: var(--ns-label-3); margin-left: -2px; }
+.ns-muted-ico .ico { width: 12px; height: 12px; }
+.ns-badge.ns-badge-muted { background: var(--ns-label-3); color: var(--vscode-editor-background, #1f1f1f); }
 
 /* ---- touch: 44px targets and roomier rows on a phone ---------------------- */
 

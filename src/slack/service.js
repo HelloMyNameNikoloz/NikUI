@@ -87,6 +87,20 @@ class SlackService extends EventEmitter {
     this._sidebarAt = null;
     this._sidebarItems = [];
 
+    // ---- files: each image's best thumb, remembered by id so slack:file can
+    // ask for it later without re-reading the message, and a small LRU of
+    // already-fetched bytes so the same image is not downloaded twice.
+    this._fileThumbs = new Map();   // file id -> {url, mimetype}
+    this._fileCache = new Map();    // file id -> {dataUrl, bytes}, oldest first
+    this._fileCacheBytes = 0;
+
+    // ---- muting: Slack's own list, polled gently, and the local one from
+    // config — either silences a conversation's escalation (never a direct
+    // mention of you, which always gets through).
+    this.localMuted = new Set();
+    this._slackMutedIds = new Set();
+    this._slackMutedAt = 0;
+
     this.escalator = createEscalator({ popupAfterMs: IGNORED_VIP_DEFAULT_POPUP_MS, alarmAfterMs: IGNORED_VIP_DEFAULT_ALARM_MS });
     this.socket = null;
     this.socketState = 'off';
@@ -104,11 +118,12 @@ class SlackService extends EventEmitter {
     this._clearTimers();
     this._stopping = false;
     const cfg = Object.assign({
-      vips: [], mentions: true,
+      vips: [], mentions: true, muted: [],
       popupAfterMs: IGNORED_VIP_DEFAULT_POPUP_MS, alarmAfterMs: IGNORED_VIP_DEFAULT_ALARM_MS,
       pollMs: DEFAULT_POLL_MS
     }, this.config() || {});
     this.cfg = cfg;
+    this.localMuted = new Set((cfg.muted || []).map(String));
     this.escalator = createEscalator({ popupAfterMs: cfg.popupAfterMs, alarmAfterMs: cfg.alarmAfterMs });
 
     if (!cfg.enabled) {
@@ -397,6 +412,10 @@ class SlackService extends EventEmitter {
     else if (senderIsVip && mentionsMe) kind = 'vip';
     else if (mentionsMe) kind = 'mention';
     if (!kind) return;
+    // A muted conversation never escalates on its own — a VIP's DM, or one of
+    // theirs that happens to land here — but a direct mention of you still
+    // does, muted or not; that is the one thing worth breaking silence for.
+    if (!mentionsMe && this._isMuted(raw.channel)) return;
 
     const threadTs = raw.thread_ts && raw.thread_ts !== raw.ts ? raw.thread_ts : undefined;
     const conversationId = raw.channel;
@@ -510,6 +529,7 @@ class SlackService extends EventEmitter {
     if (!force && this._sidebarRefreshAt && now - this._sidebarRefreshAt < 15000) return;
     this._sidebarRefreshAt = now;
     try {
+      await this._refreshMutedFromSlack();
       await this._ensureMembership(force);
       await this._refreshCounts();
       await this._refreshPreviews();
@@ -520,6 +540,35 @@ class SlackService extends EventEmitter {
       this.log('slack: could not build the sidebar: ' + err.message);
     }
     this._scheduleStateEmit();
+  }
+
+  /** Slack's own mute list — undocumented, so any trouble is just treated as empty, not retried for ten minutes. */
+  async _refreshMutedFromSlack() {
+    const now = this.now();
+    if (this._slackMutedAt && now - this._slackMutedAt < 10 * 60000) return;
+    this._slackMutedAt = now;
+    try {
+      const result = await this.api.call('users.prefs.get', {});
+      const raw = (result.prefs && result.prefs.muted_channels) || '';
+      this._slackMutedIds = new Set(String(raw).split(',').map((s) => s.trim()).filter(Boolean));
+    } catch (_) {
+      this._slackMutedIds = new Set();
+    }
+  }
+
+  _isMuted(conversationId) {
+    return this.localMuted.has(conversationId) || this._slackMutedIds.has(conversationId);
+  }
+
+  /** Where a mute comes from, so the client can explain why unmuting locally will not be enough. */
+  _mutedIn(conversationId) {
+    if (this._slackMutedIds.has(conversationId)) return 'slack';
+    if (this.localMuted.has(conversationId)) return 'nikui';
+    return null;
+  }
+
+  isSlackMuted(conversationId) {
+    return this._slackMutedIds.has(conversationId);
   }
 
   async _ensureMembership(force) {
@@ -694,7 +743,9 @@ class SlackService extends EventEmitter {
         last,
         pending: !!pendingSince,
         pendingSince,
-        vip: !!(m.kind === 'dm' && user && vipIds.has(user.id))
+        vip: !!(m.kind === 'dm' && user && vipIds.has(user.id)),
+        muted: this._isMuted(m.id),
+        mutedIn: this._mutedIn(m.id)
       };
     });
 
@@ -811,15 +862,27 @@ class SlackService extends EventEmitter {
 
   // ---- what the UI asks for -----------------------------------------------
 
-  /** @returns {Promise<{conversation: object, messages: object[]}>} oldest first, last 50 */
-  async thread(conversationId, threadTs) {
-    let messages;
+  /**
+   * @param {string} conversationId
+   * @param {string} [threadTs]
+   * @param {{before?: string}} [opts]  `before`: 50 messages older than this ts
+   * @returns {Promise<{conversation: object, messages: object[], hasMore: boolean}>} oldest first, 50 at a time
+   */
+  async thread(conversationId, threadTs, opts) {
+    const before = opts && opts.before;
+    let messages, hasMore;
     if (threadTs) {
-      const replies = await this.api.call('conversations.replies', { channel: conversationId, ts: threadTs, limit: 50 });
-      messages = replies.messages || [];
+      const params = Object.assign({ channel: conversationId, ts: threadTs, limit: 50 },
+        before ? { latest: before, inclusive: false } : {});
+      const replies = await this.api.call('conversations.replies', params);
+      messages = replies.messages || []; // Slack hands these back oldest first already
+      hasMore = !!replies.has_more;
     } else {
-      const history = await this.api.call('conversations.history', { channel: conversationId, limit: 50 });
+      const params = Object.assign({ channel: conversationId, limit: 50 },
+        before ? { latest: before, inclusive: false } : {});
+      const history = await this.api.call('conversations.history', params);
       messages = (history.messages || []).slice().reverse();
+      hasMore = !!history.has_more;
     }
     for (const m of messages) await this._resolveUserInfo(m.user);
     // Not just who sent each message: who they mention too, so a name nobody
@@ -834,7 +897,7 @@ class SlackService extends EventEmitter {
       mine: m.user === (this.me && this.me.id),
       html: messageHtml(m, names),
       edited: !!m.edited,
-      files: (m.files || []).length,
+      files: (m.files || []).map((f) => this._describeFile(f)),
       reactions: (m.reactions || []).map((r) => ({
         name: r.name, emoji: applyEmoji(':' + r.name + ':'), count: r.count || 0,
         mine: !!(this.me && (r.users || []).includes(this.me.id))
@@ -843,7 +906,85 @@ class SlackService extends EventEmitter {
       threadTs: m.thread_ts,
       replyCount: m.reply_count
     }));
-    return { conversation: this.conversations.get(conversationId) || { id: conversationId }, messages: out };
+    return { conversation: this.conversations.get(conversationId) || { id: conversationId }, messages: out, hasMore };
+  }
+
+  /**
+   * A file as the client needs it — never the bytes themselves, those are
+   * asked for separately with fileData(), only once a bubble is actually
+   * shown. The best thumb Slack offered is remembered here by id so that ask
+   * does not have to re-read the message.
+   */
+  _describeFile(f) {
+    if (!f) return null;
+    const mimetype = f.mimetype || '';
+    const isImageType = /^image\//i.test(mimetype);
+    const thumbUrl = isImageType ? bestThumbUrl(f) : null;
+    const image = !!thumbUrl;
+    if (image && f.id) this._rememberThumb(f.id, { url: thumbUrl, mimetype });
+    return {
+      id: f.id || null,
+      name: f.name || null,
+      title: f.title || null,
+      mimetype,
+      image,
+      w: f.original_w || null,
+      h: f.original_h || null,
+      permalink: f.permalink || f.permalink_public || null
+    };
+  }
+
+  /** Last 300 thumb URLs, forgotten oldest-first — a bound, not a cache of everything ever shown. */
+  _rememberThumb(id, info) {
+    if (this._fileThumbs.has(id)) this._fileThumbs.delete(id);
+    this._fileThumbs.set(id, info);
+    while (this._fileThumbs.size > 300) {
+      this._fileThumbs.delete(this._fileThumbs.keys().next().value);
+    }
+  }
+
+  /**
+   * A file's bytes, as a data URL the client can put straight in an <img>.
+   * Fetched once per id and kept in a small LRU — a conversation scrolled past
+   * twice should not mean downloading the same image twice.
+   *
+   * @returns {Promise<{ok: boolean, dataUrl?: string, reason?: string}>}
+   */
+  async fileData(id) {
+    const cached = this._fileCache.get(id);
+    if (cached) {
+      this._fileCache.delete(id);
+      this._fileCache.set(id, cached); // touched: least recently used moves to the back
+      return { ok: true, dataUrl: cached.dataUrl };
+    }
+    const info = this._fileThumbs.get(id);
+    if (!info) return { ok: false, reason: 'That file is not available any more.' };
+    if (!this.api.fetchFile) return { ok: false, reason: 'Slack could not do that right now.' };
+    let fetched;
+    try {
+      fetched = await this.api.fetchFile(info.url);
+    } catch (err) {
+      return { ok: false, reason: humanFileError(err) };
+    }
+    const dataUrl = 'data:' + (fetched.mimetype || info.mimetype) + ';base64,' + fetched.buffer.toString('base64');
+    this._cacheFile(id, dataUrl, fetched.buffer.length);
+    return { ok: true, dataUrl };
+  }
+
+  /** 40 entries or 25 MB, whichever comes first — oldest (least recently used) goes first. */
+  _cacheFile(id, dataUrl, bytes) {
+    if (this._fileCache.has(id)) {
+      this._fileCacheBytes -= this._fileCache.get(id).bytes;
+      this._fileCache.delete(id);
+    }
+    this._fileCache.set(id, { dataUrl, bytes });
+    this._fileCacheBytes += bytes;
+    while (this._fileCache.size > 40 || this._fileCacheBytes > 25 * 1024 * 1024) {
+      const oldestId = this._fileCache.keys().next().value;
+      if (oldestId === undefined) break;
+      this._fileCacheBytes -= this._fileCache.get(oldestId).bytes;
+      this._fileCache.delete(oldestId);
+    }
   }
 
   async permalink(conversationId, ts) {
@@ -1001,6 +1142,25 @@ function flattenRichText(blocks) {
     }
   }
   return parts.join(' ').trim();
+}
+
+/** The best thumb Slack offered for an image, falling back to the original only when it is small enough to be worth it. */
+function bestThumbUrl(f) {
+  if (f.thumb_720) return f.thumb_720;
+  if (f.thumb_480) return f.thumb_480;
+  if (f.thumb_360) return f.thumb_360;
+  if (Number(f.size) && Number(f.size) <= 3 * 1024 * 1024 && f.url_private) return f.url_private;
+  return null;
+}
+
+/** A sentence for a file that would not load, never the url or the code alone. */
+function humanFileError(err) {
+  const code = err && err.code;
+  if (code === 'too_big') return 'That image is larger than NikUI will load.';
+  if (code === 'bad_type') return 'That is not an image.';
+  if (code === 'bad_host') return 'That file is not something Slack sent.';
+  if (code === 'network') return 'No connection to Slack.';
+  return 'Slack could not do that right now.';
 }
 
 function initialsFor(name) {

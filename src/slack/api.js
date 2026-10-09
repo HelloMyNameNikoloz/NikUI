@@ -94,7 +94,81 @@ function createApi({ token, appToken, cookie, fetch: fetchImpl, sleep } = {}) {
     return json;
   }
 
-  return { call };
+  /**
+   * A file's bytes, straight from Slack — the one place this reaches past
+   * `slack.com/api/` itself, so the host is checked before the token (or the
+   * session cookie) ever goes on the wire: only `files.slack.com`, or a
+   * `files-pri` path on some other `*.slack.com` subdomain, as Slack's own
+   * private file URLs look like. Anything else is refused outright.
+   *
+   * Capped at 3 MB and to an image, so a stray link never turns this into a
+   * way to fetch arbitrary pages through the token.
+   *
+   * @param {string} url
+   * @returns {Promise<{mimetype: string, buffer: Buffer}>}
+   */
+  async function fetchFile(url) {
+    if (!isSlackFileUrl(url)) {
+      throw Object.assign(new Error('refused to fetch a file from an untrusted host'), { code: 'bad_host' });
+    }
+    if (!token) {
+      throw Object.assign(new Error('no Slack token is set for a file'), { code: 'no_token' });
+    }
+    if (!doFetch) {
+      throw Object.assign(new Error('no fetch is available to reach Slack'), { code: 'no_fetch' });
+    }
+
+    // Redirects are followed by hand so the credentials only ever go to Slack's
+    // own file hosts; a hop anywhere else is fetched bare.
+    let response;
+    let target = url;
+    try {
+      for (let hop = 0; ; hop++) {
+        const trusted = isSlackFileUrl(target);
+        response = await doFetch(target, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: trusted ? Object.assign({ authorization: 'Bearer ' + token }, cookie ? { cookie: 'd=' + cookie } : {}) : {}
+        });
+        const location = response.status >= 300 && response.status < 400 && response.headers && response.headers.get && response.headers.get('location');
+        if (!location) break;
+        if (hop >= 3) throw new Error('too many redirects');
+        target = new URL(location, target).toString();
+        if (!/^https:\/\//.test(target)) throw new Error('redirect off https');
+      }
+    } catch (_) {
+      throw Object.assign(new Error('could not reach Slack'), { code: 'network' });
+    }
+
+    const mimetype = (response.headers && response.headers.get && response.headers.get('content-type')) || '';
+    if (!/^image\//i.test(mimetype)) {
+      throw Object.assign(new Error('refused a file that is not an image'), { code: 'bad_type' });
+    }
+    const declared = response.headers && response.headers.get && Number(response.headers.get('content-length'));
+    if (declared && declared > MAX_FILE_BYTES) {
+      throw Object.assign(new Error('refused a file over 3 MB'), { code: 'too_big' });
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > MAX_FILE_BYTES) {
+      throw Object.assign(new Error('refused a file over 3 MB'), { code: 'too_big' });
+    }
+    return { mimetype, buffer };
+  }
+
+  return { call, fetchFile };
+}
+
+const MAX_FILE_BYTES = 3 * 1024 * 1024;
+
+/** Only Slack's own file hosts — never wherever a message happens to link. */
+function isSlackFileUrl(url) {
+  let parsed;
+  try { parsed = new URL(String(url || '')); } catch (_) { return false; }
+  if (parsed.protocol !== 'https:') return false;
+  const host = parsed.hostname.toLowerCase();
+  if (host === 'files.slack.com') return true;
+  if (host.endsWith('.slack.com') && parsed.pathname.startsWith('/files-pri/')) return true;
+  return false;
 }
 
 /**

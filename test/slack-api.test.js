@@ -125,4 +125,93 @@ module.exports = async function () {
     check('a token of the wrong shape is named', /xoxc-/.test(cleanSession('xoxb-nope', 'xoxd-b').error));
     check('a cookie of the wrong shape is named', /xoxd-/.test(cleanSession('xoxc-a', 'nope').error));
   }
+
+  suite('Slack API: fetching a file, without handing the token to anywhere else');
+
+  function imageResponse(bytes, contentType, contentLength) {
+    return {
+      status: 200,
+      headers: {
+        get: (name) => {
+          const n = name.toLowerCase();
+          if (n === 'content-type') return contentType === undefined ? 'image/png' : contentType;
+          if (n === 'content-length') return contentLength === undefined ? String(bytes.length) : contentLength;
+          return null;
+        }
+      },
+      arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    };
+  }
+
+  {
+    const bytes = Buffer.from([1, 2, 3, 4]);
+    const fetch = fakeFetch([imageResponse(bytes)]);
+    const api = createApi({ token: 'xoxp-secret', cookie: 'xoxd-abc', fetch });
+    const result = await api.fetchFile('https://files.slack.com/files-pri/T1-F1/image.png');
+    checkEqual('the mimetype comes back', result.mimetype, 'image/png');
+    check('and the bytes', result.buffer.equals(bytes));
+    check('the bearer token goes with it', fetch.calls[0].init.headers.authorization === 'Bearer xoxp-secret');
+    check('and the session cookie, in session mode', fetch.calls[0].init.headers.cookie === 'd=xoxd-abc');
+  }
+
+  {
+    const bytes = Buffer.from([5, 6]);
+    const redirect = { status: 302, headers: { get: (n) => (n.toLowerCase() === 'location' ? 'https://cdn.example.net/img.png' : null) } };
+    const fetch = fakeFetch([redirect, imageResponse(bytes)]);
+    const api = createApi({ token: 'xoxc-secret', cookie: 'xoxd-abc', fetch });
+    const result = await api.fetchFile('https://files.slack.com/files-pri/T1-F1/image.png');
+    check('a redirect is followed', result.buffer.equals(bytes) && fetch.calls[1].url === 'https://cdn.example.net/img.png');
+    check('redirects are not followed blindly', fetch.calls[0].init.redirect === 'manual');
+    check('but neither token nor cookie follows it off Slack',
+      !fetch.calls[1].init.headers.authorization && !fetch.calls[1].init.headers.cookie);
+  }
+
+  {
+    const fetch = fakeFetch([]);
+    const api = createApi({ token: 'xoxp-secret', appToken: 'xapp-app', fetch });
+    let caught = null;
+    try { await api.fetchFile('https://evil.example.com/token-please'); } catch (err) { caught = err; }
+    checkEqual('a host that is not Slack\'s own files host is refused outright', caught && caught.code, 'bad_host');
+    checkEqual('no request is even made', fetch.calls.length, 0);
+  }
+
+  {
+    const fetch = fakeFetch([]);
+    const api = createApi({ token: 'xoxp-secret', fetch });
+    let caught = null;
+    try { await api.fetchFile('https://slack.com.evil.example/x'); } catch (err) { caught = err; }
+    checkEqual('a lookalike host fools nobody', caught && caught.code, 'bad_host');
+  }
+
+  {
+    const fetch = fakeFetch([imageResponse(Buffer.from([1]), 'text/html')]);
+    const api = createApi({ token: 'xoxp-secret', fetch });
+    let caught = null;
+    try { await api.fetchFile('https://files.slack.com/files-pri/T1-F1/x'); } catch (err) { caught = err; }
+    checkEqual('a non-image content type is refused', caught && caught.code, 'bad_type');
+  }
+
+  {
+    const big = 4 * 1024 * 1024;
+    const fetch = fakeFetch([imageResponse(Buffer.alloc(1), 'image/png', String(big))]);
+    const api = createApi({ token: 'xoxp-secret', fetch });
+    let caught = null;
+    try { await api.fetchFile('https://files.slack.com/files-pri/T1-F1/x'); } catch (err) { caught = err; }
+    checkEqual('a declared size over 3 MB is refused before it is even downloaded', caught && caught.code, 'too_big');
+  }
+
+  {
+    const fetch = fakeFetch([imageResponse(Buffer.alloc(4 * 1024 * 1024))]);
+    const api = createApi({ token: 'xoxp-secret', fetch });
+    let caught = null;
+    try { await api.fetchFile('https://files.slack.com/files-pri/T1-F1/x'); } catch (err) { caught = err; }
+    checkEqual('and so is one that turns out too big once downloaded', caught && caught.code, 'too_big');
+  }
+
+  {
+    const fetch = fakeFetch([imageResponse(Buffer.from([9]))]);
+    const api = createApi({ token: 'xoxp-user', appToken: 'xapp-app', fetch });
+    await api.fetchFile('https://files.slack.com/files-pri/T1-F1/x');
+    check('fetching a file never sends the app-level token', fetch.calls[0].init.headers.authorization === 'Bearer xoxp-user');
+  }
 };

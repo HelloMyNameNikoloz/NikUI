@@ -8,21 +8,29 @@ function fakeService() {
     calls,
     state: () => ({ connected: true, socket: 'live', error: null, me: { id: 'UME', teamId: 'T1' },
       unresolved: [], vips: [], conversations: [{ id: 'D1', title: 'Anna', pending: true }] }),
-    thread: async (id, thread) => { calls.push(['thread', id, thread]); return { conversation: { id }, messages: [{ ts: '1.0', html: 'hi' }] }; },
+    thread: async (id, thread, opts) => {
+      calls.push(['thread', id, thread, opts]);
+      if (opts && opts.before) return { conversation: { id }, messages: [{ ts: '0.5', html: 'older' }], hasMore: false };
+      return { conversation: { id }, messages: [{ ts: '1.0', html: 'hi' }], hasMore: true };
+    },
     reply: async (id, text, thread) => { calls.push(['reply', id, text, thread]); if (text === 'boom') { const e = new Error('x'); e.code = 'not_in_channel'; throw e; } return { ts: '2.0' }; },
     seenInNikui: (id) => calls.push(['seen', id]),
     refreshSidebar: async () => calls.push(['refresh']),
-    permalink: async (id, ts) => `https://x.slack.com/archives/${id}/p${ts || ''}`
+    permalink: async (id, ts) => `https://x.slack.com/archives/${id}/p${ts || ''}`,
+    fileData: async (id) => { calls.push(['fileData', id]); return id === 'F1' ? { ok: true, dataUrl: 'data:image/png;base64,AQID' } : { ok: false, reason: 'That file is not available any more.' }; },
+    isSlackMuted: (id) => id === 'D9'
   };
 }
 
 function room(service, extra) {
-  const said = { vips: null, enabled: null, connected: 0, opened: [] };
+  const said = { vips: null, muted: null, enabled: null, connected: 0, opened: [] };
   const audit = [];
+  let mutedList = ['D9'];
   const r = new SlackRoom(Object.assign({
     service: () => service,
-    settings: () => ({ enabled: true, hasTokens: true, vipList: ['anna@x.com'], clock: '12h' }),
+    settings: () => ({ enabled: true, hasTokens: true, vipList: ['anna@x.com'], mutedList, clock: '12h' }),
     setVips: async (list) => { said.vips = list; },
+    setMuted: async (list) => { said.muted = list; mutedList = list; },
     setEnabled: async (on) => { said.enabled = on; },
     connect: async () => { said.connected++; },
     openUrl: (url) => said.opened.push(url),
@@ -70,6 +78,24 @@ module.exports = async function () {
   await r.handle('w', { type: 'slack:vips', vips: ['x'] });
   check('nor change the VIPs', said.vips === null && watcher.some((m) => m.type === 'slack:refused'));
 
+  watcher.length = 0;
+  service.calls.length = 0;
+  await r.handle('w', { type: 'slack:older', conversation: 'D1', before: '1.0' });
+  check('any seat that may read may page back through history', watcher.some((m) => m.type === 'slack:older' && m.messages[0].ts === '0.5' && m.hasMore === false));
+  check('older messages carry no seen/escalation side effect', !service.calls.some((c) => c[0] === 'seen'));
+
+  watcher.length = 0;
+  await r.handle('w', { type: 'slack:file', id: 'F1' });
+  check('any seat that may read may ask for a file\'s bytes', watcher.some((m) => m.type === 'slack:file' && m.id === 'F1' && m.ok && m.dataUrl === 'data:image/png;base64,AQID'));
+
+  watcher.length = 0;
+  await r.handle('w', { type: 'slack:file', id: 'nope' });
+  check('a file that is not available says so, not an error', watcher.some((m) => m.type === 'slack:file' && m.ok === false && /not available/.test(m.reason)));
+
+  watcher.length = 0;
+  await r.handle('w', { type: 'slack:mute', conversation: 'D1', muted: true });
+  check('a watching phone cannot mute either', said.muted === null && watcher.some((m) => m.type === 'slack:refused'));
+
   service.calls.length = 0;
   watcher.length = 0;
   await r.handle('w', { type: 'slack:refresh' });
@@ -94,6 +120,21 @@ module.exports = async function () {
 
   await r.handle('s', { type: 'slack:vips', vips: [' Anna ', 'anna', '@bob', 42, 'x'.repeat(200)] });
   checkEqual('VIPs are trimmed, deduplicated and only strings', said.vips, ['Anna', '@bob']);
+
+  steering.length = 0;
+  await r.handle('s', { type: 'slack:mute', conversation: 'D3', muted: true });
+  checkEqual('a phone that may send prompts can mute a conversation locally', said.muted, ['D9', 'D3']);
+  check('and it is written down', audit.some((a) => a.action === 'slack mute' && a.allowed === true && a.detail === 'D3'));
+
+  steering.length = 0;
+  said.muted = null;
+  await r.handle('s', { type: 'slack:mute', conversation: 'D9', muted: false });
+  check('unmuting what Slack itself muted is refused, not silently ignored',
+    said.muted === null && /Muted in Slack itself/.test((steering.find((m) => m.type === 'slack:refused') || {}).reason));
+
+  steering.length = 0;
+  await r.handle('s', { type: 'slack:mute', conversation: 'D3', muted: false });
+  checkEqual('unmuting a locally-muted one works', said.muted, ['D9']);
 
   steering.length = 0;
   await r.handle('s', { type: 'slack:connect' });

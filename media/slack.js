@@ -41,6 +41,11 @@
   const FILE_ICO = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+  const BELL_SLASH = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M8.7 3.3A6 6 0 0 1 18 8v5c0 .6.1 1.2.4 1.7"/>' +
+    '<path d="M4 8a6 6 0 0 0-1 3.4V13c0 2.5-1 4-2 5h14"/>' +
+    '<path d="M9 21a3 3 0 0 0 5.3 1.1"/><path d="M2 2l20 20"/></svg>';
 
   const ONE_PANE_WIDTH = 640;
   const GROUP_GAP_MS = 5 * 60 * 1000;
@@ -144,6 +149,13 @@
     let threadTs = null;           // the thread currently open, or null for the main channel
     let threadData = null;         // the slack:thread payload matching selectedId/threadTs
     let loadingThread = false;
+    let loadingOlder = false;      // slack:older in flight — one at a time
+    let scroller = null;           // the current .ns-messages (the scrolling element)
+    let inner = null;              // its content wrapper — what ResizeObserver watches
+    let msgResizeObserver = null;
+    let fileObserver = null;       // IntersectionObserver that lazily asks for image bytes
+    const fileCache = new Map();   // file id -> { ok, dataUrl }
+    let menuEl = null;             // the open row context menu, or null
     let pane = 'list';             // one-pane: 'list' | 'thread'
     let onePane = forceCompact || host.clientWidth < ONE_PANE_WIDTH || window.innerWidth < ONE_PANE_WIDTH;
     let followScroll = true;
@@ -229,6 +241,27 @@
 
     function say(text) { live.textContent = text; }
 
+    // ── the page itself never scrolls ───────────────────────────
+    //
+    // In the real webview, scrolling a conversation has been seen to scroll
+    // the whole tab — the sidebar sliding off the top. `html`/`body`/`.nik-slack`
+    // are pinned in CSS, but an element with `overflow: hidden` can still be
+    // scrolled *programmatically* (a stray `.focus()` without `preventScroll`,
+    // a `scrollIntoView`, an anchor). This is the backstop: whatever moved one
+    // of them, snap it back the same tick, every time.
+    function resetAncestorScroll() {
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+      const docEl = document.documentElement;
+      if (docEl.scrollTop || docEl.scrollLeft) { docEl.scrollTop = 0; docEl.scrollLeft = 0; }
+      if (document.body.scrollTop || document.body.scrollLeft) { document.body.scrollTop = 0; document.body.scrollLeft = 0; }
+      if (host.scrollTop || host.scrollLeft) { host.scrollTop = 0; host.scrollLeft = 0; }
+    }
+    window.addEventListener('scroll', resetAncestorScroll, true);
+    document.addEventListener('scroll', resetAncestorScroll, true);
+    document.documentElement.addEventListener('scroll', resetAncestorScroll);
+    document.body.addEventListener('scroll', resetAncestorScroll);
+    host.addEventListener('scroll', resetAncestorScroll);
+
     // ── layout ───────────────────────────────────────────────
 
     function applyLayout() {
@@ -293,7 +326,9 @@
         last: c.last ? { text: c.last.text, from: c.last.from, mine: !!c.last.mine, at: c.lastAt } : null,
         pending: !!c.pending,
         pendingSince: c.pendingSince || null,
-        vip: !!c.vip
+        vip: !!c.vip,
+        muted: !!c.muted,
+        mutedIn: c.mutedIn || null
       }));
     }
 
@@ -303,16 +338,23 @@
       return hay.indexOf(q) !== -1;
     }
 
+    // A muted row still belongs to its section — it just sorts after
+    // everything in it that is not muted, the order between muted rows
+    // unchanged from whatever the section's own comparator said.
+    function mutedLast(cmp) {
+      return (a, b) => (a.muted ? 1 : 0) - (b.muted ? 1 : 0) || cmp(a, b);
+    }
+
     function sections() {
       const all = sidebarItems().filter((it) => matchesSearch(it, searchQuery));
       const needsYou = all.filter((it) => it.pending)
-        .sort((a, b) => (a.pendingSince || 0) - (b.pendingSince || 0));
+        .sort(mutedLast((a, b) => (a.pendingSince || 0) - (b.pendingSince || 0)));
       // A pending conversation lives in "Needs you" only — showing it again
       // below would say the same thing twice in two different voices.
       const dms = all.filter((it) => !it.pending && (it.kind === 'dm' || it.kind === 'group'))
-        .sort((a, b) => (b.latestAt || 0) - (a.latestAt || 0));
+        .sort(mutedLast((a, b) => (b.latestAt || 0) - (a.latestAt || 0)));
       const channels = all.filter((it) => !it.pending && it.kind === 'channel')
-        .sort((a, b) => (b.latestAt || 0) - (a.latestAt || 0));
+        .sort(mutedLast((a, b) => (b.latestAt || 0) - (a.latestAt || 0)));
       return [
         { title: 'Needs you', rows: needsYou },
         { title: 'Direct messages', rows: dms },
@@ -403,19 +445,25 @@
 
     function buildRow(item) {
       const li = el('li', null, { role: 'listitem' });
-      const row = el('button', 'ns-row' + (item.id === selectedId ? ' on' : ''), { type: 'button', 'data-id': item.id });
+      const row = el('button', 'ns-row' + (item.id === selectedId ? ' on' : '') + (item.muted ? ' muted' : ''),
+        { type: 'button', 'data-id': item.id });
 
       const gutter = el('span', 'ns-row-gutter');
-      if (item.unread > 0) gutter.appendChild(el('span', 'ns-dot'));
+      if (item.unread > 0 && !item.muted) gutter.appendChild(el('span', 'ns-dot'));
       row.appendChild(gutter);
 
       row.appendChild(buildAvatar(item, item.vip));
 
       const main = el('div', 'ns-row-main');
       const top = el('div', 'ns-row-top');
-      const title = el('span', 'ns-title' + (item.unread > 0 ? ' unread' : ''));
+      const title = el('span', 'ns-title' + (item.unread > 0 && !item.muted ? ' unread' : ''));
       title.textContent = item.title;
       top.appendChild(title);
+      if (item.muted) {
+        const bell = el('span', 'ns-muted-ico', { 'aria-label': 'Muted' });
+        bell.innerHTML = BELL_SLASH;
+        top.appendChild(bell);
+      }
       // A pending row spends its top-line slot on how long it has waited,
       // in place of the time — the preview line underneath is one thing
       // already (what it says), not a second thing fighting it for room.
@@ -434,7 +482,7 @@
       lastText.textContent = previewText(item);
       bottom.appendChild(lastText);
       if (item.mentions > 0) {
-        const badge = el('span', 'ns-badge');
+        const badge = el('span', 'ns-badge' + (item.muted ? ' ns-badge-muted' : ''));
         badge.textContent = String(item.mentions);
         bottom.appendChild(badge);
       }
@@ -443,8 +491,90 @@
       main.appendChild(bottom);
       row.appendChild(main);
       row.addEventListener('click', () => select(item.id));
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        openRowMenu(item, e.clientX, e.clientY);
+      });
+      let pressTimer = null;
+      row.addEventListener('touchstart', () => {
+        clearTimeout(pressTimer);
+        pressTimer = setTimeout(() => {
+          const r = row.getBoundingClientRect();
+          openRowMenu(item, r.left + r.width / 2, r.top + r.height / 2);
+        }, 500);
+      }, { passive: true });
+      row.addEventListener('touchend', () => clearTimeout(pressTimer));
+      row.addEventListener('touchmove', () => clearTimeout(pressTimer));
+      row.addEventListener('keydown', (e) => {
+        if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return;
+        e.preventDefault();
+        const r = row.getBoundingClientRect();
+        openRowMenu(item, r.left + 10, r.bottom);
+      });
       li.appendChild(row);
       return li;
+    }
+
+    // ── the row context menu: Mute/Unmute, Open in Slack ───────────────
+
+    function closeRowMenu() {
+      if (!menuEl) return;
+      menuEl.remove();
+      menuEl = null;
+      document.removeEventListener('keydown', onMenuKeydown);
+      document.removeEventListener('mousedown', onMenuOutside, true);
+    }
+    function onMenuKeydown(e) { if (e.key === 'Escape') closeRowMenu(); }
+    function onMenuOutside(e) { if (menuEl && !menuEl.contains(e.target)) closeRowMenu(); }
+
+    function openRowMenu(item, x, y) {
+      closeRowMenu();
+      const watchOnly = state && state.mayReply === false;
+      menuEl = el('div', 'ns-ctx-menu', { role: 'menu', 'aria-label': 'Conversation options' });
+
+      const addItem = (label, opts) => {
+        opts = opts || {};
+        const btn = el('button', 'ns-ctx-item' + (opts.disabled ? ' disabled' : ''),
+          { type: 'button', role: 'menuitem' });
+        const lbl = el('span', 'ns-ctx-label');
+        lbl.textContent = label;
+        btn.appendChild(lbl);
+        if (opts.subtitle) {
+          const sub = el('span', 'ns-ctx-sub');
+          sub.textContent = opts.subtitle;
+          btn.appendChild(sub);
+        }
+        if (opts.disabled) {
+          btn.disabled = true;
+        } else {
+          btn.addEventListener('click', () => { closeRowMenu(); if (opts.onClick) opts.onClick(); });
+        }
+        menuEl.appendChild(btn);
+        return btn;
+      };
+
+      if (!watchOnly) {
+        if (item.muted) {
+          addItem('Unmute', {
+            disabled: item.mutedIn === 'slack',
+            subtitle: item.mutedIn === 'slack' ? 'Muted in Slack' : undefined,
+            onClick: () => send({ type: 'slack:mute', conversation: item.id, muted: false })
+          });
+        } else {
+          addItem('Mute', { onClick: () => send({ type: 'slack:mute', conversation: item.id, muted: true }) });
+        }
+        menuEl.appendChild(el('div', 'ns-ctx-sep'));
+      }
+      addItem('Open in Slack', { onClick: () => send({ type: 'slack:link', conversation: item.id }) });
+
+      host.appendChild(menuEl);
+      const rect = menuEl.getBoundingClientRect();
+      const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
+      const top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8));
+      menuEl.style.left = left + 'px';
+      menuEl.style.top = top + 'px';
+      document.addEventListener('keydown', onMenuKeydown);
+      document.addEventListener('mousedown', onMenuOutside, true);
     }
 
     function renderSetup() {
@@ -590,10 +720,12 @@
     }
 
     function select(id) {
+      closeRowMenu();
       selectedId = id;
       threadTs = null;
       threadData = null;
       loadingThread = true;
+      loadingOlder = false;
       followScroll = true;
       sendError = null;
       if (banner && banner.conversation === id) banner = null;
@@ -628,6 +760,12 @@
     }
 
     function renderThread() {
+      // A full rebuild — a new message pushed from the server, a banner
+      // dismissed — replaces the scroller with a fresh element, whose
+      // scrollTop starts at 0. Not following the bottom, that would silently
+      // yank a reader who had scrolled up back to the top; remember where
+      // they were and put the new scroller back there.
+      const prevScrollTop = scroller ? scroller.scrollTop : 0;
       threadPane.innerHTML = '';
 
       if (!selectedId) {
@@ -690,21 +828,121 @@
         threadPane.appendChild(toast);
       }
 
-      const scroller = el('div', 'ns-messages');
+      scroller = el('div', 'ns-messages');
+      inner = el('div', 'ns-messages-inner');
+      scroller.appendChild(inner);
       scroller.addEventListener('scroll', () => {
         followScroll = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
+        if (scroller.scrollTop < 200) requestOlder();
       });
       threadPane.appendChild(scroller);
 
+      if (fileObserver) fileObserver.disconnect();
+      fileObserver = (typeof IntersectionObserver === 'function')
+        ? new IntersectionObserver(onFileVisible, { root: scroller, rootMargin: '200px' })
+        : null;
+
       if (loadingThread || !threadData) {
-        scroller.innerHTML = '<div class="ns-loading">Loading…</div>';
+        inner.innerHTML = '<div class="ns-loading">Loading…</div>';
       } else {
-        renderMessages(scroller, threadData.messages || [], conv);
+        renderMessages(inner, threadData.messages || [], conv, threadData.hasMore);
       }
 
       threadPane.appendChild(buildComposer());
 
       if (followScroll) scroller.scrollTop = scroller.scrollHeight;
+      else scroller.scrollTop = prevScrollTop;
+
+      // Pinned to the bottom, the transcript should stay there as its own
+      // content grows — an image finishing, a new message arriving — the
+      // same way Messages does. Observing the content wrapper (not the
+      // scroller, whose own box never resizes) is what notices that.
+      if (msgResizeObserver) msgResizeObserver.disconnect();
+      if (typeof ResizeObserver === 'function') {
+        msgResizeObserver = new ResizeObserver(() => {
+          if (followScroll) scroller.scrollTop = scroller.scrollHeight;
+        });
+        msgResizeObserver.observe(inner);
+      }
+    }
+
+    // ── loading older messages, scrolled near the top ──────────────────
+
+    function requestOlder() {
+      if (loadingThread || loadingOlder || !threadData) return;
+      if (threadData.hasMore === false) return;
+      const messages = threadData.messages;
+      if (!messages || !messages.length) return;
+      loadingOlder = true;
+      const spinner = el('div', 'ns-older-spinner');
+      spinner.innerHTML = '<span class="ns-spinner" aria-hidden="true"></span>';
+      inner.insertBefore(spinner, inner.firstChild);
+      send({ type: 'slack:older', conversation: selectedId, thread: threadTs || undefined, before: messages[0].ts });
+    }
+
+    // ── images: a sized placeholder, filled in lazily ──────────────────
+
+    function imageBoxSize(w, h) {
+      const maxW = 320, maxH = 320;
+      w = Number(w) > 0 ? Number(w) : 160;
+      h = Number(h) > 0 ? Number(h) : 160;
+      const scale = Math.min(1, maxW / w, maxH / h);
+      return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
+    }
+
+    function applyFileResult(node, result) {
+      if (result.ok) {
+        const img = node.querySelector('img');
+        if (img) img.src = result.dataUrl;
+        node.classList.add('loaded');
+      } else if (node.parentNode) {
+        node.parentNode.replaceChild(fileChip(node._nsFile), node);
+      }
+    }
+
+    function onFileVisible(entries) {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const node = entry.target;
+        fileObserver.unobserve(node);
+        const id = node.dataset.fileId;
+        if (!id) continue;
+        if (fileCache.has(id)) { applyFileResult(node, fileCache.get(id)); continue; }
+        send({ type: 'slack:file', id });
+      }
+    }
+
+    function fileImageNode(file) {
+      const { w, h } = imageBoxSize(file.w, file.h);
+      const wrap = el('div', 'ns-image', { style: 'width:' + w + 'px;height:' + h + 'px' });
+      wrap._nsFile = file;
+      if (file.id) wrap.dataset.fileId = file.id;
+      const img = el('img');
+      img.alt = (file && (file.name || file.title)) || 'Image';
+      wrap.appendChild(img);
+      wrap.addEventListener('click', () => { if (img.src) openLightbox(img.src, img.alt); });
+      if (file.id && fileCache.has(file.id)) {
+        applyFileResult(wrap, fileCache.get(file.id));
+      } else if (fileObserver) {
+        fileObserver.observe(wrap);
+      }
+      return wrap;
+    }
+
+    function openLightbox(src, alt) {
+      const overlay = el('div', 'ns-lightbox', { role: 'dialog', 'aria-modal': 'true' });
+      const img = el('img');
+      img.src = src;
+      img.alt = alt || '';
+      overlay.appendChild(img);
+      function onKey(e) { if (e.key === 'Escape') close(); }
+      function close() {
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+      }
+      overlay.addEventListener('click', close);
+      document.addEventListener('keydown', onKey);
+      host.appendChild(overlay);
     }
 
     function fileChip(file) {
@@ -728,8 +966,13 @@
       return row;
     }
 
-    function renderMessages(scroller, messages, conv) {
-      scroller.innerHTML = '';
+    function renderMessages(container, messages, conv, hasMore) {
+      container.innerHTML = '';
+      if (hasMore === false) {
+        const begin = el('div', 'ns-begin');
+        begin.textContent = 'Beginning of conversation';
+        container.appendChild(begin);
+      }
       const named = conv && (conv.kind === 'channel' || conv.kind === 'group');
       let lastDay = null;
       let lastGroupKey = null;
@@ -742,7 +985,7 @@
         if (day && day !== lastDay) {
           const sep = el('div', 'ns-day');
           sep.textContent = day;
-          scroller.appendChild(sep);
+          container.appendChild(sep);
           lastDay = day;
           lastGroupKey = null;
           lastAnyAt = 0;
@@ -755,12 +998,12 @@
         if (fresh && lastAnyAt && gap > GROUP_GAP_MS) {
           const timeHead = el('div', 'ns-time-cluster');
           timeHead.textContent = fmtClock(m.at, state ? state.clock : '24h');
-          scroller.appendChild(timeHead);
+          container.appendChild(timeHead);
         }
 
         if (fresh) {
           group = el('div', 'ns-group' + (m.mine ? ' mine' : ''));
-          scroller.appendChild(group);
+          container.appendChild(group);
           lastBubble = null;
           if (named && !m.mine) {
             const nameHead = el('div', 'ns-msg-name');
@@ -773,7 +1016,13 @@
         lastAnyAt = m.at;
 
         const hasText = m.html && /\S/.test(m.html.replace(/<[^>]*>/g, ''));
-        const hasFiles = Array.isArray(m.files) && m.files.length;
+        // Files used to arrive as a bare count; now each is an object, and an
+        // image one carries enough to draw a placeholder before any bytes
+        // are asked for.
+        const files = Array.isArray(m.files)
+          ? m.files.map((f) => (f && typeof f === 'object') ? f : { name: 'File' })
+          : [];
+        const hasFiles = files.length > 0;
 
         const bubbleWrap = el('div', 'ns-bubble-wrap');
         if (hasText) {
@@ -789,7 +1038,7 @@
           bubble.classList.add('tail');
           lastBubble = bubble;
         } else if (hasFiles) {
-          for (const f of m.files) bubbleWrap.appendChild(fileChip(f));
+          for (const f of files) bubbleWrap.appendChild(f.image ? fileImageNode(f) : fileChip(f));
         } else {
           const bubble = el('div', 'ns-msg ns-msg-empty');
           bubble.textContent = '(message)';
@@ -928,7 +1177,7 @@
       vipForm.hidden = !editable;
     }
 
-    vipBtn.addEventListener('click', () => { vipOpen = true; vipSheet.hidden = false; renderVips(); vipInput.focus(); });
+    vipBtn.addEventListener('click', () => { vipOpen = true; vipSheet.hidden = false; renderVips(); vipInput.focus({ preventScroll: true }); });
     host.querySelector('.ns-vip-close').addEventListener('click', () => { vipOpen = false; vipSheet.hidden = true; });
     vipSheet.addEventListener('click', (e) => { if (e.target === vipSheet) { vipOpen = false; vipSheet.hidden = true; } });
     vipForm.addEventListener('submit', (e) => {
@@ -969,7 +1218,7 @@
         if (items[next]) {
           select(items[next].id);
           const row = listBody.querySelector('[data-id="' + CSS.escape(items[next].id) + '"]');
-          if (row) row.focus();
+          if (row) row.focus({ preventScroll: true });
         }
       }
     });
@@ -1019,8 +1268,37 @@
           if (!message.conversation || message.conversation.id !== selectedId) break;
           if ((message.thread || null) !== (threadTs || null)) break;
           threadData = message;
+          threadData.hasMore = message.hasMore !== false;
           loadingThread = false;
+          loadingOlder = false;
           renderThread();
+          break;
+        }
+        case 'slack:older': {
+          if (!message.conversation || message.conversation.id !== selectedId) break;
+          if ((message.thread || null) !== (threadTs || null)) break;
+          loadingOlder = false;
+          if (!threadData || !scroller || !inner) break;
+          const spinner = inner.querySelector('.ns-older-spinner');
+          if (spinner) spinner.remove();
+          const prevHeight = scroller.scrollHeight;
+          const prevTop = scroller.scrollTop;
+          threadData.messages = (message.messages || []).concat(threadData.messages || []);
+          threadData.hasMore = message.hasMore !== false;
+          renderMessages(inner, threadData.messages, findConversation(selectedId), threadData.hasMore);
+          // Keep whatever the reader was looking at in place: the content
+          // grew above it, so the same delta has to come off the top.
+          scroller.scrollTop = prevTop + (scroller.scrollHeight - prevHeight);
+          break;
+        }
+        case 'slack:file': {
+          const ok = !!message.ok && typeof message.dataUrl === 'string' && message.dataUrl.indexOf('data:') === 0;
+          const result = { ok, dataUrl: ok ? message.dataUrl : null };
+          fileCache.set(message.id, result);
+          if (inner) {
+            const node = inner.querySelector('.ns-image[data-file-id="' + CSS.escape(message.id) + '"]');
+            if (node) applyFileResult(node, result);
+          }
           break;
         }
         case 'slack:sent': {
