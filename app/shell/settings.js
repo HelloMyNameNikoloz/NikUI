@@ -244,25 +244,6 @@
       });
     }
 
-    // A different thing from the lock above, and confusing the two is how
-    // somebody ends up with a phone that will not connect. The lock is a door
-    // on the app. This is a condition on the *key*: the chip itself refuses to
-    // sign without a face, so every connection needs one, and a face that is
-    // not there means no connection rather than a screen you can still read.
-    if (hardware && state.key && state.key.biometrics) {
-      row(identity, {
-        label: 'Make the key itself need your face',
-        hint: state.device && state.device.biometric
-          ? 'On: every connection needs a face. Asked once, then not for five minutes.'
-          : 'Off. The lock above is the lighter way to do this.',
-        value: state.device && state.device.biometric ? 'On' : 'Off',
-        tone: state.device && state.device.biometric ? 'good' : '',
-        stacked: true,
-        tap: toggleBiometric,
-        chevron: true
-      });
-    }
-
     row(identity, { label: 'Its key', value: shortKey(state.device && state.device.publicKey), mono: true });
     row(identity, { label: 'Laptop key pinned', value: shortKey(state.where.fingerprint), mono: true });
     row(identity, { label: 'Paired', value: ago(state.where.pairedAt) });
@@ -577,7 +558,7 @@
 
     const list = group('Lock this app',
       has
-        ? 'Asked for when the app opens, and again after a minute in your pocket. Moving between screens does not ask again.'
+        ? 'Asked for once when the app opens, and again only after five minutes away. Moving between screens does not ask again.'
         : 'Anyone holding this phone unlocked can read every instance, and send prompts if this device may.');
 
     row(list, {
@@ -807,8 +788,8 @@
     state.moving = 'Making a new key…';
     draw();
 
-    const wanted = !!(state.device && state.device.biometric);
-    window.nikDevice.stageUpgrade({ biometric: wanted }).then(function () {
+    // Never behind a face: the lock is the one place that asks for one.
+    window.nikDevice.stageUpgrade({ biometric: false }).then(function () {
       state.moving = 'Telling your laptop…';
       draw();
       if (transport && transport.reconnect) transport.reconnect();
@@ -830,33 +811,6 @@
 
   /** A person saying no is not an error to report as one. */
   const cancelled = (err) => /cancel/i.test(String((err && (err.message || err.code)) || ''));
-
-  /**
-   * Turning the face check on or off means making the key again — the rule is
-   * baked into the key by the chip and cannot be changed afterwards. Which is
-   * exactly the move that already exists, so it is the same path.
-   */
-  function toggleBiometric() {
-    if (state.moving) return;
-    const wanting = !(state.device && state.device.biometric);
-    state.moving = wanting ? 'Turning it on…' : 'Turning it off…';
-    draw();
-    window.nikDevice.stageUpgrade({ biometric: wanting }).then(function () {
-      if (transport && transport.reconnect) transport.reconnect();
-      else listen();
-      state.giveUp = setTimeout(function () {
-        if (!state.moving) return;
-        state.moving = null;
-        window.nikDevice.discardUpgrade().catch(function () {});
-        refreshKey();
-        flash('Your laptop did not answer. Nothing changed.');
-      }, 20000);
-    }).catch(function (err) {
-      state.moving = null;
-      draw();
-      flash(cancelled(err) ? 'Cancelled. Nothing changed.' : 'This phone would not make the key.');
-    });
-  }
 
   /** What the identity says about itself, after anything that could change it. */
   function refreshKey() {

@@ -34,9 +34,12 @@
   const aliasForNewKey = () => ALIAS + '.' +
     Date.now().toString(36) + '.' + Math.floor(Math.random() * 0x1000000).toString(36);
 
-  // A biometric gate that asked on every reconnect would be unusable — a phone
-  // reconnects whenever it changes network. One check covers this long.
+  // Only read for keys made behind a face, which are no longer made: the chip
+  // times that check out on its own clock, so it asked again every five
+  // minutes of use whether or not the app lock was on. The lock is the one
+  // place that asks now; see retireBiometricKey.
   const UNLOCK_WINDOW_SECONDS = 300;
+  const RETIRE_TRIES = 'nikui.key.retireTries';
 
   function open() {
     return new Promise(function (resolve, reject) {
@@ -431,6 +434,24 @@
   }
 
   /**
+   * A key behind a face is swapped for one that is not, once, by the same move
+   * as moving a key into the chip: the next connection asks the laptop to take
+   * it. That connection may ask for a face one last time, since the old key
+   * signs for its replacement. Tried twice at most, so a laptop too old to
+   * understand does not mean a prompt on every launch.
+   */
+  function retireBiometricKey() {
+    return load().then(function (record) {
+      if (!record || !record.id || !record.biometric || record.staged) return null;
+      let tries = 0;
+      try { tries = Number(window.localStorage.getItem(RETIRE_TRIES) || 0); } catch (_) { tries = 0; }
+      if (tries >= 2) return null;
+      try { window.localStorage.setItem(RETIRE_TRIES, String(tries + 1)); } catch (_) { /* fine */ }
+      return stageUpgrade({ biometric: false });
+    }).catch(function () { return null; });
+  }
+
+  /**
    * The laptop accepted it: the new key becomes the identity, the old one goes.
    *
    * The order matters. The record is written pointing at the new key before the
@@ -571,9 +592,12 @@
   window.nikDevice = {
     available, load, ensure, sign, remember, forget, toBase64, fromBase64,
     fingerprintOf, verifyLaptop, authMessage, nativePlugin, stillThere, saysKeyIsGone,
-    protection, stageUpgrade, commitUpgrade, discardUpgrade,
+    protection, stageUpgrade, commitUpgrade, discardUpgrade, retireBiometricKey,
     spkiFromPublicKey, p1363FromSignature, UNLOCK_WINDOW_SECONDS
   };
+
+  // Only a phone ever made a key behind a face.
+  if (window.Capacitor && window.indexedDB) retireBiometricKey();
 
   // Exported so the conversions can be checked against the laptop's real
   // verifier, which is the only way to know a device nobody here owns will be

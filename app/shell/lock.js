@@ -22,8 +22,15 @@
      four times to read one number would be turned off within a day, so the
      unlock lasts for as long as the app is in front of you.
 
-     Coming back after a minute away does. That is the case this exists for:
-     the phone put down, picked up by somebody else. */
+     Coming back after five minutes away does. That is the case this exists
+     for: the phone put down, picked up by somebody else — not a glance at
+     another app to copy something.
+
+   It is the only thing in the app that asks for a face or a finger. The
+   device key used to be able to demand one too, and since the chip times that
+   out on its own clock, it asked again every five minutes while the app was in
+   use, lock or no lock. Keys like that are replaced on their own (device.js,
+   retireBiometricKey). */
 (function () {
   'use strict';
 
@@ -32,7 +39,7 @@
   const AWAY = 'nikui.app.leftAt';
 
   // How long the app may sit in somebody's pocket before it wants proof again.
-  const GRACE_MS = 60000;
+  const GRACE_MS = 5 * 60000;
   // How many times a face may be offered before the keypad is the only way in.
   const FACE_TRIES = 3;
   const MIN = 4;
@@ -739,8 +746,13 @@
         try { window.sessionStorage.setItem(AWAY, String(Date.now())); } catch (_) { /* fine */ }
         return;
       }
+      // Read once and forgotten: Capacitor and the page both say "back", and
+      // only time actually spent away counts.
       let left = 0;
-      try { left = Number(window.sessionStorage.getItem(AWAY) || 0); } catch (_) { left = 0; }
+      try {
+        left = Number(window.sessionStorage.getItem(AWAY) || 0);
+        window.sessionStorage.removeItem(AWAY);
+      } catch (_) { left = 0; }
       if (!left || Date.now() - left < GRACE_MS) return;
       shut();
       guard();
