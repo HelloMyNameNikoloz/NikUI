@@ -115,6 +115,10 @@
     let banner = null;             // { conversation, text } from slack:focus
     let vipOpen = false;
     let errorToast = null;
+    let setupTab = 'app';          // the setup card's chosen method: 'app' | 'session'
+    let signInBusy = false;
+    let signInError = null;
+    const sessionDraft = { token: '', cookie: '' };
     const drafts = new Map();      // `${conv}\u0000${thread||''}` -> text
 
     // ── shell, built once ──────────────────────────────────────
@@ -287,30 +291,112 @@
 
     function renderSetup() {
       listBody.innerHTML = '';
-      const card = el('div', 'ns-card');
+      const local = !!(state && state.local);
+      const card = el('div', 'ns-card ns-setup');
       card.innerHTML =
         '<h2>Connect Slack</h2>' +
         '<p>NikUI watches DMs from your VIPs and messages that @mention you. ' +
         'If one goes unseen for a minute it pops up here; after three minutes your phone rings.</p>' +
+        '<div class="ns-seg" role="tablist">' +
+          '<button type="button" class="ns-seg-opt" role="tab" data-tab="app">Create an app</button>' +
+          '<button type="button" class="ns-seg-opt" role="tab" data-tab="session">Paste session</button>' +
+          '<span class="ns-seg-glider" aria-hidden="true"></span>' +
+        '</div>' +
+        '<div class="ns-setup-body"></div>';
+
+      const seg = card.querySelector('.ns-seg');
+      const body = card.querySelector('.ns-setup-body');
+      seg.querySelectorAll('.ns-seg-opt').forEach((opt) => {
+        opt.setAttribute('aria-selected', String(opt.dataset.tab === setupTab));
+        opt.addEventListener('click', () => {
+          if (setupTab === opt.dataset.tab) return;
+          setupTab = opt.dataset.tab;
+          renderSetup();
+        });
+      });
+      seg.classList.toggle('on-session', setupTab === 'session');
+
+      if (setupTab === 'app') body.appendChild(buildAppSetup(local));
+      else body.appendChild(buildSessionSetup(local));
+      listBody.appendChild(card);
+    }
+
+    // The proper way, recommended for a workspace that will approve an app.
+    function buildAppSetup(local) {
+      const wrap = el('div', 'ns-setup-pane');
+      wrap.innerHTML =
         '<ol class="ns-steps">' +
-          '<li><button type="button" class="ns-step-app">Create the Slack app</button></li>' +
+          '<li><button type="button" class="ns-step-app ghost">Create the Slack app</button></li>' +
           '<li>Install it to your workspace and copy the two tokens.' +
             '<div class="ns-note">If your workspace needs an admin to approve apps, this step will ask one.</div></li>' +
           '<li></li>' +
         '</ol>';
-      const stepApp = card.querySelector('.ns-step-app');
-      stepApp.addEventListener('click', () => send({ type: 'slack:setup' }));
-      const lastStep = card.querySelectorAll('.ns-steps li')[2];
-      if (state && state.local) {
-        const btn = el('button', null, { type: 'button' });
-        btn.className = 'ns-connect';
+      wrap.querySelector('.ns-step-app').addEventListener('click', () => send({ type: 'slack:setup' }));
+      const lastStep = wrap.querySelectorAll('.ns-steps li')[2];
+      if (local) {
+        const btn = el('button', 'ns-connect', { type: 'button' });
         btn.textContent = 'Connect Slack';
         btn.addEventListener('click', () => send({ type: 'slack:connect' }));
         lastStep.appendChild(btn);
       } else {
         lastStep.textContent = 'Finish this on your laptop.';
       }
-      listBody.appendChild(card);
+      return wrap;
+    }
+
+    // The quick way: the session Slack's own web client already holds. No app,
+    // nothing to approve — two values a browser keeps, pasted once.
+    function buildSessionSetup(local) {
+      const wrap = el('div', 'ns-setup-pane');
+      if (!local) {
+        wrap.innerHTML = '<p class="ns-note">Paste your Slack session on the laptop — these two values never leave this machine.</p>';
+        return wrap;
+      }
+      wrap.innerHTML =
+        '<p class="ns-session-lede">Already signed in to Slack in a browser? Paste what it holds — no app to create.</p>' +
+        '<form class="ns-session-form" novalidate>' +
+          '<label class="ns-field"><span>Session token</span>' +
+            '<input type="password" class="ns-in-token" placeholder="xoxc-…" autocomplete="off" spellcheck="false"></label>' +
+          '<label class="ns-field"><span>d cookie</span>' +
+            '<input type="password" class="ns-in-cookie" placeholder="xoxd-…" autocomplete="off" spellcheck="false"></label>' +
+          '<details class="ns-help"><summary>Where do I find these?</summary>' +
+            '<ol>' +
+              '<li>Open <b>app.slack.com</b> in a browser and your workspace.</li>' +
+              '<li>Open the developer tools (⌥⌘I), then the <b>Console</b>.</li>' +
+              '<li>Paste <code>JSON.parse(localStorage.localConfig_v2).teams[Object.keys(JSON.parse(localStorage.localConfig_v2).teams)[0]].token</code> — that is the <b>xoxc-</b> token.</li>' +
+              '<li>In <b>Application → Cookies → app.slack.com</b>, copy the value of the <b>d</b> cookie — the <b>xoxd-</b> one.</li>' +
+            '</ol>' +
+            '<p class="ns-note">The session lasts until you sign out of that browser. Close the tab instead.</p>' +
+          '</details>' +
+          '<div class="ns-session-err" hidden></div>' +
+          '<button type="submit" class="ns-session-go">Sign in</button>' +
+        '</form>';
+
+      const form = wrap.querySelector('.ns-session-form');
+      const tokenIn = wrap.querySelector('.ns-in-token');
+      const cookieIn = wrap.querySelector('.ns-in-cookie');
+      const go = wrap.querySelector('.ns-session-go');
+      const err = wrap.querySelector('.ns-session-err');
+      tokenIn.value = sessionDraft.token;
+      cookieIn.value = sessionDraft.cookie;
+      tokenIn.addEventListener('input', () => { sessionDraft.token = tokenIn.value; });
+      cookieIn.addEventListener('input', () => { sessionDraft.cookie = cookieIn.value; });
+      if (signInError) { err.hidden = false; err.textContent = signInError; }
+      go.disabled = signInBusy;
+      go.textContent = signInBusy ? 'Checking…' : 'Sign in';
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (signInBusy) return;
+        const token = tokenIn.value.trim();
+        const cookie = cookieIn.value.trim();
+        if (!/^(['"`]*)xoxc-/.test(token)) { signInError = 'The session token starts with xoxc-.'; return void renderSetup(); }
+        if (!/^(['"`]*)(d=)?xoxd-/.test(cookie)) { signInError = 'The d cookie starts with xoxd-.'; return void renderSetup(); }
+        signInBusy = true;
+        signInError = null;
+        renderSetup();
+        send({ type: 'slack:signIn', token, cookie });
+      });
+      return wrap;
     }
 
     function renderDisabled() {
@@ -652,6 +738,20 @@
           renderConn();
           renderList();
           if (selectedId) renderThread();
+          break;
+        }
+        case 'slack:signedIn': {
+          signInBusy = false;
+          if (message.ok) {
+            // The state that follows will leave the setup card behind; clear
+            // the pasted values so they do not linger in the page.
+            signInError = null;
+            sessionDraft.token = '';
+            sessionDraft.cookie = '';
+          } else {
+            signInError = message.message || 'Slack did not accept that session.';
+            if (state && !state.hasTokens) renderSetup();
+          }
           break;
         }
         case 'slack:thread': {

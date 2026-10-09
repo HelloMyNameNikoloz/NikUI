@@ -112,6 +112,23 @@ module.exports = async function () {
   await r.handle('e', { type: 'slack:reply', id: 'e1', conversation: 'D2', text: 'hi' });
   check('the editor is not written in the trail', !audit.some((a) => a.detail === 'D2'));
 
+  // Session sign-in: the two values are typed into the laptop's own tab and
+  // handed straight to the keychain. A phone is refused, as with app tokens.
+  const kept = [];
+  const rsess = room(service, { connectWith: async (how) => { kept.push(how); return how.token === 'xoxc-ok' ? { ok: true, who: { user: 'niko' } } : { ok: false, message: 'Slack did not accept that session: nope' }; } }).r;
+  const phone = seat(rsess, 'p', { control: true });
+  phone.length = 0;
+  await rsess.handle('p', { type: 'slack:signIn', token: 'xoxc-ok', cookie: 'xoxd-a' });
+  check('a phone may not sign in with a session', kept.length === 0 && phone.some((m) => m.type === 'slack:signedIn' && m.ok === false && /laptop/.test(m.message)));
+  const lap = seat(rsess, 'l', { local: true, device: null });
+  lap.length = 0;
+  await rsess.handle('l', { type: 'slack:signIn', token: 'xoxc-ok', cookie: 'xoxd-a' });
+  check('the laptop signs in, and the values reach the keychain path', kept.length === 1 && kept[0].token === 'xoxc-ok' &&
+    lap.some((m) => m.type === 'slack:signedIn' && m.ok === true && m.who.user === 'niko'));
+  lap.length = 0;
+  await rsess.handle('l', { type: 'slack:signIn', token: 'xoxc-bad', cookie: 'xoxd-a' });
+  check('a session Slack rejects is said in words, not kept', lap.some((m) => m.type === 'slack:signedIn' && m.ok === false && /did not accept/.test(m.message)));
+
   editor.length = 0; watcher.length = 0;
   r.focus('D1');
   check('a popup is for the editor', editor.some((m) => m.type === 'slack:focus' && m.conversation === 'D1'));

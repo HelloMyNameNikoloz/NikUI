@@ -13,6 +13,11 @@ const { SlackPanel } = require('./slackPanel');
  */
 const USER_TOKEN = 'nikui.slack.userToken';
 const APP_TOKEN = 'nikui.slack.appToken';
+// The other way in, for a workspace that will not have the app: the session
+// Slack's own clients run on. One of the two pairs is kept, never both.
+const SESSION_TOKEN = 'nikui.slack.sessionToken';
+const SESSION_COOKIE = 'nikui.slack.sessionCookie';
+const ALL_KEYS = [USER_TOKEN, APP_TOKEN, SESSION_TOKEN, SESSION_COOKIE];
 
 const cfg = () => vscode.workspace.getConfiguration('nikui');
 const minutes = (key, fallback) => {
@@ -31,11 +36,13 @@ function startSlack(context, deps) {
   const log = deps.log || (() => {});
   let service = null;
   let hasTokens = false;
+  let authMode = null; // 'app' | 'session'
   let stopped = false;
 
   const settings = () => ({
     enabled: cfg().get('slack.enabled', false),
     hasTokens,
+    authMode,
     vipList: cfg().get('slack.vips', []) || [],
     clock: cfg().get('clock', '24h')
   });
@@ -47,6 +54,7 @@ function startSlack(context, deps) {
     setVips: (list) => write('nikui.slack.vips', list),
     setEnabled: (on) => write('nikui.slack.enabled', !!on),
     connect: () => vscode.commands.executeCommand('nikui.slack.connect'),
+    connectWith: (how) => keepSession(context, how).then((r) => { if (r && r.ok) rebuild(); return r; }),
     disconnect: () => vscode.commands.executeCommand('nikui.slack.disconnect'),
     openSettings: () => vscode.commands.executeCommand('workbench.action.openSettings', 'nikui.slack'),
     openUrl: (url) => vscode.env.openExternal(vscode.Uri.parse(url)),
@@ -105,9 +113,13 @@ function startSlack(context, deps) {
   async function build() {
     if (service) { try { service.stop(); } catch (_) { /* already */ } service = null; }
     const secrets = context.secrets;
-    const token = secrets ? await secrets.get(USER_TOKEN) : null;
-    const appToken = secrets ? await secrets.get(APP_TOKEN) : null;
+    const userToken = secrets ? await secrets.get(USER_TOKEN) : null;
+    const sessionToken = secrets && !userToken ? await secrets.get(SESSION_TOKEN) : null;
+    const cookie = sessionToken ? await secrets.get(SESSION_COOKIE) : null;
+    const token = userToken || (sessionToken && cookie ? sessionToken : null);
+    const appToken = userToken && secrets ? await secrets.get(APP_TOKEN) : null;
     hasTokens = !!token;
+    authMode = userToken ? 'app' : token ? 'session' : null;
     if (stopped || !token || !cfg().get('slack.enabled', false)) {
       paintBar();
       return void room.broadcast();
@@ -115,7 +127,7 @@ function startSlack(context, deps) {
     const { createApi } = require('./slack/api');
     const { createSocket } = require('./slack/socket');
     const { SlackService } = require('./slack/service');
-    const api = createApi({ token, appToken });
+    const api = createApi({ token, appToken, cookie: authMode === 'session' ? cookie : undefined });
     service = new SlackService({
       api,
       createSocket: appToken ? (opts) => createSocket(Object.assign({ api }, opts)) : null,
@@ -136,16 +148,16 @@ function startSlack(context, deps) {
   context.subscriptions.push(
     vscode.commands.registerCommand('nikui.slack.open', () => open({})),
     vscode.commands.registerCommand('nikui.slack.connect', () => connect(context).then((ok) => { if (ok) rebuild(); })),
+    vscode.commands.registerCommand('nikui.slack.signIn', () => connectSession(context).then((r) => { if (r && r.ok) rebuild(); })),
     vscode.commands.registerCommand('nikui.slack.disconnect', async () => {
-      await context.secrets.delete(USER_TOKEN);
-      await context.secrets.delete(APP_TOKEN);
+      for (const key of ALL_KEYS) await context.secrets.delete(key);
       rebuild();
       vscode.window.setStatusBarMessage('NikUI: Slack disconnected', 3000);
     })
   );
   if (context.secrets && context.secrets.onDidChange) {
     context.subscriptions.push(context.secrets.onDidChange((e) => {
-      if (e.key === USER_TOKEN || e.key === APP_TOKEN) rebuild();
+      if (ALL_KEYS.includes(e.key)) rebuild();
     }));
   }
   if (vscode.workspace.onDidChangeConfiguration) context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
@@ -211,9 +223,83 @@ async function connect(context) {
   return true;
 }
 
+/**
+ * The easy way in, and the one the setup page leads with: the session Slack's
+ * own web client already holds. No app to create, nothing for an admin to
+ * approve — the two values a browser keeps, pasted once.
+ *
+ * Checked against Slack before they are kept, so a value pasted short a
+ * character is caught here while it is still on your clipboard. Keeping these
+ * clears any app token, since only one way in is live at a time.
+ *
+ * @param {object} context
+ * @param {{token: string, cookie: string}} how
+ * @returns {Promise<{ok: boolean, message?: string, who?: object}>}
+ */
+async function keepSession(context, how) {
+  const { createApi, cleanSession } = require('./slack/api');
+  const cleaned = cleanSession(how && how.token, how && how.cookie);
+  if (cleaned.error) return { ok: false, message: cleaned.error };
+  let who;
+  try {
+    who = await createApi({ token: cleaned.token, cookie: cleaned.cookie }).call('auth.test', {});
+  } catch (err) {
+    const { sayError } = require('./slackRoom');
+    return { ok: false, message: 'Slack did not accept that session: ' + sayError(err) };
+  }
+  const secrets = context.secrets;
+  await secrets.store(SESSION_TOKEN, cleaned.token);
+  await secrets.store(SESSION_COOKIE, cleaned.cookie);
+  await secrets.delete(USER_TOKEN);
+  await secrets.delete(APP_TOKEN);
+  const { write } = require('./settingsMenu');
+  await write('nikui.slack.enabled', true);
+  return { ok: true, who };
+}
+
+/**
+ * The session sign-in as a command, for the laptop: two masked boxes, the same
+ * values the Slack page in a browser holds, the same keychain the app tokens
+ * would use. Each is checked for shape before the next is asked.
+ */
+async function connectSession(context) {
+  const token = await vscode.window.showInputBox({
+    title: 'Sign in to Slack (1 of 2)',
+    prompt: 'The session token from app.slack.com — DevTools → Console: JSON.parse(localStorage.localConfig_v2).teams[Object.keys(…)[0]].token',
+    placeHolder: 'xoxc-…',
+    password: true,
+    ignoreFocusOut: true,
+    validateInput: (v) => (/^xoxc-[A-Za-z0-9-]+$/.test(String(v || '').trim().replace(/^['"`]+|['"`]+$/g, '')) ? null : 'A session token starts with xoxc-')
+  });
+  if (!token) return { ok: false };
+  const cookie = await vscode.window.showInputBox({
+    title: 'Sign in to Slack (2 of 2)',
+    prompt: 'The value of the “d” cookie for app.slack.com — DevTools → Application → Cookies. Starts with xoxd-.',
+    placeHolder: 'xoxd-…',
+    password: true,
+    ignoreFocusOut: true,
+    validateInput: (v) => (/^(d=)?xoxd-/.test(String(v || '').trim().replace(/^['"`]+|['"`]+$/g, '')) ? null : 'The d cookie starts with xoxd-')
+  });
+  if (!cookie) return { ok: false };
+
+  const result = await keepSession(context, { token, cookie });
+  if (!result.ok) {
+    vscode.window.showErrorMessage(result.message || 'Slack did not accept that session.');
+    return result;
+  }
+  const who = result.who;
+  const vips = cfg().get('slack.vips', []) || [];
+  vscode.window.showInformationMessage(
+    `Slack connected as ${(who && who.user) || 'you'}${who && who.team ? ' in ' + who.team : ''}.` +
+    (vips.length ? '' : ' Add your VIPs next.'),
+    vips.length ? 'Open Slack' : 'Add VIPs'
+  ).then((pick) => { if (pick) vscode.commands.executeCommand('nikui.slack.open'); });
+  return result;
+}
+
 function clip(text, max) {
   const one = String(text || '').replace(/\s+/g, ' ').trim();
   return one.length > max ? one.slice(0, max - 1) + '…' : one;
 }
 
-module.exports = { startSlack, USER_TOKEN, APP_TOKEN };
+module.exports = { startSlack, USER_TOKEN, APP_TOKEN, SESSION_TOKEN, SESSION_COOKIE };

@@ -278,7 +278,12 @@
       },
       {
         "command": "nikui.slack.connect",
-        "title": "Connect Slack",
+        "title": "Connect Slack (create an app)",
+        "category": "NikUI"
+      },
+      {
+        "command": "nikui.slack.signIn",
+        "title": "Sign in to Slack (paste session)",
         "category": "NikUI"
       },
       {

@@ -1,5 +1,5 @@
 'use strict';
-const { createApi } = require('../src/slack/api.js');
+const { createApi, cleanSession } = require('../src/slack/api.js');
 
 /** A fetch that answers from a queue, remembering what it was asked. */
 function fakeFetch(queue) {
@@ -95,5 +95,34 @@ module.exports = async function () {
     let caught = null;
     try { await api.call('auth.test', {}); } catch (err) { caught = err; }
     checkEqual('with no token, it refuses rather than asking Slack', caught && caught.code, 'no_token');
+  }
+
+  suite('Slack API: a browser session, not an app');
+
+  {
+    const fetch = fakeFetch([jsonResponse(200, { ok: true, user: 'niko' })]);
+    const api = createApi({ token: 'xoxc-sess', cookie: 'xoxd-abc%2F', fetch });
+    await api.call('auth.test', {});
+    check('the d cookie rides along with the session token',
+      fetch.calls[0].init.headers.cookie === 'd=xoxd-abc%2F' &&
+      fetch.calls[0].init.headers.authorization === 'Bearer xoxc-sess');
+  }
+
+  {
+    // Socket Mode uses the app token and must not carry a user's cookie.
+    const fetch = fakeFetch([jsonResponse(200, { ok: true, url: 'wss://x' })]);
+    const api = createApi({ token: 'xoxc-sess', cookie: 'xoxd-abc', appToken: 'xapp-a', fetch });
+    await api.call('apps.connections.open', {}, { app: true });
+    check('an app-token call sends no cookie', !('cookie' in fetch.calls[0].init.headers));
+  }
+
+  {
+    checkEqual('a clean pair passes, the cookie kept as Slack set it',
+      cleanSession('xoxc-aaa', 'xoxd-bbb'), { token: 'xoxc-aaa', cookie: 'xoxd-bbb' });
+    checkEqual('quotes, a d= prefix and a trailing ; Path are all forgiven',
+      cleanSession('"xoxc-aaa"', 'd=xoxd-bbb; Path=/; HttpOnly'), { token: 'xoxc-aaa', cookie: 'xoxd-bbb' });
+    check('a decoded cookie is re-encoded', cleanSession('xoxc-a', 'xoxd-a/b+c=').cookie === 'xoxd-a%2Fb%2Bc%3D');
+    check('a token of the wrong shape is named', /xoxc-/.test(cleanSession('xoxb-nope', 'xoxd-b').error));
+    check('a cookie of the wrong shape is named', /xoxd-/.test(cleanSession('xoxc-a', 'nope').error));
   }
 };

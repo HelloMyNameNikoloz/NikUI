@@ -62,6 +62,7 @@ class SlackRoom {
    * @param {(list: string[]) => Promise} deps.setVips
    * @param {(on: boolean) => Promise} deps.setEnabled
    * @param {() => Promise} [deps.connect]        asks for the tokens, on this laptop
+   * @param {(how: {token: string, cookie: string}) => Promise} [deps.connectWith]  keeps a pasted session, on this laptop
    * @param {() => Promise} [deps.disconnect]
    * @param {() => void} [deps.openSettings]
    * @param {(url: string) => void} [deps.openUrl] opens a link on this laptop
@@ -228,6 +229,19 @@ class SlackRoom {
         const act = message.type === 'slack:connect' ? this.deps.connect
           : message.type === 'slack:disconnect' ? this.deps.disconnect : this.deps.openSettings;
         if (act) await act();
+        return void this.broadcast();
+      }
+
+      // The session sign-in, from the laptop's own tab: the two values are
+      // typed into the page here on this machine, handed straight to the
+      // keychain, and never put on a wire — a phone is refused, as with the
+      // app tokens.
+      case 'slack:signIn': {
+        if (!seat.local) return void post({ type: 'slack:signedIn', ok: false, message: 'Sign in to Slack on the laptop.' });
+        if (!this.deps.connectWith) return void post({ type: 'slack:signedIn', ok: false, message: 'Signing in is not available here.' });
+        const result = await this.deps.connectWith({ token: String(message.token || ''), cookie: String(message.cookie || '') });
+        this.note(seat, 'slack sign-in', !!(result && result.ok));
+        post({ type: 'slack:signedIn', ok: !!(result && result.ok), message: result && result.message, who: result && result.who });
         return void this.broadcast();
       }
 

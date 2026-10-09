@@ -228,6 +228,81 @@ button.ns-row.on { background: var(--ns-active); filter: none; }
 .ns-note { margin-top: var(--ns-s1); font-size: 11.5px; color: var(--vscode-descriptionForeground, #9d9d9d); }
 .ns-step-app, .ns-connect { margin-top: var(--ns-s1); }
 
+/* ---- setup: two ways in, an iOS segmented control between them -------------- */
+
+.ns-seg {
+  position: relative;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  margin: var(--ns-s3) 0 var(--ns-s4);
+  padding: 2px;
+  background: var(--ns-fill-1);
+  border-radius: var(--ns-radius);
+  isolation: isolate;
+}
+.nik-slack .ns-seg-opt {
+  position: relative; z-index: 1;
+  margin: 0; padding: 6px 10px;
+  background: none; border: 0; border-radius: calc(var(--ns-radius) - 2px);
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  font-weight: 560;
+  transition: color 0.2s ease;
+}
+.nik-slack .ns-seg-opt:hover { filter: none; }
+.nik-slack .ns-seg-opt[aria-selected="true"] { color: var(--vscode-foreground, #eee); }
+.ns-seg-glider {
+  position: absolute; z-index: 0; top: 2px; bottom: 2px; left: 2px;
+  width: calc(50% - 2px);
+  background: var(--ns-fill-2);
+  border: 0.5px solid var(--ns-hairline);
+  border-radius: calc(var(--ns-radius) - 2px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.ns-seg.on-session .ns-seg-glider { transform: translateX(100%); }
+
+.ns-setup-body { position: relative; overflow: hidden; }
+.ns-setup-pane { animation: ns-setup-in 0.26s cubic-bezier(0.32, 0.72, 0, 1); }
+@keyframes ns-setup-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+.ns-session-lede { margin: 0 0 var(--ns-s3); color: var(--vscode-foreground, #eee); }
+.ns-session-form { display: flex; flex-direction: column; gap: var(--ns-s3); }
+.ns-field { display: flex; flex-direction: column; gap: var(--ns-s1); }
+.ns-field > span { font-size: 11.5px; font-weight: 560; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.ns-field > input {
+  width: 100%; padding: 8px 11px;
+  background: var(--ns-fill-1);
+  border: 0.5px solid var(--ns-hairline);
+  border-radius: var(--ns-radius);
+  color: var(--vscode-foreground, #eee);
+  font: inherit; font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ns-field > input::placeholder { color: color-mix(in srgb, var(--vscode-foreground, #ccc) 35%, transparent); }
+.ns-field > input:focus {
+  outline: none;
+  border-color: var(--ns-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ns-accent) 22%, transparent);
+}
+.ns-help { font-size: 12px; color: var(--vscode-descriptionForeground, #9d9d9d); }
+.ns-help summary { cursor: pointer; user-select: none; color: var(--ns-accent); font-weight: 540; }
+.ns-help summary::-webkit-details-marker { display: none; }
+.ns-help summary::before { content: '›'; display: inline-block; margin-right: 6px; transition: transform 0.2s ease; }
+.ns-help[open] summary::before { transform: rotate(90deg); }
+.ns-help ol { margin: var(--ns-s2) 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 5px; }
+.ns-help code {
+  display: inline-block; max-width: 100%; overflow-x: auto; vertical-align: bottom;
+  padding: 1px 5px; border-radius: 5px;
+  background: var(--ns-fill-2);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 11px;
+}
+.ns-session-err {
+  padding: 7px 11px; border-radius: var(--ns-radius);
+  background: color-mix(in srgb, var(--ns-error) 14%, transparent);
+  color: var(--ns-error); font-size: 12px;
+}
+.ns-session-go { align-self: flex-start; margin-top: var(--ns-s1); }
+
 /* ---- thread header --------------------------------------------------------- */
 
 .ns-thread-head {

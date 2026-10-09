@@ -135,6 +135,32 @@ const THREAD_ANNA = {
     await click('.ns-step-app');
     out.setupAsksLaptop = (await posted()).some((m) => m.type === 'slack:setup');
 
+    // ---- the two ways in, and the session paste ------------------------
+    out.setupTwoOptions = (await count('.ns-seg-opt')) === 2;
+    out.setupAppFirst = /Create an app/.test(await text('.ns-seg-opt') || '');
+    await click('.ns-seg-opt[data-tab="session"]');
+    out.sessionFieldsShown = await exists('.ns-in-token') && await exists('.ns-in-cookie');
+    out.sessionHasHelp = /app\.slack\.com/.test(await text('.ns-help') || '');
+    await click('.ns-help summary');
+    await new Promise((r) => setTimeout(r, 320));
+    await browser.shot('/tmp/slack-session-setup.png');
+    await browser.evaluate("window.__posted.length = 0; true");
+    // A malformed paste is caught in the page, before anything is sent.
+    await browser.evaluate("(function(){ var t=document.querySelector('.ns-in-token'); t.value='nope'; t.dispatchEvent(new Event('input',{bubbles:true})); var c=document.querySelector('.ns-in-cookie'); c.value='xoxd-abc'; c.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('.ns-session-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})); return true; })()");
+    out.sessionBadCaught = !(await posted()).some((m) => m.type === 'slack:signIn') && /xoxc-/.test(await text('.ns-session-err') || '');
+    // A well-formed pair is sent with both values.
+    await browser.evaluate("(function(){ var t=document.querySelector('.ns-in-token'); t.value='xoxc-good'; t.dispatchEvent(new Event('input',{bubbles:true})); var c=document.querySelector('.ns-in-cookie'); c.value='xoxd-good'; c.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('.ns-session-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})); return true; })()");
+    const afterSignIn = await posted();
+    out.sessionSent = afterSignIn.some((m) => m.type === 'slack:signIn' && m.token === 'xoxc-good' && m.cookie === 'xoxd-good');
+    out.sessionBusy = /Checking/.test(await text('.ns-session-go') || '');
+    // Slack refusing it says so in the form, keeping the setup card up.
+    await post({ type: 'slack:signedIn', ok: false, message: 'Slack did not accept that session: invalid_auth' });
+    out.sessionRejectShown = /did not accept/.test(await text('.ns-session-err') || '');
+    // A phone (not local) is told to do it on the laptop.
+    await post({ type: 'slack:state', state: Object.assign({}, BASE_STATE, { hasTokens: false, local: false }) });
+    await click('.ns-seg-opt[data-tab="session"]');
+    out.sessionPhoneDeferred = /laptop/.test(await text('.ns-setup-pane') || '') && !(await exists('.ns-in-token'));
+
     // ---- disabled card --------------------------------------------------
     await post({ type: 'slack:state', state: Object.assign({}, BASE_STATE, { enabled: false }) });
     out.disabledCardShown = /off/.test(await text('.ns-card h2') || '');
@@ -303,6 +329,15 @@ const THREAD_ANNA = {
     ['no tokens shows the setup card', out.setupCardShown === true],
     ['which explains what this does', out.setupExplains === true],
     ['and Create the Slack app asks the laptop to open the page', out.setupAsksLaptop === true],
+    ['the setup card offers two ways in', out.setupTwoOptions === true],
+    ['with Create an app first', out.setupAppFirst === true],
+    ['the session tab shows both fields', out.sessionFieldsShown === true],
+    ['and says where to find them', out.sessionHasHelp === true],
+    ['a malformed session is caught before anything is sent', out.sessionBadCaught === true],
+    ['a well-formed session is sent with both values', out.sessionSent === true],
+    ['and the button shows it is checking', out.sessionBusy === true],
+    ['Slack refusing it is shown in the form', out.sessionRejectShown === true],
+    ['a phone is told to sign in on the laptop', out.sessionPhoneDeferred === true],
     ['disabled-but-connected shows its own card', out.disabledCardShown === true],
     ['every conversation gets a row', out.rowCount === 3],
     ['a pending conversation sorts first', out.pendingFirst === 'Anna'],

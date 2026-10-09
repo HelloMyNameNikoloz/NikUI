@@ -10,6 +10,11 @@
  * as the person, and an app-level token (xapp-) for the one method that opens
  * a Socket Mode connection. Which one a call wants is the `app` option, not
  * the method name, since Slack does not say so itself.
+ *
+ * Or no app at all: the session Slack's own web and desktop clients use — an
+ * xoxc- token with the `d` cookie it belongs to. Same methods, same answers,
+ * as you; it simply lasts until that browser session is signed out, and there
+ * is no Socket Mode without an app, so the service polls.
  */
 
 const BASE = 'https://slack.com/api/';
@@ -18,10 +23,11 @@ const BASE = 'https://slack.com/api/';
  * @param {object} deps
  * @param {string} deps.token        the user token (xoxp-)
  * @param {string} [deps.appToken]   the app-level token (xapp-), for Socket Mode only
+ * @param {string} [deps.cookie]     the session's `d` cookie, URL-encoded, when `token` is an xoxc-
  * @param {Function} [deps.fetch]   injectable; defaults to the global `fetch`
  * @param {Function} [deps.sleep]   injectable (ms) => Promise, for the 429 wait
  */
-function createApi({ token, appToken, fetch: fetchImpl, sleep } = {}) {
+function createApi({ token, appToken, cookie, fetch: fetchImpl, sleep } = {}) {
   const doFetch = fetchImpl || (typeof fetch === 'function' ? fetch : null);
   const wait = sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 
@@ -56,10 +62,10 @@ function createApi({ token, appToken, fetch: fetchImpl, sleep } = {}) {
     try {
       response = await doFetch(BASE + method, {
         method: 'POST',
-        headers: {
+        headers: Object.assign({
           authorization: 'Bearer ' + useToken,
           'content-type': 'application/x-www-form-urlencoded'
-        },
+        }, cookie && !options.app ? { cookie: 'd=' + cookie } : {}),
         body: body.toString()
       });
     } catch (_) {
@@ -91,4 +97,23 @@ function createApi({ token, appToken, fetch: fetchImpl, sleep } = {}) {
   return { call };
 }
 
-module.exports = { createApi };
+/**
+ * A session as pasted: quotes, a `d=` in front, a `; Path=/…` behind, or the
+ * cookie already decoded by whatever it was copied from — all of it happens,
+ * and none of it should be a reason to say no. The cookie goes back on the
+ * wire URL-encoded, which is how Slack set it.
+ *
+ * @returns {{token: string, cookie: string} | {error: string}}
+ */
+function cleanSession(rawToken, rawCookie) {
+  const strip = (v) => String(v || '').trim().replace(/^['"`]+|['"`]+$/g, '').trim();
+  const token = strip(rawToken);
+  let cookie = strip(rawCookie).replace(/^d=/, '').split(';')[0].trim();
+  if (!/^xoxc-[A-Za-z0-9-]+$/.test(token)) return { error: 'The session token starts with xoxc-.' };
+  if (!/^xoxd-/.test(cookie)) return { error: 'The d cookie starts with xoxd-.' };
+  if (/[/+=]/.test(cookie)) cookie = encodeURIComponent(cookie);
+  if (!/^xoxd-[A-Za-z0-9%._-]+$/.test(cookie)) return { error: 'That does not look like the whole d cookie.' };
+  return { token, cookie };
+}
+
+module.exports = { createApi, cleanSession };

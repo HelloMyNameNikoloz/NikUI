@@ -647,6 +647,7 @@ class SlackService extends EventEmitter {
       connected: !!this.me && !this.error,
       socket: this.socketState,
       error: this.error || null,
+      signedOut: this.error === SIGNED_OUT,
       me: this.me,
       unresolved: this.unresolved,
       vips: this.vips.map((v) => ({ id: v.id, name: v.name, initials: v.initials })),
@@ -683,12 +684,14 @@ function initialsFor(name) {
   return (words[0][0] + words[1][0]).toUpperCase();
 }
 
+const SIGNED_OUT = 'Slack refused the token — connect again.';
+
 /** A sentence, never a token, however Slack phrased its complaint. */
 function humanError(err) {
   if (!err) return 'Something went wrong talking to Slack.';
   const code = err.code;
   if (code === 'invalid_auth' || code === 'not_authed' || code === 'token_revoked' || code === 'account_inactive') {
-    return 'Slack refused the token — connect again.';
+    return SIGNED_OUT;
   }
   if (code === 'network') return 'No connection to Slack.';
   if (code === 'no_token' || code === 'no_fetch') return 'No connection to Slack.';
