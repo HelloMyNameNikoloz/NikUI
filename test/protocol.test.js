@@ -33,7 +33,7 @@ const TO_HOST = [
 
 const TO_CLIENT = [
   'init', 'items', 'status', 'stats', 'meta', 'queue', 'reset',
-  'statusReport', 'openStatus', 'editPrompt', 'focus', 'presence', 'settings', 'commands'
+  'statusReport', 'openStatus', 'editPrompt', 'focus', 'draft', 'presence', 'settings', 'commands'
 ];
 
 /**
@@ -227,6 +227,19 @@ module.exports = async function () {
   check('and kept fresh while it is open', hubUnderTest.clients.get('anything').commandsOpen === true);
   await say({ type: 'commandsOpen', open: false });
   check('until it is closed', hubUnderTest.clients.get('anything').commandsOpen === false);
+
+  check('a draft needs a client to go to', hubUnderTest.draftInput(null, 'x') === false);
+  hubUnderTest.draftInput('anything', 'https://github.com/o/r/pull/1');
+  check('and reaches only that one', seen.some((m) => m.type === 'draft' && m.text === 'https://github.com/o/r/pull/1'));
+  {
+    const entry = hubUnderTest.clients.get('anything');
+    entry.ready = false;
+    const from = seen.length;
+    hubUnderTest.draftInput('anything', 'https://github.com/o/r/pull/2');
+    check('a panel not listening yet does not lose its draft', entry.pendingDraft === 'https://github.com/o/r/pull/2' && seen.length === from);
+    await say({ type: 'ready' });
+    check('it gets it once it is ready', seen.slice(from).some((m) => m.type === 'draft' && m.text === 'https://github.com/o/r/pull/2') && !entry.pendingDraft);
+  }
 
   checkEqual('so every message the host can send has been seen',
     TO_CLIENT.filter((t) => !sawType(t)), []);

@@ -13,6 +13,10 @@ const { EventEmitter } = require('events');
  */
 
 const PR_URL = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/?#].*)?$/;
+// Pull request or issue: GitHub numbers both out of one shared sequence per
+// repo, so a ticket number means the same thing either way — used only where
+// "is this a GitHub ticket link" matters and not "is this specifically a PR".
+const TICKET_URL = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)\/(?:pull|issues)\/(\d+)(?:[/?#].*)?$/;
 
 const FAIL_CONCLUSIONS = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE']);
 const FAIL_STATES = new Set(['FAILURE', 'ERROR']);
@@ -31,6 +35,13 @@ const defaultRun = (file, args, options) => new Promise((resolve) => {
 /** https://github.com/owner/repo/pull/123(/files)(#discussion) → {owner, repo, number} */
 function parsePrUrl(url) {
   const m = PR_URL.exec(String(url || '').trim());
+  if (!m) return null;
+  return { owner: m[1], repo: m[2], number: Number(m[3]) };
+}
+
+/** As parsePrUrl, but a .../issues/123 link counts too. */
+function parseTicketUrl(url) {
+  const m = TICKET_URL.exec(String(url || '').trim());
   if (!m) return null;
   return { owner: m[1], repo: m[2], number: Number(m[3]) };
 }
@@ -677,4 +688,4 @@ class PrFeed extends EventEmitter {
   }
 }
 
-module.exports = { PrFeed, normalize, QUERY, parsePrUrl, threadPrompt, checkPrompt };
+module.exports = { PrFeed, normalize, QUERY, parsePrUrl, parseTicketUrl, threadPrompt, checkPrompt };

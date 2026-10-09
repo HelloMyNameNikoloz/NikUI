@@ -702,6 +702,11 @@ class SessionHub {
       entry.pendingStatus = false;
       this.openStatus(entry.client.id);
     }
+    if (entry.pendingDraft) {
+      const text = entry.pendingDraft;
+      entry.pendingDraft = null;
+      safePost(entry.client, { type: 'draft', text });
+    }
   }
 
   // ---- what a client is told -----------------------------------------------
@@ -869,6 +874,16 @@ class SessionHub {
     if (clientId) return this.send(clientId, { type: 'focus' });
     this.broadcast({ type: 'focus' });
     return true;
+  }
+
+  /** Put text in the composer without sending it — a draft, never a prompt. */
+  draftInput(clientId, text) {
+    // Only ever to the one panel that asked: drafts are not shared between views.
+    // A panel opened a moment ago is not listening yet; it gets it once it is.
+    if (!text || !clientId) return false;
+    const entry = this.clients.get(clientId);
+    if (entry && !entry.ready) { entry.pendingDraft = text; return true; }
+    return this.send(clientId, { type: 'draft', text });
   }
 
   /**

@@ -32,6 +32,12 @@
   const LOCK = '<svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
     'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  // A GitHub pull request or issue link in a message — strict enough that
+  // only a real ticket link grows a button, never any other github.com url.
+  const TICKET_LINK = /^https:\/\/github\.com\/[^/]+\/[^/]+\/(pull|issues)\/(\d+)(?:[/?#].*)?$/;
+  const TICKET_GLYPH = '<svg class="ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M9 18l6-6-6-6"/></svg>';
   const OPEN_EXT = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>';
@@ -956,6 +962,33 @@
       return chip;
     }
 
+    // The pill under a bubble for each distinct GitHub PR/issue link inside
+    // it — up to 3, laptop only: a phone must not pop a panel open on a
+    // machine it is not looking at.
+    function ticketRow(bubble) {
+      if (!state || !state.local) return null;
+      const seen = new Set();
+      const urls = [];
+      for (const a of bubble.querySelectorAll('a[href]')) {
+        const href = a.getAttribute('href') || '';
+        if (!TICKET_LINK.test(href) || seen.has(href)) continue;
+        seen.add(href);
+        urls.push(href);
+        if (urls.length >= 3) break;
+      }
+      if (!urls.length) return null;
+      const row = el('div', 'ns-ticket-row');
+      for (const url of urls) {
+        const m = TICKET_LINK.exec(url);
+        const number = m ? m[2] : '';
+        const btn = el('button', 'ns-ticket-open', { type: 'button', title: `Open #${number} in instance` });
+        btn.innerHTML = TICKET_GLYPH + '<span>Open in instance</span>';
+        btn.addEventListener('click', () => send({ type: 'slack:openTicket', url }));
+        row.appendChild(btn);
+      }
+      return row;
+    }
+
     function reactionsRow(reactions) {
       const row = el('div', 'ns-reactions');
       for (const r of reactions) {
@@ -1034,6 +1067,8 @@
             bubble.appendChild(edited);
           }
           bubbleWrap.appendChild(bubble);
+          const tickets = ticketRow(bubble);
+          if (tickets) bubbleWrap.appendChild(tickets);
           if (lastBubble) lastBubble.classList.remove('tail');
           bubble.classList.add('tail');
           lastBubble = bubble;
@@ -1328,6 +1363,14 @@
         }
         case 'slack:link': {
           if (message.url) openUrl(message.url);
+          break;
+        }
+        case 'slack:openTicket': {
+          if (!message.ok) {
+            errorToast = message.reason || 'Could not open that ticket.';
+            renderThread();
+            say(errorToast);
+          }
           break;
         }
         case 'slack:refused': {

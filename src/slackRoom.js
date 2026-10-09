@@ -21,6 +21,10 @@
 
 const MAX_VIPS = 50;
 
+// A GitHub pull request or issue link, strictly: nothing else is let through
+// to open an instance on this laptop.
+const TICKET_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/(?:pull|issues)\/\d+(?:[/?#].*)?$/;
+
 // What a Slack app needs to do this, as a manifest Slack itself can read: user
 // scopes only, so everything happens as you and nothing as a bot, and Socket
 // Mode so no server of anybody's has to be reachable from Slack.
@@ -309,6 +313,20 @@ class SlackRoom {
       case 'slack:setup': {
         if (seat.local && this.deps.openUrl) return void this.deps.openUrl(SETUP_URL);
         return void post({ type: 'slack:link', url: SETUP_URL });
+      }
+
+      // Open a PR/issue link from a message in an instance, never the browser.
+      // A phone may only watch here: it must not pop a panel open on the
+      // laptop it is not looking at.
+      case 'slack:openTicket': {
+        const url = text(message.url, 400);
+        if (!seat.local) return void post({ type: 'slack:openTicket', url, ok: false, reason: 'Do that on the laptop.' });
+        if (!TICKET_URL.test(url)) return void post({ type: 'slack:openTicket', url, ok: false, reason: 'Not a GitHub pull request or issue link.' });
+        if (!this.deps.openTicket) return void post({ type: 'slack:openTicket', url, ok: false, reason: 'Opening a ticket is not available here.' });
+        let result;
+        try { result = await this.deps.openTicket(url); }
+        catch (err) { result = { ok: false, reason: sayError(err) }; }
+        return void post(Object.assign({ type: 'slack:openTicket', url }, result));
       }
 
       case 'slack:link': {

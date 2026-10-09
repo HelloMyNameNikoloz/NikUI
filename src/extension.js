@@ -15,11 +15,12 @@ const { SessionPanel } = require('./panel');
 const { DoneNotifier, banner: plainBanner, chime } = require('./done');
 const { CiWatcher } = require('./ci');
 const { PrLinks } = require('./prlink');
-const { PrFeed } = require('./prView');
+const { PrFeed, parseTicketUrl } = require('./prView');
+const { resolveRepoFolder, originOf } = require('./repoFolders');
 const { MacNotifier } = require('./notifier');
 const { closeHub, closeAllHubs, eachHub } = require('./hub');
 const { HistoryTree } = require('./historyTree');
-const { projectsRoot } = require('./history');
+const { projectsRoot, listSessions } = require('./history');
 const { nextTicket } = require('./ticket');
 const { labelFor } = require('./label');
 const { createHost, installHost, forgetHost } = require('./host');
@@ -46,6 +47,108 @@ let manager;
 let ledger = null;
 // The GitHub pane's feed and PR picker, for the host the server builds.
 let github = {};
+
+/**
+ * Bring a transcript back as an instance — the live one if it is already
+ * open, otherwise resumed from disk. Shared by the History view's own resume
+ * command and by Slack's "open in instance", which does the same thing on
+ * its way to a ticket.
+ *
+ * @returns {object|null} the SessionPanel shown, or null if there was nothing
+ * to resume (and a warning has already been shown).
+ */
+function resumeHistoryEntry(entry, context, manager) {
+  if (!entry || !entry.sessionId) return null;
+  const cwd = entry.cwd || (vscode.workspace.workspaceFolders || [])[0]?.uri.fsPath;
+  if (!cwd) { vscode.window.showWarningMessage('NikUI: that transcript has no folder recorded.'); return null; }
+  const live = manager.list.find((s) => s.claudeSessionId === entry.sessionId);
+  if (live) return SessionPanel.show(live, context, manager);
+  // Recover a PR/issue number from the stored prompt so the instance is not
+  // just named after its folder.
+  const ticket = nextTicket(null, entry.title || '');
+  const session = manager.create({
+    cwd,
+    resume: entry.sessionId,
+    title: null,
+    ticket,
+    autoLabel: ticket ? null : (entry.label || labelFor(entry.title))
+  });
+  return SessionPanel.show(session, context, manager);
+}
+
+/** The folders this window already knows about, for repoFolders to search from. */
+function repoFolderOptions(manager, historyCwds) {
+  const cfg = vscode.workspace.getConfiguration('nikui');
+  const candidateDirs = [];
+  for (const s of manager.list) if (s.cwd) candidateDirs.push(s.cwd);
+  for (const cwd of historyCwds) if (cwd) candidateDirs.push(cwd);
+  for (const f of vscode.workspace.workspaceFolders || []) candidateDirs.push(f.uri.fsPath);
+  return {
+    override: cfg.get('repoFolders', {}) || {},
+    codeRoots: cfg.get('codeRoots', ['~/Codes']) || [],
+    candidateDirs
+  };
+}
+
+/** Whether a checkout at `cwd` has its origin on `repo` ({owner, repo}). */
+function checkoutMatches(cwd, repo) {
+  if (!cwd) return false;
+  const info = originOf(cwd, fs);
+  return !!info && info.owner.toLowerCase() === repo.owner.toLowerCase() && info.repo.toLowerCase() === repo.repo.toLowerCase();
+}
+
+/**
+ * Slack's "open in instance": focus a live instance on this ticket, else
+ * resume the most recent history entry on it, else start a fresh one in the
+ * repo's local checkout — asking where that is, once, if it cannot be found.
+ *
+ * @returns {Promise<{ok: boolean, how?: 'focused'|'resumed'|'created', reason?: string}>}
+ */
+async function openTicketInNikui(url, context, manager) {
+  const parsed = parseTicketUrl(url);
+  if (!parsed) return { ok: false, reason: 'Not a GitHub pull request or issue link.' };
+
+  // Tickets are kept as strings; the URL's number is a number.
+  const ticket = String(parsed.number);
+  const live = manager.list.find((s) => String(s.ticket || '') === ticket && checkoutMatches(s.cwd, parsed));
+  if (live) { SessionPanel.show(live, context, manager).focusInput(); return { ok: true, how: 'focused' }; }
+
+  const history = await listSessions({ limit: 200, scan: 800 });
+  const entry = history.find((e) => checkoutMatches(e.cwd, parsed) && String(nextTicket(null, e.title || '') || '') === ticket);
+  if (entry) {
+    const panel = resumeHistoryEntry(entry, context, manager);
+    if (panel) { panel.focusInput(); return { ok: true, how: 'resumed' }; }
+  }
+
+  const folder = resolveRepoFolder(parsed, repoFolderOptions(manager, history.map((e) => e.cwd)));
+  if (!folder) {
+    const repoName = parsed.owner + '/' + parsed.repo;
+    const choice = await vscode.window.showWarningMessage(
+      `NikUI: no local checkout found for ${repoName}.`, 'Choose folder…'
+    );
+    if (choice === 'Choose folder…') {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+        title: `Folder for ${repoName}`
+      });
+      const dir = picked && picked[0] && picked[0].fsPath;
+      if (dir) {
+        const cfg = vscode.workspace.getConfiguration('nikui');
+        const map = Object.assign({}, cfg.get('repoFolders', {}) || {});
+        map[repoName] = dir;
+        await writeSetting('nikui.repoFolders', map);
+        return openTicketInNikui(url, context, manager);
+      }
+    }
+    return { ok: false, reason: `No local checkout found for ${repoName}.` };
+  }
+
+  const session = manager.create({ cwd: folder, ticket, autoLabel: null });
+  const panel = SessionPanel.show(session, context, manager);
+  panel.focusInput();
+  if (typeof panel.draftText === 'function') panel.draftText(url);
+  return { ok: true, how: 'created' };
+}
 
 function activate(context) {
   manager = new SessionManager(context);
@@ -532,22 +635,8 @@ function activate(context) {
   });
 
   register('nikui.resumeHistory', async (entry) => {
-    if (!entry || !entry.sessionId) return;
-    const cwd = entry.cwd || (vscode.workspace.workspaceFolders || [])[0]?.uri.fsPath;
-    if (!cwd) { vscode.window.showWarningMessage('NikUI: that transcript has no folder recorded.'); return; }
-    const live = manager.list.find((s) => s.claudeSessionId === entry.sessionId);
-    if (live) { SessionPanel.show(live, context, manager).focusInput(); return; }
-    // Recover a PR/issue number from the stored prompt so the instance is not
-    // just named after its folder.
-    const ticket = nextTicket(null, entry.title || '');
-    const session = manager.create({
-      cwd,
-      resume: entry.sessionId,
-      title: null,
-      ticket,
-      autoLabel: ticket ? null : (entry.label || labelFor(entry.title))
-    });
-    SessionPanel.show(session, context, manager).focusInput();
+    const panel = resumeHistoryEntry(entry, context, manager);
+    if (panel) panel.focusInput();
   });
 
   // Bring back the instances that were open before the reload, then let VS Code
@@ -964,6 +1053,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   const slack = startSlack(context, {
     notifier,
     devices,
+    openTicket: (url) => openTicketInNikui(url, context, manager),
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
   });
   slackRoom = slack.room;

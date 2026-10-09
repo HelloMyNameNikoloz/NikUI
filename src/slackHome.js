@@ -30,6 +30,7 @@ const minutes = (key, fallback) => {
  * @param {object} deps
  * @param {object} [deps.notifier]   tells the phone
  * @param {object} [deps.devices]    for the audit trail
+ * @param {(url: string) => Promise<object>} [deps.openTicket]  open a PR/issue link in an instance, on the laptop
  * @param {(line: string) => void} [deps.log]
  */
 function startSlack(context, deps) {
@@ -60,6 +61,7 @@ function startSlack(context, deps) {
     disconnect: () => vscode.commands.executeCommand('nikui.slack.disconnect'),
     openSettings: () => vscode.commands.executeCommand('workbench.action.openSettings', 'nikui.slack'),
     openUrl: (url) => vscode.env.openExternal(vscode.Uri.parse(url)),
+    openTicket: deps.openTicket,
     audit: deps.devices ? (entry) => deps.devices.record(entry) : undefined,
     log
   });

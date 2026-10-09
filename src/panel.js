@@ -146,6 +146,11 @@ class SessionPanel {
     this.hub.focusInput(this.clientId);
   }
 
+  /** Prefill the composer with a draft, never sent on its own. */
+  draftText(text) {
+    this.hub.draftInput(this.clientId, text);
+  }
+
   dispose() {
     if (this.hostOff) { this.hostOff(); this.hostOff = null; }
     if (this.hub) this.hub.detach(this.clientId);

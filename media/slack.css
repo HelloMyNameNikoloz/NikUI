@@ -633,6 +633,29 @@ button.ns-row.on { background: var(--ns-active); filter: none; }
 }
 .ns-reaction.mine { border-color: var(--ns-blue); color: var(--ns-blue); }
 
+.ns-ticket-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+  align-self: flex-start;
+}
+.ns-group.mine .ns-ticket-row { align-self: flex-end; }
+
+.nik-slack button.ns-ticket-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ns-blue) 16%, transparent);
+  color: var(--ns-blue);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.nik-slack button.ns-ticket-open:hover { background: color-mix(in srgb, var(--ns-blue) 26%, transparent); }
+.nik-slack button.ns-ticket-open .ico { width: 11px; height: 11px; }
+
 button.ns-replies {
   align-self: flex-start;
   margin-top: 2px;

@@ -859,6 +859,18 @@
           "default": false,
           "description": "Watch Slack for DMs from your VIPs and messages that @mention you. Connect it with NikUI: Connect Slack."
         },
+        "nikui.repoFolders": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "description": "Where each GitHub repo's checkout lives, for \"Open in instance\" on a PR/issue link in Slack — e.g. \"peuka/frontend\": \"/Users/you/Codes/Peuka/frontend\". Set automatically the first time you choose a folder for a repo that could not be found; wins over anything NikUI would otherwise find on its own."
+        },
+        "nikui.codeRoots": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["~/Codes"],
+          "description": "Folders to search, two levels deep, for a repo's local checkout when it is not already known from an open instance, its history, or nikui.repoFolders."
+        },
         "nikui.slack.vips": {
           "type": "array",
           "items": { "type": "string" },

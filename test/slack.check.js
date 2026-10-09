@@ -381,6 +381,32 @@ const OLDER_ANNA = [
       })()`
     );
 
+    // ---- a PR link grows a button; a non-GitHub link does not -----------
+    const THREAD_LINKS = {
+      conversation: CONV_ANNA, thread: null, hasMore: true,
+      messages: [
+        { ts: '30', user: 'U_ANNA', name: 'Anna', initials: 'A', mine: false,
+          html: 'can you look at <a href="https://github.com/peuka/frontend/pull/1168">this</a>? also see <a href="https://example.com/not/github">this</a>',
+          at: NOW - 1 * MIN }
+      ]
+    };
+    await post({ type: 'slack:thread', conversation: THREAD_LINKS.conversation, thread: null, messages: THREAD_LINKS.messages, hasMore: true });
+    out.ticketPillShown = /Open in instance/.test(await text('.ns-ticket-open') || '');
+    out.ticketPillCount = await count('.ns-ticket-open');
+    await browser.evaluate("window.__posted.length = 0; true");
+    await click('.ns-ticket-open');
+    const afterTicketClick = await posted();
+    const ticketMsg = afterTicketClick.find((m) => m.type === 'slack:openTicket');
+    out.ticketSentUrl = ticketMsg && ticketMsg.url === 'https://github.com/peuka/frontend/pull/1168';
+    await new Promise((r) => setTimeout(r, 300));
+    await browser.shot('/tmp/slack-ios-openticket.png');
+
+    // ---- not shown on a phone (non-local) seat ---------------------------
+    await post({ type: 'slack:state', state: Object.assign({}, BASE_STATE, { local: false }) });
+    await post({ type: 'slack:thread', conversation: THREAD_LINKS.conversation, thread: null, messages: THREAD_LINKS.messages, hasMore: true });
+    out.ticketPillHiddenRemote = !(await exists('.ns-ticket-open'));
+    await post({ type: 'slack:state', state: BASE_STATE });
+
     // ---- a channel thread: named senders, a reaction, edited -------------
     await browser.evaluate("window.__posted.length = 0; true");
     await click('.ns-row[data-id="c-team"]');
@@ -759,6 +785,10 @@ const OLDER_ANNA = [
     ['a file-only message shows the file, not an empty bubble', out.fileShown === true],
     ['no bubble is ever empty', out.noEmptyBubble === true],
     ['a short bubble sizes to its content, not the 75% cap', out.shortBubbleNarrow === true],
+    ['a GitHub PR link grows an "Open in instance" pill', out.ticketPillShown === true],
+    ['one pill per distinct link, not one per non-GitHub link too', out.ticketPillCount === 1],
+    ['clicking it sends slack:openTicket with that url', out.ticketSentUrl === true],
+    ['hidden on a non-local (phone) seat', out.ticketPillHiddenRemote === true],
     ['a channel names more than one sender', out.channelShowsNames === true],
     ['and shows a reaction', out.channelHasReaction === true],
     ['"N replies" links to the thread', out.repliesLinkShown === true],

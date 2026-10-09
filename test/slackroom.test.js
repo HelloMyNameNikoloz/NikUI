@@ -188,6 +188,27 @@ module.exports = async function () {
   r.broadcast();
   check('a window that left hears nothing more', watcher.length === 0 && editor.some((m) => m.type === 'slack:state'));
 
+  // Opening a PR/issue link in an instance: only the laptop's own tab may ask,
+  // the url is checked strictly, and the dep is handed exactly what was sent.
+  const openCalls = [];
+  const rticket = room(service, {
+    openTicket: async (url) => { openCalls.push(url); return { ok: true, how: 'focused' }; }
+  }).r;
+  const ticketPhone = seat(rticket, 'tp', { control: true });
+  await rticket.handle('tp', { type: 'slack:openTicket', url: 'https://github.com/peuka/frontend/pull/1168' });
+  check('a phone may not open a ticket panel on the laptop', openCalls.length === 0 &&
+    ticketPhone.some((m) => m.type === 'slack:openTicket' && m.ok === false && /laptop/.test(m.reason)));
+
+  const ticketEditor = seat(rticket, 'te', { local: true, device: null });
+  await rticket.handle('te', { type: 'slack:openTicket', url: 'https://example.com/not/github' });
+  check('a non-GitHub url is refused without asking the dep', openCalls.length === 0 &&
+    ticketEditor.some((m) => m.type === 'slack:openTicket' && m.ok === false && /pull request or issue/.test(m.reason)));
+
+  ticketEditor.length = 0;
+  await rticket.handle('te', { type: 'slack:openTicket', url: 'https://github.com/peuka/frontend/issues/9' });
+  check('a good url on the laptop reaches the dep', openCalls[0] === 'https://github.com/peuka/frontend/issues/9');
+  check('and the reply carries how it was opened', ticketEditor.some((m) => m.type === 'slack:openTicket' && m.ok === true && m.how === 'focused'));
+
   const off = room(null).r;
   const nobody = seat(off, 'n', { control: true });
   await off.handle('n', { type: 'slack:ready' });

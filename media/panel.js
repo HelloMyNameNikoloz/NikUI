@@ -2015,6 +2015,13 @@
         closeFind();
         break;
       case 'focus': input.focus(); break;
+      case 'draft':
+        if (msg.text) {
+          input.value = input.value ? input.value + '\n' + msg.text : msg.text;
+          autoGrow();
+          input.focus();
+        }
+        break;
 
       // Whether this client may steer. In the panel neither of these arrives;
       // over a socket the welcome says what this device was granted, and
