@@ -1882,11 +1882,30 @@ const record = (name, ok) => {
       await phone.until('window.__mic.state().live === 0 && window.__voice().phase === "idle"', 4000) &&
       (await wait(400), voiceStage.heard.length === heardBefore));
 
+    await typed('');
+    await phone.evaluate('document.getElementById("mic").click()');
+    await phone.until('window.__voice().phase === "recording" && window.__mic.state().live === 1', 6000);
+    record('while talking, send is marked ready',
+      await phone.until('document.getElementById("send").classList.contains("voice-live")', 2000));
+    record('and looks it, rather than greyed out',
+      await phone.until('getComputedStyle(document.getElementById("send")).color === "rgb(255, 255, 255)"', 2000));
+    await shoot(phone, 'voice-send-ready');
+    await typed('Also');
+    await phone.until('/0:0[1-9]/.test(document.querySelector(".voice-clock").textContent)', 6000);
+    await phone.evaluate('document.getElementById("send").click()');
+    record('pressing send while talking lets the microphone go', await phone.until('window.__mic.state().live === 0', 4000));
+    record('and sends what was typed with what was said, with no second tap',
+      await waitFor(() => (session.items || []).some((i) => i.kind === "user" && i.text === "Also words from the laptop"), 8000));
+    record('leaving the composer empty and the bar gone',
+      (await phone.evaluate('document.getElementById("input").value')) === '' && (await phase()) === 'idle' &&
+      !(await phone.evaluate('document.getElementById("send").classList.contains("voice-live")')));
+    const heardSent = voiceStage.heard.length;
+
     await phone.evaluate('document.getElementById("mic").click()');
     await phone.until('window.__mic.state().live === 1', 6000);
     await phone.navigate(appOrigin + '/index.html');
     record('leaving the conversation while recording lets the microphone go', (await micLive()) === 0);
-    record('and sends nothing', voiceStage.heard.length === heardBefore);
+    record('and sends nothing', voiceStage.heard.length === heardSent);
 
     await phone.navigate(conversation);
     await phone.until('!document.getElementById("mic").hidden', 10000);

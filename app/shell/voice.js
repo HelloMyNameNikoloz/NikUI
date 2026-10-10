@@ -4,7 +4,9 @@
    VoiceInk already keeps there, because a phone has neither the memory nor the
    time to do it as well. What comes back goes into the composer where the
    cursor was and is not sent: speech recognition gets names and code wrong, and
-   the person who said it is the one to read it first.
+   the person who said it is the one to read it first — unless they pressed send
+   while talking, which says they would rather not: the recording stops, and
+   what comes back goes with whatever was already typed, without a second tap.
 
    Nothing listens until the button is pressed, and the microphone is let go
    the moment it is pressed again. The recording lives in this page and nowhere
@@ -39,6 +41,7 @@
     said: '',           // what the bar says when held or noticing
     retry: 'Try again',
     waitBuild: null,    // asking again while the laptop builds the transcriber
+    sendAfter: false,   // send pressed while talking: send the words once they are back
     deadline: null
   };
 
@@ -60,6 +63,9 @@
     button.title = 'Talk — your laptop writes it down';
     actions.insertBefore(button, $('stop') || $('send'));
     button.addEventListener('click', press);
+    // Send, while talking, is "stop and send it". Caught on the way down so
+    // the client's own send never sees a tap that is not for it.
+    actions.addEventListener('click', sendWhileTalking, true);
 
     bar = document.createElement('div');
     bar.className = 'voice';
@@ -130,6 +136,8 @@
     button.innerHTML = recording ? SQUARE : MIC;
     button.setAttribute('aria-label', recording ? 'Stop and write it down' : 'Talk');
     button.disabled = state.phase === 'sending';
+    const go = $('send');
+    if (go) go.classList.toggle('voice-live', state.phase === 'recording' || state.phase === 'sending');
 
     bar.hidden = state.phase === 'idle';
     bar.className = 'voice voice-' + state.phase;
@@ -170,6 +178,7 @@
   }
 
   function notice(words) {
+    state.sendAfter = false;
     state.phase = 'notice';
     state.said = words;
     draw();
@@ -192,6 +201,15 @@
   }
 
   // ---- recording ---------------------------------------------------------------
+
+  function sendWhileTalking(event) {
+    if (!event.target.closest('#send')) return;
+    if (state.phase !== 'recording' && state.phase !== 'sending') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    state.sendAfter = true;
+    if (state.phase === 'recording') finish('send');
+  }
 
   function press() {
     if (state.phase === 'recording') return finish('send');
@@ -276,7 +294,7 @@
     const take = state.take;
     if (!take || take.ending) return;
     buzz();
-    if (take.starting) { drop(); state.phase = 'idle'; return draw(); }
+    if (take.starting) { drop(); state.sendAfter = false; state.phase = 'idle'; return draw(); }
     take.ending = true;
     if (then === 'paused') return finished(take, then);
     state.phase = 'sending';
@@ -302,6 +320,7 @@
     stopWaiting();
     clearTimeout(state.deadline);
     state.kept = null;
+    state.sendAfter = false;
     state.phase = 'idle';
     draw();
   }
@@ -329,10 +348,13 @@
     clearTimeout(state.deadline);
     state.kept = null;
     const words = String(text || '').trim();
+    const then = state.sendAfter;
+    state.sendAfter = false;
     if (!words) return notice('Nothing was heard in that recording.');
     put(words);
     state.phase = 'idle';
     draw();
+    if (then && $('send')) $('send').click();
   }
 
   function refused(message) {

@@ -679,6 +679,11 @@ body.app-conversation .composer-wrap:has(.attachments:empty) .composer:has(#inpu
   background: var(--app-raised-2);
   color: var(--app-faint);
 }
+/* Talking counts as something written: send is "stop and send it" then. */
+body.app-conversation .composer-wrap .composer #send.voice-live {
+  background: var(--app-accent) !important;
+  color: #fff !important;
+}
 
 /* ---- talking ----------------------------------------------------------------
    The mic sits with stop and send, the same round button. Recording turns it
