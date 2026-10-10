@@ -975,9 +975,22 @@ body.app .prefs:focus-visible { outline: none; }
    something on it worth a line. */
 .hrow {
   display: block;
+  width: 100%;
   padding: 12px 15px;
   position: relative;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
+
+/* Tapping one brings it back; it says so while the laptop does. */
+.hrow:active { background: var(--app-raised-2); }
+.hrow.busy { background: var(--app-raised-2); opacity: 0.6; }
+.hrow-refused { color: var(--app-red); }
 
 .hrow + .hrow::before {
   content: "";

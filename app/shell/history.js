@@ -1,8 +1,8 @@
 /* What this machine has talked about before.
 
    The same list the editor's History view shows, read over the socket the app
-   is already holding. Read-only by design: a phone can look at what happened,
-   and resuming one is a decision that belongs where the work is.
+   is already holding. Tapping one brings it back as an instance — the live
+   one if it is still open — and opens it, as the editor's History view does.
 
    The list is long on any machine that has been used, so it is searchable and
    grouped by day — a flat two hundred rows of "3h ago" is a list nobody
@@ -18,7 +18,7 @@
   const screen = $('screen');
   const search = $('search');
 
-  const state = { entries: null, trouble: null, filter: '', limit: 60, connected: false };
+  const state = { entries: null, trouble: null, filter: '', limit: 60, connected: false, opening: null, refused: null };
 
   const el = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -53,7 +53,7 @@
   function matches(entry) {
     if (!state.filter) return true;
     const needle = state.filter.toLowerCase();
-    return [entry.label, entry.title, entry.cwd, entry.branch]
+    return [entry.label, entry.title, entry.cwd, entry.branch, entry.sessionId]
       .filter(Boolean)
       .some((field) => String(field).toLowerCase().indexOf(needle) >= 0);
   }
@@ -93,6 +93,8 @@
       return;
     }
 
+    if (state.refused) screen.appendChild(el('p', 'lede hrow-refused', state.refused));
+
     const shown = state.entries.filter(matches).slice(0, state.limit);
     if (!shown.length) {
       screen.appendChild(el('p', 'lede', state.filter
@@ -114,7 +116,9 @@
         screen.appendChild(card);
       }
 
-      const row = el('div', 'hrow');
+      const row = el('button', 'hrow' + (state.opening === entry.sessionId ? ' busy' : ''));
+      row.type = 'button';
+      row.addEventListener('click', () => open(entry));
       const top = el('div', 'hrow-top');
       top.appendChild(el('span', 'hrow-name', entry.label || entry.sessionId));
       top.appendChild(el('span', 'hrow-when', ago(entry.modified)));
@@ -148,6 +152,20 @@
     }
   }
 
+  // ---- opening one -----------------------------------------------------------
+
+  let seq = 0;
+  /** Ask the laptop to bring it back, then go to it. The laptop looks the
+   * conversation up in its own history, so only the id goes over. */
+  function open(entry) {
+    if (state.opening || !entry.sessionId) return;
+    state.opening = entry.sessionId;
+    state.refused = null;
+    state.asked = 'r' + (++seq) + '-' + Date.now().toString(36);
+    transport.postMessage({ type: 'instance:resume', id: state.asked, sessionId: entry.sessionId });
+    draw();
+  }
+
   // ---- where it comes from ---------------------------------------------------
 
   window.NIKUI_REMOTE = app.remote(null);
@@ -171,6 +189,18 @@
     if (message.type === '@welcome' || message.type === '@device') {
       state.connected = true;
       requestHistory();
+      return;
+    }
+    if ((message.type === 'instance:created' || message.type === '@refused') && message.id && message.id === state.asked) {
+      state.opening = null;
+      state.asked = null;
+      if (message.type === 'instance:created') {
+        window.location.href = (window.NIKUI_REMOTE.conversation || 'conversation.html?session=') + encodeURIComponent(message.instance);
+        return;
+      }
+      state.refused = message.reason || 'That did not open.';
+      draw();
+      window.scrollTo(0, 0);
       return;
     }
     if (message.type !== 'history') return;

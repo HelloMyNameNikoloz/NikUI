@@ -677,6 +677,37 @@ module.exports = async function () {
     check('with the fleet sent fresh too', posts.some((m) => m.type === 'fleet'));
   }
 
+  suite('a phone reopening a past conversation from History');
+
+  {
+    const resumed = [];
+    const posts = [];
+    const reopen = new RemoteServer({
+      root: ROOT, host, localKey: auth,
+      sessions: { list: () => [], get: () => null },
+      history: async () => [{ sessionId: 'old-1297', label: 'Fix #1297', cwd: '/Users/me/Codes/thing' }],
+      resumeInstance: async (entry) => { resumed.push(entry); return { id: 'back-1' }; }
+    });
+    const watchOnly = { id: 'c1', open: true, post: (m) => posts.push(m), device: { kind: 'device', id: 'd1', name: 'Phone', control: false } };
+    const controlling = { id: 'c2', open: true, post: (m) => posts.push(m), device: { kind: 'device', id: 'd2', name: 'Phone', control: true } };
+
+    await reopen.resumeInstanceFor(watchOnly, { id: 'q1', sessionId: 'old-1297' });
+    checkEqual('watching but not steering is refused', (posts.find((m) => m.type === '@refused') || {}).what, 'instance:resume');
+    checkEqual('and nothing was reopened', resumed.length, 0);
+
+    posts.length = 0;
+    await reopen.resumeInstanceFor(controlling, { id: 'q2', sessionId: 'made-up', cwd: '/etc' });
+    checkEqual('a conversation not in the history is refused', (posts.find((m) => m.type === '@refused') || {}).what, 'instance:resume');
+    checkEqual('never reaching resumeInstance', resumed.length, 0);
+
+    posts.length = 0;
+    await reopen.resumeInstanceFor(controlling, { id: 'q3', sessionId: 'old-1297', cwd: '/etc' });
+    checkEqual('a real one is reopened', resumed.length, 1);
+    checkEqual('where the laptop says it ran, not where the phone says', resumed[0] && resumed[0].cwd, '/Users/me/Codes/thing');
+    const reply = posts.find((m) => m.type === 'instance:created');
+    check('and the reply names the instance to open', !!reply && reply.id === 'q3' && reply.instance === 'back-1');
+  }
+
   suite('a socket that misbehaves is not fatal');
 
   const rude = await ws.connect(`ws://127.0.0.1:${port}/socket?session=${second.id}`, { headers: cookie });

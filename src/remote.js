@@ -69,6 +69,8 @@ class RemoteServer {
    * @param {() => Array} [deps.projects] this window's workspace folders, as {path,name} or bare paths
    * @param {(opts: {cwd: string, folderId?: string}) => Promise<{id: string}>} [deps.createInstance]
    *   start a new instance the same way the editor's own "new instance" command does
+   * @param {(entry: object) => Promise<{id: string}>} [deps.resumeInstance]
+   *   bring a past conversation back as an instance, as the History view's resume does
    * @param {() => void} [deps.refreshTree] redraw the sidebar tree, as the tree's own drag-drop does
    * @param {(opts: object) => Promise<Array>} [deps.history] past conversations on this machine
    * @param {() => object} [deps.report] exactly what /status draws
@@ -108,6 +110,7 @@ class RemoteServer {
     this.projectRoot = deps.projectRoot || null;
     this.projects = deps.projects || null;
     this.createInstance = deps.createInstance || null;
+    this.resumeInstance = deps.resumeInstance || null;
     this.refreshTree = deps.refreshTree || null;
     this.history = deps.history || null;
     this.report = deps.report || null;
@@ -993,6 +996,7 @@ ${this.appHead(nonce)}</head>
           if (message.type === 'voice' || message.type === 'voice:state') return void (await this.voiceMessage(client, message));
           if (message.type.indexOf('slack:') === 0) return void (await this.slackFor(client, message));
           if (message.type === 'instance:new') return void (await this.newInstanceFor(client, message));
+          if (message.type === 'instance:resume') return void (await this.resumeInstanceFor(client, message));
           if (message.type === 'instance:place') return void (await this.placeInstanceFor(client, message));
         } catch (err) {
           // A handler that throws used to answer nothing at all, and nothing at
@@ -1165,6 +1169,30 @@ ${this.appHead(nonce)}</head>
       this.log('the status report could not be built: ' + (err && err.message));
       return { type: 'status', report: null, available: true, trouble: 'could not be built' };
     }
+  }
+
+  /**
+   * Bring a past conversation back into the fleet, from the phone's History.
+   * The phone names only the conversation; where it ran and what it was called
+   * come from this machine's own history, never from the device — so a phone
+   * cannot start an instance anywhere the laptop has not already worked.
+   */
+  async resumeInstanceFor(client, message) {
+    const id = message.id;
+    const refuse = (reason) => client.post({ type: '@refused', id, what: 'instance:resume', reason });
+    const sessionId = typeof message.sessionId === 'string' ? message.sessionId : '';
+    if (!this._mayControl(client)) {
+      this.note(client.device, 'instance:resume', sessionId, false);
+      return void refuse('This device can watch but not open instances. Grant it control in the editor.');
+    }
+    if (!this.resumeInstance || !this.history) return void refuse('This window is not offering that.');
+    const entries = (await this.history({ limit: 200 })) || [];
+    const entry = sessionId && entries.find((e) => e && e.sessionId === sessionId);
+    if (!entry) return void refuse('That conversation is not in this laptop\'s history.');
+    const made = await this.resumeInstance(entry);
+    if (!made || !made.id) return void refuse('That could not be opened.');
+    client.post({ type: 'instance:created', id, instance: made.id });
+    this.broadcastFleet();
   }
 
   /**

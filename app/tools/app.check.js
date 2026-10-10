@@ -257,6 +257,7 @@ const record = (name, ok) => {
   // Set by a check just before it drags or taps something it expects the
   // laptop to refuse; read (and cleared) the one time `createInstance` runs.
   let createInstanceRefuse = null;
+  const resumed = [];
 
   const laptop = new RemoteServer({
     root: REPO,
@@ -324,6 +325,18 @@ const record = (name, ok) => {
       extraSessions.push(created);
       if (folderId) folderAssign[created.id] = folderId;
       return { id: created.id };
+    },
+    // Bringing a past conversation back, as the History view's resume does:
+    // one more fake session, carrying the conversation it resumes.
+    resumeInstance: async (entry) => {
+      const back = new Session({ cwd: entry.cwd || REPO });
+      back.customTitle = entry.label;
+      back.claudeSessionId = entry.sessionId;
+      back.start = function () { this.everStarted = true; };
+      back._write = function () {};
+      extraSessions.push(back);
+      resumed.push(entry.sessionId);
+      return { id: back.id };
     },
     history: async () => [{
       sessionId: 'past-1', label: 'an earlier turn', title: 'what happened before',
@@ -1016,6 +1029,18 @@ const record = (name, ok) => {
       record('nothing marked hidden is on the screen on ' + screen,
         shown.length === 0 || shout('showing: ' + shown.join(' ')));
     }
+
+    // Found by searching, then tapped: it comes back as an instance and opens.
+    await phone.navigate(appOrigin + '/history.html');
+    await phone.until('document.querySelectorAll("button.hrow").length >= 1', 8000);
+    await phone.evaluate(`(() => { const s = document.getElementById('search'); s.value = 'earlier';
+      s.dispatchEvent(new Event('input')); const row = document.querySelector('button.hrow');
+      if (!row) throw new Error('no row: ' + document.getElementById('screen').innerText.slice(0, 300)); row.click(); })()`);
+    record('tapping a past conversation in history brings it back and opens it',
+      await phone.until('location.pathname.endsWith("conversation.html") && location.search.indexOf("session=") >= 0', 8000)
+        && resumed.length === 1 && resumed[0] === 'past-1');
+    // Out of the fleet again, so the + sheet's own count below starts from none.
+    extraSessions.splice(extraSessions.findIndex((s) => s.claudeSessionId === 'past-1'), 1);
 
     for (const screen of ['index.html', 'status.html', 'terminal.html', 'history.html', 'settings.html']) {
       await phone.navigate(appOrigin + '/' + screen);

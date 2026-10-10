@@ -61,19 +61,24 @@ function resumeHistoryEntry(entry, context, manager) {
   if (!entry || !entry.sessionId) return null;
   const cwd = entry.cwd || (vscode.workspace.workspaceFolders || [])[0]?.uri.fsPath;
   if (!cwd) { vscode.window.showWarningMessage('NikUI: that transcript has no folder recorded.'); return null; }
+  return SessionPanel.show(sessionForEntry(entry, cwd, manager), context, manager);
+}
+
+/** The instance for a past conversation: the live one if it is open, else a
+ * new one resuming it. Opens no panel, so a phone can use it too. */
+function sessionForEntry(entry, cwd, manager) {
   const live = manager.list.find((s) => s.claudeSessionId === entry.sessionId);
-  if (live) return SessionPanel.show(live, context, manager);
+  if (live) return live;
   // Recover a PR/issue number from the stored prompt so the instance is not
   // just named after its folder.
   const ticket = nextTicket(null, entry.title || '');
-  const session = manager.create({
+  return manager.create({
     cwd,
     resume: entry.sessionId,
     title: null,
     ticket,
     autoLabel: ticket ? null : (entry.label || labelFor(entry.title))
   });
-  return SessionPanel.show(session, context, manager);
 }
 
 /** The folders this window already knows about, for repoFolders to search from. */
@@ -934,6 +939,14 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       const session = manager.create({ cwd });
       const folder = folderId ? folders.get(folderId) : null;
       if (folder) folders.place(session, folder.id);
+      if (deps && deps.refreshTree) deps.refreshTree();
+      return { id: session.id };
+    },
+    // The History view's resume, without opening a panel — for the same
+    // reason as above.
+    resumeInstance: async (entry) => {
+      if (!entry || !entry.sessionId || !entry.cwd) return null;
+      const session = sessionForEntry(entry, entry.cwd, manager);
       if (deps && deps.refreshTree) deps.refreshTree();
       return { id: session.id };
     },
