@@ -429,13 +429,16 @@ class SessionHub {
       // "Ask Claude": the comment or the failing log goes into this client's
       // composer, not straight to Claude — it is still yours to send.
       case 'pr:askThread':
-      case 'pr:askCheck': {
+      case 'pr:askCheck':
+      case 'pr:askConflicts': {
         const feed = this.host.prFeed;
         const known = feed && session.prUrl ? feed.get(session.prUrl) : null;
         const snap = known && known.state;
         if (!snap) break;
-        const { threadPrompt, checkPrompt } = require('./prView');
-        if (msg.type === 'pr:askThread') {
+        const { threadPrompt, checkPrompt, conflictPrompt } = require('./prView');
+        if (msg.type === 'pr:askConflicts') {
+          if (snap.mergeable === 'CONFLICTING') this.send(clientId, { type: 'editPrompt', text: conflictPrompt(snap) });
+        } else if (msg.type === 'pr:askThread') {
           const thread = (snap.threads || []).find((t) => t.id === msg.threadId);
           if (thread) this.send(clientId, { type: 'editPrompt', text: threadPrompt(thread, snap) });
         } else {

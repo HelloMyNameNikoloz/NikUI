@@ -393,6 +393,18 @@ function checkPrompt(check, log, snapshot) {
     '```\n' + tail + '\n```\n\nFind why this check fails and fix it.';
 }
 
+/** The composer prompt for "resolve the merge conflicts": a merge, never a rebase, so nothing is force-pushed. */
+function conflictPrompt(snapshot) {
+  const s = snapshot || {};
+  const n = s.number != null ? s.number : '?';
+  const base = s.baseRef || 'the base branch';
+  const head = s.headRef || 'this branch';
+  return `PR #${n}${s.url ? ' (' + s.url + ')' : ''} has merge conflicts with \`${base}\`.\n\n` +
+    `Fetch origin and merge origin/${base} into \`${head}\`. Resolve every conflict so that what both sides meant ` +
+    'survives — never take one side wholesale. Then run the tests, commit the merge and push. ' +
+    'Do not rebase or force-push.';
+}
+
 /** owner/name parsed from a PR URL, for the calls that take --repo. */
 function repoOf(url) {
   const p = parsePrUrl(url);
@@ -688,4 +700,4 @@ class PrFeed extends EventEmitter {
   }
 }
 
-module.exports = { PrFeed, normalize, QUERY, parsePrUrl, parseTicketUrl, threadPrompt, checkPrompt };
+module.exports = { PrFeed, normalize, QUERY, parsePrUrl, parseTicketUrl, threadPrompt, checkPrompt, conflictPrompt };

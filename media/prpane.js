@@ -34,6 +34,8 @@
   const ARROW_DOWN = customIcon('<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>', 18);
   const GITHUB_MARK = '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/>';
   const MINIMIZE_PATH = '<path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10 21 3"/><path d="M3 21l7-7"/>';
+  const ALERT = customIcon('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', 14);
+  const ALERT_SMALL = customIcon('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', 12);
   const DOT = '<svg class="ico pr-dot-ico" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>';
   const STATE_ICON = { open: GIT_OPEN, merged: GIT_MERGE, closed: GIT_CLOSED, draft: GIT_OPEN };
 
@@ -300,12 +302,14 @@
         const dotClass = cs.fail > 0 ? 'fail' : (cs.pending > 0 ? 'pending' : (cs.pass > 0 ? 'pass' : ''));
         if (dotClass) bits.push('<span class="pr-chip-dot ' + dotClass + '"></span>');
       }
+      if (conflicted(st)) bits.push('<span class="pr-chip-conflict" aria-label="Merge conflicts">' + ALERT_SMALL + '</span>');
       const unresolved = st ? (st.threads || []).filter((t) => !t.resolved).length : 0;
       if (unresolved) bits.push('<span class="pr-chip-bubble">' + BUBBLE + esc(unresolved) + '</span>');
       chip.innerHTML = bits.join('');
       paintStyles(chip);
       chip.title = (view.open ? 'Close' : 'Open') + ' the pull request panel' +
-        (st ? ' — ' + (STATE_WORD[st.state] || st.state) + (st.isDraft ? ' (draft)' : '') : '');
+        (st ? ' — ' + (STATE_WORD[st.state] || st.state) + (st.isDraft ? ' (draft)' : '') : '') +
+        (conflicted(st) ? ', with merge conflicts' : '');
       chip.setAttribute('aria-expanded', String(view.open));
     }
 
@@ -570,6 +574,24 @@
       return html + '</div>';
     }
 
+    /** Open and in conflict with its base: GitHub says CONFLICTING; UNKNOWN is still being worked out. */
+    function conflicted(st) {
+      return !!st && st.state === 'OPEN' && st.mergeable === 'CONFLICTING';
+    }
+
+    /** Next to the reviews, because it blocks the merge just as a review can. */
+    function renderConflict(st) {
+      if (!conflicted(st)) return '';
+      return '<div class="pr-conflict" role="status">' +
+        '<span class="pr-conflict-icon">' + ALERT + '</span>' +
+        '<div class="pr-conflict-text"><b>Merge conflicts</b>' +
+          '<span>This branch conflicts with <code>' + esc(st.baseRef || 'its base') + '</code>. They must be resolved before it can merge.</span></div>' +
+        '<div class="pr-conflict-actions">' +
+          '<button type="button" data-ask-conflicts>Ask Claude to resolve</button>' +
+          (st.url ? '<a class="pr-conflict-web" href="' + esc(st.url + '/conflicts') + '">Resolve on GitHub ' + EXTERNAL + '</a>' : '') +
+        '</div></div>';
+    }
+
     function renderCompactRow(st) {
       // The reviewers are in the header now; this row is what is left.
       const labels = st.labels || [];
@@ -597,6 +619,7 @@
           '<span class="pr-merge-line"><b>' + esc(st.author || '') + '</b> ' + esc(verb) + ' ' + esc(commitWord) +
           ' into <code>' + esc(st.baseRef || '') + '</code> from <code>' + esc(st.headRef || '') + '</code></span>' +
           '</div>' + reviewSummary(st.reviewers) + '</div>');
+        parts.push(renderConflict(st));
         parts.push(renderCompactRow(st));
         parts.push('<div class="pr-head-meta">' +
           changeBar(st.additions || 0, st.deletions || 0) +
@@ -1104,6 +1127,8 @@
 
       const askThread = e.target.closest('[data-ask-thread]');
       if (askThread) { send({ type: 'pr:askThread', threadId: askThread.dataset.askThread }); return; }
+
+      if (e.target.closest('[data-ask-conflicts]')) { send({ type: 'pr:askConflicts' }); return; }
 
       const askCheck = e.target.closest('[data-ask-check]');
       if (askCheck) { send({ type: 'pr:askCheck', runId: askCheck.dataset.askCheck, name: askCheck.dataset.name }); return; }

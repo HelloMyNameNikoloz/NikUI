@@ -319,6 +319,21 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     await click('[data-ask-check="run-1"]');
     const askCheckMsg = (await posted()).find((m) => m.type === 'pr:askCheck');
     out.askCheckSent = askCheckMsg && askCheckMsg.runId === 'run-1' && askCheckMsg.name === 'build';
+
+    // ---- merge conflicts: by the reviews, on the chip, and a way to resolve --
+    out.noConflictWhenMergeable = !(await exists('.pr-conflict')) && !(await exists('.pr-chip-conflict'));
+    await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: false, error: null, state: Object.assign({}, PR_STATE, { mergeable: 'CONFLICTING' }) });
+    out.conflictBanner = /Merge conflicts/.test(await text('.pr-pane-head .pr-conflict') || '') &&
+      /main/.test(await text('.pr-conflict code') || '');
+    out.conflictOnChip = await exists('.pr-chip-conflict');
+    out.conflictWebLink = await browser.evaluate("(document.querySelector('.pr-conflict-web') || {}).getAttribute ? document.querySelector('.pr-conflict-web').getAttribute('href') : null");
+    await clearPosted();
+    await click('[data-ask-conflicts]');
+    out.askConflictsSent = (await posted()).some((m) => m.type === 'pr:askConflicts');
+    await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: false, error: null, state: Object.assign({}, PR_STATE, { state: 'MERGED', mergeable: 'CONFLICTING' }) });
+    out.noConflictOnceMerged = !(await exists('.pr-conflict'));
+    await post({ type: 'pr:state', prUrl: PR_STATE.url, loading: false, error: null, state: PR_STATE });
+    out.conflictGoneWhenResolved = !(await exists('.pr-conflict')) && !(await exists('.pr-chip-conflict'));
     await click('[data-act="rerun"]');
     out.rerunSent = (await posted()).some((m) => m.type === 'pr:rerun');
 
@@ -593,6 +608,13 @@ const DIFF_TEXT = 'diff --git a/media/prpane.js b/media/prpane.js\n' +
     ['the Checks tab badges the failing count', out.checksTabFailBadge === true],
     ['failing checks sort first', out.failingCheckFirst === true],
     ['Ask Claude to fix sends the run id and name', out.askCheckSent === true],
+    ['a mergeable PR shows no conflict', out.noConflictWhenMergeable === true],
+    ['merge conflicts show in the header, naming the base', out.conflictBanner === true],
+    ['and on the chip', out.conflictOnChip === true],
+    ['with GitHub\'s own resolver a tap away', out.conflictWebLink === PR_STATE.url + '/conflicts'],
+    ['Ask Claude to resolve asks the host', out.askConflictsSent === true],
+    ['a merged PR never claims conflicts', out.noConflictOnceMerged === true],
+    ['and it goes once they are resolved', out.conflictGoneWhenResolved === true],
     ['Re-run failed asks the host', out.rerunSent === true],
     ['opening Files asks for the diff once', out.diffRequestedOnce === true],
     ['the diff renders added lines', out.diffRendered === true],

@@ -249,6 +249,31 @@ body.pr-dragging > header, body.pr-dragging #work-main {
   background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red);
 }
 .pr-done-banner { background: var(--fill-2); color: var(--vscode-foreground); }
+
+/* Merge conflicts: beside the reviews, since it blocks the merge the same way. */
+.pr-conflict {
+  margin-top: var(--s3); padding: 10px 12px;
+  border-radius: var(--r-ctrl);
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s2) var(--s3);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
+  font-size: var(--fs-small);
+}
+.pr-conflict-icon { display: inline-flex; color: var(--red); padding-top: 1px; }
+.pr-conflict-text { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pr-conflict-text b { color: var(--red); font-weight: 650; }
+.pr-conflict-text span { color: var(--vscode-foreground); opacity: 0.85; }
+.pr-conflict-actions { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); padding-left: 22px; }
+.pr-conflict-actions button {
+  border: none; border-radius: var(--r-ctrl); padding: 5px 12px; cursor: pointer;
+  background: var(--accent); color: #fff; font: inherit; font-weight: 600;
+}
+.pr-conflict-actions button:hover { filter: brightness(1.1); }
+.pr-conflict-web { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); text-decoration: none; }
+.pr-conflict-web:hover { text-decoration: underline; }
+.pr-pane.phone .pr-conflict-actions { padding-left: 0; }
+.pr-pane.phone .pr-conflict-actions button { padding: 10px 14px; min-height: 44px; }
+.pr-chip-conflict { display: inline-flex; color: var(--red); }
 .pr-done-banner.err { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
 
 /* ── tabs ─────────────────────────────────────────────────── */

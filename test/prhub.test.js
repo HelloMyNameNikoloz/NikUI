@@ -121,6 +121,16 @@ module.exports = async function () {
   check('and a failing check brings its log', /Error: boom/.test(laptop.last('editPrompt').text));
   checkEqual('which it fetched for that run', JSON.stringify(feed.calls.find((c) => c[0] === 'log')), JSON.stringify(['log', 99]));
 
+  const promptsBefore = laptop.ofType('editPrompt').length;
+  await hub.receive('laptop', { type: 'pr:askConflicts' });
+  checkEqual('no conflicts, nothing put in the composer', laptop.ofType('editPrompt').length, promptsBefore);
+  SNAP.mergeable = 'CONFLICTING'; SNAP.baseRef = 'main'; SNAP.headRef = 'fix';
+  await hub.receive('laptop', { type: 'pr:askConflicts' });
+  const resolveAsk = laptop.last('editPrompt').text;
+  check('conflicts put a merge of the base into the composer', /merge origin\/main into `fix`/.test(resolveAsk) && /#7/.test(resolveAsk));
+  check('and never a rebase or a force-push', /Do not rebase or force-push/.test(resolveAsk));
+  delete SNAP.mergeable;
+
   await hub.receive('laptop', { type: 'pr:open', url: 'https://github.com/o/r/pull/7/files' });
   await hub.receive('laptop', { type: 'pr:open', url: 'https://evil.example/' });
   checkEqual('only github.com is opened', JSON.stringify(opened), JSON.stringify(['https://github.com/o/r/pull/7/files']));

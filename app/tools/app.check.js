@@ -231,7 +231,7 @@ const record = (name, ok) => {
   prFeed.get = (url) => (url === PR ? {
     prUrl: PR, loading: false, error: null, state: {
       url: PR, number: 691, repo: 'acme/nikui', title: 'Read the PR on the phone', state: 'OPEN', isDraft: false,
-      author: 'nik', createdAt: new Date(Date.now() - 900000).toISOString(), headRef: 'pr-phone', baseRef: 'main',
+      author: 'nik', createdAt: new Date(Date.now() - 900000).toISOString(), headRef: 'pr-phone', baseRef: 'main', mergeable: 'CONFLICTING',
       additions: 40, deletions: 3, changedFiles: 2, body: 'GitHub, readable, on a phone.',
       checks: [{ name: 'test', status: 'pass' }], checkSummary: { total: 1, pass: 1, fail: 0, pending: 0 },
       threads: [], comments: [], files: [], reviewers: [], reviews: [], labels: [], assignees: [], commits: [],
@@ -1577,6 +1577,10 @@ const record = (name, ok) => {
       await waitFor(() => prFeed.watched.get(session.id) && prFeed.watched.get(session.id).active === true, 4000));
     record('without opening the pane on the laptop', !(session.prPane && session.prPane.open));
     if (process.env.SHOTS) { await wait(300); await shoot(phone, 'github'); }
+    record('merge conflicts show on the phone too, with a thumb-sized way to resolve them',
+      await phone.until(`(() => { const c = document.querySelector('#pr-pane .pr-conflict'); if (!c) return false;
+        const b = c.querySelector('[data-ask-conflicts]').getBoundingClientRect();
+        return /Merge conflicts/.test(c.textContent) && b.height >= 44 && !!document.querySelector('#pr-chip .pr-chip-conflict'); })()`, 4000));
     record('the close and refresh buttons have their icons in the middle',
       (await phone.evaluate(`[...document.querySelectorAll('#pr-pane .pr-head-actions .icon-only')].every((b) => {
         const r = b.getBoundingClientRect(), i = b.querySelector('svg, .spinner').getBoundingClientRect();
