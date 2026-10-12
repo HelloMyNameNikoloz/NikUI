@@ -1733,8 +1733,9 @@ const record = (name, ok) => {
     record('Commands in /settings opens the commands page',
       await phone.until('!!document.querySelector(".cmd-nav") && !document.querySelector(".prefs")', 10000));
     record('listing NikUI\u2019s own and the shipped snippets',
-      await phone.evaluate(`['status','settings','commands','watch','table','delegate','implement']
-        .every((n) => !!document.querySelector('[data-command="' + n + '"]'))`));
+      await phone.evaluate(`['status','settings','commands','table','delegate','implement']
+        .every((n) => !!document.querySelector('[data-command="' + n + '"]'))
+        && !document.querySelector('[data-command="watch"]')`));
     await phone.evaluate(`document.querySelector('[data-command="delegate"]').click()`);
     record('a snippet shows what it is for and its prompt',
       await phone.until(`/cheaper agents/.test(document.querySelector('.cmd-description').textContent) &&
