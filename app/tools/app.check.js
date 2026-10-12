@@ -531,7 +531,7 @@ const record = (name, ok) => {
     record('over its own socket',
       await phone.until('document.getElementById("link").textContent === "Live"', 10000));
     record('showing what was already there',
-      /what the app should show/.test(await phone.evaluate('document.getElementById("stream").textContent')));
+      await phone.until('/what the app should show/.test(document.getElementById("stream").textContent)', 4000));
     record('opened on the phone, it is no longer blue on the laptop', !session.unread);
     record('the prompt says when it was sent',
       await phone.until('!!document.querySelector(".turn-user .sent-at") && document.querySelector(".turn-user .sent-at").textContent.length > 3', 4000));
@@ -2472,6 +2472,7 @@ const record = (name, ok) => {
   }
 
   const failed = checks.filter(([, ok]) => !ok).length;
+  for (const [name, ok] of checks) if (!ok) console.log('FAILED  ' + name);
   console.log('\n' + (checks.length - failed) + '/' + checks.length + ' app checks passed');
   process.exit(failed ? 1 : 0);
 })().catch((err) => {
