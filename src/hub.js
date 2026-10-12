@@ -2,10 +2,9 @@
 
 const { commandArgs } = require('./session');
 const { buildReport } = require('./report');
-const { GRANT } = require('./ci');
 
 // Commands NikUI answers itself rather than passing to the CLI.
-const OWN_COMMANDS = ['status', 'settings', 'commands', 'slack', 'watch'];
+const OWN_COMMANDS = ['status', 'settings', 'commands', 'slack'];
 
 /**
  * The messages that change something, as opposed to the ones that only watch.
@@ -25,8 +24,6 @@ const STEERING = new Set([
   // Writing to the pull request — a reply, a resolved thread, a re-run — is
   // done as the laptop's GitHub account, so it is steering too.
   'pr:reply', 'pr:resolve', 'pr:comment', 'pr:rerun', 'pr:unlink',
-  // /watch hands out permission to push, which is steering if anything is.
-  'watch',
   // A setting changes what every instance does next, and whether the laptop
   // sleeps. Reading them is watching; changing one is not.
   'setSetting',
@@ -472,16 +469,6 @@ class SessionHub {
         session.submit(msg.text, msg.attachments, { sent: msg.sent, snippets: msg.snippets });
         break;
 
-      // /watch: NikUI watches the PR's CI itself, and the model is told it may
-      // push — with the prompt that came with it, or with the next one.
-      case 'watch': {
-        const text = String(msg.text || '').trim();
-        if (text) session.submit(text, [], { sent: text + '\n\n' + GRANT });
-        else session.pendingNote = GRANT;
-        session.emit('watch');
-        break;
-      }
-
       case 'interrupt':
         session.interrupt();
         break;
@@ -757,7 +744,8 @@ class SessionHub {
     const remembered = typeof this.host.knownCommands === 'function' ? this.host.knownCommands() : [];
     const base = (live && live.length) ? live : (remembered || []);
     // NikUI's first: the palette shows forty at a time, and the CLI alone
-    // lists more than that, which put /watch past the end of the list.
+    // lists more than that, which could otherwise push one of ours off the
+    // end of the list.
     const own = this.ownCommands(this.config());
     return own.concat(base.filter((c) => !own.includes(c)));
   }

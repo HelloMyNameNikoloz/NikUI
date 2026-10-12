@@ -3,7 +3,7 @@
 /**
  * What the Commands page lists, and what a change on it writes.
  *
- * Two kinds of command. NikUI's own — /status, /settings, /commands, /watch —
+ * Two kinds of command. NikUI's own — /status, /settings, /commands, /slack —
  * are answered by the panel itself and are described here, not edited: they are
  * code. Prompt snippets are words that append a standing instruction to what you
  * typed, and are yours: the shipped ones can be rewritten, switched off and put
@@ -34,12 +34,6 @@ const OWN = [
     name: 'slack',
     usage: '/slack',
     description: 'Your Slack VIPs and @mentions: read them, and reply as yourself. Reading here never marks anything read in Slack; replying does.'
-  },
-  {
-    name: 'watch',
-    usage: '/watch [prompt]',
-    description: 'Watches the CI of this branch\'s pull request and says when it goes green or fails. ' +
-      'Anything after it is sent as a prompt, with permission to push.'
   }
 ];
 

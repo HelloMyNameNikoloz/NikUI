@@ -203,7 +203,8 @@ class Session extends EventEmitter {
 
   /**
    * A turn is in flight. Agents in the background are not one: the CLI answers
-   * a prompt sent meanwhile straight away, so only a turn holds the queue.
+   * a prompt sent meanwhile straight away. The queue waits for them all the
+   * same (isReadyForQueue), since it is for after the run.
    */
   get inTurn() {
     return (this.status === STATUS.WORKING && !this._inBackground) || this.status === STATUS.WAITING;
@@ -473,9 +474,7 @@ class Session extends EventEmitter {
       type: 'image',
       source: { type: 'base64', media_type: f.mediaType, data: f.data }
     }));
-    // Permission /watch gave, carried on the next thing the model reads.
-    let said = outgoing || 'See the attached image.';
-    if (this.pendingNote) { said += '\n\n' + this.pendingNote; this.pendingNote = null; }
+    const said = outgoing || 'See the attached image.';
     content.push({ type: 'text', text: said });
 
     this._write({ type: 'user', message: { role: 'user', content } });
@@ -558,6 +557,10 @@ class Session extends EventEmitter {
   isReadyForQueue() {
     if (this.isPaused) return false;
     if (!this.isRunning || this.inTurn) return false;
+    // Agents the last turn started are still out, or have just come back and
+    // the CLI is about to hand over what they found. The run is not over until
+    // they have, and a queued prompt sent now lands in the middle of it.
+    if (this._inBackground) return false;
     // Only a tool that is genuinely still running counts. It used to be "any
     // tool not marked done", which included tools abandoned by a process that
     // died mid-turn and tools replayed from a transcript that ends in one —
@@ -578,7 +581,8 @@ class Session extends EventEmitter {
       this._drainTimer = null;
       this.drainAt = null;
       if (!this.queue.length) return;
-      if (!this.isReadyForQueue()) { this._scheduleDrain(1000); return; }
+      // Waiting on agents is not polled: the instance settling wakes it.
+      if (!this.isReadyForQueue()) { if (!this._inBackground) this._scheduleDrain(1000); return; }
       const next = this.queue.shift();
       this.emit('queue');
       this.send(next.text, next.attachments, { sent: next.sent, snippets: next.snippets });
@@ -1363,8 +1367,12 @@ class Session extends EventEmitter {
   /** `background`: working only because agents are, with no turn in flight. */
   _setStatus(status, background) {
     // A status set for any other reason ends that, and supersedes a stop.
+    const wasBackground = this._inBackground;
     this._inBackground = status === STATUS.WORKING && !!background;
     if (!this._inBackground) this._stoppingAgents = false;
+    // The agents are back and nothing followed: the run is over, so the queue
+    // it was holding can go.
+    if (wasBackground && status === STATUS.DONE && this.queue.length) this._scheduleDrain();
     if (this.status === status) return;
     const was = this.status;
     this.status = status;

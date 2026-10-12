@@ -321,7 +321,6 @@ const drive = `
     // edited, saved, refused and added from it.
     const COMMANDS = (extra) => [
       { name: 'status', kind: 'own', usage: '/status', description: 'A sheet of what this instance is doing.' },
-      { name: 'watch', kind: 'own', usage: '/watch [prompt]', description: 'Watches the CI.' },
       { name: 'table', kind: 'snippet', prompt: 'Give me a table.', description: 'The plan as a table.',
         summary: 'The plan as a table.', shipped: true, edited: false, off: false }
     ].concat(extra || []);
@@ -708,7 +707,7 @@ const checks = [
   ['which asks the laptop for them', out.commandsAsked === true],
   ['and replaces the settings sheet rather than stacking', out.commandsReplaceSettings === true],
   ['/commands is /status\u2019s layout: a rail and a page', out.commandsLayout === true],
-  ['the rail lists every command, and a way to add one', out.commandsNav === 'status,watch,table,+new'],
+  ['the rail lists every command, and a way to add one', out.commandsNav === 'status,table,+new'],
   ['a snippet\u2019s prompt is previewed', out.commandsPreview === 'Give me a table.'],
   ['Edit puts the cursor in the prompt', out.commandsEditFocused === true],
   ['a change elsewhere does not throw the draft away', out.commandsDraftKept === 'A shorter table.'],

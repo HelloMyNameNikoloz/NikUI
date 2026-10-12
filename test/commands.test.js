@@ -31,7 +31,7 @@ module.exports = async function () {
   {
     const list = commands.list({ shipped: SHIPPED, mine: { Mine: 'My own. Second.', lean: '' }, shippedSaid: SAID, mineSaid: {} });
     checkEqual('NikUI\'s own first, then the shipped, then yours',
-      list.map((c) => c.name), ['status', 'settings', 'commands', 'slack', 'watch', 'table', 'lean', 'mine']);
+      list.map((c) => c.name), ['status', 'settings', 'commands', 'slack', 'table', 'lean', 'mine']);
     check('every own command says what it does', list.filter((c) => c.kind === 'own').every((c) => c.description && c.usage));
     checkEqual('the hub offers exactly those as its own', OWN_COMMANDS, commands.OWN_NAMES);
     const table = list.find((c) => c.name === 'table');
@@ -81,7 +81,7 @@ module.exports = async function () {
     check('a name is needed', /Give it a name/.test(refusal(() => commands.save(held, { name: ' ', prompt: 'x' }))));
     check('and must be a word', /starts with a letter/.test(refusal(() => commands.save(held, { name: '9 lives', prompt: 'x' }))));
     check('not too long', /longer than 40/.test(refusal(() => commands.save(held, { name: 'a'.repeat(41), prompt: 'x' }))));
-    check('nor one of NikUI\'s own', /NikUI's own/.test(refusal(() => commands.save(held, { name: 'watch', prompt: 'x' }))));
+    check('nor one of NikUI\'s own', /NikUI's own/.test(refusal(() => commands.save(held, { name: 'slack', prompt: 'x' }))));
     check('nor one already there', /already a \/table/.test(refusal(() => commands.save(held, { name: 'table', prompt: 'x' }))));
     check('an empty prompt is turned away with the right way to do it', /switch it off instead/.test(refusal(() => commands.save(held, { name: 'x', prompt: '   ' }))));
     check('a prompt too long is refused', /longer than/.test(refusal(() => commands.save(held, { name: 'x', prompt: 'p'.repeat(commands.MAX_PROMPT + 1) }))));
@@ -206,8 +206,8 @@ module.exports = async function () {
     check('yours can be deleted', yours.includes('data-act="ask-remove">Delete'));
     const confirm = sheet.render({ commands: list, mayChange: true }, { active: 'mine', confirm: 'mine' });
     check('deleting asks once more', confirm.includes('data-act="remove">Delete /mine?') && confirm.includes('data-act="keep"'));
-    const own = sheet.render({ commands: list, mayChange: true }, { active: 'watch' });
-    check('NikUI\'s own are described and not editable', /Watches the CI/.test(own) && !own.includes('data-act="edit"'));
+    const own = sheet.render({ commands: list, mayChange: true }, { active: 'slack' });
+    check('NikUI\'s own are described and not editable', /Your Slack VIPs/.test(own) && !own.includes('data-act="edit"'));
     const edited = commands.list({ shipped: SHIPPED, mine: { table: 'Changed.' }, shippedSaid: SAID });
     check('a changed shipped one can be put back',
       sheet.render({ commands: edited, mayChange: true }, { active: 'table' }).includes('data-act="restore"'));

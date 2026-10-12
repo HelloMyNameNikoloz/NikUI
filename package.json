@@ -663,7 +663,7 @@
         "nikui.watchCIAfterPush": {
           "type": "boolean",
           "default": true,
-          "description": "When an instance pushes to a branch with a pull request, or opens one, watch that PR's CI checks through the GitHub CLI (gh) and show their progress in the panel's header. /watch does the same by hand, and also gives the instance permission to push."
+          "description": "When an instance pushes to a branch with a pull request, or opens one, watch that PR's CI checks through the GitHub CLI (gh) and show their progress in the panel's header."
         },
         "nikui.notifyCI": {
           "type": "boolean",

@@ -23,13 +23,9 @@ const FAILED = new Set(['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_RE
 const HISTORY = 10;
 
 const POLL_MS = 15000;
-const PR_WAIT_MS = 30 * 60000;     // "create the PR, then /watch" has this long to find one
+const PR_WAIT_MS = 30 * 60000;     // a push whose commit isn't on the PR yet waits this long
 const CHECKS_WAIT_MS = 3 * 60000;  // a PR with no CI says so after this
 const GIVE_UP_MS = 3 * 3600000;
-
-const GRANT = 'The user ran /watch: you have their permission to commit and push to this branch, ' +
-  'and to create or update its pull request, without asking first. NikUI is watching the PR\'s CI ' +
-  'and tells them when it finishes, so there is no need to wait for it or poll it yourself.';
 
 const defaultRun = (file, args, options) => new Promise((resolve) => {
   execFile(file, args, Object.assign({ timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, options), (err, stdout, stderr) => {
@@ -90,7 +86,6 @@ class CiWatch {
   /**
    * @param {object} o
    * @param {string} o.cwd
-   * @param {boolean} [o.asked]      started by /watch rather than by a push
    * @param {Function} [o.run]
    * @param {object} [o.history]    { get(repo) => ms[], add(repo, ms) }
    * @param {Function} o.onChange   (state) => void
@@ -98,7 +93,6 @@ class CiWatch {
    */
   constructor(o) {
     this.cwd = o.cwd;
-    this.asked = !!o.asked;
     this.run = o.run || defaultRun;
     this.now = o.now || Date.now;
     this.setTimer = o.setTimeout || setTimeout;
@@ -165,11 +159,8 @@ class CiWatch {
         return this.finish({ phase: 'error', message: 'gh is not logged in: run gh auth login.' });
       }
       if (/not a git repository/i.test(why)) return this.finish({ phase: 'error', message: 'Not a git repository.' });
-      // A push with no PR behind it is not a PR to watch. /watch is
-      // different: somebody may be about to make one.
-      if (!this.asked) return this.finish({ phase: 'no-pr', quiet: true });
-      if (now - this.startedAt > PR_WAIT_MS) return this.finish({ phase: 'error', message: 'No pull request for this branch.' });
-      return this.set({ phase: 'no-pr' });
+      // A push with no PR behind it is not a PR to watch.
+      return this.finish({ phase: 'no-pr', quiet: true });
     }
 
     const data = JSON.parse(view.stdout);
@@ -275,17 +266,14 @@ class CiWatcher {
     this.sessions = new Map();
   }
 
-  /** Listen to a manager: pushes Claude makes, and /watch. */
+  /** Listen to a manager: pushes Claude makes. */
   attach(manager) {
     const pushed = (session, cwd) => { if (this.autoWatch()) this.watch(session, { cwd }); };
-    const asked = (session) => this.watch(session, { asked: true });
     const gone = (session) => this.forget(session.id);
     manager.on('pushed', pushed);
-    manager.on('watch', asked);
     manager.on('removed', gone);
     return () => {
       manager.off('pushed', pushed);
-      manager.off('watch', asked);
       manager.off('removed', gone);
       for (const id of [...this.watches.keys()]) this.forget(id);
     };
@@ -293,30 +281,17 @@ class CiWatcher {
 
   watch(session, opts) {
     const o = opts || {};
-    const running = this.watches.get(session.id);
-    // /watch on a watch already going changes nothing but whether its end is news.
-    if (running && !running.state.finished && o.asked && !o.cwd) { running.asked = true; return running; }
     this.forget(session.id, true);
     const w = new CiWatch({
       cwd: o.cwd || session.cwd,
-      asked: o.asked,
       run: this.run,
       history: this.history,
-      onChange: (state) => {
-        session.setCi(state);
-        // /watch on a PR this branch is ahead of: that is a push waiting for
-        // permission, and it has it now.
-        if (w.asked && !w.prompted && state.phase === 'push' && !session.inTurn && !(session.queue || []).length) {
-          w.prompted = true;
-          session.pendingNote = null;
-          session.submit('/watch', [], { sent: GRANT + ' This branch has commits its PR does not have yet: push them now.' });
-        }
-      },
+      onChange: (state) => { session.setCi(state); },
       onFinish: (state) => {
         if (state.quiet) { this.forget(session.id); return; }
         // Already over when it was first looked at: a push that changed
-        // nothing is not news, unless somebody asked.
-        if (w.asked || w.sawUnfinished) this.notify(session, state);
+        // nothing is not news.
+        if (w.sawUnfinished) this.notify(session, state);
         // A finished strip stays long enough to be seen, then goes.
         const t = setTimeout(() => { if (this.watches.get(session.id) === w) this.forget(session.id); }, 30 * 60000);
         if (t.unref) t.unref();
@@ -343,4 +318,4 @@ class CiWatcher {
   }
 }
 
-module.exports = { CiWatch, CiWatcher, pushedFrom, readCheck, runDurations, repoOf, describe, remaining, average, GRANT, PUSHED };
+module.exports = { CiWatch, CiWatcher, pushedFrom, readCheck, runDurations, repoOf, describe, remaining, average, PUSHED };

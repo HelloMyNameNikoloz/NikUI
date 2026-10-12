@@ -57,7 +57,7 @@
     return '<section class="card prefs-group"><h3>Commands</h3><div class="prefs-list">' +
       '<div class="pref" data-pref="commands"><div class="pref-text">' +
       '<span class="pref-label" id="pref-commands">Commands and prompt snippets</span>' +
-      '<span class="pref-hint">/watch, /delegate and the rest: what each one does and sends. ' +
+      '<span class="pref-hint">/delegate and the rest: what each one does and sends. ' +
       'Change them, or add your own.</span></div>' +
       '<div class="pref-control"><button type="button" class="ghost" data-act="commands" ' +
       'aria-describedby="pref-commands">Open' + icon('chevron', 13) + '</button></div></div>' +

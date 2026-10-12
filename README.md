@@ -104,21 +104,16 @@ owns the whole surface.
   default browser (Brave, Chrome, Edge, Arc, Vivaldi or Safari), that tab is
   brought forward instead of a new one; the first time, macOS asks whether VS
   Code may control the browser.
-- **CI, watched for you, and `/watch`.** When an instance runs `git push` or
-  `gh pr create` on a branch with a pull request, NikUI watches that PR's
-  checks itself — `gh pr view` every fifteen seconds, no tokens spent — and
-  the panel's header shows a bar beside the context budget: *PR #12 · CI 3/5 ·
-  ~2m left*, the time left being the average of the repo's last ten PR runs
-  (`gh run list`), or of the last ten NikUI watched, for checks that are not
-  Actions. It turns green or red, links to the PR or the failing check, shows
-  in the sidebar row too, and a notification says so when it is over (clicking
-  it opens the instance). A watch started before the push waits for the push;
-  the first failing check ends it. `/watch` does it by hand, and tells the
-  model it may commit, push and open or update the PR without asking — with
-  the prompt after it (`/watch make the PR and push`), or with the next one
-  you send. `/watch` with no PR yet waits up to thirty minutes for one, so
-  *create the PR*, then `/watch`, works; on a PR this branch is ahead of, it
-  asks the instance to push. Needs `gh`, logged in.
+- **CI, watched for you.** When an instance runs `git push` or `gh pr create`
+  on a branch with a pull request, NikUI watches that PR's checks itself —
+  `gh pr view` every fifteen seconds, no tokens spent — and the panel's header
+  shows a bar beside the context budget: *PR #12 · CI 3/5 · ~2m left*, the
+  time left being the average of the repo's last ten PR runs (`gh run list`),
+  or of the last ten NikUI watched, for checks that are not Actions. It turns
+  green or red, links to the PR or the failing check, shows in the sidebar row
+  too, and a notification says so when it is over (clicking it opens the
+  instance). A watch started before the push waits for the push; the first
+  failing check ends it. Needs `gh`, logged in.
 - **A real `/status`.** It is offered as soon as you type `/` (tagged NikUI, so
   you can tell it from the CLI's own), and NikUI answers it itself with a
   full-screen sheet in six sections you can click or key through (`1`–`6`,
@@ -179,7 +174,7 @@ owns the whole surface.
   entries merged over the built-in ones, and an empty string switches one off.
 - **The Commands page.** `/commands`, or *Commands* at the bottom of `/settings`,
   opens a page laid out like `/status`: a rail with NikUI's own commands
-  (`/status`, `/settings`, `/commands`, `/watch`) and every prompt snippet, and
+  (`/status`, `/settings`, `/commands`, `/slack`) and every prompt snippet, and
   a page for the one picked — what it is for, the whole prompt it adds, and how
   to type it. Snippets can be edited, renamed, switched off, put back to the
   shipped text, deleted if they are yours, and added with *New snippet*. Edits

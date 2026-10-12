@@ -87,7 +87,7 @@ module.exports = async function () {
     answer(s, 'msg_four', '4');
     checkEqual('whose end goes back to working in the background', s.status, 'working');
     check('with no turn in flight', !s.inTurn);
-    check('so a queue may drain meanwhile', s.isReadyForQueue());
+    check('but a queue waits for the agent, since the run is not over', !s.isReadyForQueue());
 
     // The agent's own command outlives it, and the agent reports back.
     s._handle(tasks(agentTask, shellTask));
@@ -264,5 +264,50 @@ module.exports = async function () {
     check('and owes no turn a nudge, since none was cut off', !s.interruptedByPause);
     s.stop();
     check('stopping the process takes its agents with it', s.backgroundAgents === 0 && !s.isBusy);
+  }
+
+  suite('a queue waits for the whole run, agents and all');
+
+  {
+    const s = new Session({ cwd: '/tmp' });
+    const written = running(s);
+    s.agentSettleMs = 20;
+    s.send('delegate this');
+    s._handle(init);
+    launch(s);
+    checkEqual('a prompt typed during the turn is queued', s.submit('afterwards'), 'queued');
+    answer(s, 'msg_launched', 'Launched.');
+    const sent = written.length;
+    check('the turn ending with its agent out does not send it', !s.isReadyForQueue());
+    s._clearDrain();
+    s._scheduleDrain(0);
+    await new Promise((r) => setTimeout(r, 30));
+    check('even when a drain comes due', written.length === sent && s.queue.length === 1);
+    check('and nothing polls for it meanwhile', !s._drainTimer);
+    s._handle(updated('completed'));
+    s._handle(notification('completed'));
+    s._handle(tasks());
+    check('the agent back but not yet reported still holds it', !s.isReadyForQueue());
+    s._handle(init);
+    answer(s, 'msg_report', 'The agent finished.', { origin: { kind: 'task-notification' } });
+    checkEqual('once the CLI has reported, it is done', s.status, 'done');
+    check('and the queue is on its way', s.isReadyForQueue() && !!s._drainTimer);
+    s._clearDrain();
+  }
+
+  {
+    const s = new Session({ cwd: '/tmp' });
+    running(s);
+    s.agentSettleMs = 20;
+    s.send('delegate this');
+    s._handle(init);
+    launch(s);
+    s.submit('afterwards');
+    answer(s, 'msg_launched', 'Launched.');
+    s._handle(tasks());
+    await new Promise((r) => setTimeout(r, 40));
+    checkEqual('agents back with no report to follow: it settles done', s.status, 'done');
+    check('and that alone sends the queue on', !!s._drainTimer);
+    s._clearDrain();
   }
 };

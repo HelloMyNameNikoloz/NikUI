@@ -1,7 +1,7 @@
 'use strict';
 const { EventEmitter } = require('events');
 const ci = require('../src/ci.js');
-const { CiWatch, CiWatcher, pushedFrom, readCheck, runDurations, describe, remaining, GRANT } = ci;
+const { CiWatch, CiWatcher, pushedFrom, readCheck, runDurations, describe, remaining } = ci;
 
 const SHA = 'abc123';
 const MIN = 60000;
@@ -108,7 +108,7 @@ module.exports = async function () {
   }
   {
     const world = { pr: pr([run('COMPLETED', 'SUCCESS')], { headRefOid: 'old' }), head: SHA };
-    const t = watch(world, { asked: true });
+    const t = watch(world);
     await t.w.tick();
     checkEqual('a PR behind this commit waits for the push', t.states.pop().phase, 'push');
     world.pr = pr([]);
@@ -117,15 +117,6 @@ module.exports = async function () {
     t.advance(4 * MIN);
     await t.w.tick();
     checkEqual('and says so if there never is any', t.finished[0] && t.finished[0].phase, 'none');
-  }
-  {
-    const world = { pr: null };
-    const t = watch(world, { asked: true });
-    await t.w.tick();
-    checkEqual('/watch before the PR exists waits for one', t.states.pop().phase, 'no-pr');
-    world.pr = pr([run('QUEUED', '')]);
-    await t.w.tick();
-    checkEqual('and picks it up when it does', t.states.pop().phase, 'running');
   }
   {
     const t = watch({ pr: null });
@@ -163,16 +154,6 @@ module.exports = async function () {
     await new Promise((r) => setTimeout(r, 20));
     checkEqual('a push that was already green shows it', session.ci && session.ci.phase, 'passed');
     checkEqual('but is not news', told, []);
-
-    manager.emit('watch', session);
-    await new Promise((r) => setTimeout(r, 20));
-    checkEqual('/watch on it is', told, ['passed']);
-
-    world.pr = pr([run('COMPLETED', 'SUCCESS')], { headRefOid: 'older' });
-    manager.emit('watch', session);
-    await new Promise((r) => setTimeout(r, 20));
-    checkEqual('/watch with commits the PR lacks asks for the push', session.sent.length, 1);
-    check('and says it may', session.sent[0][1].startsWith(GRANT));
 
     manager.emit('removed', session);
     checkEqual('an instance that goes takes its watch with it', watcher.watches.size, 0);

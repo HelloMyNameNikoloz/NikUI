@@ -1213,19 +1213,6 @@
     // passed to the CLI — the sheet knows things the CLI cannot see.
     // Only the bare command is ours; "/status something" belongs to the CLI.
     // /settings the same way: the few settings people change, as switches.
-    // /watch, alone or in front of a prompt: NikUI watches the PR's CI, and
-    // the prompt goes with permission to push.
-    const watch = !attachments.length && /^\/watch(?:\s+([\s\S]*))?$/i.exec(text);
-    if (watch) {
-      vscode.postMessage({ type: 'watch', text: (watch[1] || '').trim() });
-      prompts.remember(text);
-      prompts.reset();
-      input.value = '';
-      remember();
-      slashBox.hidden = true;
-      autoGrow();
-      return;
-    }
     const own = !attachments.length && /^\/(status|settings|commands|slack)$/i.exec(text);
     if (own) {
       prompts.remember(text);

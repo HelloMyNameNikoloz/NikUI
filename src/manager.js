@@ -254,7 +254,6 @@ class SessionManager extends EventEmitter {
     session.on('ci', () => this._changed(session));
     session.on('unread', () => this._changed(session));
     session.on('pushed', (cwd) => this.emit('pushed', session, cwd));
-    session.on('watch', () => this.emit('watch', session));
     // Whichever instance hears about the account's limits, all of them know.
     session.on('limits', (limits) => this.rememberLimits(limits));
     session.on('exhausted', (limits) => this.pauseForLimit(limits));
