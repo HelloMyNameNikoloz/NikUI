@@ -110,6 +110,49 @@ module.exports = async function () {
     s._clearDrain();
   }
 
+  suite('the clock times the whole run, not each turn');
+
+  {
+    const s = new Session({ cwd: '/tmp' });
+    running(s);
+    s.send('delegate this');
+    const began = s.runStartedAt;
+    s._handle(init);
+    s._handle(requesting);
+    launch(s);
+    answer(s, 'msg_launched', 'Launched.');
+    check('it keeps running while the agent works', s.stats().running);
+    s._handle(tasks());
+    s._handle(notification('completed'));
+    s.runStartedAt -= 5000;
+    const from = s.runStartedAt;
+    s._handle(init);
+    checkEqual('the turn the CLI starts when the agent is back does not restart it', s.runStartedAt, from);
+    check('and the run started with the prompt', from === began - 5000);
+    answer(s, 'msg_report', 'The agent finished.', { origin: { kind: 'task-notification' } });
+    checkEqual('it stops when the instance is done', s.stats().running, false);
+    check('having timed the whole run', s.stats().elapsedMs >= 5000);
+  }
+
+  {
+    const s = new Session({ cwd: '/tmp' });
+    running(s);
+    s.send('delegate this');
+    s.runStartedAt -= 5000;
+    const from = s.runStartedAt;
+    s._handle(init);
+    s._handle(requesting);
+    launch(s);
+    answer(s, 'msg_launched', 'Launched.');
+    s._handle(tasks());
+    s._setStatus('done');
+    checkEqual('a report later than the settle wait still carries the run on', (s._handle(init), s.runStartedAt), from);
+    answer(s, 'msg_report', 'The agent finished.', { origin: { kind: 'task-notification' } });
+    s._lastRun.ended -= 10 * 60 * 1000;
+    s._handle(init);
+    check('but a wakeup long after starts a run of its own', s.runStartedAt > from + 4000);
+  }
+
   suite('an agent in the foreground is part of its turn');
 
   {

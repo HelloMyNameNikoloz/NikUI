@@ -36,6 +36,10 @@ const NEVER_ENDS = /\b(dev|serve|server|start|preview|watch|storybook|nodemon|ta
 // green and let the machine sleep, so that turn gets this long to begin.
 const AGENT_SETTLE_MS = 3000;
 
+// A report that comes later than that still belongs to the run that sent the
+// agents, so its clock carries on. A wakeup long after is a run of its own.
+const RUN_RESUME_MS = 60 * 1000;
+
 // A `cat` of a large file, a failing test suite, a 40 MB log: one tool result
 // can be bigger than everything else in the conversation put together. The
 // model saw all of it either way, and the whole thing is in the transcript on
@@ -96,6 +100,12 @@ class Session extends EventEmitter {
     this.usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
     this.turns = opts.turns || 0;
     this.turnStartedAt = null;
+    // The header's clock times the run, not the turn: from the prompt until
+    // the instance is done, through the turns the CLI starts by itself when
+    // agents come back. Restarting it on each of those read as a reset.
+    this.runStartedAt = null;
+    this._lastRun = null;
+    this.runDurationMs = 0;
     this.lastDurationMs = 0;
     this.finishedAt = opts.finishedAt || 0;
     // What /status reports on: one record per finished turn, plus the running
@@ -389,6 +399,9 @@ class Session extends EventEmitter {
     this.turns = 0;
     this.lastDurationMs = 0;
     this.turnStartedAt = null;
+    this.runStartedAt = null;
+    this._lastRun = null;
+    this.runDurationMs = 0;
     this.finishedAt = 0;
     this.contextTokens = 0;
     this.lastError = null;
@@ -467,6 +480,7 @@ class Session extends EventEmitter {
     this._limitThisTurn = false;
     this._turnTools = [];
     this.turnStartedAt = Date.now();
+    if (!this.runStartedAt) this.runStartedAt = this.turnStartedAt;
     this._setStatus(STATUS.WORKING);
 
     // Images first, then the prompt — the order the CLI expects.
@@ -606,8 +620,8 @@ class Session extends EventEmitter {
       total: u.input + u.output + u.cacheRead + u.cacheCreate,
       cost: this.totalCost,
       turns: this.turns,
-      elapsedMs: this.turnStartedAt ? Date.now() - this.turnStartedAt : this.lastDurationMs,
-      running: !!this.turnStartedAt,
+      elapsedMs: this.runStartedAt ? Date.now() - this.runStartedAt : this.runDurationMs,
+      running: !!this.runStartedAt,
       background: this.backgroundAgents,
       shells: this.backgroundShells,
       shellList: this.shellList,
@@ -941,6 +955,13 @@ class Session extends EventEmitter {
     this._limitThisTurn = false;
     this._turnTools = [];
     this.turnStartedAt = Date.now();
+    // Agents that came back belong to the run that sent them, even when it
+    // was called done before the CLI got round to reporting.
+    if (!this.runStartedAt) {
+      const last = this._lastRun;
+      const resumes = last && last.agents && this.turnStartedAt - last.ended < RUN_RESUME_MS;
+      this.runStartedAt = resumes ? last.began : this.turnStartedAt;
+    }
     this._setStatus(STATUS.WORKING);
   }
 
@@ -966,7 +987,11 @@ class Session extends EventEmitter {
     // Inside a turn, the turn's end decides where the instance rests.
     if (this.inTurn) return;
     if (this.backgroundWork) {
-      if (this.status === STATUS.DONE) this._setStatus(STATUS.WORKING, true);
+      if (this.status === STATUS.DONE) {
+        // The turn that started them ended a moment before the CLI said so.
+        if (!this.runStartedAt && this._lastRun) this.runStartedAt = this._lastRun.began;
+        this._setStatus(STATUS.WORKING, true);
+      }
       return;
     }
     if (!this._inBackground) return;
@@ -1370,6 +1395,13 @@ class Session extends EventEmitter {
     const wasBackground = this._inBackground;
     this._inBackground = status === STATUS.WORKING && !!background;
     if (!this._inBackground) this._stoppingAgents = false;
+    // Nothing running and nothing asked: the run, and its clock, are over.
+    if (this.runStartedAt && status !== STATUS.WORKING && status !== STATUS.WAITING) {
+      const ended = Date.now();
+      this.runDurationMs = ended - this.runStartedAt;
+      this._lastRun = { began: this.runStartedAt, ended, agents: wasBackground };
+      this.runStartedAt = null;
+    }
     // The agents are back and nothing followed: the run is over, so the queue
     // it was holding can go.
     if (wasBackground && status === STATUS.DONE && this.queue.length) this._scheduleDrain();
