@@ -9,6 +9,7 @@
     "android": "npm run sync && npx cap open android",
     "ios": "npm run sync && npx cap open ios",
     "test": "node tools/build.test.js",
+    "test:design": "node tools/design.js",
     "xcode": "node tools/xcode.js",
     "version": "node tools/version.js",
     "release:android": "npm run sync && cd android && ./gradlew assembleRelease"

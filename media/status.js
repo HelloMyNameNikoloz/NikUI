@@ -174,13 +174,13 @@
   function limitsCard(r) {
     const limits = r.limits;
     if (!limits) {
-      return card('Plan usage',
+      return card('Claude · plan usage',
         hint('Nothing reported yet. The CLI sends your five-hour and weekly usage when it changes, ' +
           'so this fills in during the next turn.'), { wide: true });
     }
     const stale = Date.now() - (limits.at || 0) > 1800000;
     const w = limits.windows || {};
-    return card('Plan usage',
+    return card('Claude · plan usage',
       windowRow('Five-hour session', w.fiveHour, 'five-hour window') +
       windowRow('This week', w.week, 'weekly window') +
       (w.weekOverage ? windowRow('Weekly, overage included', w.weekOverage, 'weekly window including overage') : '') +
@@ -189,6 +189,102 @@
         (limits.resetsAt && limits.status !== 'allowed' ? ' · resets ' + until(limits.resetsAt) : '') +
         ' · as of ' + fmt.time(limits.at) + (stale ? ' (nothing newer since)' : '')),
       { wide: true, note: LIMIT_STATUS[limits.status] || '' });
+  }
+
+  // ── ChatGPT's own limits, one account at a time ──────────────
+
+  /**
+   * Codex's limits for every ChatGPT account signed in on this machine. Each
+   * account has its own windows (Plus has five hours and a week, Pro Lite only
+   * a week), so each is drawn with whatever it reported.
+   */
+  function codexCard(r) {
+    const accounts = r.codexLimits;
+    if (!accounts || !accounts.length) return '';
+    const body = accounts.map((a) => {
+      const head = '<div class="acct-head"><b>ChatGPT ' + esc(a.name) + '</b>' +
+        (a.plan ? '<span class="acct-plan">' + esc(a.plan) + '</span>' : '') +
+        (a.email ? '<span class="acct-mail dim">' + esc(a.email) + '</span>' : '') + '</div>';
+      // The meter already says how much is used; under it only when it comes back.
+      const rows = (a.windows || []).map((w) => '<div class="meter-line">' +
+        '<span class="meter-name">' + esc(w.name) + '</span>' +
+        charts.meter(Math.min(1, w.used), { marks: [0.7, 0.9],
+          label: 'ChatGPT ' + a.name + ', ' + w.name + ': ' + fmt.pct(w.used) + ' used, resets ' + until(w.resetsAt) }) +
+        '<span class="meter-value">' + esc(fmt.pct(Math.max(0, 1 - w.used))) + ' left</span></div>' +
+        '<p class="hint-line acct-reset">' + esc('resets ' + until(w.resetsAt)) + '</p>').join('');
+      const notes = [];
+      if (a.reached) notes.push('Limit reached');
+      if (a.resets) notes.push(a.resets + ' free reset' + (a.resets === 1 ? '' : 's') + ' available');
+      if (a.error) notes.push(a.windows && a.windows.length ? 'Could not check just now — showing ' + fmt.time(a.at) : 'Could not check: ' + a.error);
+      else if (a.at) notes.push('as of ' + fmt.time(a.at));
+      return '<div class="acct' + (a.reached ? ' acct-out' : '') + '">' + head +
+        (rows || hint('No limits reported.')) + hint(notes.join(' · ')) + '</div>';
+    }).join('');
+    const tightest = accounts.reduce((most, a) => Math.max(most, ...(a.windows || []).map((w) => w.used)), 0);
+    return card('ChatGPT · Codex', body, { wide: true, note: accounts.length + ' account' + (accounts.length === 1 ? '' : 's') +
+      (tightest ? ' · fullest ' + fmt.pct(tightest) : '') });
+  }
+
+  /** Every limit, Claude's and each ChatGPT account's, one line each. */
+  function compactLimits(r) {
+    const line = (name, win, opts) => {
+      const o = opts || {};
+      if (!win) {
+        return '<div class="meter-line gen-limit"><span class="meter-name">' + esc(name) + '</span>' +
+          charts.meter(0, { klass: 'm-dim', label: name + ' not reported yet' }) +
+          '<span class="meter-value dim">not reported</span></div>';
+      }
+      const left = Math.max(0, 1 - win.used);
+      const value = o.stale ? fmt.pct(left) + ' · ' + fmt.time(o.at)
+        : fmt.pct(left) + (win.resetsAt ? ' · ' + soon(win.resetsAt) : '');
+      return '<div class="meter-line gen-limit' + (o.stale ? ' stale' : '') + '"><span class="meter-name">' + esc(name) + '</span>' +
+        charts.meter(Math.min(1, win.used), { marks: [0.7, 0.9],
+          label: name + ': ' + fmt.pct(win.used) + ' used, resets ' + until(win.resetsAt) +
+            (o.stale ? ', last checked ' + fmt.time(o.at) : '') }) +
+        '<span class="meter-value">' + esc(value) + '</span></div>';
+    };
+    const limits = r.limits;
+    const w = (limits && limits.windows) || {};
+    let body = line('Claude 5h', w.fiveHour) + line('Claude week', w.week) +
+      (w.weekOverage ? line('Claude overage', w.weekOverage) : '');
+    const notes = [];
+    if (limits && limits.overage) notes.push('Claude is on overage credits');
+    if (limits && limits.status && limits.status !== 'allowed') {
+      notes.push('Claude: ' + (LIMIT_STATUS[limits.status] || limits.status) + (limits.resetsAt ? ', resets ' + until(limits.resetsAt) : ''));
+    }
+    (r.codexLimits || []).forEach((a) => {
+      // A failed check keeps the last windows it had; say they are old.
+      const stale = !!a.error && !!a.at;
+      const wins = a.windows || [];
+      if (!wins.length) body += line(a.name, null);
+      wins.forEach((win) => { body += line(a.name + ' ' + shortWindow(win), win, { stale, at: a.at }); });
+      if (a.reached) notes.push(a.name + ': limit reached');
+      if (a.error) notes.push(a.name + ': could not check' + (wins.length && a.at ? ', showing ' + fmt.time(a.at) : ''));
+    });
+    return card('Limits', body + (notes.length ? hint(notes.join(' · ')) : ''),
+      { wide: true, klass: 'gen-limits', note: 'left · resets' });
+  }
+
+  /** When a limit resets, in as few characters as still say it: 2h 19m, 40m, or Fri. */
+  function soon(at) {
+    const left = at - Date.now();
+    if (left <= 0) return 'now';
+    if (left < 60000) return '<1m';
+    if (left < 86400000) {
+      const h = Math.floor(left / 3600000), m = Math.floor((left % 3600000) / 60000);
+      return h ? h + 'h ' + m + 'm' : m + 'm';
+    }
+    return new Date(at).toLocaleDateString([], { weekday: 'short' });
+  }
+
+  /** A window's short name: 5h and week, by length where it was reported. */
+  function shortWindow(win) {
+    const mins = win.mins || 0;
+    if (mins === 300) return '5h';
+    if (mins === 10080) return 'week';
+    if (mins) return mins % 1440 === 0 ? mins / 1440 + 'd' : mins % 60 === 0 ? mins / 60 + 'h' : mins + 'm';
+    const n = String(win.name || '').toLowerCase();
+    return /\bfive[- ]hour|\b5[- ]?h(our)?\b/.test(n) ? '5h' : /week/.test(n) ? 'week' : n;
   }
 
   const dot = (status) => '<span class="sdot ' + esc(status) + '"></span>';
@@ -264,14 +360,14 @@
     const paused = pausedCard(r);
     const plan = r.limits && r.limits.windows ? r.limits.windows : null;
     const planLine = plan && (plan.fiveHour || plan.week)
-      ? card('Plan usage',
+      ? card('Claude · plan usage',
         (plan.fiveHour ? '<div class="meter-line"><span class="meter-name">Five-hour</span>' +
           charts.meter(Math.min(1, plan.fiveHour.used), { marks: [0.7, 0.9], label: 'Five-hour window ' + fmt.pct(plan.fiveHour.used) + ' used' }) +
           '<span class="meter-value">' + esc(fmt.pct(Math.max(0, 1 - plan.fiveHour.used))) + ' left</span></div>' : '') +
         (plan.week ? '<div class="meter-line"><span class="meter-name">This week</span>' +
           charts.meter(Math.min(1, plan.week.used), { marks: [0.7, 0.9], label: 'Weekly window ' + fmt.pct(plan.week.used) + ' used' }) +
           '<span class="meter-value">' + esc(fmt.pct(Math.max(0, 1 - plan.week.used))) + ' left</span></div>' : '') +
-        hint('Your account\u2019s limits, shared by every instance — the full picture is under Fleet.'),
+        hint('Your account\u2019s limits, shared by every instance — the full picture is under General.'),
         { wide: true })
       : '';
 
@@ -285,7 +381,7 @@
       tile('Focus', fmt.pct(r.totals.focusPct), 'of the session working') +
       '</div>', { wide: true }) : '';
 
-    return hero + kpis + paused + context + planLine + costChart + recordCard;
+    return hero + kpis + paused + context + planLine + codexCard(r) + costChart + recordCard;
   }
 
   function spark(r) {
@@ -457,7 +553,7 @@
     return durations + rhythm + context + log;
   }
 
-  function fleet(r) {
+  function fleet(r, opts) {
     const f = r.fleetTotals || {};
     const rows = r.fleet || [];
     const mine = rows.find((m) => m.active);
@@ -579,6 +675,7 @@
       tip: m.cwd + (m.branch ? ' · ' + m.branch : ''),
       cells: [
         dot(m.status + (m.asleep ? ' asleep' : '')) + '<span class="link">' + esc(m.label) + '</span>' +
+          '<span class="provider-badge ' + (m.provider === 'codex' ? 'codex' : 'claude') + '">' + (m.provider === 'codex' ? 'Codex' : 'Claude') + '</span>' +
           (m.active ? '<span class="badge">open</span>' : '') +
           (m.queue ? '<span class="badge">' + m.queue + ' queued</span>' : ''),
         '<span class="dim">' + esc(m.project || m.folder) + (m.branch ? ' · ' + esc(m.branch) : '') + '</span>',
@@ -610,8 +707,32 @@
       tile('Open longest', oldest.label, fmt.ms(oldest.ageMs)) +
       '</div>', { wide: true }) : '';
 
-    return hero + tiles + pausedCard(r) + limitsCard(r) + activity + costBars + tokenBars + pressure +
-      projects + detailCard + records;
+    const analytics = hero + tiles + activity + costBars + tokenBars + pressure + projects + detailCard + records;
+    if (opts && opts.compact) {
+      // The phone gets the whole picture on one screen: four numbers, one line
+      // per conversation, one line per limit. The charts wait behind Details.
+      const attention = rows.filter((m) => m.status === 'waiting' || m.status === 'error');
+      const ordered = rows.slice().sort((a, b) => Number(attention.includes(b)) - Number(attention.includes(a)) || Number(!!b.busy) - Number(!!a.busy));
+      const stat = (label, value, klass) => '<div class="gen-stat' + (klass ? ' ' + klass : '') + '">' +
+        '<b>' + esc(value) + '</b><span>' + esc(label) + '</span></div>';
+      const stats = '<div class="gen-stats">' +
+        stat('open', fmt.count(rows.length)) +
+        stat('working', fmt.count(f.working || 0), f.working ? 'on' : '') +
+        stat('need you', fmt.count(attention.length), attention.length ? 'bad' : '') +
+        stat('tokens', fmt.tokens(f.tokens || 0)) + '</div>';
+      const conversations = ordered.length ? card('', ordered.map((m) => {
+        const provider = m.provider === 'codex' ? 'codex' : 'claude';
+        const state = m.status === 'waiting' ? 'Needs you' : m.status === 'error' ? 'Error' : m.busy ? 'Working' : m.asleep ? 'Asleep' : 'Ready';
+        return '<button class="fleet-conversation" data-action="switch:' + esc(m.id) + '">' +
+          dot(m.status + (m.asleep ? ' asleep' : '')) +
+          '<span class="gen-name">' + esc(m.label) + '</span>' +
+          '<span class="gen-prov ' + provider + '" title="' + (provider === 'codex' ? 'Codex' : 'Claude') + '">' + (provider === 'codex' ? 'Codex' : 'Claude') + '</span>' +
+          '<span class="gen-state">' + esc(state) + '</span></button>';
+      }).join(''), { wide: true, klass: 'gen-list' }) : '<p class="dim gen-empty">Open a conversation from Chats to get started.</p>';
+      return stats + pausedCard(r) + conversations + compactLimits(r) +
+        phoneDetails('fleet', limitsCard(r) + codexCard(r) + analytics);
+    }
+    return hero + tiles + pausedCard(r) + limitsCard(r) + codexCard(r) + activity + costBars + tokenBars + pressure + projects + detailCard + records;
   }
 
   function system(r) {
@@ -773,7 +894,7 @@
   const SECTIONS = [
     // The fleet leads: the first question is which instance, and only then what
     // that instance has been doing.
-    { id: 'fleet', title: 'Fleet', icon: 'cpu', render: fleet },
+    { id: 'fleet', title: 'General', icon: 'cpu', render: fleet },
     { id: 'overview', title: 'This instance', icon: 'sparkles', render: overview },
     { id: 'usage', title: 'Usage', icon: 'coins', render: usage },
     { id: 'tools', title: 'Tools', icon: 'terminal', render: tools },
@@ -785,6 +906,11 @@
     return SECTIONS.map((s, i) =>
       '<button class="nav-item' + (s.id === activeId ? ' on' : '') + '" data-section="' + s.id + '">' +
       icon(s.icon, 14) + '<span>' + esc(s.title) + '</span><kbd>' + (i + 1) + '</kbd></button>').join('');
+  }
+
+  function phoneDetails(active, analytics) {
+    return '<details class="status-more"><summary>Details</summary><nav class="status-destinations" aria-label="Status details">' + renderNav(active) + '</nav><button type="button" class="ghost status-copy" data-act="copy">Copy report</button>' +
+      (analytics ? '<details class="status-analytics"><summary>Workspace analytics</summary>' + analytics + '</details>' : '') + '</details>';
   }
 
   /**
@@ -800,8 +926,9 @@
   function renderSheet(report, activeId, opts) {
     const o = opts || {};
     const section = SECTIONS.find((s) => s.id === activeId) || SECTIONS[0];
-    const summary = word(report.instance) + (report.instance.asleep ? ' · asleep' : '') + ' · ' +
-      fmt.money(report.totals.cost) + ' · ' + fmt.tokens(report.totals.tokens.total) + ' tokens';
+    const summary = (report.instance.provider === 'codex' ? 'Codex' : 'Claude') + ' · ' +
+      word(report.instance) + (report.instance.asleep ? ' · asleep' : '') + ' · ' +
+      (report.instance.provider === 'codex' ? '' : fmt.money(report.totals.cost) + ' · ') + fmt.tokens(report.totals.tokens.total) + ' tokens';
 
     const head = o.compact
       ? '<div class="sheet-head">' +
@@ -828,16 +955,20 @@
     // what it copies, not above it.
     const foot = o.compact
       ? '<div class="sheet-foot">' +
-        '<button class="ghost wide-action" data-act="copy">Copy report</button>' +
         '<span>' + esc('Measured ' + fmt.when(report.generatedAt)) + '</span></div>'
       : '<div class="sheet-foot">' + esc('Measured ' + fmt.when(report.generatedAt) +
         ' · ↑↓ or 1–6 to move · Esc to close') + '</div>';
+
+    if (o.compact) return '<h2 class="sr-only" id="sheet-title">' + (section.id === 'fleet' ? 'Workspace status' : 'Status of ' + esc(report.instance.label)) + '</h2>' +
+      (section.id === 'fleet' ? '' : '<button type="button" class="status-general" data-section="fleet">← General</button>' + head) +
+      '<div class="sheet-body"><div class="sheet-content" tabindex="0">' + section.render(report, o) +
+      (section.id === 'fleet' ? '' : phoneDetails(section.id)) + '</div></div>' + foot;
 
     return '<h2 class="sr-only" id="sheet-title">Status of ' + esc(report.instance.label) + '</h2>' +
       head +
       '<div class="sheet-body">' +
       '<nav class="sheet-nav">' + renderNav(section.id) + '</nav>' +
-      '<div class="sheet-content" tabindex="0">' + section.render(report) + '</div>' +
+      '<div class="sheet-content" tabindex="0">' + section.render(report, o) + '</div>' +
       '</div>' + foot;
   }
 
@@ -868,10 +999,15 @@
           return win ? (k === 'week' ? 'weekly ' : '5h ') + fmt.pct(Math.max(0, 1 - win.used)) + ' left' : null;
         }).filter(Boolean).join(', ') || 'not reported'
         : 'not reported'),
+    ].concat((r.codexLimits || []).map((a) => ('ChatGPT ' + a.name + ' ').padEnd(10) +
+      (a.plan ? a.plan + '  ' : '') + ((a.windows || []).map((w) =>
+        (w.name === 'This week' ? 'weekly ' : w.name === 'Five-hour' ? '5h ' : w.name + ' ') +
+        fmt.pct(Math.max(0, 1 - w.used)) + ' left').join(', ') || (a.error ? 'could not check' : 'not reported'))
+    )).concat([
       'Tools     ' + r.totals.toolCalls + ' calls, ' + r.totals.toolErrors + ' failed',
       'Top tools ' + (r.tools.slice(0, 5).map((t) => t.name + ' ' + t.calls).join(', ') || 'none'),
       'Files     ' + (r.files.slice(0, 5).map((f) => f.name + ' ' + f.count).join(', ') || 'none')
-    ];
+    ]);
     return lines.join('\n');
   }
 

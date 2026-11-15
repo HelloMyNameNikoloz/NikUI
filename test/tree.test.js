@@ -8,7 +8,7 @@ const { SessionTree, projectRoot, describe: describeRow, lookFor, ASLEEP, MIME, 
 const { FolderStore } = require('../src/folders.js');
 
 const instance = (id, cwd, label, busy) => ({
-  id, cwd, label, status: busy ? 'working' : 'idle', isBusy: !!busy,
+  id, cwd, label, status: busy ? 'working' : 'idle', isBusy: !!busy, isWorking: !!busy,
   totalCost: 0.5, ticket: null, meta: {}, claudeSessionId: null, lastError: null
 });
 

@@ -51,6 +51,7 @@
   function row(list, { label, hint, value, mono, tone, tap, dot, chevron, stacked }) {
     const node = el(tap ? 'button' : 'div',
       'row' + (tap ? ' tappable' : '') + (stacked ? ' stacked' : '') + (tone ? ' ' + tone : ''));
+    node.dataset.settingRow = label;
     if (tap) { node.type = 'button'; node.addEventListener('click', tap); }
 
     const left = el('div', 'row-label');
@@ -68,14 +69,96 @@
     return node;
   }
 
+  let settingsSheet = null;
+  let currentSetting = null;
   function group(title, note) {
     const wrap = el('section', 'group');
+    wrap.dataset.sectionTitle = title;
     if (title) wrap.appendChild(el('div', 'group-title', title));
-    const list = el('div', 'list');
-    wrap.appendChild(list);
+    const list = el('div', 'list'); wrap.appendChild(list);
     if (note) wrap.appendChild(el('p', 'group-note', note));
     screen.appendChild(wrap);
     return list;
+  }
+
+  function openSetting(name, trigger) {
+    currentSetting = name;
+    if (!settingsSheet) settingsSheet = app.sheet({ title: name, className: 'settings-sheet', onClose: () => { currentSetting = null; } });
+    draw();
+    settingsSheet.show(() => [...screen.querySelectorAll('[data-setting-row]')].find((r) => r.dataset.settingRow === name));
+  }
+
+  function compactSettings(sections, top) {
+    screen.textContent = '';
+    const list = el('div', 'settings-main'); screen.append(list);
+    const prefs = app.prefs();
+    const theme = { system: 'System', light: 'Light', dark: 'Dark' }[prefs.appearance];
+    const size = { small: 'Small', medium: 'Default', large: 'Large' }[prefs.textSize];
+    const notify = window.NikNotify ? window.NikNotify.prefs() : {};
+    const live = state.connection === 'live';
+    updateRow(list);
+    for (const item of [
+      { label: 'Laptop', hint: state.laptopName || state.where.host, value: live ? 'Connected' : state.connection === 'checking' ? 'Connecting…' : 'Unavailable' },
+      { label: 'Appearance', value: theme },
+      { label: 'Text size', value: size },
+      { label: 'Notifications', value: notify.on && state.notify === 'granted' ? 'On' : 'Off' },
+      { label: 'Security', hint: 'App lock', value: state.lock ? 'On' : 'Off' },
+      { label: 'Slack', value: 'Open' },
+      { label: 'Advanced', value: state.version.app }
+    ]) {
+      row(list, Object.assign({}, item, { chevron: true, tap: (event) => item.label === 'Slack' ? app.go('slack.html') : openSetting(item.label, event.currentTarget) }));
+    }
+    screen.scrollTop = top;
+    if (!settingsSheet || !currentSetting) return;
+    const names = {
+      Laptop: ['Connection', 'Your laptop'], Appearance: ['Appearance'], 'Text size': ['Text size'],
+      Notifications: ['Notifications'], Security: ['Lock this app', 'Security', 'What this device may do', 'Devices', 'This device'],
+      Advanced: ['About', 'Undo']
+    }[currentSetting] || [];
+    const scroll = settingsSheet.body.scrollTop;
+    const focus = document.activeElement && document.activeElement.dataset.settingRow;
+    settingsSheet.heading.textContent = currentSetting;
+    settingsSheet.body.replaceChildren(...names.flatMap((name) => sections.filter((section) => section.dataset.sectionTitle === name)));
+    settingsSheet.body.scrollTop = scroll;
+    if (focus) [...settingsSheet.body.querySelectorAll('[data-setting-row]')].find((r) => r.dataset.settingRow === focus)?.focus({ preventScroll: true });
+  }
+
+  /**
+   * The laptop has a newer build of this app: a card above everything, with
+   * the one button that installs it. Nothing at all when there is no update,
+   * or on an iPhone.
+   */
+  function updateRow(list) {
+    const up = window.NikUpdate;
+    if (!up || !up.supported) return;
+    const s = up.state;
+    if (!s.offer && !s.phase && !s.error) return;
+    const mb = s.offer && s.offer.size ? (s.offer.size / 1048576).toFixed(1) + ' MB' : null;
+    let card;
+    if (s.phase === 'allow') {
+      card = { title: 'Allow updates', text: 'Turn on “Allow from this source”, then come back here.', button: 'Allow', tap: () => up.allow() };
+    } else if (s.phase === 'downloading') {
+      card = { title: 'Downloading update', text: mb || 'From your laptop', button: s.progress == null ? '…' : Math.round(s.progress * 100) + '%' };
+    } else if (s.phase === 'asking' || s.phase === 'installing') {
+      card = { title: 'Installing update', text: 'Preparing…', button: '…' };
+    } else if (s.phase === 'confirming') {
+      card = { title: 'Installing update', text: 'Confirm on the Android screen.', button: 'Show', tap: () => up.confirm() };
+    } else if (s.error) {
+      card = { title: 'Update failed', text: s.error, button: 'Retry', tone: 'bad', tap: () => up.install() };
+    } else {
+      card = { title: 'Update available', text: 'A new version of NikUI is ready on your laptop' + (mb ? ' · ' + mb : '') + '.', button: 'Update', tap: () => up.install() };
+    }
+    const node = el('section', 'update-card' + (card.tone ? ' ' + card.tone : ''));
+    node.dataset.settingRow = 'Update';
+    const words = el('div', 'update-words');
+    words.append(el('b', null, card.title), el('small', null, card.text));
+    const button = el('button', 'update-button', card.button);
+    button.type = 'button';
+    if (card.tap) button.addEventListener('click', card.tap);
+    else button.disabled = true;
+    node.append(words, button);
+    if (s.phase === 'downloading' && s.progress != null) node.style.setProperty('--update-progress', (s.progress * 100).toFixed(1) + '%');
+    list.appendChild(node);
   }
 
   const ago = (at) => {
@@ -130,8 +213,20 @@
     // one thing differently. Rebuilt children would each fade back in from
     // nothing, so a switch flipped on the other phone read as the whole screen
     // blinking — the flash Status had, arrived at by another road.
+    const top = screen.scrollTop;
     if (screen.firstElementChild) screen.classList.add('steady');
     screen.textContent = '';
+
+    for (const [key, title, options] of [
+      ['appearance', 'Appearance', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]],
+      ['textSize', 'Text size', [['small', 'Small'], ['medium', 'Default'], ['large', 'Large']]]
+    ]) {
+      const list = group(title);
+      for (const [value, label] of options) row(list, {
+        label, value: app.prefs()[key] === value ? '✓' : '',
+        tap: () => { app.setPref(key, value); draw(); }
+      });
+    }
 
     const connection = group('Connection', state.connection === 'live'
       ? 'This device is talking to your laptop now.'
@@ -262,7 +357,7 @@
       : 'Your laptop decides what is worth telling you. This decides which of those reach you here.');
 
     row(telling, {
-      label: 'Tell me things',
+      label: 'Allow notifications',
       hint: allowed === 'denied' ? 'Blocked by this phone' : null,
       value: wanted.on && allowed === 'granted' ? 'On' : 'Off',
       tone: wanted.on && allowed === 'granted' ? 'good' : allowed === 'denied' ? 'bad' : '',
@@ -342,25 +437,13 @@
       }
     }
 
-    const slack = group('Slack');
+    const slack = group('Integrations');
     row(slack, {
       label: 'Slack',
       hint: 'Messages from your VIPs and @mentions',
       tap: () => app.go('slack.html'),
       chevron: true
     });
-
-    const look = group('Text size');
-    const sizes = [['small', 'Small'], ['medium', 'Default'], ['large', 'Large']];
-    const current = app.prefs().textSize;
-    for (const [key, label] of sizes) {
-      row(look, {
-        label,
-        value: key === current ? '✓' : '',
-        tone: key === current ? 'good' : '',
-        tap: () => { app.setPref('textSize', key); draw(); }
-      });
-    }
 
     const about = group('About');
     row(about, {
@@ -394,7 +477,7 @@
 
     if (state.explaining) {
       const words = el('p', 'group-note explain');
-      words.textContent = 'NikUI runs Claude Code on your laptop. This app is the same screen the ' +
+      words.textContent = 'NikUI runs Claude Code and Codex conversations on your laptop. This app is the same screen the ' +
         'editor shows, on your phone: you can watch what every instance is doing from anywhere, ' +
         'and — if you grant it on the laptop — answer and send prompts. Nothing runs on this ' +
         'phone. It holds a key that proves it is yours, and everything it says is sealed between ' +
@@ -410,6 +493,7 @@
       tap: confirmForget,
       chevron: true
     });
+    compactSettings([...screen.querySelectorAll(':scope > .group')], top);
   }
 
   /**
@@ -966,6 +1050,7 @@
   } else {
     state.laptopName = state.where.name;
     draw();
+    if (window.NikUpdate) window.NikUpdate.on(() => draw());
     app.version().then((v) => { state.version = v; draw(); });
     refreshKey();
     probe();

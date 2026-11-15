@@ -269,8 +269,8 @@ body.read-only .shell-stop { display: none; }
   margin: 0 0 0.85em;
 }
 .msg-text pre code { background: none; padding: 0; font-size: 12px; line-height: 1.5; }
-.msg-text pre[data-lang]:not([data-lang=""])::before {
-  content: attr(data-lang);
+.msg-text pre[data-label]:not([data-label=""])::before {
+  content: attr(data-label);
   position: absolute; top: 7px; right: 11px;
   font-family: var(--font-ui);
   font-size: var(--fs-micro); font-weight: 590;
@@ -278,6 +278,40 @@ body.read-only .shell-stop { display: none; }
   color: var(--vscode-descriptionForeground);
   opacity: 0.6;
 }
+
+/* ── Code colouring (highlight.js) ───────────────────────────
+   VS Code's Dark+ by default, Light+ in a light theme. */
+pre code {
+  --tk-comment: #6A9955; --tk-str: #CE9178; --tk-num: #B5CEA8; --tk-kw: #569CD6; --tk-ctl: #C586C0;
+  --tk-fn: #DCDCAA; --tk-type: #4EC9B0; --tk-var: #9CDCFE; --tk-const: #4FC1FF; --tk-rx: #D16969;
+  --tk-tag: #569CD6; --tk-punct: #808080; --tk-attr: #9CDCFE; --tk-sel: #D7BA7D; --tk-val: #CE9178;
+  --tk-ins: #81B88B; --tk-del: #F48771; --tk-meta: #C586C0;
+}
+body.vscode-light pre code, body.vscode-high-contrast-light pre code {
+  --tk-comment: #008000; --tk-str: #A31515; --tk-num: #098658; --tk-kw: #0000FF; --tk-ctl: #AF00DB;
+  --tk-fn: #795E26; --tk-type: #267F99; --tk-var: #001080; --tk-const: #0070C1; --tk-rx: #811F3F;
+  --tk-tag: #800000; --tk-punct: #800000; --tk-attr: #E50000; --tk-sel: #800000; --tk-val: #0451A5;
+  --tk-ins: #098658; --tk-del: #A31515; --tk-meta: #AF00DB;
+}
+.tk-comment { color: var(--tk-comment); }
+.tk-str { color: var(--tk-str); }
+.tk-num { color: var(--tk-num); }
+.tk-kw { color: var(--tk-kw); }
+.tk-ctl { color: var(--tk-ctl); }
+.tk-fn { color: var(--tk-fn); }
+.tk-type { color: var(--tk-type); }
+.tk-var { color: var(--tk-var); }
+.tk-const { color: var(--tk-const); }
+.tk-rx { color: var(--tk-rx); }
+.tk-tag { color: var(--tk-tag); }
+.tk-punct { color: var(--tk-punct); }
+.tk-attr { color: var(--tk-attr); }
+.tk-sel { color: var(--tk-sel); }
+.tk-val { color: var(--tk-val); }
+.tk-ins { color: var(--tk-ins); }
+.tk-del { color: var(--tk-del); }
+.tk-meta { color: var(--tk-meta); }
+.tk-head { font-weight: 600; }
 
 /* ── Tables ────────────────────────────────────────────────── */
 .table-wrap {
@@ -510,6 +544,9 @@ body.read-only .shell-stop { display: none; }
   padding: 7px 11px;
   white-space: pre-wrap;
 }
+.notice { display: flex; gap: 12px; align-items: baseline; }
+.notice-text { flex: 1; min-width: 0; }
+.notice-at { flex: none; opacity: 0.7; font-variant-numeric: tabular-nums; }
 .notice.error { color: var(--red); background: color-mix(in srgb, var(--red) 9%, transparent); }
 
 .empty {
@@ -731,8 +768,8 @@ pre:hover .copy, .copy:focus-visible { opacity: 1; }
 .copy.ok { opacity: 1; color: var(--green); }
 
 /* Language chip moves left so it never sits under the copy button. */
-.msg-text pre[data-lang]:not([data-lang=""])::before { left: 15px; right: auto; }
-.msg-text pre[data-lang]:not([data-lang=""]) { padding-top: 26px; }
+.msg-text pre[data-label]:not([data-label=""])::before { left: 15px; right: auto; }
+.msg-text pre[data-label]:not([data-label=""]) { padding-top: 26px; }
 
 /* ── Context budget ────────────────────────────────────────── */
 .ctx {
@@ -1172,6 +1209,16 @@ body.vscode-light, body.vscode-high-contrast-light {
 .meter-row { display: flex; align-items: center; gap: var(--s3); }
 .meter-row .chart { flex: 1 1 auto; }
 .meter-value { font-size: 17px; font-weight: 590; font-variant-numeric: tabular-nums; }
+
+/* One ChatGPT account in the Codex card: who it is, then its windows. */
+.acct + .acct { margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--fill-2, rgba(128,128,128,.18)); }
+.acct-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-bottom: var(--s2); }
+.acct-head b { font-weight: 650; }
+.acct-plan { font-size: var(--fs-small); font-weight: 590; padding: 1px 8px; border-radius: 999px;
+  background: var(--fill-2, rgba(128,128,128,.18)); }
+.acct-mail { flex-basis: 100%; font-size: var(--fs-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-reset { margin-top: 0; margin-bottom: var(--s2); }
+.acct-out .acct-head b { color: var(--vscode-errorForeground, #f14c4c); }
 
 .legend { display: flex; flex-wrap: wrap; gap: var(--s3); margin-top: var(--s2); font-size: var(--fs-small); }
 .legend .key { display: inline-flex; align-items: center; gap: 6px; color: var(--vscode-descriptionForeground); }
@@ -1689,3 +1736,66 @@ body.app .copy { right: 6px; }
 .cmd-slash b { font-family: var(--vscode-editor-font-family, monospace); opacity: 0.6; }
 .cmd-locked { margin-bottom: var(--s1); }
 .pref-control [data-act="commands"] { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Whose conversation this is: Codex's, not one of ours. */
+.perm-chip.codex-chip { background: color-mix(in srgb, #10a37f 16%, transparent); color: #10a37f; font-weight: 590; }
+
+/* Codex driving the Mac, and the goal it pursues: above the composer, on every
+   screen that watches the conversation. */
+.mac-bar, .goal-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: var(--s2);
+  padding: 7px 8px 7px 11px;
+  border-radius: var(--r-card);
+  font-size: 12px;
+}
+.mac-bar[hidden], .goal-bar[hidden] { display: none !important; }
+.mac-bar {
+  background: color-mix(in srgb, #10a37f 14%, var(--fill-1));
+  border: 0.5px solid color-mix(in srgb, #10a37f 45%, transparent);
+}
+.mac-bar svg, .goal-bar svg { flex: none; }
+.mac-text { flex: 1; min-width: 0; display: flex; gap: 6px; align-items: baseline; overflow: hidden; }
+.mac-text b { font-weight: 600; white-space: nowrap; }
+.mac-what { opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mac-pulse {
+  flex: none; width: 7px; height: 7px; border-radius: 50%; background: #10a37f;
+  animation: mac-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mac-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .mac-pulse { animation: none; } }
+.mac-stop { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.goal-bar { background: var(--fill-1); border: 0.5px solid var(--hairline); }
+.goal-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.goal-text b { font-weight: 600; margin-right: 4px; }
+.goal-state { font-size: 11px; opacity: 0.7; flex: none; }
+.goal-bar.paused .goal-text, .goal-bar.done .goal-text { opacity: 0.65; }
+.goal-bar button { flex: none; }
+.perm-chip.plan-chip { cursor: pointer; border: none; font: inherit; background: color-mix(in srgb, #7c5cff 18%, transparent); color: #8b6dff; font-weight: 590; }
+
+/* The host owns these commands. These controls make them discoverable while
+   preserving a draft, at editor width and on the phone. */
+.provider-badge { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 11px; line-height: 1.5; font-weight: 650; padding: 3px 8px; border-radius: 6px; }
+.provider-badge.claude { color: var(--app-claude, #cb8f72); background: color-mix(in srgb, var(--app-claude, #cb8f72) 12%, transparent); }
+.provider-badge.codex { color: var(--app-codex, #39bba0); background: color-mix(in srgb, var(--app-codex, #39bba0) 12%, transparent); }
+.conversation-summary { display: none; }
+.conversation-tools { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+.conversation-tools button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; color: var(--vscode-descriptionForeground); background: var(--fill-1); border: 1px solid var(--hairline); padding: 6px 10px; font: inherit; font-size: 11.5px; border-radius: 8px; white-space: nowrap; }
+.conversation-tools .selected { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.agent-dialog { width: min(420px, calc(100vw - 32px)); max-height: 80dvh; overflow-y: auto; padding: 20px; border: 1px solid var(--hairline); border-radius: 18px; background: var(--vscode-editor-background); color: var(--vscode-foreground); box-shadow: var(--shadow-sheet); font-family: var(--font-ui); }
+.agent-dialog::backdrop { background: #0009; backdrop-filter: blur(6px); }
+.agent-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.agent-dialog-head h2 { margin: 0; font-size: 18px; }
+.agent-dialog-head button { width: 44px; min-height: 44px; padding: 0; }
+.agent-dialog-note { color: var(--vscode-descriptionForeground); margin: 8px 0 16px; font-size: 13px; }
+.agent-dialog .agent-option { display: block; width: 100%; text-align: left; min-height: 44px; padding: 10px 12px; margin-top: 6px; font-size: 13px; background: var(--fill-1); color: inherit; border: 1px solid var(--hairline); border-radius: 10px; }
+.agent-dialog .agent-option:disabled { opacity: .4; }
+.agent-dialog form { display: grid; gap: 12px; }
+.agent-dialog input { width: 100%; font: inherit; padding: 12px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
+.read-only .conversation-tools button:not([data-agent="status"]),
+.read-only :is(.mac-bar,.goal-bar) button { display: none; }
+
+/* Phone permission requests lead with the command; structured input can open. */
+body.app-conversation .permission-command { padding: 0; color: var(--vscode-foreground); font-size: 13px; }
+body.app-conversation .permission-arguments summary { display: flex; align-items: center; min-height: 44px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+body.app-conversation .permission-arguments pre { margin: 0; }

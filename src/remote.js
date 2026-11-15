@@ -109,6 +109,8 @@ class RemoteServer {
     this.slack = deps.slack || (() => null);
     this.projectRoot = deps.projectRoot || null;
     this.projects = deps.projects || null;
+    // Codex's conversations, the phone's second workspace. Optional.
+    this.codex = deps.codex || null;
     this.createInstance = deps.createInstance || null;
     this.resumeInstance = deps.resumeInstance || null;
     this.refreshTree = deps.refreshTree || null;
@@ -123,6 +125,18 @@ class RemoteServer {
       requireSealed: () => this.requireSealed()
     });
     this.log = deps.log || (() => {});
+    // Told when something arrives under a name this server does not answer to,
+    // which is how a tailnet that came up after the window did first shows.
+    this.onStrangeHost = deps.onStrangeHost || null;
+    // The phone app's newest build, offered to paired phones (appUpdate.js).
+    this.appUpdate = deps.appUpdate || null;
+    if (this.appUpdate && this.appUpdate.watch) {
+      this.appUpdate.watch(() => {
+        // Every socket, the fleet's and each conversation's: a phone left
+        // reading one chat should hear about it as much as one on the list.
+        for (const client of this.clients || []) client.post({ type: 'app:update:changed' });
+      });
+    }
     this.announcer = deps.announce || null;
     // What this window is running, told to a device once it has proved itself.
     // An app carries its own copy of the client, so the two can drift — and a
@@ -529,6 +543,9 @@ class RemoteServer {
     this.refusals.push(entry);
     if (this.refusals.length > 50) this.refusals.shift();
     this.log('refused ' + entry.url + ': ' + why);
+    if (this.onStrangeHost && /^unexpected Host: /.test(why)) {
+      try { this.onStrangeHost(why.slice('unexpected Host: '.length)); } catch (_) { /* only a hint */ }
+    }
     return entry;
   }
 
@@ -586,6 +603,8 @@ class RemoteServer {
     // Enough for a phone to tell "the laptop is not reachable" from "the laptop
     // is there and would not have me". No data, so it costs nothing to answer.
     if (route === '/health') return json(res, 200, { ok: true });
+    // The app's own update, by an address only a paired device was handed.
+    if (route === '/app/update.apk') return this.serveUpdate(req, res, url.searchParams.get('t'));
     // The public half of this window's sending identity. Public by definition:
     // it is what the browser hands the push service to say who may send.
     if (route === '/push/key') {
@@ -995,6 +1014,11 @@ ${this.appHead(nonce)}</head>
           if (message.type.indexOf('term:') === 0) return void this.terminalFor(client, message);
           if (message.type === 'voice' || message.type === 'voice:state') return void (await this.voiceMessage(client, message));
           if (message.type.indexOf('slack:') === 0) return void (await this.slackFor(client, message));
+          if (message.type === 'codex:watch') {
+            // The phone switched to Codex: keep the list fresh, and read it now.
+            if (this.codex) { this.codex.watch(); this.codex.refresh().then(() => this.broadcastFleet(), () => {}); }
+            return;
+          }
           if (message.type === 'instance:new') return void (await this.newInstanceFor(client, message));
           if (message.type === 'instance:resume') return void (await this.resumeInstanceFor(client, message));
           if (message.type === 'instance:place') return void (await this.placeInstanceFor(client, message));
@@ -1036,6 +1060,7 @@ ${this.appHead(nonce)}</head>
       const root = this.projectRoot ? this.projectRoot(session.cwd) : '';
       return {
         id: session.id,
+        sessionId: session.claudeSessionId || null,
         label: session.customTitle || session.label,
         status: session.status,
         cwd: session.cwd,
@@ -1075,9 +1100,26 @@ ${this.appHead(nonce)}</head>
     for (const session of list) {
       addProject(this.projectRoot ? this.projectRoot(session.cwd) : session.cwd);
     }
+    // The other workspace. Sent alongside rather than mixed in, so nothing that
+    // reads `instances` ever mistakes a Codex conversation for an instance.
+    const codexList = this.codex ? this.codex.list() : [];
+    const codex = codexList.map((session) => ({
+      id: session.id,
+      label: session.label,
+      status: session.status,
+      cwd: session.cwd,
+      queued: (session.queue || []).length,
+      asleep: !!session.isAsleep,
+      unread: !!session.unread,
+      activeAt: session.activeAt || 0,
+      model: session.model || null,
+      readOnly: !!session.readOnly
+    }));
     return {
       type: 'fleet',
       instances,
+      codex,
+      codexState: this.codex ? this.codex.state() : null,
       // Folders that exist but have nothing in them are still folders.
       folders: placed.map((f) => ({ id: f.id, name: f.name })),
       projects,
@@ -1111,14 +1153,20 @@ ${this.appHead(nonce)}</head>
       this.note(client.device, 'instance:new', String(message.cwd || ''), false);
       return void refuse('This device can watch but not start instances. Grant it control in the editor.');
     }
-    if (!this.createInstance) return void refuse('This window is not offering that.');
-    const allowed = new Set((this.fleetMessage().projects || []).map((p) => p.path));
+    const wantsCodex = message.provider === 'codex';
+    if (wantsCodex ? !this.codex : !this.createInstance) return void refuse('This window is not offering that.');
+    const fleet = this.fleetMessage();
+    const allowed = new Set((fleet.projects || []).map((p) => p.path));
+    // A Codex conversation may also start where another one already lives.
+    if (wantsCodex) for (const c of fleet.codex || []) if (c.cwd) allowed.add(c.cwd);
     const cwd = typeof message.cwd === 'string' ? message.cwd : '';
     if (!cwd || !allowed.has(cwd)) {
       return void refuse('That is not one of this window\'s projects.');
     }
     try {
-      const created = await this.createInstance({ cwd, folderId: message.folderId || null });
+      const created = wantsCodex
+        ? await this.codex.create({ cwd })
+        : await this.createInstance({ cwd, folderId: message.folderId || null });
       if (!created || !created.id) return void refuse('That could not be started.');
       client.post({ type: 'instance:created', id, instance: created.id });
       this.broadcastFleet();
@@ -1161,6 +1209,48 @@ ${this.appHead(nonce)}</head>
    * `media/status.js`. A screen that says almost what another screen says is
    * two screens to keep in step.
    */
+  /**
+   * Whether this laptop has a newer build of the phone app than the phone
+   * asking. The phone says which build it runs; the answer carries a
+   * short-lived address and the checksum the download must match.
+   */
+  appUpdateFor(client, message) {
+    const info = this.appUpdate ? this.appUpdate.current() : null;
+    if (!info) return { type: 'app:update', available: false };
+    if (typeof message.build === 'string' && message.build === info.build) {
+      return { type: 'app:update', available: false, build: info.build };
+    }
+    const token = this.appUpdate.issue(client.device && client.device.id);
+    if (!token) return { type: 'app:update', available: false };
+    return {
+      type: 'app:update',
+      available: true,
+      build: info.build,
+      version: info.version,
+      size: info.size,
+      sha256: info.sha256,
+      at: info.at,
+      path: '/app/update.apk?t=' + encodeURIComponent(token)
+    };
+  }
+
+  serveUpdate(req, res, token) {
+    const held = this.appUpdate ? this.appUpdate.redeem(token) : null;
+    // An address handed to a device that has since been removed dies with it.
+    const gone = held && held.device && this.devices && !this.devices.get(held.device);
+    if (!held || gone) return plain(res, 410, 'That update is no longer offered');
+    res.writeHead(200, {
+      'content-type': 'application/vnd.android.package-archive',
+      'content-length': held.size,
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff'
+    });
+    if (req.method === 'HEAD') return res.end();
+    const stream = fs.createReadStream(held.file);
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
+  }
+
   statusMessage() {
     if (!this.report) return { type: 'status', report: null, available: false };
     try {
@@ -1848,6 +1938,8 @@ class RemoteClient {
     // forgets where to reach it, with no second list to remember to clean.
     if (msg.type === '@apple') return this.server.rememberApple(this.device, msg.token);
     if (msg.type === '@listen') return this.server.issueListener(this);
+    // Asked on any socket a device has proved itself on, fleet or conversation.
+    if (msg.type === 'app:update') return this.post(this.server.appUpdateFor(this, msg));
 
     if (msg.type.charCodeAt(0) === 64) return; // '@' frames are the transport's, not the session's
     if (!this.binding) return;
@@ -1949,7 +2041,7 @@ function html(res, body, csp) {
  * difference, so the method is checked.
  */
 function isAppRoute(method, route) {
-  if (route === '/health' || route === '/push/key') return method === 'GET' || method === 'HEAD';
+  if (route === '/health' || route === '/push/key' || route === '/app/update.apk') return method === 'GET' || method === 'HEAD';
   if (route === '/pair' || route === '/push/subscribe') return method === 'POST';
   if (route === '/notify/listen') return method === 'GET';
   return false;

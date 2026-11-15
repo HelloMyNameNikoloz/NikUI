@@ -19,6 +19,7 @@ const SHELL = [
   '/media/browser.css',
   '/media/panel.css',
   '/media/icons.js',
+  '/media/highlight.js',
   '/media/markdown.js',
   '/media/prompts.js',
   '/media/snippets.js',

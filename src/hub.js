@@ -6,6 +6,21 @@ const { buildReport } = require('./report');
 // Commands NikUI answers itself rather than passing to the CLI.
 const OWN_COMMANDS = ['status', 'settings', 'commands', 'slack'];
 
+// What a Codex conversation answers besides: Codex's own ways of working, and
+// the values each takes, for the palette. The models come from Codex itself.
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+const CODEX_ARGS = {
+  plan: [{ value: 'on', detail: 'Plan first, change nothing until agreed' }, { value: 'off', detail: 'Back to working directly' }],
+  goal: [{ value: 'clear', detail: 'Drop the goal' }, { value: 'pause', detail: 'Stop pursuing it for now' },
+    { value: 'resume', detail: 'Pursue it again' }, { value: 'done', detail: 'Mark it reached' }],
+  review: [{ value: 'commit', detail: 'Review one commit: /review commit <sha>' }, { value: 'main', detail: 'Changes against main' }],
+  fork: [],
+  undo: [],
+  model: [],
+  effort: EFFORTS.map((value) => ({ value })),
+  steer: []
+};
+
 /**
  * The messages that change something, as opposed to the ones that only watch.
  *
@@ -86,6 +101,12 @@ class SessionHub {
       this.emitHost('chrome');
       this.syncPr();
     });
+    // A fork of a Codex conversation: whoever asked for it goes there.
+    on('open', (id) => {
+      const entry = this.clients.get(this.lastSender);
+      if (entry && entry.device) this.send(this.lastSender, { type: '@navigate', session: id });
+      else if (typeof this.host.switchTo === 'function') this.host.switchTo(id, null);
+    });
 
     // The pull request beside the conversation: one feed for the whole window,
     // shared by every instance that names the same PR.
@@ -109,6 +130,14 @@ class SessionHub {
       this.broadcast(this.queueMessage());
       this.refreshStatus();
     });
+
+    // ChatGPT's limits arrive after the sheet has drawn without them.
+    const limits = this.host.codexLimits || null;
+    if (limits && typeof limits.on === 'function') {
+      const onLimits = () => this.refreshStatus();
+      limits.on('changed', onLimits);
+      this.listeners.push(() => limits.removeListener('changed', onLimits));
+    }
 
     // Token counts move during a turn even when no item changes.
     this.ticker = setInterval(() => {
@@ -466,6 +495,19 @@ class SessionHub {
       }
 
       case 'send':
+        // Held on the quota: offer to send anyway, since the numbers can be
+        // stale — the limit reset early, or more was bought. Only the editor
+        // can ask; a phone's prompt joins the queue as before.
+        if (session.isPaused && this.isLocal(entry) && typeof this.host.confirmPausedSend === 'function') {
+          await this.host.confirmPausedSend(session);
+        }
+        this.lastSender = clientId;
+        // "/codex <task>" from a Claude conversation hands the task to Codex.
+        if (session.provider !== 'codex' && /^\/codex(\s|$)/i.test(String(msg.text || '').trim()) &&
+            typeof this.host.handOffToCodex === 'function') {
+          await this.handOff(clientId, entry, msg);
+          break;
+        }
         session.submit(msg.text, msg.attachments, { sent: msg.sent, snippets: msg.snippets });
         break;
 
@@ -650,10 +692,15 @@ class SessionHub {
     const session = this.session;
     // Opened on a phone is opened. The panel says so itself, when it is in view.
     this.seenElsewhere(entry);
-    // A restored instance has no items yet; rebuild it from disk before the
-    // first paint, then bring its process back with --resume. Only the first
-    // client through the door pays for this.
-    if (!session.items.length && session.claudeSessionId) {
+    // Being picked up from the keeper after a reload: what it has is the
+    // conversation as it stands, so wait for that rather than the transcript.
+    if (session._attaching) { try { await session._attaching; } catch (_) { /* nothing to pick up */ } }
+    // A restored instance has no conversation yet; rebuild it from disk before
+    // the first paint, then bring its process back with --resume. Only the
+    // first client through the door pays for this. Notices may already be
+    // there — a quota pause restored with the window, or its reset — and those
+    // used to count as a conversation, leaving the panel with nothing else.
+    if (!session.replayed && session.claudeSessionId && session.items.every((i) => i.kind === 'notice')) {
       let replayed = false;
       try { replayed = await session.replayTranscript(); } catch (_) { replayed = false; }
       if (!replayed) session.noteMissingTranscript();
@@ -712,7 +759,7 @@ class SessionHub {
       label: s.label,
       cwd: s.cwd,
       home: this.host.home || '',
-      model: (s.meta && s.meta.model) || cfg.model || null,
+      model: (s.meta && s.meta.model) || (s.provider === 'codex' ? null : cfg.model) || null,
       cost: s.totalCost,
       ticket: s.ticket,
       prUrl: s.prUrl || null,
@@ -722,7 +769,13 @@ class SessionHub {
       // Bypassing permissions means every tool runs without asking. That is the
       // default here, so it has to be visible in the panel, not buried in
       // settings — see the chip in the header.
-      permissionMode: s.permissionMode || null
+      permissionMode: s.permissionMode || null,
+      provider: s.provider || 'claude',
+      // Codex's way of working: planning first, a goal it pursues, and when it
+      // is driving the Mac — which the panel has to make plain, with a Stop.
+      mode: (s.meta && s.meta.mode) || null,
+      goal: (s.meta && s.meta.goal) || null,
+      usingMac: (s.meta && s.meta.usingMac) || null
     };
   }
 
@@ -741,13 +794,53 @@ class SessionHub {
    */
   commandList() {
     const live = this.session.meta && this.session.meta.slashCommands;
+    // Claude's commands mean nothing to Codex; it has its own.
+    if (this.session.provider === 'codex') return this.ownCommands(this.config()).concat(Object.keys(CODEX_ARGS));
     const remembered = typeof this.host.knownCommands === 'function' ? this.host.knownCommands() : [];
     const base = (live && live.length) ? live : (remembered || []);
     // NikUI's first: the palette shows forty at a time, and the CLI alone
     // lists more than that, which could otherwise push one of ours off the
     // end of the list.
-    const own = this.ownCommands(this.config());
+    const own = this.ownCommands(this.config()).concat(typeof this.host.handOffToCodex === 'function' ? ['codex'] : []);
     return own.concat(base.filter((c) => !own.includes(c)));
+  }
+
+  /**
+   * A task given to Codex from a Claude conversation: a Codex conversation of
+   * its own in the same folder, told where it came from and what was last said
+   * here, and whoever asked is taken to it.
+   */
+  async handOff(clientId, entry, msg) {
+    const session = this.session;
+    const task = String(msg.text || '').trim().replace(/^\/codex\s*/i, '');
+    const last = (kind) => {
+      for (let i = session.items.length - 1; i >= 0; i--) {
+        const it = session.items[i];
+        if (it.kind === kind && it.text) return String(it.text).slice(0, 4000);
+      }
+      return '';
+    };
+    const asked = last('user');
+    const answered = last('text');
+    const lines = ['Handed over from a Claude Code conversation in ' + session.cwd + '.'];
+    if (asked) lines.push('', 'What was last asked there:', asked);
+    if (answered) lines.push('', 'What Claude last said:', answered);
+    lines.push('', task ? 'Your task: ' + task : 'Pick up from there and carry on.');
+    try {
+      const id = await this.host.handOffToCodex({ cwd: session.cwd, text: lines.join('\n'), attachments: msg.attachments || [] });
+      if (entry && entry.device) this.send(clientId, { type: '@navigate', session: id });
+      else if (typeof this.host.switchTo === 'function') this.host.switchTo(id, null);
+    } catch (err) {
+      if (typeof session._notice === 'function') session._notice('Codex could not take it: ' + ((err && err.message) || err), 'error');
+    }
+  }
+
+  /** The palette's values for Codex's commands; the models are the ones Codex offers. */
+  codexArgs() {
+    const models = typeof this.session.modelChoices === 'function' ? (this.session.modelChoices() || []) : [];
+    return Object.assign({}, CODEX_ARGS, {
+      model: models.map((m) => ({ value: m.id, label: m.name || '', detail: m.detail || '' }))
+    });
   }
 
   queueSummary() {
@@ -771,7 +864,7 @@ class SessionHub {
       type: 'meta',
       meta: this.meta(),
       slashCommands: this.commandList(),
-      commandArgs: commandArgs(),
+      commandArgs: this.session.provider === 'codex' ? this.codexArgs() : commandArgs(),
       ownCommands: this.ownCommands(cfg),
       snippets: cfg.promptSnippets || {},
       // The settings the page draws itself with. They were only ever sent in
@@ -806,7 +899,7 @@ class SessionHub {
       queue: this.queueSummary(),
       drainAt: session.drainAt || null,
       slashCommands: this.commandList(),
-      commandArgs: commandArgs(),
+      commandArgs: this.session.provider === 'codex' ? this.codexArgs() : commandArgs(),
       ownCommands: this.ownCommands(cfg),
       snippets: cfg.promptSnippets || {},
       showThinking: cfg.showThinking,

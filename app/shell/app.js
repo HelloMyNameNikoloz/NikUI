@@ -73,7 +73,7 @@
   }
 
   function prefs() {
-    return Object.assign({ textSize: 'medium' }, read(PREFS, {}));
+    return Object.assign({ textSize: 'medium', appearance: 'system' }, read(PREFS, {}));
   }
 
   function setPref(key, value) {
@@ -84,6 +84,14 @@
     return next;
   }
 
+  function systemBars() {
+    const cap = window.Capacitor;
+    if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || cap.getPlatform() !== 'android') return null;
+    if (cap.Plugins && cap.Plugins.SystemBars) return cap.Plugins.SystemBars;
+    if (typeof cap.registerPlugin !== 'function') return null;
+    try { return (cap.Plugins.SystemBars = cap.registerPlugin('SystemBars')); } catch (_) { return null; }
+  }
+
   /** The few things the reader can change about how this looks. */
   function applyPrefs(current) {
     const p = current || prefs();
@@ -91,6 +99,20 @@
     const size = sizes[p.textSize] || sizes.medium;
     document.documentElement.style.setProperty('--nik-font-size', size + 'px');
     document.documentElement.style.fontSize = size + 'px';
+    const light = p.appearance === 'light' || (p.appearance !== 'dark' &&
+      window.matchMedia('(prefers-color-scheme: light)').matches);
+    document.documentElement.dataset.theme = light ? 'light' : 'dark';
+    const plugins = native();
+    if (plugins && plugins.StatusBar && plugins.StatusBar.setStyle) {
+      plugins.StatusBar.setStyle({ style: light ? 'LIGHT' : 'DARK' }).catch(() => {});
+    }
+    // Android's navigation strip is native, under the page: paint it the tab
+    // bar's colour, which is the page's background in either theme.
+    const bars = systemBars();
+    if (bars) {
+      const color = getComputedStyle(document.documentElement).getPropertyValue('--app-bg').trim();
+      Promise.resolve(bars.set({ light, color: /^#[0-9a-f]{6}$/i.test(color) ? color : undefined })).catch(() => {});
+    }
   }
 
   const origin = (where) => (where ? where.scheme + '://' + where.host : null);
@@ -173,7 +195,7 @@
     // The client's own back link points at the server's root; in a bundle the
     // fleet is a page rather than a path.
     const back = document.getElementById('back');
-    if (back && back.tagName === 'A') back.setAttribute('href', 'index.html');
+    if (back && back.tagName === 'A' && back.getAttribute('href') === '/') back.setAttribute('href', 'index.html');
 
     // Anything that reads as "go back" — a chevron button, a link to the
     // fleet — says so before the navigation happens, in the one place that
@@ -214,20 +236,12 @@
     });
   }
 
-  // The three screens that are peers rather than a hierarchy: what is running,
-  // what has run, and how this is set up. A tab bar says that in a way a pair
-  // of icons crowded into a title bar cannot, and puts all three where a thumb
-  // already is.
-  // Instances gives up the >_ now that there is a real terminal to wear it: a
-  // chip is what a fleet of them looks like, and two tabs with the same glyph
-  // is a tab bar you have to read rather than glance at.
+  // History lives in Chats. Slack stays reachable through Settings and links.
   const TABS = [
-    { page: 'index.html', label: 'Instances', icon: 'cpu' },
-    { page: 'status.html', label: 'Status', icon: 'activity' },
+    { page: 'index.html', label: 'Chats', icon: 'message' },
     { page: 'terminal.html', label: 'Terminal', icon: 'terminal' },
-    { page: 'history.html', label: 'History', icon: 'history' },
-    { page: 'settings.html', label: 'Settings', icon: 'settings' },
-    { page: 'slack.html', label: 'Slack', icon: 'message' }
+    { page: 'status.html', label: 'Status', icon: 'activity' },
+    { page: 'settings.html', label: 'Settings', icon: 'settings' }
   ];
 
   function tabs() {
@@ -557,6 +571,11 @@
 
     screen.addEventListener('pointerdown', (event) => {
       if (event.pointerType === 'mouse') return;
+      if (event.target.closest('input, textarea, select, button, a, summary, pre, .grid-scroll, .segmented, [role="dialog"]')) return;
+      // Horizontal content owns its gesture, including tables added later.
+      for (let node = event.target; node && node !== screen; node = node.parentElement) {
+        if (node.scrollWidth > node.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(node).overflowX)) return;
+      }
       tracking = true;
       axis = null;
       startX = event.clientX;
@@ -634,12 +653,82 @@
     haptic('light');
   }
 
+  /** One sheet for phone choices, with the same Back and focus behavior. */
+  let sheetCount = 0;
+  function sheet({ title, className, onClose } = {}) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'app-sheet-backdrop';
+    backdrop.hidden = true;
+    const panel = document.createElement('section');
+    panel.className = 'app-sheet' + (className ? ' ' + className : '');
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    const head = document.createElement('div');
+    head.className = 'app-sheet-head';
+    const heading = document.createElement('h2');
+    heading.textContent = title || '';
+    heading.id = 'app-sheet-title-' + (++sheetCount);
+    panel.setAttribute('aria-labelledby', heading.id);
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'sheet-close';
+    closeButton.textContent = '×';
+    closeButton.setAttribute('aria-label', 'Close sheet');
+    closeButton.dataset.close = '';
+    const body = document.createElement('div');
+    body.className = 'app-sheet-content';
+    head.append(heading, closeButton);
+    panel.append(head, body);
+    backdrop.append(panel);
+    document.body.append(backdrop);
+    let returnTo = null;
+    let background = [];
+    const close = () => {
+      if (backdrop.hidden) return;
+      backdrop.hidden = true;
+      background.forEach(([node, inert]) => { node.inert = inert; });
+      background = [];
+      const target = typeof returnTo === 'function' ? returnTo() : returnTo;
+      if (target && target.isConnected) target.focus({ preventScroll: true });
+      if (onClose) onClose();
+    };
+    closeButton.addEventListener('click', close);
+    backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(); });
+    backdrop.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
+      if (event.key !== 'Tab') return;
+      const stops = [...panel.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea, select, a[href], [tabindex="0"]')]
+        .filter((node) => node.getClientRects().length);
+      const first = stops[0], last = stops[stops.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
+    (window.NikBack = window.NikBack || []).push(() => {
+      if (backdrop.hidden) return false;
+      close();
+      return true;
+    });
+    return {
+      backdrop, panel, body, heading, closeButton, close,
+      get open() { return !backdrop.hidden; },
+      show(trigger) {
+        if (!backdrop.hidden) return;
+        returnTo = trigger || document.activeElement;
+        background = [...document.body.children].filter((node) => node !== backdrop)
+          .map((node) => [node, node.inert]);
+        background.forEach(([node]) => { node.inert = true; });
+        backdrop.hidden = false;
+        closeButton.focus({ preventScroll: true });
+      }
+    };
+  }
+
   function wireNative() {
     const plugins = native();
     if (!plugins) return;
 
     if (plugins.StatusBar && plugins.StatusBar.setStyle) {
-      plugins.StatusBar.setStyle({ style: 'DARK' }).catch(() => {});
+      applyPrefs();
     }
     // Android's back gesture should mean what it means everywhere else: go
     // back, and at the first screen leave — not close the WebView on a page
@@ -657,7 +746,7 @@
   window.NikApp = {
     laptop, remember, forget, remote, origin,
     prefs, setPref, applyPrefs,
-    params, go, requireLaptop, version, native
+    params, go, requireLaptop, version, native, sheet
   };
 
   // The client reads this at startup, so it is set before anything else runs.
@@ -685,6 +774,7 @@
 
   markPlatform();
   applyPrefs();
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => applyPrefs());
   const start = () => { wireChrome(); wireNative(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();

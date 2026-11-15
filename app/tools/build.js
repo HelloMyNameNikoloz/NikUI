@@ -35,7 +35,7 @@ const CLIENT_FILES = SCRIPTS.concat([
 ]);
 
 const SHELL_FILES = ['app.css', 'app.js', 'lock.js', 'notify.js', 'connect.js', 'settings.js',
-  'history.js', 'status.js', 'terminal.js', 'voice.js', 'slack.js', 'pull.js'];
+  'history.js', 'status.js', 'terminal.js', 'voice.js', 'slack.js', 'pull.js', 'update.js'];
 
 /** The version the app reports to a laptop, so a stale pair can say so. */
 function clientVersion() {
@@ -111,7 +111,7 @@ const CSP = [
 const head = (title, extra) =>
   '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">\n' +
   `<meta http-equiv="Content-Security-Policy" content="${CSP}">\n` +
-  '<meta name="color-scheme" content="dark">\n' +
+  '<meta name="color-scheme" content="light dark">\n' +
   `<title>${title}</title>\n` +
   (extra || '') +
   '<link rel="stylesheet" href="media/browser.css">\n' +
@@ -142,7 +142,7 @@ function page({ file, title, body, scripts, cls, css }) {
   // there is one to paint, and does nothing at all when there is not — which is
   // every phone until somebody turns one on. Put after the page's own scripts it
   // would be a cover thrown over a screen that had already drawn.
-  const tags = ['capacitor.js', 'lock.js'].concat(scripts || [])
+  const tags = ['capacitor.js', 'lock.js', 'media/mobile.js'].concat(scripts || [])
     .map((s) => `  <script src="${s}"></script>`).join('\n');
   fs.writeFileSync(path.join(OUT, file), `<!DOCTYPE html>
 <html lang="en" class="app">
@@ -181,6 +181,7 @@ function conversationPage() {
       '<script src="lock.js"></script>\n' +
       '<script src="app.js"></script>\n' +
       '<script src="notify.js"></script>\n' +
+      '<script src="update.js"></script>\n' +
       '<script src="media/mobile.js" defer></script>\n' +
       // After the client, which is what puts the composer it adds a button to on the page.
       '<script src="voice.js" defer></script>\n'
@@ -208,17 +209,17 @@ function homePage() {
     title: 'NikUI',
     cls: 'home',
     body: `  <header class="bar">
-    <span class="bar-title">Instances</span>
+    <span class="bar-title">Chats</span>
     <div class="bar-right">
       <div class="link" id="link" role="status" aria-live="polite" hidden></div>
     </div>
   </header>
   <main class="screen">
-    <p class="lede" id="lede">Connecting&hellip;</p>
+    <p class="lede fleet-notice" id="lede" role="status">Connecting to your laptop&hellip;</p>
     <div class="rows" id="rows"></div>
   </main>
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
-    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+    scripts: ['app.js', 'notify.js', 'update.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
       'media/transport.js', 'pull.js', 'media/home.js']
   });
 }
@@ -229,16 +230,15 @@ function connectPage() {
     title: 'Connect',
     cls: 'connect',
     body: `  <main class="screen welcome" id="screen">
-    <div class="mark" id="mark"></div>
-    <h1 id="headline">Connect to your laptop</h1>
-    <p class="lede" id="lede">Two steps, and the second one is pointing this phone at a screen.</p>
+    <h1 id="headline">Connect your laptop</h1>
+    <p class="lede" id="lede">Pair once to see your conversations here.</p>
 
     <!-- What somebody sees first: what to do, in order, with nothing to fill in.
          Scanning the code opens this app with everything already in it, so the
          fields below are the fallback rather than the way. -->
     <ol class="steps" id="steps">
-      <li><span>1</span><p>On your laptop, run <strong>NikUI: Pair a device</strong>.</p></li>
-      <li><span>2</span><p>Point this phone's camera at the square it shows.</p></li>
+      <li><span>1</span><p><strong>Open NikUI on your laptop</strong><br>In VS Code, run <b>NikUI: Pair a device</b>.</p></li>
+      <li><span>2</span><p><strong>Scan with your phone camera</strong><br>Open the pairing link, then tap Pair.</p></li>
     </ol>
 
     <!-- Arrived by scanning: everything is known, so there is one thing to do. -->
@@ -261,19 +261,20 @@ function connectPage() {
                spellcheck="false" maxlength="9" placeholder="ABCD2345">
       </label>
       <label class="field">
-        <span class="field-label">Name this device</span>
+        <span class="field-label">Device name (optional)</span>
         <input id="name" type="text" maxlength="32" placeholder="My phone">
       </label>
       <button class="primary" id="go" type="submit">Pair</button>
       <button class="quiet" id="paste" type="button">Paste a pairing link instead</button>
+      <button class="quiet" id="scan-instead" type="button">Back to camera pairing</button>
     </form>
 
     <button class="quiet" id="type-instead" type="button">Type the code instead</button>
     <p class="note" id="note" role="status" aria-live="polite"></p>
-    <ul class="terms">
+    <details class="pair-details"><summary>About pairing</summary><ul class="terms">
       <li id="held">This device makes a key that never leaves it.</li>
-      <li>Pairing lets it <strong>watch</strong>. Sending prompts is a separate permission you grant on the laptop.</li>
-    </ul>
+      <li>Pairing lets it <strong>watch</strong>. Allow sending prompts on the laptop.</li>
+    </ul></details>
   </main>`,
     scripts: ['app.js', 'media/device.js', 'connect.js']
   });
@@ -293,8 +294,8 @@ function statusPage() {
   </header>
   <main class="screen" id="screen"></main>
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
-    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
-      'media/transport.js', 'pull.js', 'media/charts.js', 'media/markdown.js', 'media/status.js', 'status.js'],
+    scripts: ['app.js', 'notify.js', 'update.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+      'media/transport.js', 'pull.js', 'media/charts.js', 'media/highlight.js', 'media/markdown.js', 'media/status.js', 'status.js'],
     // The sheet is the panel's own markup, so it needs the panel's own styles.
     css: ['media/panel.css']
   });
@@ -312,13 +313,14 @@ function terminalPage() {
     title: 'Terminal',
     cls: 'terminal',
     body: `  <header class="bar">
-    <div class="bar-left"><button class="bar-button" id="pick" hidden>Folder</button></div>
+    <div class="bar-left"></div>
     <span class="bar-title">Terminal</span>
     <div class="bar-right">
       <div class="link" id="link" role="status" aria-live="polite" hidden></div>
     </div>
   </header>
   <main class="screen" id="screen"></main>
+  <div class="terminal-location"><button class="bar-button text" id="pick" hidden>Choose folder</button></div>
   <form class="runner" id="runner" hidden>
     <input id="command" type="text" placeholder="Type a command"
            autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false"
@@ -326,30 +328,16 @@ function terminalPage() {
     <button class="run-go" id="go" type="submit" aria-label="Run"></button>
   </form>
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
-    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+    scripts: ['app.js', 'notify.js', 'update.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
       'media/transport.js', 'media/runnable.js', 'terminal.js']
   });
 }
 
+// Old bookmarks and notification links still land in the merged Earlier view.
 function historyPage() {
-  page({
-    file: 'history.html',
-    title: 'History',
-    cls: 'history',
-    body: `  <header class="bar">
-    <div class="bar-left"></div>
-    <span class="bar-title">History</span>
-    <div class="bar-right"></div>
-  </header>
-  <div class="search-wrap">
-    <input id="search" type="search" placeholder="Search past conversations"
-           autocapitalize="none" autocorrect="off" spellcheck="false">
-  </div>
-  <main class="screen" id="screen"></main>
-  <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
-    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
-      'media/transport.js', 'pull.js', 'history.js']
-  });
+  page({ file: 'history.html', title: 'Earlier chats', cls: 'history',
+    body: '<main class="screen"><a href="index.html?scope=earlier">Open earlier chats</a></main>',
+    scripts: ['app.js', 'history.js'] });
 }
 
 function settingsPage() {
@@ -364,7 +352,7 @@ function settingsPage() {
   </header>
   <main class="screen" id="screen"></main>
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
-    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+    scripts: ['app.js', 'notify.js', 'update.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
       'media/transport.js', 'settings.js']
   });
 }
@@ -372,9 +360,7 @@ function settingsPage() {
 /**
  * Slack, read and replied to from the phone.
  *
- * A tab of its own, after Settings, and also reached from a notification, from
- * Settings, or from typing `/slack` on the laptop. Being a tab, it has no back
- * button of its own: the tab bar is the way out.
+ * Reached from Settings or a notification, with its own way back.
  */
 function slackPage() {
   page({
@@ -382,21 +368,65 @@ function slackPage() {
     title: 'Slack',
     cls: 'slack',
     body: `  <header class="bar">
-    <div class="bar-left"></div>
+    <div class="bar-left"><a class="bar-button back" id="back" href="settings.html" aria-label="Back to Settings"></a></div>
     <span class="bar-title">Slack</span>
     <div class="bar-right">
       <div class="link" id="link" role="status" aria-live="polite" hidden></div>
     </div>
   </header>
-  <main id="slack-root" class="slack-screen"></main>
-  <nav class="tabs" id="tabs" aria-label="Sections"></nav>`,
-    scripts: ['app.js', 'notify.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
+  <main id="slack-root" class="slack-screen"></main>`,
+    scripts: ['app.js', 'notify.js', 'update.js', 'media/icons.js', 'media/device.js', 'media/secure.js',
       'media/transport.js', 'media/slack.js', 'slack.js'],
     css: ['media/slack.css']
   });
 }
 
+/**
+ * Which build this is, as a short fingerprint of everything that goes into the
+ * app: the web assets just written, and the native project they are wrapped
+ * in. The phone reads its own from the bundle and the laptop reads the one
+ * inside the APK it would hand over, so "is there an update" is a comparison
+ * of two fingerprints rather than of version numbers nobody remembers to bump.
+ */
+const NATIVE = [
+  path.join(APP, 'android', 'app', 'src', 'main', 'java'),
+  path.join(APP, 'android', 'app', 'src', 'main', 'res'),
+  path.join(APP, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'),
+  path.join(APP, 'android', 'app', 'build.gradle'),
+  path.join(APP, 'android', 'variables.gradle'),
+  path.join(APP, 'android', 'app', 'capacitor.build.gradle'),
+  path.join(APP, 'android', 'build.gradle'),
+  path.join(APP, 'android', 'settings.gradle'),
+  path.join(APP, 'android', 'capacitor.settings.gradle'),
+  path.join(APP, 'android', 'gradle.properties'),
+  path.join(APP, 'capacitor.config.json'),
+  path.join(APP, 'package.json'),
+  // Which native plugins, at which versions: a dependency bump changes the
+  // APK without touching anything above.
+  path.join(APP, 'package-lock.json')
+];
+
+function fingerprint(roots) {
+  const hash = require('crypto').createHash('sha256');
+  const files = [];
+  const walk = (at) => {
+    let stat;
+    try { stat = fs.statSync(at); } catch (_) { return; }
+    if (stat.isDirectory()) for (const name of fs.readdirSync(at).sort()) walk(path.join(at, name));
+    else if (stat.isFile()) files.push(at);
+  };
+  for (const root of roots) walk(root);
+  for (const file of files) {
+    if (path.basename(file) === 'version.json' || path.basename(file) === '.DS_Store') continue;
+    hash.update(path.relative(APP, file) + '\0');
+    hash.update(fs.readFileSync(file));
+    hash.update('\0');
+  }
+  return hash.digest('hex').slice(0, 16);
+}
+
 function manifest(version) {
+  version.build = fingerprint([OUT].concat(NATIVE));
   fs.writeFileSync(path.join(OUT, 'version.json'), JSON.stringify(version, null, 2) + '\n');
 }
 
@@ -417,7 +447,7 @@ function build() {
 
   const files = fs.readdirSync(OUT).length;
   console.log(`www/ built — ${copied.length} client files, ${files} entries, ` +
-    `client ${version.client}, app ${version.app}`);
+    `client ${version.client}, app ${version.app}, build ${version.build}`);
   return { copied, version };
 }
 

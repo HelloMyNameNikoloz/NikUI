@@ -110,6 +110,37 @@ module.exports = function () {
   const late = fake(afterReload);
   check('and an instance made during it is held too', late.isPaused);
   check('including one restored after the reload', afterReload.restorePause());
+  const pauseNote = late.items.find((i) => i.kind === 'notice' && /^Paused/.test(i.text));
+  check('a notice says when it happened', !!pauseNote && typeof pauseNote.at === 'number');
+
+  suite('overriding the pause by hand, when the usage was reset early');
+
+  const early = new SessionManager({ workspaceState: memoryState(), globalState: memoryState() });
+  const stuck = fake(early);
+  stuck._handle(rejected(Math.floor(Date.now() / 1000) + 2 * 86400));
+  check('the stale numbers hold it', stuck.isPaused);
+  early.resumeFromLimit({ manual: true });
+  check('sending anyway lifts the pause', !stuck.isPaused && early.pause === null);
+  checkEqual('and the limits stop saying rejected', early.limits && early.limits.status, 'allowed');
+  const reloaded = new SessionManager(early.context);
+  const back = fake(reloaded, { cutByLimit: true });
+  back.cutByLimit = false;
+  reloaded.restorePause();
+  check('a reload does not pause it again', reloaded.pause === null && !back.isPaused);
+
+  suite('a pause whose reset is long past comes back without a word');
+
+  const staleState = memoryState();
+  staleState.update('nikui.pause.v1', { since: 1, until: Date.now() - 3 * 86400000, blind: false });
+  const stale = new SessionManager({ workspaceState: memoryState(), globalState: staleState });
+  if (stale.pause) {
+    const quietOne = fake(stale);
+    const noticesBefore = quietOne.items.filter((i) => i.kind === 'notice').length;
+    stale.restorePause();
+    stale.resumeFromLimit();
+    checkEqual('no "Paused" and no "The quota reset" in an instance it never touched',
+      quietOne.items.filter((i) => i.kind === 'notice').length, noticesBefore);
+  } else check('the stored pause key is read (test needs updating)', false);
 
   suite('when the CLI only says it in words');
 

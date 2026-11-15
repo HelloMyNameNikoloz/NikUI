@@ -14,7 +14,7 @@ const crypto = require('crypto');
 // Order matters: every module registers itself on `window` before panel.js
 // wires them together, and transport.js must exist before panel.js asks for it.
 const SCRIPTS = [
-  'icons.js', 'markdown.js', 'runnable.js', 'prompts.js', 'snippets.js', 'palette.js',
+  'icons.js', 'highlight.js', 'markdown.js', 'runnable.js', 'prompts.js', 'snippets.js', 'palette.js',
   'charts.js', 'status.js', 'prefs.js', 'commands.js', 'device.js', 'secure.js', 'transport.js', 'boot.js', 'suggest.js',
   'mentions.js', 'prpane.js', 'panel.js'
 ];
@@ -85,6 +85,8 @@ ${head}</head>
           <button class="jump" id="jump" hidden>Jump to latest</button>
           <div class="esc-hint" id="esc-hint" hidden>Press <kbd>Esc</kbd> again to interrupt this turn</div>
           <div class="slash" id="slash" hidden></div>
+          <div class="mac-bar" id="mac-bar" role="status" aria-live="polite" hidden></div>
+          <div class="goal-bar" id="goal-bar" hidden></div>
           <div class="queue" id="queue" hidden></div>
           <div class="watching" id="watching" hidden>Watching only — this device has not been granted control.</div>
           <div class="attachments" id="attachments"></div>

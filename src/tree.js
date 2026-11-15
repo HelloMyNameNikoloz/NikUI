@@ -20,6 +20,17 @@ const PAUSED = { icon: 'watch', color: 'charts.orange', word: 'waiting for quota
 
 // A green dot means "this just finished, look at it". Five minutes later it
 // means nothing, so it stops being green and goes back to reading as idle.
+// A Codex conversation nobody has opened here: Codex's own, at rest.
+const CODEX_IDLE = { icon: 'sparkle', color: 'charts.green', word: 'in Codex' };
+
+function ago(at) {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 86400) return Math.round(s / 3600) + 'h ago';
+  return Math.round(s / 86400) + 'd ago';
+}
+
 const DONE_FADES_AFTER_MS = 5 * 60 * 1000;
 // Only a turn that finished in this window fades. One that finished before a
 // reload comes back as it was, opened or not: the reload is not news.
@@ -73,9 +84,12 @@ function projectRoot(cwd) {
 }
 
 class SessionTree {
-  constructor(manager, folders) {
+  constructor(manager, folders, codex) {
     this.manager = manager;
     this.folders = folders;
+    // Which list the view shows: our Claude instances, or Codex's conversations.
+    this.codex = codex || null;
+    this.workspace = 'claude';
     this._onDidChangeTreeData = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
     this._cache = new Map();
@@ -93,6 +107,10 @@ class SessionTree {
       this._cache.clear();
       this._onDidChangeTreeData.fire();
     });
+
+    if (this.codex) {
+      this.codex.on('changed', () => { if (this.workspace === 'codex') this._onDidChangeTreeData.fire(); });
+    }
 
     manager.on('removed', (session) => {
       this.folders.place(session.id, null);
@@ -115,6 +133,13 @@ class SessionTree {
     this._fade = null;
   }
 
+  setWorkspace(name) {
+    const next = name === 'codex' && this.codex ? 'codex' : 'claude';
+    if (next === this.workspace) return;
+    this.workspace = next;
+    this.refresh();
+  }
+
   refresh() {
     rootCache.clear();
     this._cache.clear();
@@ -124,7 +149,7 @@ class SessionTree {
   // ---- drag and drop ------------------------------------------------------
 
   handleDrag(source, dataTransfer) {
-    const ids = source.filter((s) => s && !s.__folder && !s.__group).map((s) => s.id);
+    const ids = source.filter((s) => s && !s.__folder && !s.__group && s.provider !== 'codex' && !s.__codexNote).map((s) => s.id);
     if (ids.length) dataTransfer.set(MIME, new vscode.DataTransferItem(ids));
   }
 
@@ -213,6 +238,7 @@ class SessionTree {
   getChildren(element) {
     if (element && (element.__folder || element.__group)) return element.sessions;
     if (element) return [];
+    if (this.workspace === 'codex') return this.codexChildren();
 
     const all = this.manager.list;
     const folders = this.userFolders(all);
@@ -224,7 +250,46 @@ class SessionTree {
     return folders.concat(rest);
   }
 
+  /** Codex's conversations, newest first; or a line saying why there are none. */
+  codexChildren() {
+    const list = this.codex.list;
+    if (list.length) return list;
+    const text = this.codex.error ? 'Codex could not be reached: ' + this.codex.error
+      : this.codex.loadedOnce ? 'No Codex conversations yet' : 'Loading Codex conversations…';
+    return [{ __codexNote: true, text }];
+  }
+
+  codexItem(session) {
+    const look = session.isWorking ? (LOOK[session.status] || CODEX_IDLE)
+      : session.isAsleep ? CODEX_IDLE : lookFor(session);
+    const name = session.label;
+    const label = session.unread && name ? { label: name, highlights: [[0, name.length]] } : name;
+    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+    item.id = session.id;
+    item.iconPath = new vscode.ThemeIcon(look === CODEX_IDLE ? 'sparkle' : look.icon, new vscode.ThemeColor(look.color));
+    const when = session.activeAt ? ago(session.activeAt) : '';
+    item.description = [session.readOnly ? 'open in ChatGPT' : '', path.basename(session.cwd || ''), when].filter(Boolean).join(' · ');
+    item.tooltip = new vscode.MarkdownString([
+      `**${name}** — Codex conversation, ${look.word}`,
+      '',
+      `- Folder: \`${session.cwd}\``,
+      session.model ? `- Model: ${session.model}` : '',
+      (session.queue || []).length ? `- Queued: ${session.queue.length}` : '',
+      `- Thread: \`${session.threadId}\``,
+      session.lastError ? `- Error: ${session.lastError}` : ''
+    ].filter(Boolean).join('\n'));
+    item.contextValue = session.isWorking ? 'codexRunning' : 'codex';
+    item.command = { command: 'nikui.open', title: 'Open', arguments: [session.id] };
+    return item;
+  }
+
   getTreeItem(element) {
+    if (element.__codexNote) {
+      const note = new vscode.TreeItem(element.text, vscode.TreeItemCollapsibleState.None);
+      note.iconPath = new vscode.ThemeIcon('info');
+      return note;
+    }
+    if (element.provider === 'codex') return this.codexItem(element);
     if (element.__folder) return this.folderItem(element);
     if (element.__group) return this.groupItem(element);
     return this.sessionItem(element);
@@ -298,13 +363,14 @@ class SessionTree {
         session.lastError ? `- Error: ${session.lastError}` : ''
       ].filter(Boolean).join('\n')
     );
-    item.contextValue = session.isBusy ? 'running' : 'idle';
+    // The inline stop interrupts Claude; a command left in the background has its own.
+    item.contextValue = session.isWorking ? 'running' : 'idle';
     item.command = { command: 'nikui.open', title: 'Open', arguments: [session.id] };
     return item;
   }
 
   getParent(element) {
-    if (!element || element.__group || element.__folder) return null;
+    if (!element || element.__group || element.__folder || element.__codexNote || element.provider === 'codex') return null;
     const all = this.manager.list;
     const owner = this.folders.folderOf(element);
     if (owner) return this.userFolders(all).find((f) => f.id === owner.id) || null;
@@ -318,7 +384,7 @@ class SessionTree {
 
 /** How many, how many of those are working, and what they have cost. */
 function summarise(sessions) {
-  const busy = sessions.filter((s) => s.isBusy).length;
+  const busy = sessions.filter((s) => s.isWorking).length;
   const cost = sessions.reduce((sum, s) => sum + (s.totalCost || 0), 0);
   const bits = [String(sessions.length)];
   if (busy) bits.push(`${busy} working`);

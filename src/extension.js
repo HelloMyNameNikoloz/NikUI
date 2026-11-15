@@ -25,6 +25,7 @@ const { nextTicket } = require('./ticket');
 const { labelFor } = require('./label');
 const { createHost, installHost, forgetHost } = require('./host');
 const { RemoteServer } = require('./remote');
+const { AppUpdate, defaultApk } = require('./appUpdate');
 const { Terminals } = require('./terminal');
 const { Audience } = require('./audience');
 const { DeviceStore } = require('./devices');
@@ -42,9 +43,15 @@ const { openSettings, schemaFrom, rememberModelsIn, useSwitch, write: writeSetti
 const { loadApns } = require('./apns');
 const { Voice } = require('./voice');
 const { startSlack } = require('./slackHome');
+const { CodexWorkspace } = require('./codex');
 
 let manager;
 let ledger = null;
+// Holds the `claude` processes so that a window reload does not end them.
+let keeper = null;
+// The Codex conversations on this Mac, kept apart from the Claude instances.
+let codex = null;
+const WORKSPACE_KEY = 'nikui.workspace';
 // The GitHub pane's feed and PR picker, for the host the server builds.
 let github = {};
 
@@ -75,9 +82,10 @@ function sessionForEntry(entry, cwd, manager) {
   return manager.create({
     cwd,
     resume: entry.sessionId,
-    title: null,
+    // A conversation renamed before it was closed comes back under that name.
+    title: entry.customTitle || null,
     ticket,
-    autoLabel: ticket ? null : (entry.label || labelFor(entry.title))
+    autoLabel: ticket ? null : (entry.autoLabel || entry.label || labelFor(entry.title))
   });
 }
 
@@ -157,6 +165,14 @@ async function openTicketInNikui(url, context, manager) {
 
 function activate(context) {
   manager = new SessionManager(context);
+  // Started early, so the instances brought back below can be picked up from
+  // wherever the last window left them running.
+  if (vscode.workspace.getConfiguration('nikui').get('keepInstancesAcrossReloads', true)) {
+    const { KeeperLink } = require('./keeperLink');
+    keeper = new KeeperLink({ log: (line) => console.log('[nikui] ' + line) });
+    manager.spawner = keeper.spawner();
+    keeper.connect();
+  }
   // A copy of the open instances and the folders that outlives this window's
   // own storage, which an empty window loses the moment its process does.
   const memoryDir = context.globalStorageUri && context.globalStorageUri.fsPath;
@@ -175,7 +191,31 @@ function activate(context) {
     }, 2000);
   });
   context.subscriptions.push({ dispose: () => { if (remembering) clearTimeout(remembering); if (ledger) { ledger.record(manager.list); ledger.flush(); } } });
-  const tree = new SessionTree(manager, folders);
+  // Which ChatGPT account Codex runs on, and computer use brought along to it.
+  const codexHomes = require('./codexHome');
+  const codexCfg = vscode.workspace.getConfiguration('nikui');
+  const codexDir = codexHomes.accountHome(codexCfg.get('codexAccount', 'work'));
+  codex = new CodexWorkspace({
+    codexPath: codexCfg.get('codexPath', '') || '',
+    home: codexDir,
+    args: codexHomes.homeArgs(codexDir, {
+      computerUse: codexCfg.get('codexComputerUse', true),
+      xcode: codexCfg.get('codexXcode', true)
+    }),
+    // Codex conversations kept for a week, so opening one again is instant.
+    cacheDir: context.globalStorageUri ? path.join(context.globalStorageUri.fsPath, 'codex-cache') : null
+  });
+  context.subscriptions.push({ dispose: () => { if (codex) codex.dispose(); codex = null; } });
+  if (vscode.workspace.onDidChangeConfiguration) context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async (event) => {
+    if (!event.affectsConfiguration('nikui.codexAccount') && !event.affectsConfiguration('nikui.codexComputerUse') && !event.affectsConfiguration('nikui.codexXcode')) return;
+    const pick = await vscode.window.showInformationMessage('NikUI: Codex picks up the change after a reload.', 'Reload Window');
+    if (pick) vscode.commands.executeCommand('workbench.action.reloadWindow');
+  }));
+  // Every ChatGPT account's Codex limits, read once now so /status has them.
+  require('./codexLimits').codexLimits({
+    codexPath: vscode.workspace.getConfiguration('nikui').get('codexPath', '') || ''
+  }).refresh();
+  const tree = new SessionTree(manager, folders, codex);
   context.subscriptions.push(tree);
 
   const view = vscode.window.createTreeView('nikui.sessions', {
@@ -184,6 +224,22 @@ function activate(context) {
     canSelectMany: true
   });
   context.subscriptions.push(view);
+
+  // Two workspaces in one view: ours, and Codex's. Which one is showing is
+  // remembered, and nothing about the Claude side changes when you switch.
+  const showWorkspace = (name) => {
+    const next = name === 'codex' ? 'codex' : 'claude';
+    context.globalState.update(WORKSPACE_KEY, next);
+    vscode.commands.executeCommand('setContext', 'nikui.workspace', next);
+    tree.setWorkspace(next);
+    view.title = next === 'codex' ? 'Codex' : 'Instances';
+    view.description = next === 'codex' ? 'ChatGPT app' : undefined;
+    if (next === 'codex') { codex.watch(60000); codex.refresh(); }
+  };
+  showWorkspace(context.globalState.get(WORKSPACE_KEY, 'claude'));
+  context.subscriptions.push(vscode.commands.registerCommand('nikui.showCodex', () => showWorkspace('codex')));
+  context.subscriptions.push(vscode.commands.registerCommand('nikui.showClaude', () => showWorkspace('claude')));
+  context.subscriptions.push(vscode.commands.registerCommand('nikui.refreshCodex', () => codex.refresh()));
 
   const history = new HistoryTree();
   const historyView = vscode.window.createTreeView('nikui.history', { treeDataProvider: history });
@@ -220,7 +276,7 @@ function activate(context) {
   });
 
   manager.on('changed', () => {
-    const busy = manager.list.filter((s) => s.isBusy).length;
+    const busy = manager.list.filter((s) => s.isWorking).length;
     view.badge = busy ? { value: busy, tooltip: `${busy} working` } : undefined;
   });
 
@@ -241,8 +297,8 @@ function activate(context) {
 
   const resolve = (arg) => {
     if (!arg) return null;
-    if (typeof arg === 'string') return manager.get(arg);
-    if (arg.id) return manager.get(arg.id) || arg;
+    if (typeof arg === 'string') return manager.get(arg) || codex.get(arg);
+    if (arg.id) return manager.get(arg.id) || codex.get(arg.id) || arg;
     return null;
   };
 
@@ -288,6 +344,25 @@ function activate(context) {
     if (!picked || !picked.length) return;
     const session = manager.create({ cwd: picked[0].fsPath });
     SessionPanel.show(session, context, manager).focusInput();
+  });
+
+  register('nikui.newCodex', async () => {
+    const cwd = await pickFolder(manager);
+    if (!cwd) return;
+    showWorkspace('codex');
+    try {
+      const session = await codex.create({ cwd: cwd.path });
+      SessionPanel.show(session, context, manager).focusInput();
+    } catch (err) {
+      vscode.window.showErrorMessage('NikUI: could not start a Codex conversation — ' + err.message);
+    }
+  });
+
+  register('nikui.renameCodex', async (arg) => {
+    const session = resolve(arg);
+    if (!session || session.provider !== 'codex') return;
+    const name = await vscode.window.showInputBox({ prompt: 'Name this Codex conversation', value: session.label });
+    if (name !== undefined) session.rename(name);
   });
 
   register('nikui.open', async (arg) => {
@@ -648,6 +723,9 @@ function activate(context) {
   // hand their editor tabs back to us. Folder assignments are tidied once the
   // whole set is back, never while it is still being rebuilt.
   manager.restoreOpen();
+  // Instances still running from before the reload are picked up as they
+  // were, mid-turn and all.
+  if (keeper) manager.reattach(keeper).then((n) => { if (n) { tree.refresh(); console.log('[nikui] picked up ' + n + ' running instance(s)'); } });
   folders.prune(manager.list.map((s) => s.id));
   // A quota pause that started before the reload is still in force.
   manager.restorePause();
@@ -656,7 +734,12 @@ function activate(context) {
   context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('nikui.session', {
     async deserializeWebviewPanel(panel, state) {
       const id = state && state.sessionId;
-      const session = id ? manager.get(id) : null;
+      let session = id ? manager.get(id) : null;
+      // A Codex tab comes back before Codex's list has been read.
+      if (!session && CodexWorkspace.isCodexId(id) && codex) {
+        session = codex.get(id);
+        if (!session) { await codex.refresh(); session = codex.get(id); }
+      }
       if (!session) { panel.dispose(); return; }
       SessionPanel.adopt(panel, session, context, manager);
     }
@@ -883,7 +966,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
 
   const audience = new Audience();
 
-  const served = installHost(createHost(context, manager, Object.assign({ devices, awake: awakeState || null, ledger }, github)));
+  const served = installHost(createHost(context, manager, Object.assign({ devices, awake: awakeState || null, ledger, codex: () => codex }, github)));
   served.audience = audience;
 
   /**
@@ -912,8 +995,19 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   });
 
   let slackRoom = null;
+  // The phone app's newest build, when this window runs from a checkout that
+  // has one, offered to paired phones so they update without a cable.
+  const appUpdate = new AppUpdate({
+    file: defaultApk(context.extensionUri.fsPath),
+    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
+  });
+  context.subscriptions.push({ dispose: () => appUpdate.stop() });
   const server = new RemoteServer({
     root: context.extensionUri.fsPath,
+    appUpdate,
+    // A phone knocking on the tailnet name before this window knows it is
+    // the moment to look again, rather than up to a minute later.
+    onStrangeHost: () => reachAgain(),
     host: served,
     terminals,
     voice,
@@ -923,7 +1017,18 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // Whether this laptop may sleep, readable by any paired device and
     // switchable by one that may send prompts.
     keepAwake: awakeState || null,
-    sessions: { list: () => manager.list, get: (id) => manager.get(id) },
+    sessions: { list: () => manager.list, get: (id) => manager.get(id) || (codex && codex.get(id)) || null },
+    // The other workspace: Codex's conversations, for the phone's switch.
+    codex: {
+      list: () => (codex ? codex.list : []),
+      watch: () => { if (codex) codex.watch(60000); },
+      refresh: () => (codex ? codex.refresh() : Promise.resolve()),
+      state: () => (codex ? { loaded: codex.loadedOnce, error: codex.error } : { loaded: true, error: 'Codex is not available' }),
+      create: async ({ cwd }) => {
+        const session = await codex.create({ cwd });
+        return { id: session.id };
+      }
+    },
     // The same folders, projects and history the editor shows, so a phone is
     // looking at this window rather than at a list of what happens to be in it.
     folders,
@@ -956,12 +1061,12 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // somebody is most likely asking about, with the rest as its fleet.
     report: () => {
       const { buildReport } = require('./report');
-      const open = manager.list;
-      const session = manager.get(manager.activeId) || open[0] || null;
+      const open = manager.list.concat(codex ? codex.list.filter((s) => s.loaded || s.isBusy) : []);
+      const session = manager.get(manager.activeId) || open[0] || (codex && codex.list[0]) || null;
       if (!session) return null;
       return buildReport({
         session,
-        fleet: open,
+        fleet: open.includes(session) ? open : open.concat(session),
         env: served.env ? served.env(session) : {},
         lifetime: ledger ? ledger.totals() : null
       });
@@ -974,7 +1079,11 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       const on = () => fn();
       manager.on('changed', on);
       manager.on('session-changed', on);
-      return () => { manager.off('changed', on); manager.off('session-changed', on); };
+      if (codex) codex.on('changed', on);
+      return () => {
+        manager.off('changed', on); manager.off('session-changed', on);
+        if (codex) codex.off('changed', on);
+      };
     },
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); },
     requireSealed: () => {
@@ -1146,8 +1255,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // the same wifi is a phone that works at the desk it was not needed at. So
     // the tailnet goes in front by itself unless somebody turned that off, and
     // falls back to merely noticing a tunnel that is already there.
-    if (vscode.workspace.getConfiguration('nikui').get('remote.tailnet', true)) becomeReachable();
-    else adoptTunnel();
+    reachAgain(true);
+    watchTailnet();
     context.workspaceState.update('nikui.remote.wasServing', true);
     // Built ahead of being needed, so the first thing said into the phone is
     // not the thing that waits minutes for a compiler. Once: after that the
@@ -1188,6 +1297,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // nothing, so both go — but only what this window set up. This is the one
     // path that takes the tunnel down, because it is the one where somebody
     // said they were finished rather than the window merely reloading.
+    clearInterval(tailnetWatch);
+    tailnetWatch = null;
     await closeTunnels();
     await server.stop();
     context.workspaceState.update('nikui.remote.wasServing', false);
@@ -1317,28 +1428,59 @@ function serveLocally(context, manager, awakeState, folders, deps) {
    * what it would have done anyway, and says so in the log rather than in a
    * dialog nobody asked for.
    */
+  /**
+   * Try the tailnet again, until it works.
+   *
+   * Once at start was not enough: a laptop that logs in starts VS Code before
+   * Tailscale, the window is told "not running", and Tailscale coming up a
+   * moment later resumes forwarding to a window that never learned its name
+   * — so every phone gets a 403 until somebody reloads. Cheap to repeat: a
+   * window already on the tailnet returns at once.
+   */
+  let tailnetWatch = null;
+  let lastTailnetTry = 0;
+  const reachAgain = (now) => {
+    if (!server.listening || server.exposed) return;
+    if (!now) {
+      if (Date.now() - lastTailnetTry < 10000) return;
+      lastTailnetTry = Date.now();
+    }
+    if (vscode.workspace.getConfiguration('nikui').get('remote.tailnet', true)) becomeReachable();
+    else adoptTunnel();
+  };
+  const watchTailnet = () => {
+    if (tailnetWatch) return;
+    tailnetWatch = setInterval(() => reachAgain(), 60000);
+    if (tailnetWatch.unref) tailnetWatch.unref();
+    context.subscriptions.push({ dispose: () => { clearInterval(tailnetWatch); tailnetWatch = null; } });
+  };
+  // Said once per reason, not once a minute while Tailscale stays off.
+  let lastTailnetNote = '';
+  const noteTailnet = (line) => {
+    if (!out || line === lastTailnetNote) return;
+    lastTailnetNote = line;
+    out.appendLine(new Date().toISOString() + '  ' + line);
+  };
+
   const becomeReachable = async () => {
     if (!server.listening || server.exposed) return false;
     let held = null;
     try { held = await tailscale.forwardedPort(); } catch (_) { return false; }
     if (held === server.port) return adoptTunnel(held);
     if (held !== null && await answering(held)) {
-      if (out) out.appendLine(new Date().toISOString() +
-        `  the tailnet is already forwarding to ${held}, which is another window; ` +
+      noteTailnet(`the tailnet is already forwarding to ${held}, which is another window; ` +
         `this one is serving on ${server.port} and is reachable from this machine only`);
       return false;
     }
 
     const state = await tailscale.status().catch(() => null);
     if (!state || !state.installed || !state.running || !state.https) {
-      if (out && state) out.appendLine(new Date().toISOString() +
-        '  not putting this window on the tailnet: ' + (state.reason || 'Tailscale is not ready'));
+      if (state) noteTailnet('not putting this window on the tailnet: ' + (state.reason || 'Tailscale is not ready'));
       return false;
     }
     const done = await tailscale.expose(server.port);
     if (!done.ok) {
-      if (out) out.appendLine(new Date().toISOString() +
-        '  tailscale serve refused: ' + done.reason);
+      noteTailnet('tailscale serve refused: ' + done.reason);
       return false;
     }
     weExposed = true;
@@ -2108,6 +2250,8 @@ function deactivate() {
   closeAllHubs();
   if (ledger) { ledger.record(manager ? manager.list : []); ledger.flush(); }
   if (manager) manager.disposeAll();
+  // Waits for the keeper to have every instance's newest state.
+  if (keeper) { const k = keeper; keeper = null; return k.close(); }
 }
 
 module.exports = { activate, deactivate, followFocus, serveLocally, watchForTrouble, watchForCrowding, watchForQuota, watchInbox, openClicked, watchForCi };

@@ -361,6 +361,17 @@ const record = (name, ok) => {
   laptop.publicHost = `127.0.0.1:${laptop.port}`;
 
   const phone = await launch(chrome);
+  const settingSheet = async (name) => {
+    await phone.until('document.querySelectorAll(".settings-main > .row").length === 7', 8000);
+    await phone.evaluate(`(() => {
+      const open = document.querySelector('.app-sheet-backdrop:not([hidden])');
+      if (open) open.querySelector('.sheet-close').click();
+      [...document.querySelectorAll('.settings-main .row')].find(r=>r.dataset.settingRow===${JSON.stringify(name)}).click();
+    })()`);
+  };
+  const sortChats = async (value) => {
+    await phone.evaluate(`document.querySelector('.chat-filters').open=true; const picker=document.querySelector('.fleet-sort'); picker.value=${JSON.stringify(value)}; picker.dispatchEvent(new Event('change')); document.querySelector('.chat-filters').open=false;`);
+  };
   try {
     await phone.asPhone(390, 844);
     // The native bits of a phone, from the first screen onward.
@@ -376,7 +387,7 @@ const record = (name, ok) => {
     `);
 
     // ---- the way in --------------------------------------------------------
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     record('an app with no laptop goes straight to the way in',
       await phone.until('location.pathname.endsWith("connect.html")', 6000));
     // The way in is two steps and nothing to fill in: pairing is meant to be
@@ -482,13 +493,13 @@ const record = (name, ok) => {
     record('and saying it is connected',
       (await phone.evaluate('document.getElementById("link").textContent')) === 'Live');
     // ---- the window, filed the way the editor files it ----------------------
-    record('the fleet is drawn as cards rather than one long list',
+    record('the fleet retains keyed conversation groups',
       await phone.until('document.querySelectorAll(".rows-card").length >= 1', 8000));
     record('every peer screen is reachable from a tab bar',
       (await phone.evaluate(`[...document.querySelectorAll('.tab-label')].map(n => n.textContent).join(',')`))
-        === 'Instances,Status,Terminal,History,Settings,Slack');
+        === 'Chats,Terminal,Status,Settings');
     record('the one you are on being the one that is marked',
-      (await phone.evaluate(`document.querySelector('.tab.here .tab-label').textContent`)) === 'Instances');
+      (await phone.evaluate(`document.querySelector('.tab.here .tab-label').textContent`)) === 'Chats');
     record('each tab drawn with the product\u2019s own icons',
       (await phone.evaluate('document.querySelectorAll(".tabs .tab .ico").length')) ===
       (await phone.evaluate('document.querySelectorAll(".tabs .tab").length')));
@@ -585,13 +596,16 @@ const record = (name, ok) => {
 
     // ---- settings ----------------------------------------------------------
     await phone.navigate(appOrigin + '/settings.html');
-    record('settings draws itself', await phone.until('document.querySelectorAll(".group").length >= 5', 6000));
+    record('settings draws itself', await phone.until('document.querySelectorAll(".settings-main > .row").length === 7', 6000));
     record('and says whether it is connected',
       await phone.until('/Connected/.test(document.body.textContent)', 10000));
+    await settingSheet('Security');
     record('what this device may do',
       /Watching only/.test(await phone.evaluate('document.body.textContent')));
+    await settingSheet('Laptop');
     record('which laptop it is',
       new RegExp(`127.0.0.1:${laptop.port}`).test(await phone.evaluate('document.body.textContent')));
+    await settingSheet('Security');
     record('and that the key is pinned',
       /pinned/i.test(await phone.evaluate('document.body.textContent')));
 
@@ -599,6 +613,7 @@ const record = (name, ok) => {
     //
     // Right under the connection: that says whether the laptop is there now,
     // this says whether it will still be there tonight.
+    await settingSheet('Laptop');
     const awakeRow = `[...document.querySelectorAll('.row')].find(r => /Keep awake|let it sleep/.test(r.textContent))`;
     record('settings says whether the laptop will stay awake',
       await phone.until(`!!(${awakeRow})`, 8000));
@@ -625,6 +640,7 @@ const record = (name, ok) => {
       protection: 'strongbox'
     });
 
+    await settingSheet('Security');
     record('settings lists every device paired with the laptop',
       await phone.until(`/The other phone/.test(document.body.textContent) &&
         /Check phone/.test(document.body.textContent)`, 8000));
@@ -680,6 +696,7 @@ const record = (name, ok) => {
     record('written down as one device removing another',
       devices.recent(8).some((e) => /removed another device/.test(e.action)));
 
+    await settingSheet('Laptop');
     record('with control, keep awake becomes a switch',
       await phone.until(`(${awakeRow}).tagName === 'BUTTON'`, 8000));
     await phone.evaluate(`(${awakeRow}).click()`);
@@ -712,6 +729,7 @@ const record = (name, ok) => {
     await phone.until(`/Off/.test((${awakeRow}).querySelector('.row-value').textContent)`, 8000);
 
     devices.setControl(paired.id, false);
+    await settingSheet('Security');
     await phone.until('/Watching only/.test(document.body.textContent)', 8000);
 
     record('settings says the connection is sealed',
@@ -757,8 +775,9 @@ const record = (name, ok) => {
     record('and nothing is shown while they are',
       (await phone.evaluate('window.__buzz.shown().length')) === 0);
 
+    await settingSheet('Notifications');
     await phone.evaluate(`(() => {
-      const row = [...document.querySelectorAll('.row')].find(r => /Tell me things/.test(r.textContent));
+      const row = [...document.querySelectorAll('.row')].find(r => /Allow notifications/.test(r.textContent));
       row.click();
     })()`);
     record('turning them on asks the phone first, and only then',
@@ -894,7 +913,8 @@ const record = (name, ok) => {
     // Now as an iPhone, which cannot keep a socket open at all.
     await phone.evaluate('window.__buzz.beAn("ios")');
     await phone.navigate(appOrigin + '/settings.html');
-    await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+    await phone.until('document.querySelectorAll(".settings-main > .row").length === 7', 8000);
+    await settingSheet('Notifications');
     record('an iPhone is not offered a thing it cannot do',
       (await phone.evaluate(`[...document.querySelectorAll('.row')]
         .every(r => !/Keep watching in the background/.test(r.textContent))`)) === true);
@@ -929,6 +949,7 @@ const record = (name, ok) => {
       })());
 
     await phone.navigate(appOrigin + '/settings.html');
+    await settingSheet('Advanced');
     record('forgetting asks twice', (await phone.evaluate(`(() => {
       const rows = [...document.querySelectorAll('.row')];
       const row = rows.find(r => /Forget this laptop/.test(r.textContent));
@@ -940,6 +961,7 @@ const record = (name, ok) => {
     // ---- the polish, checked rather than asserted ---------------------------
 
     await phone.navigate(appOrigin + '/settings.html');
+    await settingSheet('Advanced');
     record('a laptop running a different client says so',
       await phone.until('/99.99.99/.test(document.body.textContent)', 10000));
     record('in the words somebody can act on',
@@ -959,11 +981,11 @@ const record = (name, ok) => {
 
     // Anybody who has asked their phone to stop animating things gets none of it.
     await phone.prefers({ 'prefers-reduced-motion': 'reduce' });
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     record('asking for less motion gets less motion',
       (await phone.evaluate('getComputedStyle(document.querySelector(".screen")).animationName')) === 'none');
     await phone.prefers({ 'prefers-reduced-motion': 'no-preference' });
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     record('and not asking gets the one that makes it feel like one app',
       (await phone.evaluate('getComputedStyle(document.querySelector(".screen")).animationName')) !== 'none');
 
@@ -971,7 +993,7 @@ const record = (name, ok) => {
     // eleven inches of glass.
     await phone.asScreen(1024, 768);
     await phone.navigate(appOrigin + '/settings.html');
-    await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+    await phone.until('document.querySelectorAll(".settings-main > .row").length === 7', 8000);
     record('a wider screen keeps the content readable rather than stretching it',
       (await phone.evaluate('document.querySelector(".screen").getBoundingClientRect().width')) <= 600);
     record('and centres it', (await phone.evaluate(`(() => {
@@ -980,7 +1002,7 @@ const record = (name, ok) => {
     })()`)) === true);
     await phone.asPhone(390, 844);
 
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     record('every icon button says what it is, for anybody who cannot see it',
       (await phone.evaluate(`[...document.querySelectorAll('button')]
         .filter(b => !b.textContent.trim())
@@ -1030,15 +1052,30 @@ const record = (name, ok) => {
         shown.length === 0 || shout('showing: ' + shown.join(' ')));
     }
 
+    // Hold the history response so this checks loading, regardless of socket speed.
+    const historyBeforeLoading = laptop.history;
+    let releaseHistory = null;
+    laptop.history = (ask) => new Promise((resolve) => { releaseHistory = async () => resolve(await historyBeforeLoading(ask)); });
+    await phone.evaluate(`localStorage.removeItem('nikui:fleet'); sessionStorage.removeItem('nikui.chats')`);
+    await phone.navigate(appOrigin + '/index.html?scope=earlier');
+    for (let i = 0; i < 80 && !releaseHistory; i++) await wait(50);
+    record('Earlier requests its history from the laptop', !!releaseHistory);
+    record('Earlier shows loading until the first history answer', await phone.until(`
+      document.querySelectorAll('.row-skeleton').length>0 || /Loading earlier/.test(document.getElementById('rows').textContent)
+    `, 2000));
+    laptop.history = historyBeforeLoading;
+    if (releaseHistory) await releaseHistory();
+
     // Found by searching, then tapped: it comes back as an instance and opens.
     await phone.navigate(appOrigin + '/history.html');
-    await phone.until('document.querySelectorAll("button.hrow").length >= 1', 8000);
-    await phone.evaluate(`(() => { const s = document.getElementById('search'); s.value = 'earlier';
-      s.dispatchEvent(new Event('input')); const row = document.querySelector('button.hrow');
-      if (!row) throw new Error('no row: ' + document.getElementById('screen').innerText.slice(0, 300)); row.click(); })()`);
+    await phone.until('document.querySelectorAll(".rows .row").length >= 1', 8000);
+    await phone.evaluate(`(() => { const s = document.querySelector('.fleet-search'); s.value = 'earlier';
+      s.dispatchEvent(new Event('input')); const row = document.querySelector('.rows .row');
+      if (!row) throw new Error('no row: ' + document.getElementById('rows').innerText.slice(0, 300)); row.click(); })()`);
     record('tapping a past conversation in history brings it back and opens it',
       await phone.until('location.pathname.endsWith("conversation.html") && location.search.indexOf("session=") >= 0', 8000)
         && resumed.length === 1 && resumed[0] === 'past-1');
+    await phone.evaluate(`sessionStorage.removeItem('nikui.chats')`);
     // Out of the fleet again, so the + sheet's own count below starts from none.
     extraSessions.splice(extraSessions.findIndex((s) => s.claudeSessionId === 'past-1'), 1);
 
@@ -1049,13 +1086,13 @@ const record = (name, ok) => {
       record('nothing is cut off on ' + screen + (cut ? ' — ' + cut : ''), cut === '');
     }
     await phone.navigate(appOrigin + '/settings.html');
-    await phone.until('document.querySelectorAll(".group").length >= 5', 10000);
+    await phone.until('document.querySelectorAll(".settings-main > .row").length === 7', 10000);
 
     // Liquid Glass is Apple's material, so it belongs on Apple's hardware and
     // nowhere else. What is checked is that: the class gates it, and the chrome
     // — not the content — is what becomes glass.
-    await phone.navigate(appOrigin + '/index.html');
-    await phone.until('document.querySelectorAll(".tabs .tab").length === 3', 10000);
+    await phone.navigate(appOrigin + '/index.html?scope=active');
+    await phone.until('document.querySelectorAll(".tabs .tab").length === 5', 10000);
     record('a phone that is not an iPhone gets no glass',
       (await phone.evaluate(`getComputedStyle(document.querySelector('.tabs')).backdropFilter`))
         .indexOf('blur(30px)') < 0);
@@ -1096,8 +1133,8 @@ const record = (name, ok) => {
     // of "movement" in no time at all, and the throw sailed past it — Terminal
     // landed on Settings, Status landed on Instances.
     record('tapping a tab goes to that tab, and not past it', await (async () => {
-      await phone.navigate(appOrigin + '/index.html');
-      await phone.until('document.querySelectorAll(".tabs .tab").length >= 5', 10000);
+      await phone.navigate(appOrigin + '/index.html?scope=active');
+      await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
       await phone.evaluate(`(() => {
         const tabs = document.getElementById('tabs');
         const button = [...tabs.querySelectorAll('.tab')].find((t) => /Terminal/.test(t.textContent));
@@ -1116,7 +1153,7 @@ const record = (name, ok) => {
     })());
 
     record('and a tap on the one you are already on stays put', await (async () => {
-      await phone.until('document.querySelectorAll(".tabs .tab").length >= 5', 10000);
+      await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
       await phone.evaluate(`(() => {
         const button = [...document.querySelectorAll('.tabs .tab')].find((t) => /Terminal/.test(t.textContent));
         button.click();
@@ -1125,7 +1162,7 @@ const record = (name, ok) => {
       return (await phone.evaluate('location.pathname')).endsWith('terminal.html');
     })());
 
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
 
     record('a finger dragged across the strip carries it', (await phone.evaluate(`(() => {
@@ -1134,12 +1171,12 @@ const record = (name, ok) => {
       const pill = document.querySelector('.tab-pill');
       const at = (x) => ({ clientX: x, clientY: box.top + box.height / 2, pointerId: 1, pointerType: 'touch', button: 0, bubbles: true, cancelable: true });
       tabs.setPointerCapture = () => {};
-      tabs.dispatchEvent(new PointerEvent('pointerdown', at(box.left + box.width / 6)));
-      // Settings is the fifth of six tabs: three quarters of the way across.
-      tabs.dispatchEvent(new PointerEvent('pointermove', at(box.left + box.width * 0.75)));
+      tabs.dispatchEvent(new PointerEvent('pointerdown', at(box.left + box.width / 10)));
+      // Settings is the last of four tabs.
+      tabs.dispatchEvent(new PointerEvent('pointermove', at(box.left + box.width * 0.9)));
       const held = pill.classList.contains('held');
       const moved = pill.getBoundingClientRect().left > box.left + box.width / 3;
-      tabs.dispatchEvent(new PointerEvent('pointerup', at(box.left + box.width * 0.75)));
+      tabs.dispatchEvent(new PointerEvent('pointerup', at(box.left + box.width * 0.9)));
       return held && moved;
     })()`)) === true);
     record('and letting go over another tab goes there',
@@ -1155,7 +1192,7 @@ const record = (name, ok) => {
         return Math.abs(pill.left - tab.left) < 6;
       })()`)) === true);
     await phone.evaluate(`document.documentElement.classList.remove('plat-ios')`);
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
 
     // The tint travels with the capsule rather than switching at a threshold:
@@ -1181,7 +1218,7 @@ const record = (name, ok) => {
     // nowhere near the bottom of the screen.
     record('swiping the content sideways changes tab',
       await (async () => {
-        await phone.navigate(appOrigin + '/index.html');
+        await phone.navigate(appOrigin + '/index.html?scope=active');
         await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
         await phone.evaluate(`(() => {
           const screen = document.querySelector('.screen');
@@ -1193,7 +1230,7 @@ const record = (name, ok) => {
           screen.dispatchEvent(new PointerEvent('pointermove', at(box.left + 40)));
           screen.dispatchEvent(new PointerEvent('pointerup', at(box.left + 40)));
         })()`);
-        return phone.until('location.pathname.endsWith("status.html")', 8000);
+        return phone.until('location.pathname.endsWith("terminal.html")', 8000);
       })());
     record('and a vertical drag does not',
       await (async () => {
@@ -1208,20 +1245,23 @@ const record = (name, ok) => {
           screen.dispatchEvent(new PointerEvent('pointerup', at(box.top + 320)));
         })()`);
         await wait(900);
-        return (await phone.evaluate('location.pathname')).endsWith('status.html');
+        return (await phone.evaluate('location.pathname')).endsWith('terminal.html');
       })());
+    await phone.navigate(appOrigin + '/status.html');
     // The point of this screen is that it is not a second opinion: the same
     // report, drawn by the same renderer the editor's panel uses.
     record('the status screen draws the panel\u2019s own sheet',
-      await phone.until('document.querySelectorAll(".sheet-nav [data-section]").length >= 3', 15000));
+      await phone.until('document.querySelectorAll(".status-destinations [data-section]").length >= 3', 15000));
+    await phone.evaluate(`document.querySelector('.status-more').open=true`);
     record('from the report the laptop builds for /status',
       /Tokens|Cost|Tools|Context/i.test(await phone.evaluate('document.body.textContent')));
     record('and its sections can be moved between',
       (await phone.evaluate(`(() => {
-        const rail = [...document.querySelectorAll('.sheet-nav [data-section]')];
+        const rail = [...document.querySelectorAll('.status-destinations [data-section]')];
         if (rail.length < 2) return false;
         const before = document.querySelector('.sheet-body').textContent;
         rail[1].click();
+        document.querySelector('.status-more').open=true;
         return document.querySelector('.sheet-body').textContent !== before;
       })()`)) === true);
 
@@ -1235,15 +1275,16 @@ const record = (name, ok) => {
     // moment something else moved.
 
     record('every section is named, not just iconned',
-      (await phone.evaluate(`[...document.querySelectorAll('.sheet-nav [data-section] span')]
+      (await phone.evaluate(`[...document.querySelectorAll('.status-destinations [data-section] span')]
         .every((s) => s.textContent.trim() && s.getBoundingClientRect().width > 8)`)) === true);
 
     const layout = JSON.parse(await phone.evaluate(`(async () => {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       const out = [];
-      const rail = [...document.querySelectorAll('.sheet-nav [data-section]')];
+      const rail = [...document.querySelectorAll('.status-destinations [data-section]')];
       for (const button of rail) {
-        button.click();
+        document.querySelector('.status-more').open=true;
+        document.querySelector('.status-destinations [data-section="' + button.dataset.section + '"]').click();
         await wait(60);
         const vw = window.innerWidth;
         const all = [...document.querySelectorAll('.sheet-content *')];
@@ -1306,7 +1347,7 @@ const record = (name, ok) => {
         return after > before && !document.querySelector('.show-all');
       })()`)) !== false);
 
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
 
     // The glitch this is here to stop coming back: a spring integrated badly
@@ -1314,7 +1355,7 @@ const record = (name, ok) => {
     // eyeballed — every frame of a real flick, looking for a jump.
     record('the capsule never jumps, however hard it is thrown',
       await (async () => {
-        await phone.navigate(appOrigin + '/index.html');
+        await phone.navigate(appOrigin + '/index.html?scope=active');
         await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
         const worst = await phone.evaluate(`(() => new Promise((resolve) => {
           const pill = document.querySelector('.tab-pill');
@@ -1389,11 +1430,15 @@ const record = (name, ok) => {
         return said && !blamed;
       })());
 
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 10000);
 
-    record('the app is dark whatever the phone is',
-      (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(15, 15, 17)');
+    await phone.evaluate(`NikApp.setPref('appearance','dark')`);
+    record('the dark app preserves its OLED black palette',
+      (await phone.evaluate('getComputedStyle(document.body).backgroundColor')) === 'rgb(0, 0, 0)');
+    await phone.evaluate(`NikApp.setPref('appearance','light')`);
+    record('the light app preserves its palette and selection', await phone.evaluate(`getComputedStyle(document.body).backgroundColor==='rgb(243, 245, 243)' && NikApp.prefs().appearance==='light'`));
+    await phone.evaluate(`NikApp.setPref('appearance','system')`);
 
     // ---- the key moves into the chip, without pairing again ------------------
     //
@@ -1407,6 +1452,7 @@ const record = (name, ok) => {
 
     await phone.beforeEachPage(CHIP);
     await phone.navigate(appOrigin + '/settings.html');
+    await settingSheet('Security');
     record('with a chip, the app knows its key could be better',
       await phone.until(`[...document.querySelectorAll('.row')]
         .some(r => /Move it into the chip/.test(r.textContent))`, 8000));
@@ -1452,7 +1498,7 @@ const record = (name, ok) => {
 
     // The point of all of it: the device still connects, now signing with a key
     // whose signatures arrive in a shape the laptop had to be taught to read.
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     record('and it still connects, signing with the key in the chip',
       await phone.until('document.getElementById("link").textContent === "Live"', 12000));
     record('which the laptop verified as the new key, not the old one',
@@ -1472,10 +1518,10 @@ const record = (name, ok) => {
     // folders as somewhere to move to rather than as a gate.
     record('the terminal opens by itself, with somewhere to type',
       await phone.until('document.getElementById("runner").offsetParent !== null', 12000));
-    record('and says where the command will run',
-      /Commands run in/.test(await phone.evaluate('document.body.textContent')));
+    record('and says where the command will run beside the input',
+      await phone.evaluate(`document.getElementById('pick').title && document.getElementById('pick').getBoundingClientRect().bottom <= document.getElementById('runner').getBoundingClientRect().top + 1`));
     record('rooted at home rather than wherever an instance happens to be',
-      (await phone.evaluate('document.getElementById("pick").textContent')) === 'Home');
+      (await phone.evaluate('document.getElementById("pick").title')) === require('os').homedir());
 
     record('the folders are still reachable, over the scrollback',
       await (async () => {
@@ -1933,7 +1979,7 @@ const record = (name, ok) => {
 
     await phone.evaluate('document.getElementById("mic").click()');
     await phone.until('window.__mic.state().live === 1', 6000);
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     record('leaving the conversation while recording lets the microphone go', (await micLive()) === 0);
     record('and sends nothing', voiceStage.heard.length === heardSent);
 
@@ -1969,14 +2015,13 @@ const record = (name, ok) => {
     await phone.navigate(appOrigin + '/slack.html');
     record('/slack on the phone lists who is waiting',
       await phone.until('[...document.querySelectorAll(".ns-row")].some(r => /Anna Berg/.test(r.textContent))', 12000));
-    await shoot(phone, 'slack-tab');
-    record('Slack is a tab: the bar and the tab bar both show around it', await phone.evaluate(`(() => {
-      const tabs = document.getElementById('tabs').getBoundingClientRect();
+    await shoot(phone, 'slack-screen');
+    record('Slack has its own way back to Settings, outside the tab bar', await phone.evaluate(`(() => {
       const chat = document.querySelector('.nik-slack').getBoundingClientRect();
       const bar = document.querySelector('header.bar').getBoundingClientRect();
-      const here = document.querySelector('.tab.here .tab-label');
-      return tabs.height > 0 && chat.bottom <= tabs.top + 1 && chat.top >= bar.bottom - 1 &&
-        !!here && here.textContent === 'Slack' && !document.getElementById('back');
+      const back = document.getElementById('back');
+      return !document.getElementById('tabs') && chat.top >= bar.bottom - 1 &&
+        !!back && back.getAttribute('href') === 'settings.html';
     })()`) === true);
     await phone.evaluate(`document.querySelector('.ns-row').click()`);
     record('tapping one opens the conversation',
@@ -2018,7 +2063,7 @@ const record = (name, ok) => {
       return !!spinner && spinner.classList.contains('spinning');
     })()`);
 
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     await phone.until('document.querySelectorAll(".rows .row").length === 1', 8000);
     record('a pull that never gets an answer still lets go of the spinner', await (async () => {
       // transport.retry() would normally reconnect and get a fresh fleet —
@@ -2039,7 +2084,7 @@ const record = (name, ok) => {
       }
       return atRest;
     })());
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     await phone.until('document.querySelectorAll(".rows .row").length === 1', 8000);
 
     // ---- the fleet, grown up: folders that stay empty, Folders vs Recent,
@@ -2047,12 +2092,14 @@ const record = (name, ok) => {
     baseSessions.push(session2, session3);
     laptop.broadcastFleet();
     await phone.until('document.querySelectorAll(".rows .row").length === 3', 8000);
+    await phone.evaluate(`document.querySelector('.fleet-sort').value='folders'; document.querySelector('.fleet-sort').dispatchEvent(new Event('change'))`);
+    await phone.until('document.querySelectorAll(".rows-head").length === 2', 4000);
 
     record('an empty folder is never shown',
       !/Other folder/.test(await phone.evaluate('document.body.textContent')) &&
       (await phone.evaluate('document.querySelectorAll(".rows-head").length')) === 2);
 
-    await phone.evaluate(`document.getElementById('viewSwitch').querySelector('[data-view="recent"]').click()`);
+    await sortChats('recent');
     // Whatever the laptop says each was last used — `session` has been talked
     // to by everything above, so it is not necessarily the oldest.
     const newestFirst = laptop.fleetMessage().instances
@@ -2061,8 +2108,8 @@ const record = (name, ok) => {
       const ids = [...document.querySelectorAll('.rows .row')].map((r) => r.dataset.instance);
       return JSON.stringify(ids) === ${JSON.stringify(JSON.stringify(newestFirst))};
     })()`, 4000));
-    record('and each row says where it is and how long ago',
-      /ago|now/.test(await phone.evaluate(
+    record('and each row says its folder and state',
+      /Ready|Working|New reply|Stopped|Finished/.test(await phone.evaluate(
         `document.querySelector('.row[data-instance="${session3.id}"] .row-cwd').textContent`)));
     record('and a laptop that does not know when says nothing, not 1970', await (async () => {
       const was = session2.activeAt;
@@ -2070,21 +2117,21 @@ const record = (name, ok) => {
       laptop.broadcastFleet();
       const ok = await phone.until(`(() => {
         const cwd = document.querySelector('.row[data-instance="${session2.id}"] .row-cwd');
-        return !!cwd && !/ago|now|·/.test(cwd.textContent);
+        return !!cwd && !/ago|now|1970/.test(cwd.textContent);
       })()`, 4000);
       session2.activeAt = was;
       laptop.broadcastFleet();
       return ok;
     })());
     record('the choice of view persists across reload', await (async () => {
-      await phone.navigate(appOrigin + '/index.html');
+      await phone.navigate(appOrigin + '/index.html?scope=active');
       await phone.until('document.querySelectorAll(".rows .row").length === 3', 8000);
       return (await phone.evaluate(
-        `document.getElementById('viewSwitch').querySelector('.seg-btn.on').dataset.view`)) === 'recent';
+        `document.querySelector('.fleet-sort').value`)) === 'recent';
     })());
 
     // Folders, for the rest: rearranging only happens there.
-    await phone.evaluate(`document.getElementById('viewSwitch').querySelector('[data-view="folders"]').click()`);
+    await sortChats('folders');
     await phone.until('document.querySelectorAll(".rows-head").length === 2', 4000);
 
     const rowOrder = (groupKey) => phone.evaluate(
@@ -2121,7 +2168,7 @@ const record = (name, ok) => {
       return JSON.stringify(order) === JSON.stringify([session2.id, session.id]);
     })());
     record('and the new order persists across reload', await (async () => {
-      await phone.navigate(appOrigin + '/index.html');
+      await phone.navigate(appOrigin + '/index.html?scope=active');
       await phone.until('document.querySelectorAll(".rows .row").length === 3', 8000);
       const order = await rowOrder('f:f1');
       return JSON.stringify(order) === JSON.stringify([session2.id, session.id]);
@@ -2180,7 +2227,7 @@ const record = (name, ok) => {
     record('tapping one starts an instance there and opens it',
       await phone.until('!!document.getElementById("transcript")', 8000));
     record('created the way the editor itself would have', extraSessions.length === 1);
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     await phone.until('document.querySelectorAll(".rows .row").length >= 1', 8000);
 
     // ---- the chip loses the key the record points at -------------------------
@@ -2271,9 +2318,10 @@ const record = (name, ok) => {
     })()`);
 
     await phone.navigate(appOrigin + '/settings.html');
-    await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+    await phone.until('document.querySelectorAll(".settings-main > .row").length === 7', 8000);
     await phone.evaluate('window.__setFace({ say: "cancelled" })');
 
+    await settingSheet('Security');
     record('settings offers to lock the app', await tap('Require a passcode'));
     record('which asks for a passcode, twice',
       await phone.until('/Choose a passcode/.test(document.body.textContent)', 6000));
@@ -2333,7 +2381,7 @@ const record = (name, ok) => {
     record('moving between screens does not ask again',
       await (async () => {
         await phone.navigate(appOrigin + '/settings.html');
-        await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+        await phone.until('document.querySelectorAll(".settings-main > .row").length === 7', 8000);
         return (await phone.evaluate('document.querySelector(".lock") === null')) === true;
       })());
 
@@ -2417,7 +2465,8 @@ const record = (name, ok) => {
     record('turning the lock off needs the passcode',
       await (async () => {
         await phone.navigate(appOrigin + '/settings.html');
-        await phone.until('document.querySelectorAll(".group").length >= 5', 8000);
+        await phone.until('document.querySelectorAll(".settings-main > .row").length === 7', 8000);
+        await settingSheet('Security');
         await tap('Require a passcode');
         return phone.until('/turn the lock off/.test(document.body.textContent)', 6000);
       })());
@@ -2427,7 +2476,7 @@ const record = (name, ok) => {
     record('and then it is off', await rowSays('Require a passcode', 'Off'));
     record('so the app opens straight away again',
       await (async () => {
-        await phone.navigate(appOrigin + '/index.html');
+        await phone.navigate(appOrigin + '/index.html?scope=active');
         await phone.until('document.querySelectorAll(".tabs .tab").length >= 4', 8000);
         return (await phone.evaluate('document.querySelector(".lock") === null')) === true;
       })());
@@ -2437,8 +2486,7 @@ const record = (name, ok) => {
     // releases into the same spinner every one of these screens shares.
 
     await phone.navigate(appOrigin + '/history.html');
-    record('history shows a skeleton before its first answer',
-      (await phone.evaluate('document.querySelectorAll(".hrow-skeleton, .skeleton-chip").length')) > 0);
+    record('History bookmarks redirect into Earlier in Chats', await phone.until(`location.pathname.endsWith('index.html') && location.search.includes('scope=earlier')`, 8000));
     record('pulling down past the threshold refreshes history', await pull(160));
 
     await phone.navigate(appOrigin + '/status.html');
@@ -2446,7 +2494,7 @@ const record = (name, ok) => {
       (await phone.evaluate('document.querySelectorAll(".tile.skeleton, .card.skeleton").length')) > 0);
     record('pulling down past the threshold refreshes status', await pull(160));
 
-    await phone.navigate(appOrigin + '/index.html');
+    await phone.navigate(appOrigin + '/index.html?scope=active');
     await phone.until('document.querySelectorAll(".rows .row").length >= 1', 8000);
     record('a spinner at rest is not swept up in the page\'s entrance animation',
       await phone.evaluate(`(() => {

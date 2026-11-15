@@ -35,6 +35,21 @@ module.exports = async function () {
     checkEqual('a restored one takes the transcript\'s last timestamp, not the restore\'s',
       session.activeAt, lastUsed);
     session.dispose();
+
+    suite('a restored instance with a pause notice still gets its conversation back');
+    const paused = new Session({ cwd: '/nowhere/at/all', claudeSessionId: id });
+    paused._notice('The quota reset.', 'info');
+    check('replays although a notice came first', await paused.replayTranscript());
+    const kinds = paused.items.map((i) => i.kind + ':' + (i.text || ''));
+    check('the conversation is there', kinds.some((k) => k === 'user:hello'));
+    checkEqual('and the notice from after the reload comes after it', kinds[kinds.length - 1], 'notice:The quota reset.');
+    paused.dispose();
+
+    suite('a reload does not rename an instance');
+    const kept = new Session({ cwd: '/nowhere/at/all', claudeSessionId: id });
+    await kept.replayTranscript();
+    checkEqual('it keeps the name it had, not one made from its first prompt', kept.label, 'all');
+    kept.dispose();
   } finally {
     process.env.HOME = before;
     fs.rmSync(home, { recursive: true, force: true });

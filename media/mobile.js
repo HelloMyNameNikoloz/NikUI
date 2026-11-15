@@ -17,6 +17,7 @@
     const set = () => {
       const height = viewport ? viewport.height : window.innerHeight;
       document.documentElement.style.setProperty('--app-height', Math.round(height) + 'px');
+      document.documentElement.classList.toggle('keyboard-open', !!viewport && window.innerHeight - height > 100);
       // iOS scrolls the page itself to reveal the focused field; putting it
       // back is what stops the header sliding off the top.
       if (viewport && viewport.offsetTop === 0) window.scrollTo(0, 0);

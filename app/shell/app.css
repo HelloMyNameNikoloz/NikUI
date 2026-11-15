@@ -6,8 +6,7 @@
    The vocabulary is the one the product already speaks — the near-black field,
    the four status colours, SF Pro, the 8pt rhythm — arranged the way iOS
    arranges things: grouped inset lists, hairline separators, one clear action
-   per screen, and nothing on screen that is not doing a job. Dark only, because
-   this is a thing you look at in bed at 2am when an agent needs an answer. */
+   per screen, and nothing on screen that is not doing a job. */
 
 :root {
   color-scheme: dark;
@@ -28,6 +27,8 @@
   --app-green: #30d158;
   --app-orange: #ff9f0a;
   --app-red: #ff453a;
+  --app-yellow: #ffd60a;
+  --app-blue: #0a84ff;
   --app-grey: #8e8e93;
 
   --app-radius: 14px;
@@ -1241,7 +1242,8 @@ html.plat-ios .tab { min-height: 54px; }
 /* Room for the strip to float over, rather than under the last row. */
 html.plat-ios body.app.home .screen,
 html.plat-ios body.app.history .screen,
-html.plat-ios body.app.settings .screen {
+html.plat-ios body.app.settings .screen,
+html.plat-ios body.app.status .screen {
   padding-bottom: calc(var(--app-bottom) + 84px);
 }
 
@@ -1918,6 +1920,9 @@ body.app.status .axis { font-size: var(--fs-small); }
 body.app.status .hint { font-size: var(--fs-small); line-height: 1.45; }
 
 body.app.status .meter-line { gap: 10px; }
+/* A percentage is one word: squeezed, it stacked a digit to a line. */
+body.app.status .meter-value { white-space: nowrap; flex: none; }
+body.app.status .acct + .acct { margin-top: 12px; padding-top: 12px; }
 body.app.status .meter-name {
   min-width: 0;
   overflow: hidden;
@@ -2271,7 +2276,7 @@ html.locked, html.locked body { overflow: hidden; }
 
 .runner input::placeholder { color: var(--app-dim); font-family: inherit; }
 
-#go {
+body.app.terminal #go {
   flex: 0 0 auto;
   width: 44px;
   height: 44px;
@@ -2283,8 +2288,8 @@ html.locked, html.locked body { overflow: hidden; }
   font-size: 17px;
 }
 
-#go::before { content: '\25b6'; }
-#go:disabled { opacity: 0.4; }
+body.app.terminal #go::before { content: '\25b6'; }
+body.app.terminal #go:disabled { opacity: 0.4; }
 
 /* The tab bar floats over the content everywhere else; here the input is the
    thing above it, so the bar sits under both. */
@@ -2746,6 +2751,9 @@ body.app.home .seg-btn.on {
   color: var(--app-text, #fff);
 }
 
+/* Codex's workspace wears OpenAI's green, so it is never mistaken for ours. */
+body.app.home .workspaces .seg-btn.codex.on { color: #10a37f; }
+
 /* The crossfade between Folders and Recent: the rows underneath are the same
    elements, regrouped — only the list's opacity moves. */
 body.app.home .rows {
@@ -2905,7 +2913,7 @@ body.app.home .row-dragging {
   color: var(--app-red);
 }
 
-/* ---- Slack, as a tab ---------------------------------------------------------
+/* ---- Slack, reached from Settings --------------------------------------------
    In the editor the chat is pinned to the whole webview so nothing but its two
    panes can scroll. Here it sits between the bar and the tab bar instead, the
    way every other screen's content does. */
@@ -2922,3 +2930,546 @@ body.app.slack .nik-slack {
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* The phone workspace uses quiet solid content and a small amount of colour
+   to tell agents and attention apart. Only the iOS chrome is translucent. */
+html.app, html:has(body.app) {
+  color-scheme: dark;
+  /* Pure black for OLED phones: the background pixels switch off, so the
+     edges vanish into the bezel and the battery lasts. Surfaces sit just
+     above black, told apart by a hairline more than by their fill. */
+  --app-bg: #000000;
+  --app-raised: #0e0f10;
+  --app-raised-2: #191b1c;
+  --app-text: #eef1f0;
+  --app-dim: #a3adae;
+  --app-faint: #8a9496;
+  --app-hairline: #ffffff14;
+  --app-hairline-strong: #ffffff26;
+  --app-accent: #7fdac4;
+  --app-green: #77d6b1;
+  --app-orange: #efbf75;
+  --app-red: #f29891;
+  --app-yellow: #f3d86a;
+  --app-blue: #7fb2ff;
+  --app-claude: #e6a481;
+  --app-codex: #7fdac4;
+  --app-radius: 18px;
+  --vscode-editor-background: var(--app-bg);
+  --vscode-foreground: var(--app-text);
+  --vscode-descriptionForeground: var(--app-dim);
+  --vscode-input-background: var(--app-raised);
+  --vscode-input-foreground: var(--app-text);
+  --accent: var(--app-accent);
+  --green: var(--app-green);
+  --orange: var(--app-orange);
+  --red: var(--app-red);
+}
+html.app[data-theme="light"], html[data-theme="light"]:has(body.app) {
+  color-scheme: light;
+  --app-bg: #f3f5f3;
+  --app-raised: #ffffff;
+  --app-raised-2: #e9efec;
+  --app-text: #1c302d;
+  --app-dim: #526963;
+  --app-faint: #647771;
+  --app-hairline: #183c2e13;
+  --app-hairline-strong: #183c2e2b;
+  --app-accent: #176954;
+  --app-green: #237454;
+  --app-orange: #8c611c;
+  --app-red: #b3423b;
+  --app-yellow: #a8840a;
+  --app-blue: #2563c9;
+  --app-claude: #975736;
+  --app-codex: #176954;
+}
+body.app { font-size: var(--nik-font-size, 16px); color-scheme: inherit; }
+body.app *, body.app *::before, body.app *::after { box-sizing: border-box; }
+body.app button, body.app input, body.app textarea { font-family: inherit; }
+body.app button { cursor: pointer; }
+body.app .bar { min-height: calc(60px + var(--app-top)); padding-bottom: 8px; }
+body.app .bar-title { font-size: 19px; font-weight: 700; letter-spacing: -.035em; }
+body.app .bar-button { color: var(--app-accent); }
+body.app .screen { padding-left: 20px; padding-right: 20px; }
+html.plat-ios body.app .screen { padding-top: calc(var(--app-top) + 72px); }
+html.plat-ios body.app .bar { background: color-mix(in srgb, var(--app-bg) 86%, transparent); box-shadow: 0 1px 0 var(--app-hairline); }
+html:not(.plat-ios) body.app .bar { background: var(--app-bg); border-bottom: 0; }
+body.app .eyebrow { display: block; color: var(--app-faint); font-size: 10px; font-weight: 700; letter-spacing: .14em; line-height: 1.6; }
+body.app .page-intro { padding: 12px 0 4px; }
+body.app .page-intro h1 { margin: 8px 0; font-size: 29px; font-weight: 650; letter-spacing: -.055em; line-height: 1.12; max-width: 310px; }
+body.app .page-intro .lede { font-size: 13px; margin: 10px 0 18px; color: var(--app-dim); }
+body.app :is(.list,.rows-card,.card,.hero,.tile) { background: var(--app-raised); border: 1px solid var(--app-hairline); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+body.app :is(.card,.hero,.tile)::before, body.app :is(.card,.hero,.tile)::after { display: none; }
+body.app .provider-badge { display: inline-flex; align-items: center; flex: none; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 650; line-height: 1.4; }
+body.app .provider-badge.claude { background: color-mix(in srgb, var(--app-claude) 12%, transparent); color: var(--app-claude); }
+body.app .provider-badge.codex { background: color-mix(in srgb, var(--app-codex) 12%, transparent); color: var(--app-codex); }
+body.app .empty-state { padding: 32px 20px; border: 1px dashed var(--app-hairline-strong); border-radius: 18px; color: var(--app-dim); text-align: center; font-size: 14px; }
+body.app .empty-state h2 { color: var(--app-text); margin: 0 0 10px; font-size: 22px; letter-spacing: -.035em; }
+body.app .empty-state p { margin: 0; }
+body.app .link { color: var(--app-dim); font-size: 11px; padding: 5px 9px; background: var(--app-raised-2); }
+body.app .link.on { color: var(--app-green); }
+body.app .link.off { color: var(--app-red); }
+body.app .link.warn { color: var(--app-orange); }
+body.app .tabs { background: var(--app-raised); }
+html.plat-ios body.app .tabs { left: 14px; right: 14px; background: color-mix(in srgb, var(--app-raised) 90%, transparent); border: 1px solid var(--app-hairline-strong); box-shadow: 0 8px 24px #0002; border-radius: 26px; }
+html:not(.plat-ios) body.app .tabs { background: var(--app-bg); border-top: 1px solid var(--app-hairline); }
+body.app .tabs .tab { min-height: 60px; }
+body.app .tabs .tab .tab-label { font-size: 10px; font-weight: 600; }
+html.plat-ios body.app .tab-pill { background: color-mix(in srgb, var(--app-accent) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent) 16%, transparent); }
+html:not(.plat-ios) body.app .tab-pill::before { background: color-mix(in srgb, var(--app-accent) 17%, var(--app-raised)); }
+body.app .tab-pill::after { box-shadow: none; }
+body.app .tab-pill::before { background: none; }
+body.app .start-agents { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 22px; }
+body.app .start-agent { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 14px 10px; min-height: 56px; border: 1px solid var(--app-hairline-strong); border-radius: 14px; font: inherit; font-size: 14px; font-weight: 600; text-align: left; background: var(--app-raised); }
+body.app .start-agent.claude { color: var(--app-claude); background: color-mix(in srgb, var(--app-claude) 8%, var(--app-bg)); border-color: color-mix(in srgb, var(--app-claude) 26%, transparent); }
+body.app .start-agent.codex { color: var(--app-codex); background: color-mix(in srgb, var(--app-codex) 8%, var(--app-bg)); border-color: color-mix(in srgb, var(--app-codex) 26%, transparent); }
+body.app .agent-mark { font-size: 23px; line-height: 1; }
+body.app .start-plus { margin-left: auto; font-size: 20px; font-weight: 400; opacity: .7; }
+body.app .fleet-search { width: 100%; padding: 13px 15px; min-height: 46px; border: 1px solid var(--app-hairline); border-radius: 12px; background: var(--app-raised); color: var(--app-text); font-size: 16px; }
+body.app .fleet-search::placeholder { color: var(--app-faint); font-size: 14px; }
+body.app.home .segmented { margin: 12px 0; min-height: 44px; padding: 3px; border: 0; background: var(--app-raised); border-radius: 12px; }
+body.app.home .seg-btn { min-height: 40px; font-size: 13px; color: var(--app-dim); border-radius: 9px; }
+body.app.home .seg-btn.on, body.app.home .workspaces .seg-btn.codex.on { background: var(--app-raised-2); color: var(--app-text); box-shadow: none; }
+body.app.home #viewSwitch { margin-top: 0; background: none; padding: 0; gap: 8px; }
+body.app.home #viewSwitch .seg-btn { flex: 0 1 auto; padding: 0 14px; border: 1px solid var(--app-hairline); }
+body.app.home #viewSwitch .seg-btn.on { background: color-mix(in srgb, var(--app-accent) 10%, transparent); border-color: color-mix(in srgb, var(--app-accent) 20%, transparent); color: var(--app-accent); }
+body.app.home .rows { gap: 0; max-width: none; }
+body.app.home .rows-head { margin: 12px 0 4px; font-size: 12px; text-transform: none; letter-spacing: .02em; color: var(--app-dim); }
+body.app.home .rows-head.attention { color: var(--app-orange); }
+body.app.home .rows .rows-card { border: 0; border-radius: 0; background: transparent; }
+body.app.home .rows .row { display: grid; grid-template-columns: 6px minmax(0,1fr) 24px; grid-template-areas: "dot name badges" ". cwd cwd"; column-gap: 10px; row-gap: 4px; padding: 12px 0; min-height: 64px; border: 0; border-radius: 0; background: none; }
+body.app.home .row-name { font-size: 15px; font-weight: 550; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.app.home .row-cwd { color: var(--app-dim); font-family: var(--app-font); font-size: 12px; }
+body.app.home .row-cost { font-size: 12px; align-self: center; }
+body.app.home .row-badges { grid-area: badges; display: flex; align-items: center; gap: 9px; min-width: 0; }
+body.app.home .row-state { font-size: 11px; color: var(--app-dim); }
+body.app.home .row-state.waiting, body.app.home .row-state.error { color: var(--app-orange); }
+body.app.home .row-state.working { color: var(--app-green); }
+body.app.home .sdot { width: 6px; height: 6px; margin-top: 7px; align-self: start; box-shadow: none; }
+body.app.home .sdot.waiting, body.app.home .sdot.error { background: var(--app-red); }
+/* Working is yellow; finished is green once opened, blue until then. */
+body.app.home .sdot.working { background: var(--app-yellow); }
+body.app.home .sdot.done { background: var(--app-green); }
+body.app.home .sdot.done.unread { background: var(--app-blue); }
+body.app.home .row + .row::before { left: 16px; right: 0; background: var(--app-hairline); }
+body.app.home .row-handle { grid-area: badges; }
+body.app.home .row[data-provider="codex"] .row-handle { display: none; }
+body.app .sheet-backdrop { background: #0008; backdrop-filter: blur(6px); z-index: 100; }
+body.app .create-sheet { max-width: 560px; max-height: 85dvh; padding: 8px 22px calc(24px + var(--app-bottom)); border-radius: 26px 26px 0 0; }
+body.app .create-heading { display: flex; align-items: center; justify-content: space-between; }
+body.app .sheet-h { margin: 0; font-size: 23px; letter-spacing: -.04em; }
+body.app .sheet-close { width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--app-raised-2); color: var(--app-dim); font-size: 24px; }
+body.app .create-sub { color: var(--app-dim); font-size: 13px; margin: 8px 0 16px; }
+body.app .create-providers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 20px; }
+body.app .chip { min-height: 44px; border-radius: 12px; }
+body.app .create-providers .chip { border: 1px solid var(--app-hairline); }
+body.app .create-providers [data-provider="claude"].on { color: var(--app-claude); background: color-mix(in srgb, var(--app-claude) 12%, transparent); border-color: color-mix(in srgb, var(--app-claude) 40%, transparent); }
+body.app .create-providers [data-provider="codex"].on { color: var(--app-codex); background: color-mix(in srgb, var(--app-codex) 12%, transparent); border-color: color-mix(in srgb, var(--app-codex) 40%, transparent); }
+body.app .create-row { min-height: 76px; padding: 16px 4px; }
+body.app .create-name { font-weight: 600; }
+body.app .create-note { color: var(--app-dim); }
+body.app .search-wrap { padding: 14px 20px 4px; }
+html.plat-ios body.app .search-wrap { padding-top: calc(var(--app-top) + 74px); }
+body.app .search-wrap input { min-height: 48px; font-size: 16px; background: var(--app-raised); border: 1px solid var(--app-hairline); border-radius: 13px; box-shadow: none; }
+body.app .history-filters { display: flex; gap: 8px; padding: 10px 20px; flex: none; }
+body.app .history-filters button { min-height: 44px; padding: 0 15px; border: 1px solid var(--app-hairline); border-radius: 11px; background: var(--app-raised); color: var(--app-dim); font-size: 13px; }
+body.app .history-filters .on { color: var(--app-accent); background: color-mix(in srgb, var(--app-accent) 10%, transparent); border-color: color-mix(in srgb, var(--app-accent) 25%, transparent); }
+html.plat-ios body.app.history .screen { padding-top: 8px; }
+body.app.history .rows-head { text-transform: none; letter-spacing: 0; font-size: 12px; margin: 16px 2px 9px; color: var(--app-faint); }
+body.app .hrow { padding: 17px 16px; min-height: 98px; }
+body.app .hrow-name { font-size: 15px; font-weight: 600; line-height: 1.4; }
+body.app .hrow-when { font-size: 11px; color: var(--app-faint); }
+body.app .hrow-feet { gap: 7px; margin-top: 10px; flex-wrap: wrap; font-size: 12px; }
+body.app .hrow-where { font-family: var(--app-font); font-size: 12px; }
+body.app .hrow-branch { font-size: 10px; background: var(--app-raised-2); }
+body.app .settings-summary { padding: 12px 0 18px; }
+body.app .settings-summary h1 { font-size: 29px; letter-spacing: -.05em; line-height: 1.2; margin: 8px 0 14px; }
+body.app .settings-summary p { color: var(--app-dim); font-size: 12px; margin: 10px 0 0; }
+body.app .connection-pill { display: inline-flex; padding: 5px 10px; border-radius: 8px; background: var(--app-raised-2); color: var(--app-dim); font-size: 12px; }
+body.app .connection-pill.good { background: color-mix(in srgb, var(--app-green) 10%, transparent); color: var(--app-green); }
+body.app .group { margin-bottom: 18px; }
+body.app .group-title { color: var(--app-faint); margin-left: 2px; text-transform: none; letter-spacing: 0; font-size: 12px; }
+body.app .group-note { color: var(--app-dim); font-size: 12px; margin: 10px 12px 0; }
+body.app .settings-detail { border-radius: 15px; background: var(--app-raised); border: 1px solid var(--app-hairline); overflow: hidden; margin-bottom: 8px; }
+body.app .settings-detail > summary { display: flex; align-items: center; justify-content: space-between; min-height: 56px; font-size: 14px; font-weight: 550; color: var(--app-text); padding: 12px 16px; margin: 0; cursor: pointer; list-style: none; }
+body.app .settings-detail > summary::-webkit-details-marker { display: none; }
+body.app .settings-detail > summary::after { content: '+'; color: var(--app-faint); font-size: 19px; font-weight: 400; }
+body.app .settings-detail[open] > summary::after { content: '−'; }
+body.app .settings-detail .list { border: 0; border-top: 1px solid var(--app-hairline); border-radius: 0; }
+body.app .settings-detail .group-note { padding-bottom: 14px; }
+body.app.settings .row { padding: 14px 16px; min-height: 58px; font-size: 14px; }
+body.app.settings .row-label b { font-weight: 500; }
+body.app.settings .row-label small { font-size: 12px; color: var(--app-dim); }
+body.app.settings .row-value { font-size: 13px; }
+body.app .appearance-control { display: flex; flex-direction: column; gap: 9px; padding: 14px 16px; font-size: 13px; }
+body.app .appearance-control + .appearance-control { border-top: 1px solid var(--app-hairline); }
+body.app .preference-segment { display: grid; grid-template-columns: repeat(3,1fr); gap: 3px; border-radius: 11px; padding: 3px; background: var(--app-bg); }
+body.app .preference-segment button { min-height: 40px; border: 0; border-radius: 9px; background: none; color: var(--app-dim); font-size: 13px; }
+body.app .preference-segment button.on { color: var(--app-accent); background: var(--app-raised-2); font-weight: 600; }
+body.app.terminal .terminal-location { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 20px 14px; flex: none; }
+html.plat-ios body.app.terminal .terminal-location { padding-top: calc(var(--app-top) + 72px); }
+body.app.terminal #pick { width: auto; max-width: 58%; padding: 0 12px; min-height: 44px; color: var(--app-accent); background: var(--app-raised-2); font-size: 13px; border-radius: 10px; }
+html.plat-ios body.app.terminal .screen { padding-top: 0; }
+body.app.terminal .run { border: 1px solid var(--app-hairline); border-radius: 16px; overflow: hidden; background: var(--app-raised); margin-bottom: 16px; }
+body.app.terminal .run-head { border: 0; border-bottom: 1px solid var(--app-hairline); border-radius: 0; background: var(--app-raised-2); padding: 14px 16px; font-size: 13px; }
+body.app.terminal .run-out { padding: 16px; margin: 0; font-size: 12px; line-height: 1.7; color: var(--app-text); }
+body.app.terminal .run-foot { padding: 2px 12px 10px 16px; font-size: 11px; }
+body.app.terminal .run-again { min-height: 44px; color: var(--app-accent); background: none; }
+body.app.terminal .run-stop { min-height: 44px; }
+body.app.terminal .run.bad { border-color: color-mix(in srgb, var(--app-red) 40%, transparent); }
+body.app.terminal .run-state.good { color: var(--app-green); }
+body.app.terminal .runner { padding: 12px 20px; background: var(--app-bg); border-top: 1px solid var(--app-hairline); gap: 10px; }
+body.app.terminal .runner input { min-height: 48px; background: var(--app-raised); border: 1px solid var(--app-hairline-strong); border-radius: 12px; font-size: 16px; }
+body.app.terminal .run-go { width: 48px; height: 48px; min-width: 48px; background: var(--app-accent); color: var(--app-bg); border-radius: 12px; }
+html.plat-ios body.app.terminal .runner { padding-bottom: calc(var(--app-bottom) + 92px); }
+body.app .terminal-shortcuts { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+body.app .terminal-shortcuts button { min-height: 44px; padding: 8px 12px; background: var(--app-raised-2); color: var(--app-dim); border: 1px solid var(--app-hairline); border-radius: 10px; font: 12px var(--app-mono); }
+body.app.connect .screen { padding-top: calc(var(--app-top) + 34px); padding-left: 26px; padding-right: 26px; }
+body.app.connect .mark { width: 64px; height: 64px; margin: 0 0 28px; background: var(--app-raised-2); box-shadow: none; border-radius: 19px; }
+body.app.connect .provider-pair { display: flex; gap: 8px; margin-bottom: 18px; }
+body.app.connect h1 { font-size: 40px; line-height: 1.07; letter-spacing: -.06em; margin: 0 0 18px; }
+body.app.connect .lede { font-size: 15px; line-height: 1.65; color: var(--app-dim); margin: 0 0 24px; }
+body.app.connect .steps { padding: 18px; background: var(--app-raised); border: 1px solid var(--app-hairline); border-radius: 20px; margin: 0 0 20px; }
+body.app.connect .steps li { gap: 12px; margin-bottom: 22px; align-items: flex-start; }
+body.app.connect .steps li:last-child { margin-bottom: 0; }
+body.app.connect .steps li > span { background: var(--app-raised-2); color: var(--app-accent); min-width: 27px; width: 27px; height: 27px; font-size: 12px; margin-top: 2px; }
+body.app.connect .steps p { color: var(--app-dim); font-size: 13px; line-height: 1.6; }
+body.app.connect .steps strong { color: var(--app-text); font-size: 14px; font-weight: 600; }
+body.app.connect .quiet { min-height: 48px; background: var(--app-raised-2); border-radius: 12px; color: var(--app-accent); font-size: 14px; width: 100%; }
+body.app.connect .terms { color: var(--app-faint); font-size: 12px; line-height: 1.6; padding-left: 16px; }
+body.app.connect .note { font-size: 12px; }
+body.app.connect .primary { min-height: 52px; border-radius: 12px; background: var(--app-accent); color: var(--app-bg); }
+body.app.connect .pane { border-radius: 18px; background: var(--app-raised); }
+body.app.connect input { background: var(--app-bg); border-color: var(--app-hairline-strong); }
+body.app.status .screen { padding-left: 0; padding-right: 0; }
+body.app.status .sheet-head { padding: 12px 20px 16px; }
+body.app.status .sheet-title b { font-size: 18px; letter-spacing: -.03em; }
+body.app.status .sheet-title .dim { font-size: 12px; }
+body.app.status .sheet-content { padding: 18px 20px 24px; }
+body.app.status .sheet-nav { background: var(--app-bg); border: 0; border-bottom: 1px solid var(--app-hairline); border-radius: 0; padding: 0 20px 10px; box-shadow: none; }
+body.app.status .sheet-nav .nav-item { border-radius: 10px; background: var(--app-raised); box-shadow: none; min-height: 44px; font-size: 12px; }
+body.app.status .sheet-nav .nav-item.on { color: var(--app-accent); background: color-mix(in srgb, var(--app-accent) 10%, var(--app-bg)); border-color: color-mix(in srgb, var(--app-accent) 20%, transparent); }
+body.app.status .card { padding: 18px; border-radius: 18px; margin-bottom: 14px; }
+body.app.status .card h3 { color: var(--app-dim); text-transform: none; letter-spacing: -.01em; font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+body.app.status .hero-value, body.app.status .tile-value { color: var(--app-text); }
+body.app.status .sheet-actions .icon-only { background: var(--app-raised); color: var(--app-accent); }
+/* Phone conversation: the transcript gets the space; controls share the
+   composer's action row and message actions appear on tap or keyboard focus. */
+body.app-conversation { --fs-small: 12px; --fs-micro: 12px; }
+body.app-conversation > header { padding: var(--app-top) 12px 0; gap: 6px; background: var(--app-bg); border-bottom: 0; }
+html.plat-ios body.app-conversation > header { background: color-mix(in srgb, var(--app-bg) 90%, transparent); box-shadow: none; }
+body.app-conversation > header .back { display: flex; width: 44px; height: 44px; margin-left: -6px; }
+body.app-conversation .title-group { flex: 1; flex-wrap: nowrap; gap: 6px; min-width: 0; }
+body.app-conversation .title { flex: 1; min-width: 0; font-size: 16px; font-weight: 600; line-height: 44px; }
+body.app-conversation .title-group .provider-badge { order: 2; padding: 0; background: transparent; font-size: 12px; font-weight: 500; }
+body.app-conversation .title-group .dot { order: 3; width: 5px; height: 5px; animation: none; box-shadow: none; }
+body.app-conversation .conversation-state { order: 4; flex: none; font-size: 12px; color: var(--app-dim); }
+body.app-conversation > header :is(.who,.link,.ci) { font-size: 12px; }
+body.app-conversation > header .link.on { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+body.app-conversation > header :is(.pr-chip,.ci) { min-height: 44px; min-width: 44px; }
+body.app-conversation > header :is(.stats,.crumbs,.ctx,.spacer) { display: none; }
+body.app-conversation .conversation-summary { display: none; }
+body.app-conversation #transcript { padding: 12px 16px; scrollbar-width: none; }
+body.app-conversation #transcript::-webkit-scrollbar { display: none; }
+body.app-conversation .stream { padding-bottom: 4px; }
+body.app-conversation .stream > * { margin-bottom: 20px; }
+body.app-conversation .stream > :last-child { margin-bottom: 0; }
+body.app-conversation .turn-user { width: fit-content; max-width: 100%; min-height: 44px; border: 0; background: var(--app-raised); border-radius: 14px 14px 4px 14px; padding: 10px 12px; margin: 0 0 20px auto; line-height: 1.5; }
+body.app-conversation .msg-text { font-size: 15px; line-height: 1.5; }
+body.app-conversation .msg-text p { margin: 0 0 10px; }
+body.app-conversation .msg-text > :last-child,
+body.app-conversation .msg-text > :has(+ .copy-all) { margin-bottom: 0; }
+body.app-conversation .sent-at { position: absolute; right: 8px; bottom: -19px; margin: 0; font-size: 12px; color: var(--app-faint); opacity: 0; pointer-events: none; }
+body.app-conversation .turn-user:is(.show-actions,:focus-within) .sent-at { opacity: 1; }
+body.app-conversation .tool { border: 0; border-radius: 8px; background: transparent; margin-bottom: 8px; }
+body.app-conversation .tool:hover { background: transparent; }
+body.app-conversation .tool summary { min-height: 44px; padding: 4px 0; gap: 8px; font-size: 12px; }
+body.app-conversation .tool .name { padding: 0; background: transparent; text-transform: none; letter-spacing: 0; font-size: 12px; }
+body.app-conversation .tool :is(.summary-text,pre,.label) { font-size: 12px; }
+body.app-conversation .tool .summary-text { color: var(--app-dim); }
+body.app-conversation .tool .body { padding: 8px 0 0; }
+body.app-conversation .tool pre { background: var(--app-raised); padding: 44px 10px 10px; }
+body.app-conversation .perm { background: var(--app-raised); border: 1px solid var(--app-hairline); border-radius: 14px; padding: 12px; }
+body.app-conversation .perm h4 { font-size: 15px; margin: 0 0 8px; }
+body.app-conversation .perm pre { font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-dim); }
+body.app-conversation .perm .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+body.app-conversation .perm .actions button { min-height: 44px; border-radius: 10px; font-size: 14px; }
+body.app-conversation .perm .actions button[data-act="allow"] { background: var(--app-accent); color: var(--app-bg); }
+body.app-conversation .perm .actions button[data-act="deny"] { background: var(--app-raised-2); color: var(--app-text); }
+body.app-conversation .work-main > footer { padding: 4px 12px calc(6px + var(--app-bottom)); background: var(--app-bg); border-top: 0; }
+html.plat-ios body.app-conversation .work-main > footer { background: color-mix(in srgb, var(--app-bg) 94%, transparent); box-shadow: none; }
+html:not(.plat-ios) body.app-conversation .work-main > footer { border-top: 0; }
+body.app-conversation .conversation-tools { display: flex; flex: 1; min-width: 0; gap: 0; margin: 0; overflow-x: auto; scrollbar-width: none; }
+body.app-conversation .conversation-tools::-webkit-scrollbar { display: none; }
+body.app-conversation .conversation-tools button { flex: none; width: auto; gap: 6px; height: 44px; min-width: 44px; min-height: 44px; justify-content: center; padding: 0; font-size: 12px; border-radius: 50%; background: transparent; border: 0; color: var(--app-dim); }
+body.app-conversation .conversation-tools .agent-label { display: inline; }
+body.app-conversation .conversation-tools svg { width: 18px; height: 18px; }
+body.app-conversation .conversation-tools .selected { color: var(--app-codex); background: color-mix(in srgb, var(--app-codex) 10%, var(--app-raised)); }
+body.app-conversation .composer { display: grid; grid-template-columns: minmax(0,1fr); gap: 0; padding: 4px 6px; border: 1px solid var(--app-hairline); border-radius: 18px; background: var(--app-raised); box-shadow: none; }
+html.plat-ios body.app-conversation .composer { background: var(--app-raised); border-color: var(--app-hairline); box-shadow: none; }
+body.app-conversation .composer:focus-within,
+html.plat-ios body.app-conversation .composer:focus-within { border-color: var(--app-hairline-strong); }
+body.app-conversation #input { font-size: 16px; min-height: 44px; padding: 10px 6px; }
+body.app-conversation .composer-actions { display: flex; align-items: center; gap: 0; min-width: 0; }
+body.app-conversation .composer-actions #attach { margin-right: 0; }
+body.app-conversation .composer-actions :is(#attach,#send,#stop,#mic) { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+body.app-conversation .composer-actions :is(#attach,#send,#stop,#mic)::after { inset: 0; }
+body.app-conversation.read-only .composer :is(#input,#attach,#mic,#stop,#send),
+body.app-conversation.read-only[data-provider="codex"] .composer { display: none; }
+body.app-conversation #send { background: var(--app-accent); color: var(--app-bg); }
+body.app-conversation #stop { background: var(--app-raised-2); color: var(--app-red); }
+body.app-conversation .attachments:empty { margin: 0; }
+body.app-conversation .attachments .chip .drop { width: 44px; height: 44px; min-width: 44px; min-height: 44px; top: 0; right: 0; color: var(--app-text); background: var(--app-raised-2); }
+body.app-conversation :is(.mac-bar,.goal-bar) { display: flex; flex-wrap: nowrap; min-height: 44px; margin: 0; padding: 0 4px; border: 0; border-radius: 0; background: transparent; gap: 6px; font-size: 12px; color: var(--app-dim); }
+body.app-conversation .mac-text { flex-direction: row; gap: 6px; }
+body.app-conversation .mac-text b { font-size: 12px; }
+body.app-conversation .mac-what { font-size: 12px; min-width: 0; }
+body.app-conversation .mac-pulse { background: var(--app-codex); }
+body.app-conversation .mac-stop { min-height: 44px; min-width: 44px; padding: 0 8px; color: var(--app-red); background: transparent; border-radius: 8px; }
+body.app-conversation .goal-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; line-height: 1.5; font-size: 12px; }
+body.app-conversation .goal-bar button { min-height: 44px; min-width: 44px; border-radius: 8px; background: transparent; color: var(--app-dim); padding: 0 8px; }
+body.app-conversation .goal-bar button.icon-only { width: 44px; margin-left: 0; justify-content: center; padding: 0; }
+body.app-conversation .goal-bar .goal-state { font-size: 12px; }
+body.app-conversation .agent-dialog { background: var(--app-raised); color: var(--app-text); border-color: var(--app-hairline-strong); }
+body.app-conversation .agent-dialog .agent-option { font-size: 14px; min-height: 48px; }
+body.app-conversation .agent-dialog input { font-size: 16px; min-height: 48px; }
+body.app-conversation .agent-dialog form > button { min-height: 48px; border-radius: 10px; background: var(--app-accent); color: var(--app-bg); }
+body.app-conversation.steering .composer { border-color: var(--app-codex); }
+body.app-conversation.steering .conversation-tools [data-agent="more"] { color: var(--app-codex); background: color-mix(in srgb, var(--app-codex) 10%, var(--app-raised)); }
+@media (prefers-reduced-transparency: reduce) {
+  html.plat-ios body.app :is(.bar,.tabs), html.plat-ios body.app-conversation :is(header,footer,.composer) { background: var(--app-bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.app *, body.app *::before, body.app *::after { animation-duration: .01ms; transition-duration: .01ms; }
+}
+body.app.home .fleet-controls { display: flex; align-items: center; gap: 10px; margin: 10px 0 2px; }
+body.app.home .fleet-controls .workspaces { flex: 1; margin: 0; }
+body.app.home .fleet-controls .seg-btn { padding: 6px; font-size: 12px; }
+body.app.home .fleet-sort { max-width: 90px; min-height: 46px; padding: 8px; border: 1px solid var(--app-hairline); border-radius: 11px; background: var(--app-raised); color: var(--app-dim); font: 12px var(--app-font); }
+body.app.home.read-only .start-agents::after { content: 'Watching only · Enable control in Devices on your laptop to start work.'; grid-column: 1 / -1; color: var(--app-dim); font-size: 12px; }
+body.app.home button:disabled { opacity: .45; cursor: default; }
+html.plat-ios body.app.terminal .tabs { position: relative; left: auto; right: auto; bottom: auto; margin: 0 14px calc(var(--app-bottom) + 8px); }
+html.plat-ios body.app.terminal .runner { padding-bottom: 12px; }
+body.app.terminal .run-go { background: var(--app-accent); }
+body.app.terminal .run-go::before { border-left-color: var(--app-bg); }
+body.app.terminal #go { background: var(--app-accent); color: var(--app-bg); border-radius: 12px; width: 48px; height: 48px; }
+body.app.status .provider-badge { font-size: 12px; }
+body.app.status .link { font-size: 12px; }
+body.app.status .sheet-content .link { font-size: inherit; }
+body.app.status .gen-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+body.app.status .gen-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 4px; background: var(--app-raised); border: 1px solid var(--app-hairline); border-radius: 12px; }
+body.app.status .gen-stat b { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+body.app.status .gen-stat span { font-size: 12px; color: var(--app-dim); }
+body.app.status .gen-stat.on b { color: var(--app-accent); }
+body.app.status .gen-stat.bad b { color: var(--app-red); }
+body.app.status .card.gen-list, body.app.status .card.gen-limits { padding: 4px 14px; margin-bottom: 10px; }
+body.app.status .card.gen-limits h3 { margin: 10px 0 2px; font-size: 12px; }
+body.app.status .fleet-conversation { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--app-text); text-align: left; font: inherit; font-size: 14px; }
+body.app.status .fleet-conversation + .fleet-conversation { border-top: 1px solid var(--app-hairline); }
+body.app.status .gen-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.app.status .gen-prov { font-size: 12px; padding: 1px 6px; border-radius: 6px; background: var(--app-hairline); color: var(--app-dim); }
+body.app.status .gen-state { font-size: 12px; color: var(--app-dim); min-width: 62px; text-align: right; }
+body.app.status .gen-limit { min-height: 30px; display: grid; grid-template-columns: minmax(64px, 92px) minmax(32px, 1fr) minmax(74px, auto); align-items: center; gap: 10px; }
+body.app.status .gen-limit .meter-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.app.status .gen-limit.stale .meter-value { color: var(--app-orange); }
+body.app.status .gen-limit .meter-value { font-size: 12px; white-space: nowrap; text-align: right; }
+body.app.status .gen-limit > :nth-child(2) { width: 100%; }
+body.app.status .gen-empty { margin: 8px 2px 14px; }
+body.app.status .status-more > summary { min-height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; margin-bottom: 14px; background: var(--app-raised); color: var(--app-dim); border: 1px solid var(--app-hairline); border-radius: 12px; font-size: 13px; cursor: pointer; }
+body.app.status .status-more > summary::after { content: '+'; font-size: 18px; }
+body.app.status .status-more[open] > summary::after { content: '\2212'; }
+body.app .preference-segment button { min-height: 44px; }
+body.app.home .fleet-sort { font-size: 16px; }
+body.app.home .row-name, body.app .hrow-name, body.app-conversation .msg-text { font-size: max(14px, calc(var(--nik-font-size, 16px) * .94)); }
+body.app.settings .row { font-size: calc(var(--nik-font-size, 16px) * .875); }
+body.app .provider-badge { font-size: max(11px, calc(var(--nik-font-size, 16px) * .69)); }
+body.app-conversation #input, body.app .agent-dialog input { font-size: max(16px, var(--nik-font-size, 16px)); }
+body.app.connect #form { padding: 18px; }
+body.app.connect #form .field-label { font-size: 12px; margin-bottom: 6px; }
+body.app.status .fleet-conversation { border-radius: 0; box-shadow: none; }
+body.app-conversation .copy, body.app-conversation .run-it { width: 44px; height: 44px; min-height: 44px; min-width: 44px; border: 0; background: transparent; }
+body.app-conversation .copy svg { width: 15px; height: 15px; }
+body.app-conversation .copy.copy-all { top: var(--message-action-top, 0px); bottom: auto; right: 0; z-index: 1; opacity: 0; pointer-events: none; background: var(--app-raised-2); color: var(--app-dim); border-radius: 10px; }
+body.app-conversation :is(.show-actions,:focus-within) > .copy-all,
+body.app-conversation .copy.copy-all:is(:focus-visible,.ok) { opacity: 1; pointer-events: auto; }
+body.app-conversation .copy.ok { color: var(--app-green); }
+body.app-conversation .msg-text pre { padding-top: 44px; }
+body.app-conversation .msg-text pre .run-it { right: 50px; }
+body.app.terminal .terminal-location #pick::after { content: '⌄'; margin-left: 8px; }
+body.app-conversation #input { max-height: min(160px, 20dvh); }
+html.keyboard-open body.app-conversation .goal-bar { display: none; }
+html.keyboard-open body.app-conversation .mac-what { display: none; }
+body.app-conversation .conversation-tools .permission-warn { color: var(--app-orange); }
+body.app-conversation .reply-chip, body.app-conversation .queue-row .drop, body.app-conversation .queue-head .link, body.app-conversation #jump { min-height: 44px; min-width: 44px; }
+body.app-conversation .reply-chip { padding: 10px 16px; font-size: 13px; }
+@media (max-height: 600px) {
+  body.app-conversation .goal-bar, body.app-conversation .mac-what { display: none; }
+}
+body.app-conversation .perm .copy { display: none; }
+html.plat-ios body.app.slack .slack-screen { padding-top: calc(var(--app-top) + 60px); }
+
+/* Phone choices share one bottom sheet. Reading surfaces stay opaque. */
+body.app .app-sheet-backdrop {
+  position: fixed; inset: 0; z-index: 110; background: #0008;
+  display: flex; align-items: flex-end; justify-content: center;
+}
+body.app .app-sheet {
+  width: 100%; max-width: 560px; max-height: calc(100% - var(--app-top) - 16px);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  padding: 8px 20px calc(16px + var(--app-bottom));
+  border: 1px solid var(--app-hairline-strong); border-bottom: 0;
+  border-radius: 22px 22px 0 0; background: var(--app-raised); color: var(--app-text);
+}
+body.app .app-sheet-head { display: flex; align-items: center; justify-content: space-between; flex: none; gap: 12px; margin-bottom: 8px; }
+body.app .app-sheet-head h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.025em; }
+body.app .app-sheet-content { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+body.app .app-sheet .agent-option {
+  display: block; width: 100%; min-height: 48px; padding: 12px 0; text-align: left;
+  border: 0; border-bottom: 1px solid var(--app-hairline); border-radius: 0;
+  background: transparent; color: var(--app-text); font: inherit; font-size: 14px;
+}
+body.app .app-sheet .agent-option:disabled { opacity: .45; }
+body.app .app-sheet .agent-dialog { width: auto; max-height: none; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+body.app .app-sheet .agent-dialog-note { font-size: 13px; margin: 4px 0 12px; line-height: 1.5; color: var(--app-dim); }
+body.app .app-sheet summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--app-dim); font-size: 13px; }
+body.app .app-sheet .create-providers { margin: 0 0 8px; gap: 8px; }
+body.app .app-sheet .create-providers .chip.on { color: var(--app-accent); background: var(--app-raised-2); border-color: var(--app-accent); }
+body.app .app-sheet .create-row { min-height: 64px; padding: 12px 0; }
+body.app .app-sheet .create-group { margin: 0 0 8px; }
+body.app .app-sheet .create-note { font-size: 13px; }
+body.app .app-sheet .create-group summary::after { content: '⌄'; margin-left: auto; }
+body.app .app-sheet .create-group[open] summary::after { content: '⌃'; }
+body.app .app-sheet .create-name { font-size: 15px; }
+body.app .app-sheet .create-path { font-size: 12px; }
+body.app .app-sheet .create-row.busy { opacity: .6; }
+body.app .app-sheet :focus-visible, body.app :is(.chat-scope button, .new-chat, .fleet-search, .chat-filters summary):focus-visible { outline: 2px solid var(--app-accent); outline-offset: -2px; }
+@media (prefers-reduced-motion: no-preference) {
+  body.app .app-sheet-backdrop:not([hidden]) .app-sheet { animation: nik-sheet-up 180ms ease-out; }
+}
+@keyframes nik-sheet-up { from { transform: translateY(32px); opacity: .5; } to { transform: none; opacity: 1; } }
+
+/* Chats starts immediately beneath Search. Extra controls open on demand. */
+body.app.home .bar { grid-template-columns: minmax(70px, 1fr) auto minmax(0, 1fr); gap: 8px; }
+body.app.home .bar .bar-title { text-align: left; font-size: 20px; }
+body.app.home .bar-left { padding-left: 12px; }
+body.app.home .chat-scope { display: flex; grid-column: 2; padding: 2px; background: var(--app-raised); border-radius: 10px; }
+body.app.home .chat-scope button { min-width: 66px; min-height: 44px; padding: 0 9px; border: 0; border-radius: 8px; background: transparent; color: var(--app-dim); font: inherit; font-size: 13px; }
+body.app.home .chat-scope .on { background: var(--app-raised-2); color: var(--app-text); }
+body.app.home .chat-search { display: flex; gap: 8px; padding: 8px 20px; flex: none; align-items: flex-start; }
+body.app.home .fleet-search { flex: 1; min-width: 0; min-height: 44px; padding: 10px 12px; border: 0; }
+body.app.home .chat-filters { position: relative; flex: none; }
+body.app.home .chat-filters > summary { display: flex; justify-content: center; align-items: center; min-height: 44px; min-width: 48px; font-size: 13px; color: var(--app-dim); cursor: pointer; list-style: none; }
+body.app.home .chat-filters > summary::-webkit-details-marker { display: none; }
+body.app.home .chat-filters[open] > summary { color: var(--app-accent); }
+body.app.home .chat-filter-options { position: absolute; right: 0; top: 48px; z-index: 15; width: 288px; padding: 12px; border: 1px solid var(--app-hairline-strong); border-radius: 14px; background: var(--app-raised); box-shadow: 0 10px 32px #0003; }
+body.app.home .chat-filter-options .segmented { margin: 0 0 8px; }
+body.app.home .chat-filter-options :is(select, #edit) { width: 100%; max-width: none; min-height: 44px; margin: 4px 0; padding: 8px 12px; border: 0; border-radius: 8px; background: var(--app-raised-2); color: var(--app-text); font: inherit; font-size: 14px; }
+body.app.home .screen { padding-top: 0; padding-bottom: calc(var(--app-bottom) + 140px); }
+html.plat-ios body.app.home .chat-search { margin-top: calc(var(--app-top) + 60px); }
+html.plat-ios body.app.home .screen { padding-top: 0; padding-bottom: calc(var(--app-bottom) + 150px); }
+body.app.home .fleet-notice { margin: 10px 0; font-size: 13px; }
+body.app.home .new-chat { position: absolute; bottom: calc(var(--app-bottom) + 76px); right: 20px; z-index: 12; min-height: 48px; padding: 0 20px; border: 0; border-radius: 16px; background: var(--app-accent); color: var(--app-bg); font: inherit; font-size: 15px; font-weight: 600; box-shadow: 0 4px 20px #0003; }
+body.app.home .row-badges .provider-badge { padding: 0; background: transparent; color: var(--app-dim); font-size: 15px; line-height: 20px; }
+body.app.home .row-cwd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.app.home .rows.editing .row-badges { visibility: hidden; }
+body.app.home .rows.editing .row-handle { display: block; }
+body.app.home .row.busy { opacity: .5; pointer-events: none; }
+body.app .empty-state { border: 0; padding: 36px 8px; }
+body.app .empty-state h2 { font-size: 18px; font-weight: 550; }
+body.app.home .bar .link.on { display: none; }
+
+/* Seven Settings rows; each opens a focused set of existing controls. */
+body.app.settings .settings-main .row { min-height: 64px; padding: 12px 0; background: transparent; border-radius: 0; }
+body.app.settings .settings-main .row + .row::before { left: 0; right: 0; }
+body.app.settings .settings-main .row-label b { font-size: var(--nik-font-size, 16px); }
+body.app.settings .settings-main .row-value { max-width: 48vw; }
+body.app.settings .settings-main .row-value > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.app.settings .settings-main .row-label small { margin-top: 2px; }
+body.app.settings .settings-sheet .group { margin-bottom: 22px; }
+body.app.settings .settings-sheet .list { border: 0; border-radius: 0; background: transparent; }
+body.app.settings .settings-sheet .group-title { font-size: 12px; margin: 8px 0; color: var(--app-dim); }
+body.app.settings .settings-sheet .row { padding: 12px 0; }
+body.app.settings .settings-sheet .group-note { margin: 10px 0 0; }
+
+/* General leads Status. Details contains destinations and analytics. */
+body.app.status .sheet-content { padding-top: 14px; gap: 10px; }
+body.app.status .gen-stat { border: 0; border-radius: 0; background: transparent; padding: 6px 2px 12px; }
+body.app.status :is(.card.gen-list,.card.gen-limits) { border: 0; border-radius: 0; background: transparent; padding: 0; margin: 0; }
+body.app.status .gen-prov { background: transparent; padding: 0; }
+body.app.status .gen-stats { border-bottom: 1px solid var(--app-hairline); margin-bottom: 0; }
+body.app.status .card.gen-limits h3 { margin-top: 16px; }
+body.app.status .status-more > summary { padding: 10px 0; border: 0; border-radius: 0; border-top: 1px solid var(--app-hairline); margin: 12px 0 0; background: transparent; }
+body.app.status .status-destinations { display: flex; flex-direction: column; margin-bottom: 12px; }
+body.app.status .status-destinations .nav-item { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 0; width: 100%; border: 0; border-radius: 0; background: transparent; color: var(--app-dim); text-align: left; font: inherit; font-size: 14px; }
+body.app.status .status-destinations .nav-item span { display: inline; }
+body.app.status .status-destinations .nav-item kbd { display: none; }
+body.app.status .status-destinations .nav-item.on { color: var(--app-accent); }
+body.app.status :is(.status-analytics > summary,.status-general) { display: flex; align-items: center; min-height: 44px; border: 0; padding: 10px 0; background: transparent; color: var(--app-accent); font: inherit; font-size: 14px; }
+body.app.status .status-general { margin: 0 20px; }
+
+/* Terminal's current directory belongs beside its command field. */
+body.app.terminal .terminal-location { padding: 0 20px; }
+body.app.terminal #pick { padding: 0; max-width: 100%; background: transparent; border-radius: 0; color: var(--app-dim); justify-content: flex-start; }
+html.plat-ios body.app.terminal .terminal-location { padding-top: 0; }
+html.plat-ios body.app.terminal .screen { padding-top: calc(var(--app-top) + 72px); }
+body.app.terminal .runner { border-top: 0; padding-top: 0; }
+
+/* Pairing is an instruction and an action, without a product pitch. */
+body.app.connect .screen { padding-top: calc(var(--app-top) + 48px); }
+body.app.connect h1 { font-size: 30px; line-height: 1.15; letter-spacing: -.04em; }
+body.app.connect .steps { border: 0; border-radius: 0; background: transparent; padding: 12px 0; }
+body.app.connect .pair-details { margin-top: 18px; }
+body.app.connect .pair-details summary { display: flex; align-items: center; min-height: 44px; color: var(--app-dim); font-size: 13px; }
+body.app.connect .terms { padding-left: 16px; margin-top: 0; }
+
+/* One composer control row; the working strip owns its only Stop. */
+body.app-conversation .composer-actions #stop { display: none; }
+body.app-conversation .composer-actions #send { width: auto; padding: 0 12px; border-radius: 12px; gap: 6px; font-size: 13px; }
+body.app-conversation #send svg { width: 16px; height: 16px; }
+body.app-conversation .conversation-tools button { padding: 0 10px; border-radius: 9px; }
+body.app-conversation .mac-bar .mac-stop { margin-left: auto; }
+body.app-conversation .goal-bar { min-height: 36px; }
+body.app-conversation .goal-bar .goal-chip { display: flex; align-items: center; gap: 6px; padding: 0 4px; max-width: 100%; text-align: left; }
+body.app-conversation .permission-warning { color: var(--app-orange); font-size: 12px; padding: 4px; }
+body.app-conversation .queue-toggle { min-height: 44px; width: 100%; text-align: left; border: 0; background: transparent; color: var(--app-dim); font: inherit; font-size: 13px; }
+body.app-conversation .app-sheet .queue-row { min-height: 44px; }
+body.app-conversation.read-only .mac-stop { display: none; }
+
+body.app-conversation.read-only .conversation-tools button[data-agent="more"] { display: inline-flex; }
+body.app-conversation .title-group .provider-badge { color: var(--app-dim); }
+body.app.status .status-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 20px; font-size: 13px; color: var(--app-orange); }
+body.app.status .status-notice button { min-height: 44px; min-width: 44px; border: 0; background: transparent; color: var(--app-accent); font: inherit; }
+
+body.app.status .sheet-foot, body.app.connect .terms { color: var(--app-dim); }
+
+body.app.terminal .run-output summary { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 8px 16px; font-size: 12px; color: var(--app-dim); cursor: pointer; }
+body.app.terminal .run-output summary::after { content: "+"; }
+body.app.terminal .run-output[open] summary::after { content: "−"; }
+
+body.app.status .status-copy { min-height: 44px; min-width: 44px; margin: 0 0 12px; padding: 8px 0; border: 0; background: transparent; color: var(--app-accent); font: inherit; font-size: 14px; }
+body.app .screen { scrollbar-width: none; }
+body.app .screen::-webkit-scrollbar { display: none; }
+
+body.app.home.stale #create { display: none; }
+body.app-conversation .permission-arguments summary { list-style: none; gap: 6px; }
+body.app-conversation .permission-arguments summary::-webkit-details-marker { display: none; }
+body.app-conversation .permission-arguments summary::after { content: '⌄'; }
+body.app-conversation .permission-arguments[open] summary::after { content: '⌃'; }
+body.app-conversation .perm .permission-command { margin: 0; padding: 0; min-height: 0; }
+body.app-conversation .perm .permission-arguments { margin: 4px 0 0; }
+body.app.terminal .run-output:not([open]) + .run-foot, body.app.terminal .run-output:not([open]) { margin-bottom: 0; }
+body.app.terminal .run-output:not([open]) summary { padding-bottom: 0; }
+
+/* An update from the laptop: a dot on Settings, and one row at the top of it. */
+body.app .tab .tab-icon { position: relative; }
+body.app .tab.has-update .tab-icon::after { content: ""; position: absolute; top: -1px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--app-red); box-shadow: 0 0 0 2px var(--app-bg); }
+body.app .update-card { position: relative; overflow: hidden; display: flex; align-items: center; gap: 14px; margin: 4px 0 12px; padding: 14px 14px 14px 16px; border-radius: var(--app-radius); background: var(--app-raised); border: 1px solid var(--app-hairline); }
+body.app .update-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+body.app .update-words b { font-size: var(--nik-font-size, 16px); font-weight: 600; }
+body.app .update-words small { color: var(--app-dim); font-size: 13px; line-height: 1.35; }
+body.app .update-card.bad .update-words b { color: var(--app-red); }
+body.app .update-button { flex: none; appearance: none; -webkit-appearance: none; border: 0; margin: 0; min-width: 84px; min-height: 36px; padding: 0 16px; border-radius: 18px; background: var(--app-accent); color: #fff; font: inherit; font-size: 15px; font-weight: 600; }
+body.app .update-button:active { opacity: .75; }
+body.app .update-button:disabled { background: var(--app-raised-2); color: var(--app-dim); font-variant-numeric: tabular-nums; }
+body.app .update-card::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--update-progress, 0%); background: var(--app-accent); transition: width .2s linear; }

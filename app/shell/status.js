@@ -87,6 +87,10 @@
         said.className = 'lede';
         said.textContent = state.trouble;
         withSpinnerKept(() => screen.replaceChildren(said));
+        const retry = document.createElement('button');
+        retry.className = 'go-on'; retry.textContent = 'Try again'; retry.type = 'button';
+        retry.addEventListener('click', () => { state.trouble = null; draw(); transport.retry(); ask(); });
+        screen.appendChild(retry);
       } else {
         skeleton();
       }
@@ -101,7 +105,8 @@
     // wrapping it in a second set of those was drawing the sheet twice.
     // `compact` is what makes it a phone screen rather than a panel squeezed
     // into one: same report, same sections, a head that fits.
-    paint(sheet.renderSheet(state.report, state.section, { compact: true }));
+    paint('<div class="status-notice" role="status"' + (state.trouble ? '' : ' hidden') + '>Offline · Showing the last status<button type="button" data-act="reconnect">Try again</button></div>' +
+      sheet.renderSheet(state.report, state.section, { compact: true }));
     capLongTables();
 
     // A button that said "Copied" gets a moment to be read before the next
@@ -165,7 +170,7 @@
         if (a.getAttribute(at.name) !== at.value) a.setAttribute(at.name, at.value);
       }
       for (const at of Array.prototype.slice.call(a.attributes)) {
-        if (!b.hasAttribute(at.name)) a.removeAttribute(at.name);
+        if (!b.hasAttribute(at.name) && !(a.tagName === 'DETAILS' && at.name === 'open')) a.removeAttribute(at.name);
       }
     }
   }
@@ -222,24 +227,6 @@
     }
   }
 
-  /**
-   * Bring a section's name to the middle of the strip.
-   *
-   * Done by hand rather than with `scrollIntoView`, which has no idea the bar
-   * floats above the content: asked to make a name fully visible it scrolls the
-   * *page* until the name clears the top of the viewport, which on iOS puts it —
-   * and a hundred and sixty points of what was under it — beneath the bar. Only
-   * the strip should move, and only sideways.
-   */
-  function centre(id) {
-    const rail = screen.querySelector('.sheet-nav');
-    const now = rail && rail.querySelector('[data-section="' + id + '"]');
-    if (!rail || !now) return;
-    const to = now.offsetLeft - (rail.clientWidth - now.offsetWidth) / 2;
-    const most = rail.scrollWidth - rail.clientWidth;
-    rail.scrollTo({ left: Math.max(0, Math.min(most, to)), behavior: 'smooth' });
-  }
-
   // ---- one listener, because the nodes under it come and go -------------------
 
   screen.addEventListener('click', (event) => {
@@ -250,7 +237,6 @@
       // A different section starts at its own beginning, not wherever the last
       // one had been scrolled to.
       screen.scrollTop = 0;
-      centre(state.section);
       return;
     }
 
@@ -264,9 +250,14 @@
 
     // Neither of the sheet's other two buttons is drawn in compact: there is no
     // sheet to close and the CLI is not this phone's to talk to.
+    // A conversation in General opens it, the same as tapping it in Instances.
+    const go = event.target.closest('[data-action^="switch:"]');
+    if (go) return app.go('conversation.html', { session: go.dataset.action.slice('switch:'.length) });
+
     const act = event.target.closest('[data-act]');
     if (!act) return;
     if (act.dataset.act === 'refresh') return ask();
+    if (act.dataset.act === 'reconnect') { transport.retry(); return ask(); }
     if (act.dataset.act !== 'copy') return;
 
     const sheet = window.statusSheet;
@@ -325,6 +316,22 @@
       state.trouble = null;
     }
     draw();
+  });
+
+  setInterval(() => {
+    if (state.report && !state.trouble && transport.__state && transport.__state() !== 'online') {
+      state.trouble = 'offline';
+      draw();
+    }
+  }, 2000);
+
+  (window.NikBack = window.NikBack || []).push(() => {
+    if (state.section && state.section !== 'fleet') { state.section = 'fleet'; draw(); screen.scrollTop = 0; return true; }
+    const details = screen.querySelector('.status-more[open]');
+    if (!details) return false;
+    details.open = false;
+    details.querySelector('summary').focus();
+    return true;
   });
 
   // Coming back to the app should not mean waiting five seconds to find out

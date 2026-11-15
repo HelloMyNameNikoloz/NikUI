@@ -81,6 +81,22 @@ module.exports = async function () {
   check('and names the records across the window', /Across the fleet/.test(fleet));
   check('a wide table can scroll instead of crushing its columns', /class="grid-scroll"/.test(fleet));
 
+  suite('the phone status starts with conversations and attention');
+  const phone = sheet.renderSheet(r, 'fleet', { compact: true });
+  check('phone status offers a direct way into each conversation', /class="fleet-conversation" data-action="switch:nik-a"/.test(phone));
+  check('usage details are available behind a disclosure', /<details class="status-more">/.test(phone));
+  check('conversations appear before the details', phone.indexOf('class="fleet-conversation"') < phone.indexOf('<summary>Details</summary>'));
+  check('phone General has no unrelated instance heading or section strip', !/class="sheet-head"|class="sheet-nav"/.test(phone));
+  check('Details retains all labelled destinations', sheet.SECTIONS.every((section) => phone.includes('data-section="' + section.id + '"')));
+  check('the phone status is compact, without a workspace heading', !/Across your workspace/.test(phone) && /class="gen-stats"/.test(phone));
+  checkEqual('Claude is named in its report', r.instance.provider, 'claude');
+  const codex = report({ provider: 'codex', id: 'cx-phone', label: 'Codex workspace' });
+  checkEqual('Codex is named in its report', codex.instance.provider, 'codex');
+  checkEqual('and in the fleet', codex.fleet[0].provider, 'codex');
+  const codexPhone = sheet.renderSheet(codex, 'fleet', { compact: true });
+  check('Codex has the same actionable row as Claude', /class="fleet-conversation" data-action="switch:cx-phone"/.test(codexPhone));
+  check('with its provider badge', /provider-badge codex/.test(codexPhone));
+
   suite('the lifetime cost, when a ledger is wired in');
 
   const lifetime = report({}, { lifetime: { cost: 50.84, tokens: 9000000, turns: 900, instances: 41, projects: 6, since: NOW - 4 * 86400000 } });
@@ -116,14 +132,33 @@ module.exports = async function () {
     }
   });
   const meteredFleet = sheet.renderSheet(metered, 'fleet');
-  check('the fleet shows the plan', /Plan usage/.test(meteredFleet));
+  check('the fleet shows the plan', /Claude · plan usage/.test(meteredFleet));
   check('the five-hour window by name', /Five-hour session/.test(meteredFleet));
   check('and the weekly one', /This week/.test(meteredFleet));
   check('it says what is left, not just what is gone', /14% left/.test(meteredFleet));
   check('and when it comes back', /resets in/.test(meteredFleet));
   check('a window under pressure is flagged amber', /level-warn/.test(meteredFleet));
-  check('the instance page shows it too', /Plan usage/.test(sheet.renderSheet(metered, 'overview')));
+  check('the instance page shows it too', /Claude · plan usage/.test(sheet.renderSheet(metered, 'overview')));
   check('and the copyable summary', /5h 14% left, weekly 60% left/.test(sheet.asText(metered)));
+
+  suite('ChatGPT accounts, beside Claude');
+
+  const codexed = report({ codexLimits: [
+    { id: '.codex-work', name: 'Work', email: 'w@example.com', plan: 'Pro Lite', at: now, resets: 0,
+      windows: [{ name: 'This week', mins: 10080, used: 0.1, resetsAt: now + 3600000 }] },
+    { id: '.codex', name: 'Personal', email: 'p@example.com', plan: 'Plus', at: now, resets: 2,
+      windows: [{ name: 'Five-hour', mins: 300, used: 0.25, resetsAt: now + 3600000 },
+        { name: 'This week', mins: 10080, used: 0.43, resetsAt: now + 200000000 }] }
+  ] });
+  const codexFleet = sheet.renderSheet(codexed, 'fleet');
+  check('each account has its own name', /ChatGPT Work/.test(codexFleet) && /ChatGPT Personal/.test(codexFleet));
+  check('with its plan', /Pro Lite/.test(codexFleet) && />Plus</.test(codexFleet));
+  check('and what is left of each window', /90% left/.test(codexFleet) && /75% left/.test(codexFleet) && /57% left/.test(codexFleet));
+  check('free resets are mentioned', /2 free resets/.test(codexFleet));
+  check('the instance page shows them too', /ChatGPT Work/.test(sheet.renderSheet(codexed, 'overview')));
+  check('and the copyable summary', /ChatGPT Work.*weekly 90% left/.test(sheet.asText(codexed)) &&
+    /ChatGPT Personal.*5h 75% left, weekly 57% left/.test(sheet.asText(codexed)));
+  check('no accounts, no card', !/ChatGPT/.test(sheet.renderSheet(report({}), 'fleet')));
 
   const unknown = sheet.renderSheet(report({ limits: null }), 'fleet');
   check('before anything is reported it says so', /Nothing reported yet/.test(unknown));

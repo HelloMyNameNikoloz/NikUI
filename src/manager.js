@@ -4,27 +4,27 @@ const vscode = require('vscode');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { Session, endedOnLimit } = require('./session');
-const { transcriptPath } = require('./history');
+const { transcriptPath, useNames } = require('./history');
 
 const STORAGE_KEY = 'nikui.sessions.v1';
 // The plan's limits belong to the account, not to a window or a folder.
 const LIMITS_KEY = 'nikui.limits.v1';
 const PAUSE_KEY = 'nikui.pause.v1';
+// When you last overrode a pause by hand. Limits the CLI wrote down before it
+// are history: a reload must not read them back and pause everything again.
+const OVERRIDE_KEY = 'nikui.limitOverride.v1';
 // A minute past the reset, because the window boundary is not to the second and
 // being turned away again would just start the whole dance over.
 const RESUME_GRACE_MS = 60000;
 // If the CLI never says when the quota comes back, look again in a while rather
 // than waiting for ever.
 const BLIND_RETRY_MS = 15 * 60000;
-// One number for both sides of a reload. Remembering more than we restore
-// loses rows silently, which is worse than remembering fewer.
-const KEEP = 20;
+// Names given by hand, by conversation id. Account-wide and kept after the
+// instance is closed, so History still finds a conversation by the name it had.
+const NAMES_KEY = 'nikui.names.v1';
 // Turns kept per instance across a reload. Enough to redraw the charts without
 // making the workspace store carry the whole conversation.
 const KEEP_TURNS = 60;
-// Enough that nobody loses a night's queue, few enough that workspace storage
-// stays a list of prompts rather than a copy of the conversation.
-const KEEP_QUEUED = 50;
 const QUEUED_TEXT_MAX = 8000;
 
 /** Only what /status draws, so a remembered turn stays small. */
@@ -101,6 +101,7 @@ function readConfig() {
     effort: cfg.get('effort', ''),
     outputStyle: cfg.get('outputStyle', 'Concise'),
     extraArgs: cfg.get('extraArgs', []),
+    longCommandsInBackground: cfg.get('longCommandsInBackground', true),
     autoTitle: cfg.get('autoTitleFromTicket', true),
     fontFamily: cfg.get('fontFamily', ''),
     fontSize: cfg.get('fontSize', 13),
@@ -140,8 +141,10 @@ class SessionManager extends EventEmitter {
     // A pause outlives the window it started in: the quota is the account's and
     // the reset time does not care whether VS Code was open.
     this.pause = context.globalState.get(PAUSE_KEY, null);
+    this.limitOverride = context.globalState.get(OVERRIDE_KEY, 0) || 0;
     this._resumeTimer = null;
     this.durable = null;
+    useNames(() => this.context.globalState.get(NAMES_KEY, {}) || {});
   }
 
   /**
@@ -220,6 +223,7 @@ class SessionManager extends EventEmitter {
       effort: cfg.effort,
       outputStyle: cfg.outputStyle,
       extraArgs: cfg.extraArgs,
+      longCommandsInBackground: cfg.longCommandsInBackground,
       autoTitle: cfg.autoTitle,
       maxItems: cfg.maxItems,
       limits: this.limits,
@@ -240,7 +244,9 @@ class SessionManager extends EventEmitter {
       // Whether the limit cut off its last turn: owed a nudge when the quota
       // comes back, reload or no reload.
       cutByLimit,
-      unread
+      unread,
+      // Through the keeper, when there is one, so a reload does not end it.
+      spawner: this.spawner || null
     });
 
     session.on('status', () => { this._changed(session); });
@@ -330,6 +336,8 @@ class SessionManager extends EventEmitter {
   pauseForLimit(limits) {
     const cfg = this.config;
     if (cfg.pauseOnLimit === false) return false;
+    // Older than your own "the quota is back": read back after a reload, not news.
+    if (this.limitOverride && limits && limits.at && limits.at < this.limitOverride) return false;
 
     const resetsAt = pickReset(limits);
     const until = resetsAt ? resetsAt + RESUME_GRACE_MS : Date.now() + BLIND_RETRY_MS;
@@ -354,6 +362,18 @@ class SessionManager extends EventEmitter {
 
   /** Back to work: every held instance is released, and the cut-off ones nudged. */
   resumeFromLimit({ manual } = {}) {
+    if (manual) {
+      // You know better than the numbers: the quota was reset early, or more
+      // was bought. Forget the reset they promised so a reload does not
+      // resurrect the pause from them.
+      this.limitOverride = Date.now();
+      this.knownReset = null;
+      if (this.limits && this.limits.status === 'rejected') {
+        this.limits = Object.assign({}, this.limits, { status: 'allowed', at: this.limitOverride });
+        this.context.globalState.update(LIMITS_KEY, this.limits);
+      }
+      this.context.globalState.update(OVERRIDE_KEY, this.limitOverride);
+    }
     if (!this.pause) return 0;
     const nudge = this.config.resumePrompt;
     this.pause = null;
@@ -372,7 +392,12 @@ class SessionManager extends EventEmitter {
    * during the night does not sail past the quota everything else is waiting on.
    */
   _applyPause(session) {
-    if (this.pause) session.pause({ until: this.pause.until, reason: 'limit' });
+    if (this.pause) session.pause({ until: this.pause.until, reason: 'limit', quiet: this._pauseIsPast() });
+  }
+
+  /** The remembered reset has been and gone: holding on is a formality, not news. */
+  _pauseIsPast() {
+    return !!this.pause && this.pause.until <= Date.now() + 5000;
   }
 
   _armResume() {
@@ -419,7 +444,12 @@ class SessionManager extends EventEmitter {
       };
       this.context.globalState.update(PAUSE_KEY, this.pause);
     }
-    for (const session of this.list) session.pause({ until: this.pause.until, reason: 'limit' });
+    // A reset that has already passed — the window was closed or reloaded
+    // through it — still holds things until the resume, but says nothing: a
+    // "Paused … back on the 18th" and "The quota reset" in every instance, days
+    // later, is noise. The instances it cut off still say so when nudged.
+    const quiet = this._pauseIsPast();
+    for (const session of this.list) session.pause({ until: this.pause.until, reason: 'limit', quiet });
     this._armResume();
     return true;
   }
@@ -433,10 +463,57 @@ class SessionManager extends EventEmitter {
     return true;
   }
 
+  /**
+   * The window is going away. Instances the keeper holds are let go, not
+   * stopped — the next window picks them up — and the rest end with it.
+   */
   disposeAll() {
     if (this._resumeTimer) { clearTimeout(this._resumeTimer); this._resumeTimer = null; }
-    for (const session of this.list) session.dispose();
+    for (const session of this.list) {
+      if (typeof session.detach === 'function' && session.detach()) continue;
+      // Still being picked up: the window is going, not the instance.
+      session._leaving = true;
+      session.dispose();
+    }
     this.sessions.clear();
+  }
+
+  /**
+   * After a reload: pick up every instance the last window left running.
+   * Until each answer is in, opening or prompting it waits rather than
+   * starting a second `claude` on the same conversation.
+   */
+  reattach(link) {
+    const tries = [];
+    for (const session of this.list) {
+      if (session.isRunning || typeof session.hydrate !== 'function') continue;
+      tries.push(this._attachOne(link, session));
+    }
+    return Promise.all(tries).then((all) => all.filter(Boolean).length);
+  }
+
+  _attachOne(link, session) {
+    const trying = link.attach(session).catch(() => false);
+    session._attaching = trying;
+    session._checkedAt = Date.now();
+    return trying.then((got) => {
+      const ok = got === true;
+      // Another window has it: this one must not start a second — until it
+      // asks again, which starting it does.
+      session.elsewhere = got === 'elsewhere';
+      // Kept even when it got it: a later drop can find it in another window.
+      session._recheck = () => this._attachOne(link, session);
+      if (ok) {
+        const ci = session._ciBefore;
+        session._ciBefore = false;
+        // CI it was watching when the window went: watched again, from here.
+        if (ci) this.emit('pushed', session, session.cwd);
+        this._changed(session);
+      }
+      // Prompts typed while it was being picked up.
+      session.attached();
+      return ok;
+    });
   }
 
   _changed(session) {
@@ -445,10 +522,13 @@ class SessionManager extends EventEmitter {
     this.persist();
   }
 
-  // Remember enough to offer a resume after a window reload.
+  // Remember enough to offer a resume after a window reload. Every instance,
+  // however many and however long untouched: only the user takes one off the
+  // list. There used to be a cap of twenty, which silently dropped the oldest
+  // on the next reload — idle or not.
   persist() {
+    this._rememberNames();
     const data = this.list
-      .filter((s) => s.claudeSessionId)
       .map((s) => ({
         id: s.id, cwd: s.cwd, customTitle: s.customTitle, autoLabel: s.autoLabel, ticket: s.ticket,
         // The GitHub pane: open or not, which tab, how wide — per instance. A
@@ -465,15 +545,31 @@ class SessionManager extends EventEmitter {
         // Prompts waiting in a queue are typed work — and a quota pause, which
         // is the whole reason a queue gets long, is itself remembered across a
         // reload. Losing one while keeping the other would be the worst pair.
-        queue: (s.queue || []).slice(0, KEEP_QUEUED).map(slimQueued),
+        // All of it: a cap here dropped the tail of a long queue on a reload.
+        // Images are left out, so it stays a list of prompts.
+        queue: (s.queue || []).map(slimQueued),
         // Work the limit cut off. It was only ever held in memory, so a reload
         // during a pause forgot who to nudge, and those instances stayed red.
         cutByLimit: !!(s.cutByLimit || s.interruptedByPause),
         // Not opened since it finished: still not, after a reload.
         unread: !!s.unread
       }));
-    this.context.workspaceState.update(STORAGE_KEY, data.slice(-KEEP));
-    if (this.durable) this.durable.set(STORAGE_KEY, data.slice(-KEEP));
+    this.context.workspaceState.update(STORAGE_KEY, data);
+    if (this.durable) this.durable.set(STORAGE_KEY, data);
+  }
+
+  /** Hand-given names, written where History can find them after the instance is gone. */
+  _rememberNames() {
+    const saved = this.context.globalState.get(NAMES_KEY, {}) || {};
+    const names = Object.assign({}, saved);
+    for (const s of this.list) {
+      if (!s.claudeSessionId) continue;
+      if (s.customTitle) names[s.claudeSessionId] = s.customTitle;
+      else delete names[s.claudeSessionId];
+    }
+    const same = Object.keys(names).length === Object.keys(saved).length &&
+      Object.keys(names).every((k) => names[k] === saved[k]);
+    if (!same) this.context.globalState.update(NAMES_KEY, names);
   }
 
   /**
@@ -498,13 +594,15 @@ class SessionManager extends EventEmitter {
    * never fires off a pile of CLI processes on its own.
    */
   restoreOpen() {
-    const saved = this.restorable().filter((s) => s.claudeSessionId && s.cwd);
-    for (const entry of saved.slice(-KEEP)) {
+    const saved = this.restorable().filter((s) => s && s.cwd);
+    for (const entry of saved) {
       if (this.sessions.has(entry.id)) continue;
       // What the CLI wrote down outranks what this window remembered: an
       // instance cut off before NikUI kept track of that still ends, on disk,
       // on the limit — and so is still owed its nudge.
-      const onDisk = entry.cutByLimit ? null : endedOnLimit(transcriptPath(entry.cwd, entry.claudeSessionId));
+      let onDisk = entry.cutByLimit || !entry.claudeSessionId ? null : endedOnLimit(transcriptPath(entry.cwd, entry.claudeSessionId));
+      // A limit hit before you overrode the pause by hand is not owed anything.
+      if (onDisk && this.limitOverride && (onDisk.at || 0) <= this.limitOverride) onDisk = null;
       if (onDisk && onDisk.resetsAt) this.knownReset = Math.max(this.knownReset || 0, onDisk.resetsAt);
       this.create({
         id: entry.id,

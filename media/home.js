@@ -16,6 +16,7 @@
   const $ = (id) => document.getElementById(id);
   const rows = $('rows');
   const lede = $('lede');
+  const IN_APP = document.body && document.body.classList.contains('app');
 
   /**
    * The same shape the editor's sidebar has: folders somebody made first, then
@@ -50,17 +51,52 @@
     return groups;
   }
 
+  function attentionGroups(instances, compact) {
+    const needs = (i) => i.status === 'waiting' || i.status === 'error';
+    const recent = (a, b) => Number(!!b.unread) - Number(!!a.unread) || (b.activeAt || 0) - (a.activeAt || 0);
+    if (compact) return [
+      { key: 'attention', name: 'Needs you', kind: 'attention', instances: instances.filter(needs).sort(recent) },
+      { key: 'recent', name: null, kind: 'recent', instances: instances.filter((i) => !needs(i)).sort((a, b) => (b.activeAt || 0) - (a.activeAt || 0)) }
+    ].filter((g) => g.instances.length);
+    return [
+      { key: 'attention', name: 'Needs you', kind: 'attention', instances: instances.filter(needs).sort(recent) },
+      { key: 'working', name: 'In progress', kind: 'working', instances: instances.filter((i) => !needs(i) && i.status === 'working').sort(recent) },
+      { key: 'ready', name: 'Ready to continue', kind: 'ready', instances: instances.filter((i) => !needs(i) && i.status !== 'working').sort(recent) }
+    ].filter((g) => g.instances.length);
+  }
+
+  // Provider-qualified transcript identity prevents a resumed chat appearing twice.
+  function mergeConversations(active, history) {
+    const key = (entry) => {
+      const provider = entry.provider === 'codex' || /^cx-/.test(entry.id || entry.sessionId) ? 'codex' : 'claude';
+      return provider + ':' + String(entry.sessionId || entry.id).replace(/^cx-/, '');
+    };
+    const merged = new Map();
+    for (const entry of history || []) {
+      const provider = entry.provider === 'codex' || /^cx-/.test(entry.sessionId) ? 'codex' : 'claude';
+      merged.set(key(entry), Object.assign({}, entry, {
+        provider, id: provider === 'codex' ? 'cx-' + String(entry.sessionId).replace(/^cx-/, '') : 'past:' + entry.sessionId,
+        past: true, activeAt: new Date(entry.modified).getTime() || 0
+      }));
+    }
+    for (const entry of active || []) merged.set(key(entry), Object.assign({}, merged.get(key(entry)), entry, { past: false }));
+    return [...merged.values()];
+  }
+
   // Loaded on a page that has no list to draw — which is every page but the
   // fleet, and the test that reads the filing rule out of this file. Exported
   // either way; nothing else runs.
   if (!rows || !lede) {
-    if (typeof module !== 'undefined' && module.exports) module.exports = { group };
+    if (typeof module !== 'undefined' && module.exports) module.exports = { group, attentionGroups, mergeConversations };
     return;
   }
 
   const transport = window.nikTransport();
   const REMEMBERED = 'nikui:fleet';
   const VIEW_KEY = 'nikui:fleet:view';
+  // Provider is a filter on the same workspace, so a waiting conversation
+  // never disappears merely because the other provider was selected last.
+  const WORKSPACE_KEY = 'nikui:fleet:workspace';
   const openedAt = Date.now();
 
   const money = (value) => '$' + (Number(value) || 0).toFixed(2);
@@ -87,7 +123,7 @@
   function remember(instances, folders) {
     try {
       window.localStorage.setItem(REMEMBERED,
-        JSON.stringify({ at: Date.now(), instances: instances, folders: folders || [] }));
+        JSON.stringify({ at: Date.now(), instances: instances, folders: folders || [], ...(IN_APP ? { codex: lastCodex, projects: lastProjects } : {}) }));
     } catch (_) { /* private mode, or a full disk: not worth failing over */ }
   }
 
@@ -147,6 +183,7 @@
   /** A row (or a group's head) leaving the list fades rather than vanishing. */
   function fadeOutRemove(node) {
     if (!node) return;
+    if (reduced()) { node.remove(); return; }
     node.classList.add('row-leave');
     const done = () => { if (node.parentNode) node.parentNode.removeChild(node); };
     node.addEventListener('transitionend', done, { once: true });
@@ -158,7 +195,8 @@
   // ---- Folders vs Recent -----------------------------------------------------
   // The choice of view is the reader's, not the laptop's, and it outlives a
   // reload the same way the lock's passcode does.
-  let view = window.localStorage.getItem(VIEW_KEY) === 'recent' ? 'recent' : 'folders';
+  let view = ['recent', 'folders'].includes(window.localStorage.getItem(VIEW_KEY))
+    ? window.localStorage.getItem(VIEW_KEY) : 'attention';
   // Up here rather than with the rest of the dragging below, because `draw`
   // reads it: a fleet arriving mid-drag would put the row back under the
   // finger, so it waits for the drop instead (see `endDrag`).
@@ -167,6 +205,39 @@
   let lastInstances = [];
   let lastFolders = [];
   let lastProjects = [];
+  let workspace = 'all';
+  let restored = {};
+  if (IN_APP) { try { restored = JSON.parse(sessionStorage.getItem('nikui.chats') || '{}'); } catch (_) {} }
+  let filter = IN_APP ? restored.filter || '' : '';
+  let scope = IN_APP ? new URLSearchParams(location.search).get('scope') || restored.scope || 'active' : 'active';
+  let projectFilter = IN_APP ? restored.project || '' : '';
+  let historyEntries = null;
+  let historyTrouble = null;
+  let historyAsked = false;
+  let wasLive = false;
+  let openingHistory = null;
+  let searchInput = null;
+  let scopeControl = null;
+  let phoneSheet = null;
+  let organizeSheet = null;
+  let historyLimit = 60;
+  let creationBusy = false;
+  let moveTapAfter = 0;
+  if (IN_APP) window.addEventListener('pagehide', () => {
+    try { sessionStorage.setItem('nikui.chats', JSON.stringify({ filter, scope, project: projectFilter, top: document.querySelector('.screen').scrollTop })); } catch (_) { /* storage unavailable */ }
+  });
+  let createProvider = IN_APP ? localStorage.getItem('nikui.chats.provider') || 'claude' : 'claude';
+  let createReturn = null;
+  let lastCodex = [];
+  let codexState = null;
+  let codexAsked = false;
+  let wsEl = null;
+  let viewPicker = null;
+
+  /** The arrangement is independent of which provider is being shown. */
+  function shownView() {
+    return view;
+  }
 
   /** Recent is not a filing at all: one card, every instance, newest first. */
   function recentGroup(instances) {
@@ -183,24 +254,42 @@
     const placeholder = rows.querySelector('.rows-card.skeleton');
     if (placeholder) placeholder.remove();
 
+    if (IN_APP && (scope === 'earlier' || filter)) { drawArchive(); return; }
+    const codex = workspace === 'codex';
+    if (codex) instances = lastCodex;
+    else if (workspace === 'all') instances = Array.from(new Map(instances.concat(lastCodex).map((i) => [i.id, i])).values());
+    if (IN_APP && projectFilter) instances = instances.filter((i) => i.cwd === projectFilter);
+    if (filter) instances = instances.filter((i) => [i.label, i.cwd, i.provider, /^cx-/.test(i.id) ? 'codex' : 'claude']
+      .some((s) => String(s || '').toLowerCase().includes(filter)));
     if (!instances.length) {
       rows.textContent = '';
       groupNodes.clear();
       rowCache.clear();
-      lede.textContent = 'No instances are open in the editor yet.';
+      if (IN_APP) { showEmpty('No conversations yet', projectFilter || workspace !== 'all' ? 'Clear filters' : null, clearFilters); return; }
+      lede.textContent = filter ? 'No conversations match your search.' : !codex ? 'A fresh start. Pick an agent and a folder below.'
+        : codexState && codexState.error ? 'Codex could not be reached: ' + codexState.error
+        : codexState && codexState.loaded ? 'No Codex conversations yet.' : 'Loading Codex conversations…';
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = filter ? 'Try a project name or another provider.' : 'Your conversations will appear here. Start with Claude or Codex to get going.';
+      rows.appendChild(empty);
       return;
     }
-    lede.textContent = instances.length === 1 ? 'One instance.' : instances.length + ' instances.';
+    if (IN_APP) lede.hidden = true;
+    const needs = instances.filter((i) => i.status === 'waiting' || i.status === 'error').length;
+    const working = instances.filter((i) => i.status === 'working').length;
+    lede.textContent = needs ? needs + ' needs you · ' + working + ' working'
+      : working ? working + ' working · You’re all caught up' : instances.length + ' conversations · Ready when you are';
 
     // A folder with nothing in it is not worth a card on a screen this small:
     // dropped here rather than in `group()`, which still has to say a folder
     // exists — the editor's own sidebar reads that list too.
-    const groups = view === 'recent' ? recentGroup(instances)
-      : group(instances, folders).filter((g) => g.instances.length > 0);
+    const groups = view === 'attention' ? attentionGroups(instances, IN_APP) : view === 'recent' ? recentGroup(instances)
+      : group(instances, codex ? [] : folders).filter((g) => g.instances.length > 0);
     // One project and nothing else is not a grouping, it is a heading nobody
     // needs — so it is only drawn when there is more than one thing to tell
     // apart, and never in Recent, which is one card by definition.
-    const headed = view === 'folders' && groups.length > 1;
+    const headed = view === 'attention' || (shownView() === 'folders' && groups.length > 1);
     const seenGroups = new Set();
     const seenRows = new Set();
     let anchor = null;
@@ -210,7 +299,7 @@
       let entry = groupNodes.get(set.key);
       if (!entry) { entry = { head: null, card: null }; groupNodes.set(set.key, entry); }
 
-      if (headed) {
+      if (headed && (!IN_APP || set.name)) {
         if (!entry.head) {
           entry.head = document.createElement('div');
           const name = document.createElement('span');
@@ -238,7 +327,7 @@
       placeAfter(entry.card, anchor, rows);
       anchor = entry.card;
 
-      const ordered = view === 'recent' ? set.instances : applyOrder(set.key, set.instances);
+      const ordered = shownView() === 'recent' ? set.instances : applyOrder(set.key, set.instances);
       for (const instance of ordered) seenRows.add(instance.id);
       drawRows(entry.card, ordered, set.key);
     }
@@ -270,8 +359,34 @@
     else row.dot.removeAttribute('title');
 
     row.nameEl.textContent = instance.label || instance.id;
+    row.classList.toggle('codex', /^cx-/.test(instance.id));
+    const provider = instance.provider === 'codex' || /^cx-/.test(instance.id) ? 'codex' : 'claude';
+    row.dataset.provider = provider;
+    row.providerEl.className = 'provider-badge ' + provider;
+    row.providerEl.textContent = provider === 'codex' ? 'Codex' : 'Claude';
+    const words = { waiting: 'Needs permission', error: 'Needs attention', working: 'Working', done: 'Finished', stopped: 'Stopped', idle: 'Ready' };
+    row.stateEl.textContent = instance.unread ? 'New reply' : instance.paused ? 'Quota paused' : words[instance.status] || 'Ready';
+    row.stateEl.className = 'row-state ' + (instance.status || 'idle');
+    if (IN_APP) {
+      const folder = instance.folder ? instance.folder.name : instance.project ? instance.project.name : shortPath(instance.cwd);
+      const state = instance.unread ? 'New reply' : instance.paused ? 'Quota paused' : instance.readOnly ? 'Open in ChatGPT' : instance.queued ? instance.queued + ' queued'
+        : instance.past ? shortAgo(instance.activeAt) : words[instance.status] || (instance.activeAt ? shortAgo(instance.activeAt) : 'Ready');
+      row.whereEl.textContent = [folder, state].filter(Boolean).join(' · ');
+      row.providerEl.textContent = provider === 'codex' ? '◈' : '✳';
+      row.providerEl.title = provider === 'codex' ? 'Codex' : 'Claude';
+      row.providerEl.setAttribute('aria-label', row.providerEl.title);
+      row.setAttribute('aria-label', [instance.label || instance.id, row.providerEl.title, folder, state].filter(Boolean).join(', '));
+      row.dot.hidden = !!instance.past;
+      return;
+    }
 
-    if (view === 'recent') {
+    if (/^cx-/.test(instance.id)) {
+      const where = [shortPath(instance.cwd)];
+      if (instance.queued) where.push(instance.queued + ' queued');
+      if (instance.readOnly) where.push('open in ChatGPT');
+      if (instance.activeAt) where.push(shortAgo(instance.activeAt));
+      row.whereEl.textContent = where.join(' · ');
+    } else if (view === 'recent') {
       // Which folder or project it belongs to, since Recent has no heading to
       // say so otherwise, and how long ago it last did anything, which is the
       // whole reason to be looking at this view rather than Folders.
@@ -286,7 +401,7 @@
       row.whereEl.textContent = shortPath(instance.cwd) + (notes.length ? ' · ' + notes.join(' · ') : '');
     }
 
-    row.costEl.textContent = money(instance.cost);
+    row.costEl.textContent = /^cx-/.test(instance.id) ? '' : money(instance.cost);
   }
 
   function buildRow(instance) {
@@ -302,7 +417,14 @@
     row.appendChild(row.whereEl);
     row.costEl = document.createElement('span');
     row.costEl.className = 'row-cost';
-    row.appendChild(row.costEl);
+    if (!IN_APP) row.appendChild(row.costEl);
+    row.badgesEl = document.createElement('div');
+    row.badgesEl.className = 'row-badges';
+    row.providerEl = document.createElement('span');
+    row.stateEl = document.createElement('span');
+    row.badgesEl.appendChild(row.providerEl);
+    if (!IN_APP) row.badgesEl.appendChild(row.stateEl);
+    row.appendChild(row.badgesEl);
     // Only ever shown in edit mode (see app.css), but built once rather than
     // added and removed with it — a row dragged mid-edit should not lose the
     // handle it is being dragged by because a redraw happened to land first.
@@ -310,6 +432,9 @@
     row.handleEl.className = 'row-handle';
     row.appendChild(row.handleEl);
     paintRow(row, instance);
+    if (IN_APP) row.addEventListener('click', (event) => {
+      if (editing) { event.preventDefault(); if (Date.now() >= moveTapAfter) openMoveSheet(row.dataset.instance); }
+    });
     return row;
   }
 
@@ -359,7 +484,8 @@
       where.className = 'row-cwd skeleton-chip';
       const cost = document.createElement('span');
       cost.className = 'row-cost skeleton-chip';
-      row.append(dot, name, where, cost);
+      row.append(dot, name, where);
+      if (!IN_APP) row.append(cost);
       card.appendChild(row);
     }
     rows.appendChild(card);
@@ -375,8 +501,19 @@
     for (const resolve of waiting) resolve();
   }
 
-  function live(instances, folders, projects) {
+  function live(instances, folders, projects, codex, state) {
+    wasLive = true;
+    lastCodex = (codex || []).map((c) => Object.assign({}, c, {
+      provider: 'codex',
+      project: c.project || (c.cwd ? { path: c.cwd, name: String(c.cwd).split(/[\\/]/).filter(Boolean).pop() || c.cwd } : null)
+    }));
+    codexState = state || null;
+    if (workspace !== 'claude' && !codexAsked) {
+      codexAsked = true;
+      transport.postMessage({ type: 'codex:watch' });
+    }
     document.body.classList.remove('stale');
+    lede.hidden = false;
     const retry = document.getElementById('retry');
     if (retry) retry.remove();
     lastInstances = instances;
@@ -385,6 +522,7 @@
     draw(instances, folders);
     remember(instances, folders);
     settleRefreshes();
+    if (IN_APP && restored.top != null && scope === 'active' && !filter) { document.querySelector('.screen').scrollTop = restored.top; delete restored.top; }
   }
 
   /**
@@ -392,6 +530,7 @@
    * said to be the last list, and a way to ask again.
    */
   function stale(why) {
+    codexAsked = false;
     const saved = remembered();
     document.body.classList.add('stale');
     if (!saved) {
@@ -401,9 +540,10 @@
       draw(saved.instances, saved.folders);
       lede.textContent = (why || 'Cannot reach the laptop.') + ' Showing what it looked like ' + ago(saved.at) + '.';
     }
+    lede.hidden = false;
     if (!document.getElementById('retry')) {
       const retry = document.createElement('button');
-      retry.className = 'go-on';
+      retry.className = IN_APP ? 'new-chat reconnect' : 'go-on';
       retry.id = 'retry';
       retry.type = 'button';
       retry.textContent = 'Try again';
@@ -413,13 +553,14 @@
       });
       // Outside the list, so the list can be dimmed without dimming the way
       // out of it.
-      rows.parentNode.appendChild(retry);
+      if (IN_APP) rows.parentNode.after(retry); else rows.parentNode.appendChild(retry);
     }
   }
 
   function refused(message) {
     rows.textContent = '';
     document.body.classList.remove('stale');
+    lede.hidden = false;
     lede.textContent = message.reason || 'This device cannot see this window.';
     if (!message.pair) return;
     const link = document.createElement('a');
@@ -439,7 +580,12 @@
   function ask(type, extra) {
     const id = 'h' + (++reqSeq) + '-' + Date.now().toString(36);
     return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        if (!pending.has(id)) return;
+        pending.delete(id);
+        reject({ reason: 'Your laptop did not answer. Check the connection and try again.' });
+      }, 12000);
+      pending.set(id, { resolve, reject, timer });
       transport.postMessage(Object.assign({ type: type, id: id }, extra || {}));
     });
   }
@@ -447,14 +593,27 @@
   window.addEventListener('message', function (event) {
     const message = event.data;
     if (!message || typeof message.type !== 'string') return;
-    if (message.type === 'fleet') live(message.instances || [], message.folders || [], message.projects || []);
+    if (message.type === '@welcome' || message.type === '@device') {
+      const allowed = !message.device || message.device.control !== false;
+      document.body.classList.toggle('read-only', !allowed);
+      for (const b of document.querySelectorAll('.start-agent, #create, #edit')) b.disabled = !allowed;
+      if (IN_APP) requestHistory();
+    }
+    if (IN_APP && message.type === 'history') {
+      historyEntries = message.entries || [];
+      historyTrouble = !message.available ? 'History is unavailable on this laptop.' : message.trouble ? 'Could not read earlier chats.' : null;
+      if (scope === 'earlier' || filter) drawArchive();
+    }
+    if (message.type === 'fleet') {
+      live(message.instances || [], message.folders || [], message.projects || [], message.codex || [], message.codexState || null);
+    }
     else if (message.type === '@denied') refused(message);
     else if (message.type === 'instance:created' || message.type === 'instance:placed') {
       const waiting = pending.get(message.id);
-      if (waiting) { pending.delete(message.id); waiting.resolve(message); }
+      if (waiting) { clearTimeout(waiting.timer); pending.delete(message.id); waiting.resolve(message); }
     } else if (message.type === '@refused') {
       const waiting = pending.get(message.id);
-      if (waiting) { pending.delete(message.id); waiting.reject(message); }
+      if (waiting) { clearTimeout(waiting.timer); pending.delete(message.id); waiting.reject(message); }
     }
   });
 
@@ -463,11 +622,13 @@
   // there is not. Either beats a blank list and the word "Connecting…".
   const saved = remembered();
   if (saved) {
+    if (IN_APP) { lastInstances = saved.instances; lastFolders = saved.folders || []; lastCodex = saved.codex || []; lastProjects = saved.projects || []; }
     document.body.classList.add('stale');
     draw(saved.instances, saved.folders);
+    lede.hidden = false;
     lede.textContent = 'Last seen ' + ago(saved.at) + '. Reconnecting…';
   } else {
-    skeletonRows(4);
+    skeletonRows(IN_APP ? 7 : 4);
   }
 
   // A pull at the top of the list asks the laptop again, the same way the
@@ -477,6 +638,7 @@
     window.NikPull.attach(document.querySelector('.screen'), () => {
       const waited = new Promise((resolve) => refreshWaiters.push(resolve));
       transport.retry();
+      if (IN_APP) requestHistory(true);
       return waited;
     });
   }
@@ -486,7 +648,6 @@
    * died" — there is no connection to push it — so the page asks, and the
    * moment the answer stops being "online" the list says what it is.
    */
-  let wasLive = false;
   let saidOffline = false;
   setInterval(function () {
     const live = transport.__state && transport.__state() === 'online';
@@ -507,31 +668,59 @@
   // carry markup for. ---------------------------------------------------------
   let editing = false;
   let editBtn = null;
+  let editHome = null;
   let segEl = null;
 
   function enterEdit() {
     if (editing || view !== 'folders') return;
     editing = true;
-    if (editBtn) editBtn.textContent = 'Done';
+    if (editBtn) { editBtn.textContent = 'Done'; if (IN_APP) document.querySelector('.bar-right').append(editBtn); }
     rows.classList.add('editing');
   }
   function exitEdit() {
     if (!editing) return;
     editing = false;
-    if (editBtn) editBtn.textContent = 'Edit';
+    if (editBtn) { editBtn.textContent = IN_APP ? 'Organize' : 'Edit'; if (IN_APP && editHome) editHome.append(editBtn); }
     rows.classList.remove('editing');
     cancelDrag();
   }
 
   function paintSegmented() {
     if (!segEl) return;
-    for (const btn of segEl.querySelectorAll('.seg-btn')) btn.classList.toggle('on', btn.dataset.view === view);
-    if (editBtn) editBtn.hidden = view !== 'folders';
-    if (view !== 'folders') exitEdit();
+    for (const btn of segEl.querySelectorAll('.seg-btn')) {
+      btn.classList.toggle('on', btn.dataset.view === view);
+      btn.setAttribute('aria-pressed', String(btn.dataset.view === view));
+    }
+    if (wsEl) for (const btn of wsEl.querySelectorAll('.seg-btn')) {
+      btn.classList.toggle('on', btn.dataset.ws === workspace);
+      btn.setAttribute('aria-pressed', String(btn.dataset.ws === workspace));
+    }
+    if (viewPicker) viewPicker.value = view;
+    document.body.classList.toggle('codex-ws', workspace === 'codex');
+    const title = document.querySelector('.bar .bar-title');
+    if (title) title.textContent = IN_APP ? 'Chats' : 'NikUI';
+    if (editBtn) editBtn.hidden = IN_APP ? scope === 'earlier' || !!filter : shownView() !== 'folders' || workspace === 'codex';
+    if (shownView() !== 'folders') exitEdit();
+    if (IN_APP && scopeControl) for (const b of scopeControl.children) { b.classList.toggle('on', b.dataset.scope === scope); b.setAttribute('aria-pressed', String(b.dataset.scope === scope)); }
+  }
+
+  function setWorkspace(next) {
+    if (!['all', 'claude', 'codex'].includes(next) || next === workspace) return;
+    workspace = next;
+    if (next !== 'all') createProvider = next;
+    try { window.localStorage.setItem(WORKSPACE_KEY, workspace); } catch (_) { /* not worth failing over */ }
+    if (workspace !== 'claude') { codexAsked = true; transport.postMessage({ type: 'codex:watch' }); }
+    paintSegmented();
+    if (reduced()) { draw(lastInstances, lastFolders); return; }
+    rows.classList.add('view-fade');
+    setTimeout(() => {
+      draw(lastInstances, lastFolders);
+      requestAnimationFrame(() => rows.classList.remove('view-fade'));
+    }, 150);
   }
 
   function setView(next) {
-    if ((next !== 'folders' && next !== 'recent') || next === view) return;
+    if (!['attention', 'folders', 'recent'].includes(next) || next === view) return;
     view = next;
     try { window.localStorage.setItem(VIEW_KEY, view); } catch (_) { /* not worth failing over */ }
     paintSegmented();
@@ -548,6 +737,7 @@
   function buildChrome() {
     const bar = document.querySelector('.bar');
     if (!bar) return;
+    if (IN_APP) { buildPhoneChrome(bar); return; }
     const title = bar.querySelector('.bar-title');
 
     const left = document.createElement('div');
@@ -572,10 +762,57 @@
     if (right) right.insertBefore(addBtn, right.firstChild);
     else bar.appendChild(addBtn);
 
+    const start = document.createElement('div');
+    start.className = 'start-agents';
+    for (const provider of ['claude', 'codex']) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'start-agent ' + provider;
+      button.innerHTML = '<span class="agent-mark">' + (provider === 'codex' ? '◈' : '✳') + '</span><span>New ' + (provider === 'codex' ? 'Codex' : 'Claude') + '</span><span class="start-plus">+</span>';
+      button.addEventListener('click', () => { createProvider = provider; openCreateSheet(); });
+      start.appendChild(button);
+    }
+    rows.parentNode.insertBefore(start, rows);
+
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'fleet-search';
+    search.placeholder = 'Find a conversation or folder';
+    search.setAttribute('aria-label', search.placeholder);
+    search.addEventListener('input', () => { filter = search.value.trim().toLowerCase(); draw(lastInstances, lastFolders); });
+    rows.parentNode.insertBefore(search, rows);
+
+    wsEl = document.createElement('div');
+    wsEl.className = 'segmented workspaces';
+    wsEl.id = 'workspaceSwitch';
+    wsEl.innerHTML =
+      '<button type="button" class="seg-btn" data-ws="all">All agents</button>' +
+      '<button type="button" class="seg-btn" data-ws="claude">Claude</button>' +
+      '<button type="button" class="seg-btn codex" data-ws="codex">Codex</button>';
+    wsEl.addEventListener('click', (event) => {
+      const btn = event.target.closest('.seg-btn');
+      if (btn) setWorkspace(btn.dataset.ws);
+    });
+    const controls = document.createElement('div');
+    controls.className = 'fleet-controls';
+    controls.appendChild(wsEl);
+    viewPicker = document.createElement('select');
+    viewPicker.className = 'fleet-sort';
+    viewPicker.setAttribute('aria-label', 'Sort conversations');
+    for (const [value, label] of [['attention', 'Priority'], ['folders', 'Folders'], ['recent', 'Recent']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = label;
+      viewPicker.appendChild(option);
+    }
+    viewPicker.addEventListener('change', () => setView(viewPicker.value));
+    controls.appendChild(viewPicker);
+    rows.parentNode.insertBefore(controls, rows);
+
     segEl = document.createElement('div');
     segEl.className = 'segmented';
     segEl.id = 'viewSwitch';
+    segEl.hidden = true;
     segEl.innerHTML =
+      '<button type="button" class="seg-btn" data-view="attention">Priority</button>' +
       '<button type="button" class="seg-btn" data-view="folders">Folders</button>' +
       '<button type="button" class="seg-btn" data-view="recent">Recent</button>';
     segEl.addEventListener('click', (event) => {
@@ -585,6 +822,143 @@
     rows.parentNode.insertBefore(segEl, rows);
 
     paintSegmented();
+  }
+
+  function requestHistory(force) {
+    if (historyAsked && !force) return;
+    historyAsked = true;
+    transport.postMessage({ type: 'history', limit: 200 });
+    setTimeout(() => {
+      if (historyEntries !== null) return;
+      historyTrouble = 'Your laptop did not send earlier chats.';
+      if (scope === 'earlier' || filter) drawArchive();
+    }, 12000);
+  }
+
+  function clearFilters() {
+    filter = ''; projectFilter = ''; workspace = 'all';
+    if (searchInput) searchInput.value = '';
+    paintSegmented(); draw(lastInstances, lastFolders);
+  }
+
+  function showEmpty(title, action, tap) {
+    rows.textContent = '';
+    groupNodes.clear(); rowCache.clear();
+    lede.hidden = true;
+    const empty = document.createElement('div'); empty.className = 'empty-state';
+    const h = document.createElement('h2'); h.textContent = title; empty.append(h);
+    if (action) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'go-on'; b.textContent = action;
+      b.addEventListener('click', tap); empty.append(b);
+    }
+    rows.append(empty);
+  }
+
+  function drawArchive() {
+    const scroll = document.querySelector('.screen');
+    const previousTop = scroll.scrollTop;
+    const active = lastInstances.concat(lastCodex);
+    let entries = mergeConversations(active, historyEntries);
+    if (scope === 'earlier' && !filter) {
+      const ids = new Set((historyEntries || []).map((e) => (e.provider || 'claude') + ':' + String(e.sessionId).replace(/^cx-/, '')));
+      entries = entries.filter((e) => e.past || e.provider === 'codex' || ids.has((e.provider || 'claude') + ':' + String(e.sessionId || e.id).replace(/^cx-/, '')));
+    }
+    entries = entries.filter((e) => (workspace === 'all' || (e.provider || 'claude') === workspace) &&
+      (!projectFilter || e.cwd === projectFilter) && (!filter || [e.label, e.autoLabel, e.title, e.cwd, e.branch, e.sessionId, e.id, e.provider || 'claude']
+        .some((v) => String(v || '').toLowerCase().includes(filter)))).sort((a, b) => b.activeAt - a.activeAt);
+    showEmpty(historyEntries === null ? 'Loading earlier chats…' : filter ? 'No matching conversations' : 'No earlier chats',
+      historyTrouble ? 'Try again' : filter || projectFilter || workspace !== 'all' ? 'Clear filters' : null,
+      historyTrouble ? () => { historyTrouble = null; historyAsked = false; requestHistory(); drawArchive(); } : clearFilters);
+    if (entries.length) {
+      rows.textContent = '';
+      const card = document.createElement('div'); card.className = 'rows-card'; rows.append(card);
+      for (const entry of entries.slice(0, historyLimit)) {
+        const row = buildRow(entry);
+        if (entry.past && (entry.provider || 'claude') !== 'codex') {
+          row.href = '#';
+          row.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (openingHistory) return;
+            openingHistory = entry.sessionId; row.classList.add('busy');
+            ask('instance:resume', { sessionId: entry.sessionId }).then((made) => {
+              location.href = (window.NIKUI_REMOTE.conversation || 'conversation.html?session=') + encodeURIComponent(made.instance);
+            }).catch((error) => {
+              openingHistory = null; row.classList.remove('busy'); lede.hidden = false;
+              lede.textContent = error.reason || 'Could not open this chat. Try again.';
+            });
+          });
+        }
+        card.append(row);
+      }
+      if (entries.length > historyLimit) {
+        const more = document.createElement('button'); more.type = 'button'; more.className = 'go-on'; more.textContent = 'Show more';
+        more.addEventListener('click', () => { historyLimit += 60; drawArchive(); }); rows.append(more);
+      }
+    }
+    if (historyTrouble) { lede.hidden = false; lede.textContent = historyTrouble; }
+    scroll.scrollTop = restored.top != null && historyEntries !== null ? restored.top : previousTop;
+    if (historyEntries !== null) delete restored.top;
+    if (document.body.classList.contains('stale')) { lede.hidden = false; lede.textContent = 'Offline · Showing saved conversations'; }
+  }
+
+  function openMoveSheet(id) {
+    const instance = lastInstances.find((i) => i.id === id);
+    if (!instance) return;
+    if (!organizeSheet) organizeSheet = window.NikApp.sheet({ title: 'Move conversation' });
+    organizeSheet.body.textContent = '';
+    const note = document.createElement('p'); note.className = 'create-note'; organizeSheet.body.append(note);
+    for (const folder of [{ id: null, name: 'No group' }].concat(lastFolders)) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'agent-option'; b.textContent = folder.name;
+      b.addEventListener('click', () => {
+        b.disabled = true;
+        ask('instance:place', { instance: id, folderId: folder.id }).then(() => organizeSheet.close())
+          .catch((error) => { b.disabled = false; note.textContent = error.reason || 'Could not move this conversation.'; });
+      }); organizeSheet.body.append(b);
+    }
+    organizeSheet.show(() => [...rows.querySelectorAll('.row')].find((r) => r.dataset.instance === id));
+  }
+
+  function buildPhoneChrome(bar) {
+    const title = bar.querySelector('.bar-title');
+    scopeControl = document.createElement('div'); scopeControl.className = 'chat-scope'; scopeControl.setAttribute('role', 'group'); scopeControl.setAttribute('aria-label', 'Chat scope');
+    for (const [value, label] of [['active', 'Active'], ['earlier', 'Earlier']]) {
+      const b = document.createElement('button'); b.type = 'button'; b.dataset.scope = value; b.textContent = label;
+      b.addEventListener('click', () => { scope = value; exitEdit(); paintSegmented(); draw(lastInstances, lastFolders); requestHistory(); }); scopeControl.append(b);
+    }
+    const left = document.createElement('div'); left.className = 'bar-left'; left.append(title); bar.prepend(left);
+    bar.insertBefore(scopeControl, bar.querySelector('.bar-right'));
+    const searchBar = document.createElement('div'); searchBar.className = 'chat-search';
+    searchInput = document.createElement('input'); searchInput.type = 'search'; searchInput.className = 'fleet-search'; searchInput.placeholder = 'Search all chats'; searchInput.setAttribute('aria-label', 'Search all chats'); searchInput.value = filter;
+    searchInput.addEventListener('input', () => { filter = searchInput.value.trim().toLowerCase(); exitEdit(); paintSegmented(); requestHistory(); draw(lastInstances, lastFolders); });
+    const filters = document.createElement('details'); filters.className = 'chat-filters';
+    const summary = document.createElement('summary'); summary.textContent = 'Filter'; summary.setAttribute('aria-label', 'Filter and organize chats');
+    filters.append(summary);
+    const controls = document.createElement('div'); controls.className = 'chat-filter-options';
+    wsEl = document.createElement('div'); wsEl.className = 'segmented workspaces'; wsEl.id = 'workspaceSwitch';
+    for (const [value, label] of [['all','All'],['claude','Claude'],['codex','Codex']]) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'seg-btn'; b.dataset.ws = value; b.textContent = label;
+      b.addEventListener('click', () => setWorkspace(value)); wsEl.append(b);
+    }
+    controls.append(wsEl);
+    viewPicker = document.createElement('select'); viewPicker.className = 'fleet-sort'; viewPicker.setAttribute('aria-label', 'Sort conversations');
+    for (const [value, label] of [['attention','Priority'],['recent','Recent'],['folders','Folders']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = label; viewPicker.append(option);
+    }
+    viewPicker.addEventListener('change', () => setView(viewPicker.value)); controls.append(viewPicker);
+    const project = document.createElement('select'); project.className = 'project-filter'; project.setAttribute('aria-label', 'Filter by project');
+    const updateProjects = () => {
+      const paths = [...new Set(lastProjects.map((p) => p.path).concat(lastInstances.concat(lastCodex).map((i) => i.cwd), (historyEntries || []).map((i) => i.cwd)).filter(Boolean))];
+      project.textContent = '';
+      for (const path of [''].concat(paths)) { const option = document.createElement('option'); option.value = path; option.textContent = path ? shortPath(path) : 'All projects'; project.append(option); } project.value = projectFilter;
+    };
+    filters.addEventListener('toggle', () => { if (filters.open) updateProjects(); });
+    project.addEventListener('change', () => { projectFilter = project.value; draw(lastInstances, lastFolders); }); controls.append(project);
+    editBtn = document.createElement('button'); editBtn.type = 'button'; editBtn.id = 'edit'; editBtn.className = 'bar-button text'; editBtn.textContent = 'Organize';
+    editBtn.addEventListener('click', () => { if (editing) exitEdit(); else { setView('folders'); enterEdit(); } filters.open = false; }); editHome = controls; controls.append(editBtn);
+    filters.append(controls); searchBar.append(searchInput, filters); rows.parentNode.before(searchBar);
+    const add = document.createElement('button'); add.type = 'button'; add.id = 'create'; add.className = 'new-chat'; add.textContent = '+ New chat'; add.addEventListener('click', openCreateSheet);
+    rows.parentNode.after(add);
+    segEl = wsEl; paintSegmented();
   }
 
   // ---- rearranging, and moving a row into a different folder -----------------
@@ -675,6 +1049,7 @@
 
   function endDrag() {
     if (!dragState) return;
+    if (IN_APP) moveTapAfter = Date.now() + 400;
     const { row, originParent, originNext, originGroup } = dragState;
     dragState = null;
     row.classList.remove('row-dragging');
@@ -703,6 +1078,7 @@
       row.dataset.group = originGroup;
       saveOrder(originGroup, [...originParent.children].map((r) => r.dataset.instance).filter(Boolean));
       saveOrder(newGroup, [...newParent.children].map((r) => r.dataset.instance).filter(Boolean));
+      lede.hidden = false;
       lede.textContent = (refusal && refusal.reason) || 'That could not be moved.';
       setTimeout(() => { if (lastInstances.length) draw(lastInstances, lastFolders); }, 2500);
     });
@@ -729,7 +1105,7 @@
 
   rows.addEventListener('pointerdown', (event) => {
     const row = event.target.closest('.row');
-    if (!row || !row.dataset.instance || view !== 'folders') return;
+    if (!row || !row.dataset.instance || view !== 'folders' || row.dataset.provider === 'codex') return;
     if (editing) {
       if (event.target.closest('.row-handle')) beginDrag(row, event);
       return;
@@ -778,6 +1154,24 @@
   let sheetEls = null;
 
   function buildCreateSheet() {
+    if (IN_APP) {
+      phoneSheet = window.NikApp.sheet({ title: 'New chat', className: 'new-chat-sheet' });
+      phoneSheet.body.innerHTML = '<div class="create-providers"><button class="chip" type="button" data-provider="claude">Claude</button><button class="chip" type="button" data-provider="codex">Codex</button></div>' +
+        '<details class="create-group"><summary>Organize in a group</summary><div class="folder-chips" id="createFolders"></div></details>' +
+        '<div class="create-list" id="createList"></div><p class="create-note" id="createNote" role="status" hidden></p>';
+      phoneSheet.body.querySelector('.create-providers').addEventListener('click', (event) => {
+        const button = event.target.closest('[data-provider]');
+        if (!button || creationBusy) return;
+        createProvider = button.dataset.provider; localStorage.setItem('nikui.chats.provider', createProvider); renderCreateSheet();
+      });
+      const folders = phoneSheet.body.querySelector('#createFolders');
+      folders.addEventListener('click', (event) => {
+        const chip = event.target.closest('.chip'); if (!chip || creationBusy) return;
+        selectedFolderId = chip.dataset.folder || null;
+        for (const c of folders.children) { c.classList.toggle('on', c === chip); c.setAttribute('aria-pressed', String(c === chip)); }
+      });
+      return { backdrop: phoneSheet.backdrop, sheet: phoneSheet.panel, folders, list: phoneSheet.body.querySelector('#createList'), note: phoneSheet.body.querySelector('#createNote') };
+    }
     const backdrop = document.createElement('div');
     backdrop.className = 'sheet-backdrop';
     backdrop.id = 'createBackdrop';
@@ -786,14 +1180,37 @@
 
     const sheet = document.createElement('div');
     sheet.className = 'create-sheet';
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('aria-modal', 'true');
+    sheet.setAttribute('aria-label', 'New conversation');
     sheet.innerHTML =
       '<div class="sheet-grab"></div>' +
-      '<h2 class="sheet-h">New instance</h2>' +
+      '<div class="create-heading"><h2 class="sheet-h">New conversation</h2><button class="sheet-close" type="button" aria-label="Close new conversation">×</button></div>' +
+      '<p class="create-sub">Choose an agent, then a project to start.</p>' +
+      '<div class="create-providers"><button class="chip" type="button" data-provider="claude">✳ Claude</button><button class="chip" type="button" data-provider="codex">◈ Codex</button></div>' +
       '<div class="folder-chips" id="createFolders" hidden></div>' +
       '<div class="create-list" id="createList"></div>' +
       '<p class="create-note" id="createNote" hidden></p>';
     backdrop.appendChild(sheet);
     document.body.appendChild(backdrop);
+    (window.NikBack = window.NikBack || []).push(() => {
+      if (backdrop.hidden) return false;
+      closeCreateSheet();
+      return true;
+    });
+    sheet.querySelector('.sheet-close').addEventListener('click', closeCreateSheet);
+    sheet.querySelector('.create-providers').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-provider]');
+      if (button) { createProvider = button.dataset.provider; renderCreateSheet(); }
+    });
+    backdrop.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); closeCreateSheet(); }
+      if (event.key !== 'Tab') return;
+      const buttons = [...sheet.querySelectorAll('button:not([disabled])')].filter((b) => b.getClientRects().length);
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
 
     const folders = sheet.querySelector('#createFolders');
     folders.addEventListener('click', (event) => {
@@ -830,33 +1247,46 @@
   }
 
   function tapProject(project, rowEl) {
-    if (rowEl.classList.contains('busy')) return;
+    if ((IN_APP && creationBusy) || rowEl.classList.contains('busy')) return;
+    if (IN_APP) creationBusy = true;
     rowEl.classList.add('busy');
     sheetEls.note.hidden = true;
-    ask('instance:new', { cwd: project.path, folderId: selectedFolderId || undefined }).then((made) => {
+    const extra = createProvider === 'codex' ? { cwd: project.path, provider: 'codex' }
+      : { cwd: project.path, folderId: selectedFolderId || undefined };
+    ask('instance:new', extra).then((made) => {
       location.href = ((window.NIKUI_REMOTE || {}).conversation || '/s/') + encodeURIComponent(made.instance);
     }).catch((refusal) => {
+      creationBusy = false;
       rowEl.classList.remove('busy');
+      if (IN_APP) rowEl.querySelector('.create-name').textContent = 'Retry · ' + project.name;
       sheetEls.note.hidden = false;
       sheetEls.note.textContent = (refusal && refusal.reason) || 'That did not work.';
     });
   }
 
   function renderCreateSheet() {
-    selectedFolderId = null;
+    if (!IN_APP) selectedFolderId = null;
     sheetEls.folders.innerHTML = '';
-    if (lastFolders.length) {
+    const heading = sheetEls.sheet.querySelector('.sheet-h');
+    if (heading) heading.textContent = IN_APP ? 'New chat' : 'New conversation';
+    for (const b of sheetEls.sheet.querySelectorAll('[data-provider]')) {
+      b.classList.toggle('on', b.dataset.provider === createProvider);
+      b.setAttribute('aria-pressed', String(b.dataset.provider === createProvider));
+    }
+    if (lastFolders.length && createProvider !== 'codex') {
       sheetEls.folders.hidden = false;
       const none = document.createElement('button');
       none.type = 'button';
-      none.className = 'chip on';
+      none.className = 'chip' + (!selectedFolderId ? ' on' : '');
+      none.setAttribute('aria-pressed', String(!selectedFolderId));
       none.textContent = 'None';
       none.dataset.folder = '';
       sheetEls.folders.appendChild(none);
       for (const folder of lastFolders) {
         const chip = document.createElement('button');
         chip.type = 'button';
-        chip.className = 'chip';
+        chip.className = 'chip' + (folder.id === selectedFolderId ? ' on' : '');
+        chip.setAttribute('aria-pressed', String(folder.id === selectedFolderId));
         chip.textContent = folder.name;
         chip.dataset.folder = folder.id;
         sheetEls.folders.appendChild(chip);
@@ -866,7 +1296,23 @@
     }
 
     sheetEls.list.innerHTML = '';
-    for (const project of lastProjects) {
+    // Codex can also start where one of its conversations already lives.
+    let places = lastProjects;
+    if (createProvider === 'codex') {
+      const seen = new Set(lastProjects.map((p) => p.path));
+      places = lastProjects.slice();
+      for (const c of lastCodex) {
+        if (!c.cwd || seen.has(c.cwd)) continue;
+        seen.add(c.cwd);
+        places.push({ path: c.cwd, name: c.cwd.split(/[\\/]/).filter(Boolean).pop() || c.cwd });
+      }
+    }
+    if (IN_APP) {
+      const recent = lastInstances.concat(lastCodex).slice().sort((a,b) => b.activeAt - a.activeAt).map((i) => i.cwd);
+      places = places.slice().sort((a,b) => (recent.includes(a.path) ? recent.indexOf(a.path) : 999) - (recent.includes(b.path) ? recent.indexOf(b.path) : 999));
+      sheetEls.sheet.querySelector('.create-group').hidden = !lastFolders.length || createProvider === 'codex';
+    }
+    for (const project of places) {
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'create-row';
@@ -883,19 +1329,29 @@
       sheetEls.list.appendChild(row);
     }
     sheetEls.note.hidden = true;
+    if (!places.length) {
+      sheetEls.note.hidden = false;
+      sheetEls.note.textContent = 'No project folders are available yet. Open a project in VS Code on your laptop, then try again.';
+    }
   }
 
   function openCreateSheet() {
+    if (document.body.classList.contains('read-only')) return;
     if (!sheetEls) sheetEls = buildCreateSheet();
-    renderCreateSheet();
+    if (!creationBusy) renderCreateSheet();
+    if (IN_APP) { phoneSheet.show($('create')); return; }
     sheetEls.backdrop.hidden = false;
+    createReturn = document.activeElement;
+    sheetEls.sheet.querySelector('.sheet-close').focus();
     if (reduced()) { sheetEls.backdrop.classList.add('open'); return; }
     requestAnimationFrame(() => sheetEls.backdrop.classList.add('open'));
   }
 
   function closeCreateSheet() {
     if (!sheetEls) return;
+    if (IN_APP) { phoneSheet.close(); return; }
     sheetEls.backdrop.classList.remove('open');
+    if (createReturn) createReturn.focus();
     setTimeout(() => { sheetEls.backdrop.hidden = true; }, reduced() ? 0 : 260);
   }
 
@@ -906,5 +1362,5 @@
   // Exported so the rule for how a window is filed can be checked without a
   // browser: it is the one piece of this file that is a decision rather than
   // drawing.
-  if (typeof module !== 'undefined' && module.exports) module.exports = { group };
+  if (typeof module !== 'undefined' && module.exports) module.exports = { group, attentionGroups, mergeConversations };
 })();
