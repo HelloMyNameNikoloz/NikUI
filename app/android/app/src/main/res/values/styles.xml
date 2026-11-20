@@ -13,6 +13,9 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Black behind the system bars, not the dark theme's grey; Capacitor
+             repaints the window with this whenever the bar style changes. -->
+        <item name="android:windowBackground">@android:color/black</item>
     </style>
 
 

@@ -45,8 +45,13 @@ const ASSET_TYPES = {
 const PING_MS = 30000;
 const MAX_SOCKETS = 32;
 // A client this far behind is not reading, and buffering for it is how a server
-// runs out of memory politely.
+// runs out of memory politely. One long conversation's first picture can be
+// bigger than that on its own, though, and a phone on a tunnel takes a while to
+// read it: being behind only counts once it has lasted without the socket ever
+// catching up, or the backlog is far past anything one conversation sends.
 const MAX_BACKLOG_BYTES = 8 * 1024 * 1024;
+const HARD_BACKLOG_BYTES = 96 * 1024 * 1024;
+const BEHIND_GRACE_MS = 20000;
 // A pairing body is a name, a public key and a signature. Nothing here is large.
 const MAX_BODY_BYTES = 8 * 1024;
 
@@ -1866,9 +1871,18 @@ class RemoteClient {
 
   post(message) {
     if (!this.open) return;
-    if (this.socket.writableLength > MAX_BACKLOG_BYTES) {
-      this.log(`${this.id} is not keeping up; closing`);
-      return this.close(wire.CLOSE.POLICY, 'too far behind');
+    const backlog = this.socket.writableLength;
+    if (backlog > MAX_BACKLOG_BYTES) {
+      const now = Date.now();
+      if (!this.behindSince) {
+        this.behindSince = now;
+        // Drained is caught up: the clock starts again next time.
+        this.socket.once('drain', () => { this.behindSince = 0; });
+      }
+      if (backlog > HARD_BACKLOG_BYTES || now - this.behindSince > BEHIND_GRACE_MS) {
+        this.log(`${this.id} is not keeping up; closing`);
+        return this.close(wire.CLOSE.POLICY, 'too far behind');
+      }
     }
     let frame = message;
     if (this.box) {

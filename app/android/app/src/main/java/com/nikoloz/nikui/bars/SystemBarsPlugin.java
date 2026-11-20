@@ -16,7 +16,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * navigation icons drawn to read on it. The page says which, after it has
  * settled the reader's choice against the phone's.
  */
-@CapacitorPlugin(name = "SystemBars")
+// Not "SystemBars": Capacitor 8 has a plugin of its own by that name.
+@CapacitorPlugin(name = "NikBars")
 public class SystemBarsPlugin extends Plugin {
     @PluginMethod
     public void set(PluginCall call) {
@@ -25,6 +26,8 @@ public class SystemBarsPlugin extends Plugin {
         getActivity().runOnUiThread(() -> {
             View content = getActivity().findViewById(android.R.id.content);
             if (content != null) content.setBackgroundColor(colour);
+            // What shows behind the status bar and the navigation strip.
+            getActivity().getWindow().getDecorView().setBackgroundColor(colour);
             getActivity().getWindow().setNavigationBarColor(colour);
             WindowCompat.getInsetsController(getActivity().getWindow(), getActivity().getWindow().getDecorView())
                 .setAppearanceLightNavigationBars(light);

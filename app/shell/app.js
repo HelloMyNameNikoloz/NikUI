@@ -87,9 +87,9 @@
   function systemBars() {
     const cap = window.Capacitor;
     if (!cap || !cap.isNativePlatform || !cap.isNativePlatform() || cap.getPlatform() !== 'android') return null;
-    if (cap.Plugins && cap.Plugins.SystemBars) return cap.Plugins.SystemBars;
+    if (cap.Plugins && cap.Plugins.NikBars) return cap.Plugins.NikBars;
     if (typeof cap.registerPlugin !== 'function') return null;
-    try { return (cap.Plugins.SystemBars = cap.registerPlugin('SystemBars')); } catch (_) { return null; }
+    try { return (cap.Plugins.NikBars = cap.registerPlugin('NikBars')); } catch (_) { return null; }
   }
 
   /** The few things the reader can change about how this looks. */
@@ -103,15 +103,16 @@
       window.matchMedia('(prefers-color-scheme: light)').matches);
     document.documentElement.dataset.theme = light ? 'light' : 'dark';
     const plugins = native();
-    if (plugins && plugins.StatusBar && plugins.StatusBar.setStyle) {
-      plugins.StatusBar.setStyle({ style: light ? 'LIGHT' : 'DARK' }).catch(() => {});
-    }
-    // Android's navigation strip is native, under the page: paint it the tab
-    // bar's colour, which is the page's background in either theme.
+    const styled = plugins && plugins.StatusBar && plugins.StatusBar.setStyle
+      ? Promise.resolve(plugins.StatusBar.setStyle({ style: light ? 'LIGHT' : 'DARK' })).catch(() => {})
+      : Promise.resolve();
+    // Android's system bars are native, around the page: paint them the
+    // page's background in either theme. After the style is set, which
+    // repaints the window with the theme's own colour.
     const bars = systemBars();
     if (bars) {
       const color = getComputedStyle(document.documentElement).getPropertyValue('--app-bg').trim();
-      Promise.resolve(bars.set({ light, color: /^#[0-9a-f]{6}$/i.test(color) ? color : undefined })).catch(() => {});
+      styled.then(() => bars.set({ light, color: /^#[0-9a-f]{6}$/i.test(color) ? color : undefined })).catch(() => {});
     }
   }
 

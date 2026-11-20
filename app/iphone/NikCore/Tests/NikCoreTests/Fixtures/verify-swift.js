@@ -1,0 +1,35 @@
+'use strict';
+const fs=require('fs'),path=require('path'),crypto=require('crypto');
+const root=process.argv[2],payload=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));
+const secure=require(path.join(root,'src/secure.js'));
+const identityModule=require(path.join(root,'src/identity.js'));
+const {Gate,LocalKey}=require(path.join(root,'src/auth.js'));
+const {DeviceStore}=require(path.join(root,'src/devices.js'));
+const {RemoteServer}=require(path.join(root,'src/remote.js'));
+const {PairingWindow}=require(path.join(root,'src/pairing.js'));
+const map=new Map(),memory={get:(k,d)=>map.has(k)?map.get(k):d,update:(k,v)=>{map.set(k,v);return Promise.resolve();}};
+function privateKey(raw){const d=Buffer.from(raw,'hex'),ec=crypto.createECDH('prime256v1');ec.setPrivateKey(d);const pub=ec.getPublicKey(null,'uncompressed');return crypto.createPrivateKey({format:'jwk',key:{kty:'EC',crv:'P-256',d:d.toString('base64url'),x:pub.subarray(1,33).toString('base64url'),y:pub.subarray(33).toString('base64url')}});}
+const hostPrivate=privateKey(payload.hostRaw),serverPrivate=privateKey(payload.serverEphemeralRaw);
+const hostPublic=crypto.createPublicKey(hostPrivate).export({type:'spki',format:'der'}).toString('base64url');
+const hostIdentity=identityModule.loadIdentity({get:()=>({publicKey:hostPublic,privateKey:hostPrivate.export({type:'pkcs8',format:'der'}).toString('base64url')})});
+const devices=new DeviceStore(memory);
+devices.save([{id:'device1',name:'iPhone',publicKey:payload.deviceSPKI,fingerprint:identityModule.fingerprintOf(Buffer.from(payload.deviceSPKI,'base64url')),control:true,protection:'software'}]);
+const gate=new Gate({devices,identity:hostIdentity,requireSealed:()=>true,now:()=>1000});
+const state={nonce:payload.serverNonce,at:1000,ephemeral:{privateKey:serverPrivate,spki:crypto.createPublicKey(serverPrivate).export({type:'spki',format:'der'}).toString('base64url')}};
+const answer=gate.answer(state,payload.auth,{address:'127.0.0.1'});
+if(!answer.ok)throw new Error('Swift auth failed real Gate: '+answer.reason);
+const opened=payload.packets.map(frame=>answer.box.open(frame));
+if(opened.some(text=>text===null))throw new Error('Swift envelope failed real server Box');
+const signatureOK=identityModule.verifyWith(payload.deviceSPKI,payload.signatureMessage,payload.signature);
+const localKey=new LocalKey('fixture-local-key');
+const server=new RemoteServer({root,host:{config:()=>({})},sessions:{list:()=>[],get:()=>null},hubs:{},localKey,devices,identity:hostIdentity});
+server.port=4517;server.publicHost='laptop.example';
+const request=(host,origin,forwarded)=>({url:'/',socket:{remoteAddress:'127.0.0.1'},headers:{host,...(origin?{origin}:{}),...(forwarded?{'x-forwarded-for':'100.64.0.1'}:{})}});
+const native=server.guard(request('laptop.example',null,true)),custom=server.guard(request('laptop.example','nikui://native',true));
+const bearer=request('laptop.example',null,true);bearer.headers.authorization='Bearer '+localKey.key;
+const localBearer=localKey.check(bearer,{loopbackHost:false});
+const pairing=new PairingWindow({now:()=>1000});const invite=pairing.start({host:'laptop.example',scheme:'https'});
+const normalized=pairing.claim(invite.code.toLowerCase());const spent=!pairing.claim(invite.code).ok;pairing.start({host:'laptop.example'});pairing.claim('WRONG999');const wrongCloses=!pairing.isOpen;
+let rekey=null;
+if(payload.rekeyAuth){const result=gate.answer(state,payload.rekeyAuth,{address:'127.0.0.1'});rekey={ok:result.ok,control:result.device&&result.device.control,fingerprint:result.welcome&&result.welcome.rekeyed&&result.welcome.rekeyed.fingerprint};}
+process.stdout.write(JSON.stringify({signatureOK,opened,welcome:answer.welcome,boxedWelcome:answer.box.seal(JSON.stringify(answer.welcome)),nativeGuard:native,customGuard:custom,localBearer,normalized:normalized.ok,spent,wrongCloses,rekey})+'\n');

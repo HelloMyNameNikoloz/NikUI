@@ -1,0 +1,5 @@
+NikUI.xcodeproj/
+build/
+.build/
+.swiftpm/
+DerivedData/

@@ -47,6 +47,7 @@ public class MainActivity extends BridgeActivity {
         View content = findViewById(android.R.id.content);
         if (content == null) return;
         content.setBackgroundColor(NAV_STRIP);
+        getWindow().getDecorView().setBackgroundColor(NAV_STRIP);
         getWindow().setNavigationBarColor(NAV_STRIP);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) getWindow().setNavigationBarContrastEnforced(false);
         WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView()).setAppearanceLightNavigationBars(false);
