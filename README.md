@@ -93,10 +93,15 @@ owns the whole surface.
 - **When, on every message.** Each prompt shows the time it was sent, and the
   line that ends a turn — Done, how long it took, what it cost — ends with the
   time it came back. Today's are the time alone; older ones say the day.
-- **Commands running in the background.** While an instance waits on a
-  command it left running (`pnpm run check`, a test suite), it stays orange and
-  the header shows how many. Hover that chip (or tap it) for each command, how
-  long it has been running, and a Cancel button that stops it.
+- **Commands running in the background.** A command an instance left
+  running (`pnpm run check`, a test suite, a watcher that polls every ten
+  minutes) does not block it: once the turn is over the instance is done and
+  you can keep chatting while the command carries on, for hours if need be.
+  The header shows how many are running; hover that chip (or tap it) for each
+  command, how long it has been running, and a Cancel button that stops just
+  that one. Stop never touches them, and the machine is kept awake for them.
+  Claude is told to put long or repeating commands in the background rather
+  than block its turn on them (`nikui.longCommandsInBackground`).
 - **The title opens the PR.** Click an instance's title in its panel to open
   the PR it is about: the pull URL you gave in a prompt, the PR the CI watch
   found, or whatever `gh pr view` says for its ticket (or, with no ticket, its
@@ -554,9 +559,9 @@ An instance whose turn has ended while agents it started are still running in
 the background stays working, with the machine held awake for them, until they
 have reported back and the turn the CLI starts to hand that over has finished.
 The header counts the agents still out. A prompt sent meanwhile goes straight
-to the CLI, which answers it while they work; Stop ends them. A command left
-running in the background — a dev server, a watcher — is not counted, since it
-may never end.
+to the CLI, which answers it while they work; Stop ends them, and only them.
+Commands left running in the background do not keep an instance working or
+hold its queue — see above.
 
 ### Models, and never having to type one
 

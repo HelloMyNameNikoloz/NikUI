@@ -88,25 +88,29 @@ check('and that the key stays here', /never leaves it/i.test(connect));
 const settings = read('settings.html');
 check('settings has somewhere to draw itself', /id="screen"/.test(settings));
 
-// ---- three screens that are peers, and say so --------------------------------
-//
-// Instances, History and Settings are not inside one another, so none of them
-// is reached by a chevron and none of them needs a way back: the tab bar is on
-// all three, and the one you are looking at is the one that is marked.
-
+// History bookmarks lead into Earlier; four daily destinations share navigation.
 const history = read('history.html');
-check('history has somewhere to draw itself', /id="screen"/.test(history));
-check('and something to search with', /id="search"/.test(history));
+check('history bookmarks offer the merged Earlier view', /index.html\?scope=earlier/.test(history));
+check('and load the compatibility redirect', history.includes('src="history.js"') && read('history.js').includes("replace('index.html?scope=earlier')"));
 const status = read('status.html');
 check('status has somewhere to draw itself', /id="screen"/.test(status));
 check('and loads the panel\u2019s own renderer, rather than a second one',
   status.includes('media/status.js') && status.includes('media/panel.css'));
-for (const page of ['index.html', 'status.html', 'history.html', 'settings.html']) {
+for (const page of ['index.html', 'terminal.html', 'status.html', 'settings.html']) {
   check(page + ' carries the tab bar', /<nav class="tabs" id="tabs"/.test(read(page)));
   check(page + ' loads the icons it draws them with', read(page).includes('media/icons.js'));
 }
 check('the conversation is a pushed screen, so it has a way back instead',
   /id="back"/.test(read('conversation.html')) && !/id="tabs"/.test(read('conversation.html')));
+const navigation = /const TABS = (\[[\s\S]*?\]);/.exec(read('app.js'));
+const tabs = navigation ? require('vm').runInNewContext(navigation[1]) : [];
+equal('the four daily destinations stay in the agreed order', Array.from(tabs, (t) => t.page),
+  ['index.html', 'terminal.html', 'status.html', 'settings.html']);
+check('Slack stays outside the bottom navigation', !tabs.some((t) => t.page === 'slack.html'));
+
+check('Chats has no hero or duplicate creation action in its template', !/Good work|YOUR WORKSPACE|start-agents|id="create"/.test(read('index.html')));
+check('Connect uses instructions without a slogan or provider badges', /Connect your laptop/.test(read('connect.html')) && !/provider-pair|In your pocket/.test(read('connect.html')));
+check('Terminal places the folder beside the bottom command input', read('terminal.html').indexOf('id="screen"') < read('terminal.html').indexOf('id="pick"') && read('terminal.html').indexOf('id="pick"') < read('terminal.html').indexOf('id="runner"'));
 
 // ---- Slack, a page you are sent to rather than a tab --------------------------
 //

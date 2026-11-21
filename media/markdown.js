@@ -4,6 +4,10 @@
 (function (root) {
   'use strict';
 
+  // Colours fenced code (highlight.js, loaded first in the page).
+  const highlighter = root.NikHighlight ||
+    (typeof module !== 'undefined' && typeof require === 'function' ? require('./highlight.js') : null);
+
   function escapeHtml(s) {
     return String(s)
       .replace(/&/g, '&amp;')
@@ -15,7 +19,16 @@
 
   function safeUrl(url) {
     const u = String(url).trim();
-    return /^(https?:|mailto:|file:|vscode:|#)/i.test(u) ? u : '#';
+    if (/^(https?:|mailto:|file:|vscode:|#)/i.test(u)) return u;
+    // A path on this machine (no scheme at all): the panel opens it as a file.
+    return /^[^:]+$/.test(u) ? u : '#';
+  }
+
+  // A picture may also be inline data (a screenshot Codex took on the laptop);
+  // only as an image's source, never as a link.
+  function imageUrl(url) {
+    const u = String(url).trim();
+    return /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/i.test(u) ? u : safeUrl(u);
   }
 
   function renderInline(src) {
@@ -30,7 +43,7 @@
     });
 
     text = text.replace(/!\[([^\]]*)\]\(((?:[^()\s]|\([^()]*\))+)\)/g,
-      function (_, alt, url) { return '<img alt="' + alt + '" src="' + safeUrl(url) + '">'; });
+      function (_, alt, url) { return '<img alt="' + alt + '" src="' + imageUrl(url) + '">'; });
     text = text.replace(/\[([^\]]+)\]\(((?:[^()\s]|\([^()]*\))+)\)/g,
       function (_, label, url) { return '<a href="' + safeUrl(url) + '">' + label + '</a>'; });
     text = text.replace(/(^|[\s(])((?:https?:\/\/)[^\s<>()]+)/g,
@@ -71,8 +84,14 @@
           body.push(lines[i]); i++;
         }
         i++;
-        const cls = lang ? ' class="lang-' + escapeHtml(lang) + '"' : '';
-        out.push('<pre data-lang="' + escapeHtml(lang) + '"><code' + cls + '>' + escapeHtml(body.join('\n')) + '</code></pre>');
+        const code = body.join('\n');
+        const lit = highlighter ? highlighter.highlight(code, lang) : { html: escapeHtml(code), lang: null };
+        // data-lang is only ever what the fence said: the run button trusts it.
+        // The label also names a language that was recognised.
+        const shown = lang || lit.lang || '';
+        const cls = shown ? ' class="lang-' + escapeHtml(shown) + '"' : '';
+        out.push('<pre data-lang="' + escapeHtml(lang) + '" data-label="' + escapeHtml(shown) + '"><code' + cls + '>' +
+          lit.html + '</code></pre>');
         continue;
       }
 

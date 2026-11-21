@@ -55,6 +55,8 @@
 
   const took = (ms) => (ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + 's');
 
+  const expandedOutput = new Set();
+
   // ---- what the screen says ---------------------------------------------------
 
   function draw() {
@@ -62,6 +64,9 @@
 
     if (state.trouble) {
       screen.appendChild(el('p', 'lede', state.trouble));
+      const retry = el('button', 'go-on', 'Try again'); retry.type = 'button';
+      retry.addEventListener('click', () => { state.trouble = null; state.stale = false; draw(); transport.retry(); if (state.connected) askAndWait(); });
+      screen.appendChild(retry);
       runner.hidden = true;
       return;
     }
@@ -95,7 +100,9 @@
     pick.hidden = false;
     // The name, not the path: the path is what the screen says underneath, and
     // a bar button is forty-four points wide.
-    pick.textContent = state.terminal.name || shortPath(state.terminal.cwd);
+    pick.textContent = shortPath(state.terminal.cwd);
+    pick.setAttribute('aria-label', 'Change terminal folder: ' + state.terminal.cwd);
+    pick.title = state.terminal.cwd;
     runner.hidden = false;
 
     if (state.choosing) {
@@ -104,8 +111,17 @@
     }
 
     if (!state.runs.length) {
-      screen.appendChild(el('p', 'lede', 'Commands run in ' + state.terminal.cwd +
-        ' on your laptop, and can do anything you could type there.'));
+      const empty = el('div', 'empty-state terminal-empty');
+      empty.appendChild(el('h2', null, 'Run a command'));
+      empty.appendChild(el('p', null, 'Commands run on your laptop in the folder below.'));
+      screen.appendChild(empty);
+      const quick = el('div', 'terminal-shortcuts');
+      for (const command of ['git status --short', 'git diff --stat', 'pwd']) {
+        const b = el('button', null, command); b.type = 'button';
+        b.addEventListener('click', () => { field.value = command; field.focus(); });
+        quick.appendChild(b);
+      }
+      screen.appendChild(quick);
     }
 
     for (const run of state.runs) screen.appendChild(drawRun(run));
@@ -163,7 +179,17 @@
     if (run.output) {
       const out = el('pre', 'run-out');
       out.textContent = run.output;
-      block.appendChild(out);
+      const olderSuccess = run.done && run.exit === 0 && !run.note && run !== state.runs[state.runs.length - 1];
+      if (olderSuccess) {
+        const details = el('details', 'run-output');
+        const key = state.terminal.id + ':' + run.id;
+        details.open = expandedOutput.has(key);
+        details.addEventListener('toggle', () => {
+          if (!details.isConnected) return;
+          if (details.open) expandedOutput.add(key); else expandedOutput.delete(key);
+        });
+        details.append(el('summary', null, 'Output'), out); block.append(details);
+      } else block.appendChild(out);
     }
 
     const foot = el('footer', 'run-foot');

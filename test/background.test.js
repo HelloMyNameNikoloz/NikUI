@@ -196,22 +196,77 @@ module.exports = async function () {
     check('or the machine awake', !s.isBusy);
   }
 
+  suite('a long command in the background leaves the chat open');
+
   {
     const s = new Session({ cwd: '/tmp' });
-    running(s);
-    s.send('run the checks, then push');
+    const written = running(s);
+    s.send('watch the deploy, check every ten minutes');
     s._handle(init);
-    s._handle({ type: 'system', subtype: 'task_started', task_id: 'b2', tool_use_id: 'toolu_b2', description: 'pnpm run check', is_backgrounded: true, task_type: 'local_bash' });
-    s._handle(tasks({ task_id: 'b2', task_type: 'local_bash', description: 'pnpm run check' }));
-    answer(s, 'msg_wait', 'I will commit and push once they pass.');
-    checkEqual('a check left running keeps it working', s.status, 'working');
-    check('without holding the queue', !s.inTurn);
-    checkEqual('and says what it is waiting on', s.stats().shells, 1);
+    s._handle({ type: 'system', subtype: 'task_started', task_id: 'b2', tool_use_id: 'toolu_b2', description: 'while true; do ./check-deploy.sh; sleep 600; done', is_backgrounded: true, task_type: 'local_bash' });
+    s._handle(tasks({ task_id: 'b2', task_type: 'local_bash', description: 'while true; do ./check-deploy.sh; sleep 600; done' }));
+    answer(s, 'msg_wait', 'Watching it; I will tell you when it is out.');
+    checkEqual('the turn over, it is done rather than working', s.status, 'done');
+    check('not working, so the badge does not count it', !s.isWorking);
+    check('but still busy: closing it or sleeping would kill the command', s.isBusy);
+    checkEqual('and the chip says what is running', s.stats().shells, 1);
+
+    const n = written.length;
+    checkEqual('a message goes straight out', s.submit('how is it going?'), 'sent');
+    checkEqual('to the CLI, as a prompt', written[n].type, 'user');
+    answer(s, 'msg_chat', 'Still rolling out.');
+    checkEqual('the command carries on behind the chat', s.stats().shells, 1);
+
+    const m = written.length;
+    s.interrupt();
+    checkEqual('stop with only commands running sends nothing that would kill them', written.length, m);
+
     s._handle(tasks());
     s._handle(init);
     check('when it ends, the CLI picks the turn back up', s.inTurn);
-    answer(s, 'msg_pushed', 'Pushed.', { origin: { kind: 'task-notification' } });
+    answer(s, 'msg_pushed', 'Deployed.', { origin: { kind: 'task-notification' } });
     checkEqual('and then it is done', s.status, 'done');
+  }
+
+  {
+    const s = new Session({ cwd: '/tmp' });
+    running(s);
+    s.send('run the long suite');
+    s._handle(init);
+    checkEqual('a prompt typed during the turn is queued', s.submit('then this'), 'queued');
+    s._handle(tasks({ task_id: 'b6', task_type: 'local_bash', description: 'pnpm test:e2e' }));
+    answer(s, 'msg_suite', 'Running in the background.');
+    check('the queue does not wait for the command', s.isReadyForQueue() && !!s._drainTimer);
+    s._clearDrain();
+  }
+
+  {
+    const s = new Session({ cwd: '/tmp' });
+    const written = running(s);
+    s.send('delegate this and watch the build');
+    s._handle(init);
+    launch(s);
+    s._handle(tasks(agentTask, { task_id: 'b7', task_type: 'local_bash', description: 'pnpm test:e2e --shard 2' }));
+    answer(s, 'msg_both', 'Both going.');
+    checkEqual('an agent out still keeps it working', s.status, 'working');
+    const n = written.length;
+    s.interrupt();
+    const sent = written.slice(n);
+    checkEqual('stop ends the agent by itself, not with an interrupt', sent.map((w) => w.request.subtype + ':' + w.request.task_id),
+      ['stop_task:' + agentTask.task_id]);
+    s._handle(tasks({ task_id: 'b7', task_type: 'local_bash', description: 'pnpm test:e2e --shard 2' }));
+    checkEqual('the agent gone, it is done with the command still running', [s.status, s.stats().shells], ['done', 1]);
+  }
+
+  suite('Claude is told to keep long commands off the turn');
+
+  {
+    const args = (opts) => new Session(Object.assign({ cwd: '/tmp' }, opts)).cliArgs();
+    const on = args({});
+    check('by default, in the system prompt', on.includes('--append-system-prompt') && /run_in_background/.test(on[on.indexOf('--append-system-prompt') + 1]));
+    check('not when switched off', !args({ longCommandsInBackground: false }).includes('--append-system-prompt'));
+    const own = args({ extraArgs: ['--append-system-prompt', 'mine'] });
+    checkEqual('and not over a prompt of the user\'s own', own.filter((a) => a === '--append-system-prompt').length, 1);
   }
 
   suite('which commands, since when, and stopping one');

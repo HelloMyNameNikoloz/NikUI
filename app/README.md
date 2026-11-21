@@ -70,31 +70,43 @@ Typing is still there, behind *Type the code instead*, for when that does not
 work. The key is made before either button is pressed, so tapping one does one
 thing and does it now.
 
-**Status** — exactly what `/status` draws. Not a summary of it and not a second
-opinion about it: the laptop builds the same report with the same `buildReport`,
-and the phone draws it with the same `media/status.js` the editor's panel uses.
-A screen that says almost what another screen says is two screens to keep in
-step. What the phone adds is the width: the rail lies flat, the head stacks, and
-`panel.css` is loaded *before* the app's own stylesheets so the phone's rules
-get the last word rather than a 186-point column winning on a 393-point screen.
+**Chats** — Claude and Codex in one list, with a compact Active/Earlier switch.
+Priority puts conversations that need you first; the rest follow activity.
+Two-line rows show the title, provider mark, folder and state. Search covers
+active and past conversations without duplicates. Provider, project and sort
+controls sit behind Filter. Organize supports dragging and a tap-to-move sheet.
+One bottom New chat action opens a provider and project sheet, remembering the
+provider and retaining selections if the laptop refuses the request.
 
-**Instances** — the fleet, live, filed the way the editor files it: folders
-somebody made first, then projects, then everything else. One group draws no
-heading, because a heading over the only thing on screen is noise.
+**Earlier** — the merged history inside Chats. Claude resumes through the
+laptop's history; Codex opens its own conversation directly. Old History links
+redirect here. Search and scroll position survive a trip into a conversation.
 
-**History** — every conversation this machine has had, grouped by day and
-searchable. The same list the editor's History view shows, read over the socket
-the app is already holding.
+**Terminal** — command/result blocks retain streaming output, exit codes, Stop
+and rerun. Older successful output can expand; failures stay visible. The
+current directory sits beside the bottom command field.
 
-The three are peers, so they are tabs rather than screens inside one another.
+**Status** — the same report and renderer as the editor, opening on General:
+workspace stats, conversations and limits. One Details disclosure contains the
+labelled destinations, workspace analytics and Copy report. Refresh preserves
+expanded sections and marks disconnected numbers as stale.
 
-**Conversation** — the client, unchanged: the same transcript, composer, queue
-and dashboard the panel draws.
+Chats, Terminal, Status and Settings are the four tabs. Slack is a pushed screen
+reached from Settings, a notification or `/slack`.
 
-**Settings** — is it connected, and how fast. What this device is allowed, and
-where that is granted. Which laptop, which key is pinned, when it was paired.
-Text size. Versions of both the app and the client it carries. Copy diagnostics.
-And one way to undo it, which asks twice.
+**Conversation** — the shared transcript and composer. Attach, labelled Tools,
+optional microphone and Send share one action row. Send becomes Queue or Steer
+while working; the working strip owns the only visible Stop. Tools retains
+provider-specific model, effort, plan, goal, permissions, review, fork and undo
+controls. The queue opens from a count. Phone sheets share Android Back,
+keyboard dismissal and focus restoration. Opening a chat keeps the keyboard
+closed. Desktop controls retain their existing layout and behavior.
+
+**Settings** — seven plain rows with values: Laptop, Appearance, Text size,
+Notifications, Security, Slack and Advanced. Each opens a focused sheet or
+page. Laptop retains keep-awake and connection checks; Security includes app
+lock, devices and pairing identity; Advanced retains diagnostics and forgetting
+the laptop, which asks twice.
 
 ## Liquid Glass, on iPhones
 
@@ -108,7 +120,7 @@ Android has its own — the chrome becomes glass:
 - the title bar and the conversation's header
 - the tab strip, which becomes a capsule floating clear of the edges, with a
   second glass capsule inside it marking the tab you are on
-- the composer, and History's search field
+- the composer, and Chats' search field
 
 Three things make it read as glass rather than as a blur: a strong backdrop blur
 with the saturation pushed up, so colour bleeds through rather than grey; a
@@ -126,7 +138,7 @@ accessibility setting, not a preference.
 
 ### The capsule moves, and can be pushed
 
-Four tabs, and the selected one is a capsule you can drag.
+Five tabs, and the selected one is a capsule you can drag.
 
 The selected tab is a shape rather than a colour, and the shape is what travels
 — iOS 26 morphs it from one tab to the next instead of redrawing the strip.
@@ -177,13 +189,13 @@ never something you can see.
 
 ## Design
 
-Dark only, and pinned dark: `browser.css` switches its palette on the phone's
-setting, which is right for a page in a browser and wrong for an app whose own
-chrome is dark. The vocabulary is the product's — the near-black field, the four
-status colours, SF Pro, the 8pt rhythm — arranged the way iOS arranges things:
-grouped inset lists, hairline separators, 44pt targets, one clear action per
-screen. The chevron and the gear are drawn in CSS, so the app carries no icon
-font and no sprite sheet.
+System, light and dark appearances keep the existing palettes, including pure
+black for OLED. One action accent and semantic warning/error colours carry the
+phone UI; small provider marks distinguish conversations. Reading surfaces are
+opaque, list rows use hairlines, and only iOS chrome is translucent. Settings
+remembers appearance and text size independently of the laptop's editor text.
+Primary controls have 44pt or larger targets. Reduced motion and transparency
+are respected.
 
 ## The key
 
@@ -313,6 +325,18 @@ Opening the app with a link never pairs on sight. It fills everything in and
 asks, because a link that pairs on sight is a link somebody else could send you.
 
 ## Looking at it
+
+`npm run test:design` in `app/` builds the real bundle and renders the daily
+screens, Earlier and both conversation providers in both appearances on iOS
+and Android using a fixture transport.
+It also checks tap actions, drafts, watch-only controls, seven-row Chats
+density, three-conversation Status density, contrast, stale states, small
+screens, keyboard space and the shared editor layout. No laptop or paired
+phone is needed. Pictures and layout measurements go into `app/screens/after/`; use
+`node app/tools/design.js --before` to capture a baseline in `app/screens/before/`.
+The model and tool pickers, manual pairing, loading, empty and refused-start
+states have additional pictures. `node app/tools/look.js` still inspects all six
+Status sections, including content below the fold.
 
 `app/tools/screens.js` drives the real app on a real phone over adb — the
 WebView through its own debugging socket, so every step is the app's own code —

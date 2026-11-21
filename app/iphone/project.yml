@@ -1,0 +1,32 @@
+name: NikUI
+options:
+  bundleIdPrefix: com.nikoloz
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: KBA6653B4V
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  NikCore:
+    path: NikCore
+targets:
+  NikUI:
+    type: application
+    platform: iOS
+    sources:
+      - NikUI
+    dependencies:
+      - package: NikCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nikoloz.nikui
+        INFOPLIST_FILE: NikUI/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: NikUI/Resources/NikUI.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES

@@ -1,0 +1,805 @@
+{
+  "tokens": [
+    {
+      "language": "javascript",
+      "source": "// A comment\nconst answer = \"hello 👋\";\nfunction run(value) { return value + 42; }",
+      "detected": "js",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 12,
+          "kind": "comment"
+        },
+        {
+          "start": 13,
+          "end": 18,
+          "kind": "keyword"
+        },
+        {
+          "start": 19,
+          "end": 25,
+          "kind": "property"
+        },
+        {
+          "start": 28,
+          "end": 38,
+          "kind": "string"
+        },
+        {
+          "start": 40,
+          "end": 48,
+          "kind": "keyword"
+        },
+        {
+          "start": 49,
+          "end": 52,
+          "kind": "function"
+        },
+        {
+          "start": 53,
+          "end": 58,
+          "kind": "property"
+        },
+        {
+          "start": 62,
+          "end": 68,
+          "kind": "keyword"
+        },
+        {
+          "start": 69,
+          "end": 74,
+          "kind": "property"
+        },
+        {
+          "start": 77,
+          "end": 79,
+          "kind": "number"
+        }
+      ]
+    },
+    {
+      "language": "typescript",
+      "source": "interface User { name: string }\nconst user: User = { name: \"Nik\" };",
+      "detected": "ts",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 9,
+          "kind": "keyword"
+        },
+        {
+          "start": 10,
+          "end": 14,
+          "kind": "type"
+        },
+        {
+          "start": 17,
+          "end": 21,
+          "kind": "property"
+        },
+        {
+          "start": 23,
+          "end": 29,
+          "kind": "type"
+        },
+        {
+          "start": 32,
+          "end": 37,
+          "kind": "keyword"
+        },
+        {
+          "start": 38,
+          "end": 42,
+          "kind": "property"
+        },
+        {
+          "start": 44,
+          "end": 48,
+          "kind": "type"
+        },
+        {
+          "start": 53,
+          "end": 57,
+          "kind": "property"
+        },
+        {
+          "start": 59,
+          "end": 64,
+          "kind": "string"
+        }
+      ]
+    },
+    {
+      "language": "python",
+      "source": "@decorator\ndef greet(name):\n    # hi\n    return f\"Hello {name}\"",
+      "detected": "python",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 10,
+          "kind": "function"
+        },
+        {
+          "start": 11,
+          "end": 14,
+          "kind": "keyword"
+        },
+        {
+          "start": 15,
+          "end": 20,
+          "kind": "function"
+        },
+        {
+          "start": 21,
+          "end": 25,
+          "kind": "property"
+        },
+        {
+          "start": 32,
+          "end": 36,
+          "kind": "comment"
+        },
+        {
+          "start": 41,
+          "end": 47,
+          "kind": "keyword"
+        },
+        {
+          "start": 48,
+          "end": 63,
+          "kind": "string"
+        }
+      ]
+    },
+    {
+      "language": "swift",
+      "source": "struct Client {\n let id: String\n func connect() { return true }\n}",
+      "detected": null,
+      "tokens": [
+        {
+          "start": 0,
+          "end": 6,
+          "kind": "keyword"
+        },
+        {
+          "start": 7,
+          "end": 13,
+          "kind": "type"
+        },
+        {
+          "start": 17,
+          "end": 20,
+          "kind": "keyword"
+        },
+        {
+          "start": 21,
+          "end": 23,
+          "kind": "property"
+        },
+        {
+          "start": 25,
+          "end": 31,
+          "kind": "type"
+        },
+        {
+          "start": 33,
+          "end": 37,
+          "kind": "keyword"
+        },
+        {
+          "start": 38,
+          "end": 45,
+          "kind": "function"
+        },
+        {
+          "start": 50,
+          "end": 56,
+          "kind": "keyword"
+        },
+        {
+          "start": 57,
+          "end": 61,
+          "kind": "keyword"
+        }
+      ]
+    },
+    {
+      "language": "json",
+      "source": "{\"name\":\"Nik\",\"ok\":true,\"count\":42,\"items\":[1,2]}",
+      "detected": "json",
+      "tokens": [
+        {
+          "start": 1,
+          "end": 7,
+          "kind": "property"
+        },
+        {
+          "start": 8,
+          "end": 13,
+          "kind": "string"
+        },
+        {
+          "start": 14,
+          "end": 18,
+          "kind": "property"
+        },
+        {
+          "start": 19,
+          "end": 23,
+          "kind": "keyword"
+        },
+        {
+          "start": 24,
+          "end": 31,
+          "kind": "property"
+        },
+        {
+          "start": 32,
+          "end": 34,
+          "kind": "number"
+        },
+        {
+          "start": 35,
+          "end": 42,
+          "kind": "property"
+        },
+        {
+          "start": 44,
+          "end": 45,
+          "kind": "number"
+        },
+        {
+          "start": 46,
+          "end": 47,
+          "kind": "number"
+        }
+      ]
+    },
+    {
+      "language": "sql",
+      "source": "SELECT name FROM users WHERE id = 42; -- comment",
+      "detected": "sql",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 6,
+          "kind": "keyword"
+        },
+        {
+          "start": 12,
+          "end": 16,
+          "kind": "keyword"
+        },
+        {
+          "start": 23,
+          "end": 28,
+          "kind": "keyword"
+        },
+        {
+          "start": 34,
+          "end": 36,
+          "kind": "number"
+        },
+        {
+          "start": 38,
+          "end": 48,
+          "kind": "comment"
+        }
+      ]
+    },
+    {
+      "language": "shell",
+      "source": "$ git status --short\necho \"$HOME\"\nexport VALUE=42\n# done",
+      "detected": "shell",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 1,
+          "kind": "punctuation"
+        },
+        {
+          "start": 2,
+          "end": 5,
+          "kind": "function"
+        },
+        {
+          "start": 21,
+          "end": 25,
+          "kind": "function"
+        },
+        {
+          "start": 26,
+          "end": 33,
+          "kind": "string"
+        },
+        {
+          "start": 34,
+          "end": 40,
+          "kind": "keyword"
+        },
+        {
+          "start": 50,
+          "end": 56,
+          "kind": "comment"
+        }
+      ]
+    },
+    {
+      "language": "yaml",
+      "source": "name: Nik\ncount: 42\nready: true # yes\nitems:\n  - value",
+      "detected": "yaml",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 4,
+          "kind": "type"
+        },
+        {
+          "start": 6,
+          "end": 9,
+          "kind": "string"
+        },
+        {
+          "start": 10,
+          "end": 15,
+          "kind": "type"
+        },
+        {
+          "start": 17,
+          "end": 19,
+          "kind": "number"
+        },
+        {
+          "start": 20,
+          "end": 25,
+          "kind": "type"
+        },
+        {
+          "start": 27,
+          "end": 31,
+          "kind": "keyword"
+        },
+        {
+          "start": 31,
+          "end": 37,
+          "kind": "comment"
+        },
+        {
+          "start": 38,
+          "end": 43,
+          "kind": "type"
+        },
+        {
+          "start": 49,
+          "end": 54,
+          "kind": "string"
+        }
+      ]
+    },
+    {
+      "language": "diff",
+      "source": "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new",
+      "detected": "diff",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 18,
+          "kind": "heading"
+        },
+        {
+          "start": 19,
+          "end": 26,
+          "kind": "heading"
+        },
+        {
+          "start": 27,
+          "end": 34,
+          "kind": "heading"
+        },
+        {
+          "start": 35,
+          "end": 46,
+          "kind": "heading"
+        },
+        {
+          "start": 47,
+          "end": 51,
+          "kind": "deleted"
+        },
+        {
+          "start": 52,
+          "end": 56,
+          "kind": "inserted"
+        }
+      ]
+    },
+    {
+      "language": "html",
+      "source": "<div class=\"row\"><strong>Hello</strong><!-- yes --></div>",
+      "detected": "html",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 1,
+          "kind": "punctuation"
+        },
+        {
+          "start": 1,
+          "end": 4,
+          "kind": "type"
+        },
+        {
+          "start": 5,
+          "end": 10,
+          "kind": "property"
+        },
+        {
+          "start": 11,
+          "end": 16,
+          "kind": "string"
+        },
+        {
+          "start": 16,
+          "end": 17,
+          "kind": "punctuation"
+        },
+        {
+          "start": 17,
+          "end": 18,
+          "kind": "punctuation"
+        },
+        {
+          "start": 18,
+          "end": 24,
+          "kind": "type"
+        },
+        {
+          "start": 24,
+          "end": 25,
+          "kind": "punctuation"
+        },
+        {
+          "start": 30,
+          "end": 32,
+          "kind": "punctuation"
+        },
+        {
+          "start": 32,
+          "end": 38,
+          "kind": "type"
+        },
+        {
+          "start": 38,
+          "end": 39,
+          "kind": "punctuation"
+        },
+        {
+          "start": 39,
+          "end": 51,
+          "kind": "comment"
+        },
+        {
+          "start": 51,
+          "end": 53,
+          "kind": "punctuation"
+        },
+        {
+          "start": 53,
+          "end": 56,
+          "kind": "type"
+        },
+        {
+          "start": 56,
+          "end": 57,
+          "kind": "punctuation"
+        }
+      ]
+    },
+    {
+      "language": "css",
+      "source": ".row {\n color: #ff00ff;\n width: 12px;\n}",
+      "detected": "css",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 4,
+          "kind": "type"
+        },
+        {
+          "start": 8,
+          "end": 13,
+          "kind": "property"
+        },
+        {
+          "start": 15,
+          "end": 22,
+          "kind": "string"
+        },
+        {
+          "start": 25,
+          "end": 30,
+          "kind": "property"
+        },
+        {
+          "start": 32,
+          "end": 36,
+          "kind": "number"
+        }
+      ]
+    },
+    {
+      "language": "vue",
+      "source": "<template><div>{{ answer }}</div></template>\n<script lang=\"ts\">const answer: number = 42;</script>",
+      "detected": "html",
+      "tokens": [
+        {
+          "start": 0,
+          "end": 1,
+          "kind": "punctuation"
+        },
+        {
+          "start": 1,
+          "end": 9,
+          "kind": "type"
+        },
+        {
+          "start": 9,
+          "end": 10,
+          "kind": "punctuation"
+        },
+        {
+          "start": 10,
+          "end": 11,
+          "kind": "punctuation"
+        },
+        {
+          "start": 11,
+          "end": 14,
+          "kind": "type"
+        },
+        {
+          "start": 14,
+          "end": 15,
+          "kind": "punctuation"
+        },
+        {
+          "start": 15,
+          "end": 17,
+          "kind": "punctuation"
+        },
+        {
+          "start": 18,
+          "end": 24,
+          "kind": "property"
+        },
+        {
+          "start": 25,
+          "end": 27,
+          "kind": "punctuation"
+        },
+        {
+          "start": 27,
+          "end": 29,
+          "kind": "punctuation"
+        },
+        {
+          "start": 29,
+          "end": 32,
+          "kind": "type"
+        },
+        {
+          "start": 32,
+          "end": 33,
+          "kind": "punctuation"
+        },
+        {
+          "start": 33,
+          "end": 35,
+          "kind": "punctuation"
+        },
+        {
+          "start": 35,
+          "end": 43,
+          "kind": "type"
+        },
+        {
+          "start": 43,
+          "end": 44,
+          "kind": "punctuation"
+        },
+        {
+          "start": 45,
+          "end": 46,
+          "kind": "punctuation"
+        },
+        {
+          "start": 46,
+          "end": 52,
+          "kind": "type"
+        },
+        {
+          "start": 53,
+          "end": 57,
+          "kind": "property"
+        },
+        {
+          "start": 58,
+          "end": 62,
+          "kind": "string"
+        },
+        {
+          "start": 62,
+          "end": 63,
+          "kind": "punctuation"
+        },
+        {
+          "start": 63,
+          "end": 68,
+          "kind": "keyword"
+        },
+        {
+          "start": 69,
+          "end": 75,
+          "kind": "property"
+        },
+        {
+          "start": 77,
+          "end": 83,
+          "kind": "type"
+        },
+        {
+          "start": 86,
+          "end": 88,
+          "kind": "number"
+        },
+        {
+          "start": 89,
+          "end": 91,
+          "kind": "punctuation"
+        },
+        {
+          "start": 91,
+          "end": 97,
+          "kind": "type"
+        },
+        {
+          "start": 97,
+          "end": 98,
+          "kind": "punctuation"
+        }
+      ]
+    }
+  ],
+  "markdown": [
+    {
+      "source": "# Hello\n\nA **bold** and _italic_ word.",
+      "html": "<h1>Hello</h1>\n<p>A <strong>bold</strong> and <em>italic</em> word.</p>"
+    },
+    {
+      "source": "| Left | Code |\n| --- | ---: |\n| a | `x|y` |\n| b | c | overflow |",
+      "html": "<div class=\"table-wrap\"><table><thead><tr><th>Left</th><th>Code</th></tr></thead><tbody><tr><td>a</td><td><code>x|y</code></td></tr><tr><td>b</td><td>c | overflow</td></tr></tbody></table></div>"
+    },
+    {
+      "source": "- first\n  - nested\n- second",
+      "html": "<ul><li>first<ul><li>nested</li></ul></li><li>second</li></ul>"
+    },
+    {
+      "source": "> a quote\n>\n> ```js\n> const x = 42;\n> ```",
+      "html": "<blockquote><p>a quote</p>\n<pre data-lang=\"js\" data-label=\"js\"><code class=\"lang-js\"><span class=\"tk-kw\">const</span> <span class=\"tk-var\">x</span> = <span class=\"tk-num\">42</span>;</code></pre></blockquote>"
+    },
+    {
+      "source": "Literal <script>alert(1)</script> & HTML.",
+      "html": "<p>Literal &lt;script&gt;alert(1)&lt;/script&gt; &amp; HTML.</p>"
+    },
+    {
+      "source": "[PR](https://example.com/a_(b)) ![pixel](data:image/png;base64,AAAA)",
+      "html": "<p><a href=\"https://example.com/a_(b)\">PR</a> <img alt=\"pixel\" src=\"data:image/png;base64,AAAA\"></p>"
+    }
+  ],
+  "snippets": [
+    {
+      "source": "/one fix   the bug /two /ONE",
+      "table": {
+        "one": "First instruction.",
+        "two": "Second instruction.",
+        "empty": "  "
+      },
+      "expected": {
+        "text": "fix the bug",
+        "sent": "fix the bug\n\nFirst instruction.\n\nSecond instruction.",
+        "used": [
+          "one",
+          "two"
+        ]
+      }
+    },
+    {
+      "source": "\n unchanged  whitespace \n",
+      "table": {
+        "one": "First instruction.",
+        "two": "Second instruction.",
+        "empty": "  "
+      },
+      "expected": {
+        "text": "unchanged  whitespace",
+        "sent": "unchanged  whitespace",
+        "used": []
+      }
+    },
+    {
+      "source": "/two /one",
+      "table": {
+        "one": "First instruction.",
+        "two": "Second instruction.",
+        "empty": "  "
+      },
+      "expected": {
+        "text": "",
+        "sent": "Second instruction.\n\nFirst instruction.",
+        "used": [
+          "two",
+          "one"
+        ]
+      }
+    },
+    {
+      "source": "x /one middle y",
+      "table": {
+        "one": "First instruction.",
+        "two": "Second instruction.",
+        "empty": "  "
+      },
+      "expected": {
+        "text": "x /one middle y",
+        "sent": "x /one middle y",
+        "used": []
+      }
+    },
+    {
+      "source": "/empty hello",
+      "table": {
+        "one": "First instruction.",
+        "two": "Second instruction.",
+        "empty": "  "
+      },
+      "expected": {
+        "text": "/empty hello",
+        "sent": "/empty hello",
+        "used": []
+      }
+    }
+  ],
+  "replies": [
+    {
+      "source": "Tell me once it's pushed.",
+      "expected": [
+        "pushed"
+      ]
+    },
+    {
+      "source": "Would you prefer the signed release, the automatic workflow, or just the debug APK?",
+      "expected": [
+        "the signed release",
+        "the automatic workflow",
+        "the debug APK"
+      ]
+    },
+    {
+      "source": "Should I run the tests?",
+      "expected": [
+        "yes",
+        "no"
+      ]
+    },
+    {
+      "source": "Say the word and I will deploy.",
+      "expected": [
+        "go ahead"
+      ]
+    },
+    {
+      "source": "The job completed successfully.",
+      "expected": []
+    }
+  ]
+}

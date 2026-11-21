@@ -4,7 +4,7 @@ install();
 const { Session, restoredStatus } = require('../src/session.js');
 const { SessionManager } = require('../src/manager.js');
 
-module.exports = function () {
+module.exports = async function () {
   suite('a disposed instance stays dead');
 
   const z = new Session({ cwd: '/tmp' });
@@ -62,12 +62,66 @@ module.exports = function () {
   b.claudeSessionId = 'abc-123';
   check('one with a conversation says so', b.hasHistory === true);
 
-  suite('a reload remembers as many as it restores');
+  suite('a reload keeps every instance, however many and however idle');
 
-  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'manager.js'), 'utf8');
-  const persisted = (src.match(/update\(STORAGE_KEY, data\.slice\(-(\w+)\)\)/) || [])[1];
-  const restored = (src.match(/for \(const entry of saved\.slice\(-(\w+)\)\)/) || [])[1];
-  check('both sides use the same limit', !!persisted && persisted === restored);
+  {
+    const ctxMany = { workspaceState: memoryState(), globalState: memoryState() };
+    const many = new SessionManager(ctxMany);
+    for (let i = 0; i < 35; i++) {
+      const s = many.create({ cwd: '/tmp/p' + i, autoStart: false });
+      if (i % 3) s.claudeSessionId = 'many-' + i;
+    }
+    many.persist();
+    const ids = many.list.map((s) => s.id);
+    many.disposeAll();
+    const back = new SessionManager(ctxMany);
+    back.restoreOpen();
+    checkEqual('all thirty-five come back', back.list.length, 35);
+    checkEqual('the oldest among them', back.list[0].id, ids[0]);
+    check('including ones that never got a conversation', back.list.some((s) => !s.claudeSessionId));
+    back.disposeAll();
+  }
+
+  suite('a renamed conversation keeps its name in History');
+
+  {
+    const { listSessions } = require('../src/history');
+    const ctxName = { workspaceState: memoryState(), globalState: memoryState() };
+    const named = new SessionManager(ctxName);
+    const s = named.create({ cwd: '/tmp', autoStart: false });
+    s.claudeSessionId = 'renamed-1';
+    s.rename('Billing rewrite');
+    checkEqual('the name is remembered by conversation', ctxName.globalState.get('nikui.names.v1', {})['renamed-1'], 'Billing rewrite');
+    named.remove(s.id);
+    checkEqual('and outlives the instance', ctxName.globalState.get('nikui.names.v1', {})['renamed-1'], 'Billing rewrite');
+    const other = named.create({ cwd: '/tmp', autoStart: false });
+    other.claudeSessionId = 'renamed-2';
+    other.rename('Temp');
+    other.rename('');
+    check('clearing a name forgets it', !('renamed-2' in ctxName.globalState.get('nikui.names.v1', {})));
+    named.disposeAll();
+
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'nikui-names-'));
+    const realHome = os.homedir;
+    os.homedir = () => home;
+    try {
+      const dir = path.join(home, '.claude', 'projects', '-tmp');
+      fs.mkdirSync(dir, { recursive: true });
+      const line = JSON.stringify({ type: 'user', cwd: '/tmp', message: { content: 'fix the flaky login test please, it fails on CI every other run' } });
+      fs.writeFileSync(path.join(dir, 'renamed-1.jsonl'), line + '\n' + line + '\n');
+      const found = await listSessions({ keep: (e) => require('../src/historyTree').matches(e, 'billing') });
+      checkEqual('History finds it by the name it was given', found.map((e) => e.label), ['Billing rewrite']);
+      const byPrompt = await listSessions({ keep: (e) => require('../src/historyTree').matches(e, 'flaky login') });
+      checkEqual('and still by what it was about', byPrompt.length, 1);
+      checkEqual('reopening it brings the name back', found[0].customTitle, 'Billing rewrite');
+    } finally {
+      os.homedir = realHome;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }
 
   manager.disposeAll();
 

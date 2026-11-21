@@ -285,10 +285,18 @@ class Notifier {
   watch(manager) {
     const off = [];
     const on = (event, fn) => { manager.on(event, fn); off.push(() => manager.off(event, fn)); };
+    const restored = new Set((manager.list || []).map((s) => s.id));
 
     on('session-changed', (session) => {
       if (!session) return;
-      if (session.status === 'waiting') return void this.needsYou(session);
+      if (session.status === 'waiting') { restored.delete(session.id); return void this.needsYou(session); }
+      // One the window brought back, first heard of already finished — as it
+      // was, or picked up from the keeper — is not a turn that has just ended.
+      if (restored.has(session.id)) {
+        if (session.status === 'done') { restored.delete(session.id); this.told.set(session.id, 'done'); return; }
+        // A turn seen happening here: its end is news.
+        if (session.status === 'working' || session.status === 'waiting') restored.delete(session.id);
+      }
       // A turn that has just ended, once. `done` is a resting state and the
       // event fires again for anything else that changes while it rests, so
       // the note of having said it is what stops a second telling.

@@ -72,6 +72,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Updates from the paired laptop, handed to Android's own installer, which still asks. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Android 13 asks before an app may show anything at all. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Keeping the socket open while the app is in a pocket, and nothing else. -->

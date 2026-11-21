@@ -7,8 +7,7 @@
    The conversation itself — the list, the thread, the composer — is NikSlack's
    business, the same way the transcript is the client's on every other screen.
 
-   A tab of its own, after Settings; also reached from a notification about
-   something on Slack, the row in Settings, and typing `/slack` on the laptop. */
+   Reached from a notification, the row in Settings, or `/slack`. */
 (function () {
   'use strict';
 

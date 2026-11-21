@@ -18,6 +18,18 @@ function projectsRoot() {
 
 const titleCache = new Map(); // file -> { mtimeMs, title, cwd, at }
 
+// Names given to conversations by hand, by session id. A renamed instance goes
+// by that name in History too — closed or not — and can be searched for by it.
+let readNames = () => ({});
+function useNames(fn) { readNames = typeof fn === 'function' ? fn : () => ({}); }
+
+/** The entry as it should be shown: under its hand-given name, if it has one. */
+function named(entry, names) {
+  const name = names && names[entry.sessionId];
+  if (!name) return entry;
+  return Object.assign({}, entry, { label: name, customTitle: name, autoLabel: entry.label });
+}
+
 /**
  * First real user prompt in a transcript, used as its title. Transcripts can be
  * hundreds of megabytes, so this streams and bails out at the first hit.
@@ -145,6 +157,8 @@ async function listSessions({ cwd, limit = 30, keep, scan = 600 } = {}) {
   }
 
   files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  let names = {};
+  try { names = readNames() || {}; } catch (_) { names = {}; }
   const out = [];
   let opened = 0;
   for (const f of files) {
@@ -153,8 +167,9 @@ async function listSessions({ cwd, limit = 30, keep, scan = 600 } = {}) {
     // nothing would read every transcript on the machine.
     if (opened >= scan) break;
     opened++;
-    const entry = await describe(f.file);
-    if (!entry) continue;
+    const described = await describe(f.file);
+    if (!described) continue;
+    const entry = named(described, names);
     if (keep && !keep(entry)) continue;
     out.push(entry);
   }
@@ -218,4 +233,4 @@ function exists(file) {
   try { return fs.existsSync(file); } catch (_) { return false; }
 }
 
-module.exports = { listSessions, slugFor, projectsRoot, transcriptPath };
+module.exports = { listSessions, slugFor, projectsRoot, transcriptPath, useNames };

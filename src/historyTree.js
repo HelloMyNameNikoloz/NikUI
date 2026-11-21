@@ -133,7 +133,7 @@ class HistoryTree {
 /** Name, opening prompt or folder — whichever the reader was thinking of. */
 function matches(entry, needle) {
   const q = needle.toLowerCase();
-  return [entry.label, entry.title, entry.cwd, entry.branch]
+  return [entry.label, entry.autoLabel, entry.title, entry.cwd, entry.branch]
     .filter(Boolean)
     .some((field) => String(field).toLowerCase().indexOf(q) >= 0);
 }

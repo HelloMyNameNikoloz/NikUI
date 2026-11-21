@@ -11,7 +11,9 @@ import androidx.core.view.WindowInsetsCompat;
 
 import com.getcapacitor.BridgeActivity;
 import com.nikoloz.nikui.applock.AppLockPlugin;
+import com.nikoloz.nikui.bars.SystemBarsPlugin;
 import com.nikoloz.nikui.securekey.SecureKeyPlugin;
+import com.nikoloz.nikui.updater.UpdaterPlugin;
 import com.nikoloz.nikui.watcher.WatcherPlugin;
 
 public class MainActivity extends BridgeActivity {
@@ -22,14 +24,17 @@ public class MainActivity extends BridgeActivity {
         // first page would look for it and conclude the phone has no chip.
         registerPlugin(SecureKeyPlugin.class);
         registerPlugin(WatcherPlugin.class);
+        registerPlugin(SystemBarsPlugin.class);
         registerPlugin(AppLockPlugin.class);
+        registerPlugin(UpdaterPlugin.class);
         super.onCreate(savedInstanceState);
         keepClearOfNavigation();
     }
 
     // The colour of the tab bar, so the strip the system navigation sits in
-    // reads as the bottom of the app rather than as a gap. app.css says the same.
-    private static final int NAV_STRIP = 0xFF141417;
+    // reads as the bottom of the app rather than as a gap. Black until the page
+    // has settled the theme; SystemBarsPlugin repaints it from there.
+    private static final int NAV_STRIP = 0xFF000000;
 
     /**
      * Android 15 and later draw every app under the navigation bar. Here the
@@ -42,6 +47,7 @@ public class MainActivity extends BridgeActivity {
         View content = findViewById(android.R.id.content);
         if (content == null) return;
         content.setBackgroundColor(NAV_STRIP);
+        getWindow().getDecorView().setBackgroundColor(NAV_STRIP);
         getWindow().setNavigationBarColor(NAV_STRIP);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) getWindow().setNavigationBarContrastEnforced(false);
         WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView()).setAppearanceLightNavigationBars(false);

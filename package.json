@@ -290,18 +290,62 @@
         "command": "nikui.slack.disconnect",
         "title": "Disconnect Slack",
         "category": "NikUI"
+      },
+      {
+        "command": "nikui.showCodex",
+        "title": "NikUI: Switch to the Codex Workspace",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "nikui.showClaude",
+        "title": "NikUI: Switch to the Claude Workspace",
+        "icon": "$(hubot)"
+      },
+      {
+        "command": "nikui.newCodex",
+        "title": "NikUI: New Codex Conversation",
+        "icon": "$(add)"
+      },
+      {
+        "command": "nikui.refreshCodex",
+        "title": "NikUI: Refresh Codex Conversations",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "nikui.renameCodex",
+        "title": "Rename"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "nikui.showCodex",
+          "when": "view == nikui.sessions && nikui.workspace != codex",
+          "group": "navigation@0"
+        },
+        {
+          "command": "nikui.showClaude",
+          "when": "view == nikui.sessions && nikui.workspace == codex",
+          "group": "navigation@0"
+        },
+        {
+          "command": "nikui.newCodex",
+          "when": "view == nikui.sessions && nikui.workspace == codex",
+          "group": "navigation@1"
+        },
+        {
+          "command": "nikui.refreshCodex",
+          "when": "view == nikui.sessions && nikui.workspace == codex",
+          "group": "navigation@2"
+        },
+        {
           "command": "nikui.newSession",
-          "when": "view == nikui.sessions",
+          "when": "view == nikui.sessions && nikui.workspace != codex",
           "group": "navigation@1"
         },
         {
           "command": "nikui.clearStopped",
-          "when": "view == nikui.sessions",
+          "when": "view == nikui.sessions && nikui.workspace != codex",
           "group": "navigation@9"
         },
         {
@@ -321,17 +365,17 @@
         },
         {
           "command": "nikui.newFolder",
-          "when": "view == nikui.sessions",
+          "when": "view == nikui.sessions && nikui.workspace != codex",
           "group": "navigation@2"
         },
         {
           "command": "nikui.showHistory",
-          "when": "view == nikui.sessions",
+          "when": "view == nikui.sessions && nikui.workspace != codex",
           "group": "navigation@3"
         },
         {
           "command": "nikui.newSessionHere",
-          "when": "view == nikui.sessions",
+          "when": "view == nikui.sessions && nikui.workspace != codex",
           "group": "1_new@1"
         },
         {
@@ -455,6 +499,16 @@
           "command": "nikui.forgetDevice",
           "when": "view == nikui.devices && viewItem =~ /nikui.device/",
           "group": "3_gone"
+        },
+        {
+          "command": "nikui.interrupt",
+          "when": "view == nikui.sessions && viewItem == codexRunning",
+          "group": "inline"
+        },
+        {
+          "command": "nikui.renameCodex",
+          "when": "view == nikui.sessions && viewItem =~ /^codex/",
+          "group": "1_edit@1"
         }
       ],
       "commandPalette": [
@@ -525,6 +579,10 @@
         {
           "command": "nikui.renameDevice",
           "when": "true"
+        },
+        {
+          "command": "nikui.renameCodex",
+          "when": "false"
         }
       ]
     },
@@ -590,6 +648,16 @@
           "default": [],
           "description": "Extra CLI arguments appended to every instance."
         },
+        "nikui.keepInstancesAcrossReloads": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep instances running through Developer: Reload Window. Their processes are held by a small background helper, and the reloaded window picks them up mid-turn. When the window is closed rather than reloaded, they are stopped after three minutes."
+        },
+        "nikui.longCommandsInBackground": {
+          "type": "boolean",
+          "default": true,
+          "description": "Tell Claude to run long or repeating commands (watchers, polling loops, long test suites) in the background instead of blocking its turn, so you can keep chatting with the instance while they run."
+        },
         "nikui.autoTitleFromTicket": {
           "type": "boolean",
           "default": true,
@@ -611,14 +679,14 @@
             "type": "string"
           },
           "default": {
-            "table": "Give me the whole plan for what we are working on right now as a table: one row per step, with \ud83d\udfe2 for done and verified, \ud83d\udfe1 for in progress, and \ud83d\udd34 for not started. Cover only the current task and the phase of it we are in \u2014 not the project's wider scope, and not earlier phases that are already finished. Carry on from the plan we are already working to rather than starting a new one; if there is no plan yet, make one first. Include the steps still outstanding, not only the finished ones, and end with one line on what is left.",
+            "table": "Give me the whole plan for what we are working on right now as a table: one row per step, with 🟢 for done and verified, 🟡 for in progress, and 🔴 for not started. Cover only the current task and the phase of it we are in — not the project's wider scope, and not earlier phases that are already finished. Carry on from the plan we are already working to rather than starting a new one; if there is no plan yet, make one first. Include the steps still outstanding, not only the finished ones, and end with one line on what is left.",
             "decisions": "Before doing anything else, read `docs/validation/691-692-decisions-reference.md` in the peuka/backend repository and work from it. It indexes every decision taken on #691 (field validation and the error contract) and #692 (booking authority) with the date it was taken and its source, plus the HTTP status contract, the items still open and who owns them, and the traps that have cost time before. Analyse its content against whatever the prompt asks for, and say explicitly which rows apply. That file is an index, not an authority: where it disagrees with docs/validation/decision-register.md, backend-authority-and-gating.md, http-status-opt-in-contract.md or an issue comment, the canonical source wins and the reference row is the bug. Decisions on these two issues get corrected and reversed while work is in flight, so check the dates and never enforce a rule the register still marks open.",
-            "lean": "Work lean on this, with the same care and the same checks as always. Look once: decide everything you need to see and fetch it in one step \u2014 parallel reads and searches, line ranges for big files \u2014 and look again only for what that turned up. Change with small edits, grouped by file. Verify once with the checks that cover the change; keep their output short, and read any failure in full. Don't re-read what is already in the conversation. A sweep of a large codebase goes to the scout agent and web research to the researcher agent, each with a precise brief \u2014 never an agent per file. Keep messages short: what changed, what was checked, what is left.",
-            "delegate": "Delegate this where it pays, and keep the judgment yourself.\n1. Plan first. Split only where parts are independent and each is big enough to be worth an agent \u2014 every agent starts with about 50k tokens of its own. If the task is small or tightly coupled, say so in one line and do it directly.\n2. Give each part to the cheapest agent that will do it well:\n- runner (Haiku): run tests, builds, linters and scripts and report failures verbatim; mechanical changes to an exact spec.\n- scout (Sonnet): find code across a large codebase. researcher (Sonnet): web research.\n- worker (Sonnet): implement a contained piece to a clear brief, or write tests for specified behaviour.\n- deep (Opus, high effort): one hard, isolated sub-problem \u2014 a bug nobody understands yet, a tricky algorithm, a risky design question.\n- Yourself: the plan, the decisions, anything that needs the whole picture, and reviewing every result.\nIf one of these agents doesn't exist, use general-purpose with that model.\n3. Launch independent parts together in one step so they run in parallel. Parts that edit files run in parallel only if their files don't overlap.\n4. Brief each agent precisely: the goal, the files it owns, the constraints, how to check its work, and what to report back.\n5. Review every result before building on it. If one is wrong, fix it yourself or re-brief once with exactly what was wrong. Make sure the final checks pass, reading any failure in full.\nEnd with a short table: part, who did it, result, checked.",
+            "lean": "Work lean on this, with the same care and the same checks as always. Look once: decide everything you need to see and fetch it in one step — parallel reads and searches, line ranges for big files — and look again only for what that turned up. Change with small edits, grouped by file. Verify once with the checks that cover the change; keep their output short, and read any failure in full. Don't re-read what is already in the conversation. A sweep of a large codebase goes to the scout agent and web research to the researcher agent, each with a precise brief — never an agent per file. Keep messages short: what changed, what was checked, what is left.",
+            "delegate": "Delegate this where it pays, and keep the judgment yourself.\n1. Plan first. Split only where parts are independent and each is big enough to be worth an agent — every agent starts with about 50k tokens of its own. If the task is small or tightly coupled, say so in one line and do it directly.\n2. Give each part to the cheapest agent that will do it well:\n- runner (Haiku): run tests, builds, linters and scripts and report failures verbatim; mechanical changes to an exact spec.\n- scout (Sonnet): find code across a large codebase. researcher (Sonnet): web research.\n- worker (Sonnet): implement a contained piece to a clear brief, or write tests for specified behaviour.\n- deep (Opus, high effort): one hard, isolated sub-problem — a bug nobody understands yet, a tricky algorithm, a risky design question.\n- Yourself: the plan, the decisions, anything that needs the whole picture, and reviewing every result.\nIf one of these agents doesn't exist, use general-purpose with that model.\n3. Launch independent parts together in one step so they run in parallel. Parts that edit files run in parallel only if their files don't overlap.\n4. Brief each agent precisely: the goal, the files it owns, the constraints, how to check its work, and what to report back.\n5. Review every result before building on it. If one is wrong, fix it yourself or re-brief once with exactly what was wrong. Make sure the final checks pass, reading any failure in full.\nEnd with a short table: part, who did it, result, checked.",
             "review": "Review the pull request or issue linked above and give me an implementation plan. If I linked nothing, use this branch's pull request (gh pr view). Change nothing: no edits, commits, pushes, comments, or resolved threads. Read with gh and git only.\n\nIf it is a pull request:\n1. State: gh pr view <number> --json title,body,state,isDraft,baseRefName,headRefName,mergeable,mergeStateStatus,reviewDecision,reviews,comments,files,statusCheckRollup\n2. Changes requested: every review marked CHANGES_REQUESTED, and every review thread that is not resolved (gh api graphql, pullRequest.reviewThreads with isResolved, path, line and comments). Skip resolved and outdated threads, but say how many you skipped.\n3. Conflicts: git fetch, then git merge-tree --write-tree origin/<base> origin/<head> to name the conflicting files and what each side changed, without touching the working tree.\n4. CI: gh pr checks; for each failure, gh run view --log-failed, and the cause in one line.\n5. Check each requested change against the code: is it already done, is it needed, do you agree.\n\nIf it is an issue: the body, comments, labels and linked pull requests, then find the code involved and what the fix would touch.\n\nReply with:\n- Where it stands: one paragraph (state, review decision, mergeable, CI).\n- Requested changes: a table of reviewer, file:line, what they asked, your verdict (do it / already done / push back, and why).\n- Conflicts: each file and how to resolve it.\n- CI failures: cause and fix.\n- Plan: numbered steps in order, with files and a test for each.\n- Risks and questions for me.\nEnd with: \"Say go and I will implement it.\"",
             "implement": "Implement the plan from earlier in this chat, or what I wrote above if I wrote something. If there is neither, ask me what to implement rather than guessing.\n\nScope\n- Implement everything in it. Doing the work is the default. Leave something out only if it truly cannot be done from this repository: it needs secrets or access we don't have, another team's repo or service, or something only I can provide. Being hard, large or tedious is not a reason to skip it.\n- When something needs a judgement call, make the sensible choice, implement it, and note the choice. Don't stop to ask.\n- Do every change a reviewer asked for. Don't do one only if doing it would be wrong: it would break something, or contradict another reviewer or the codebase. Then do the closest correct thing and say why.\n- If the branch conflicts with its base, merge or rebase locally and resolve the conflicts, keeping what both sides meant.\n\nQuality\n- Build it to last: follow the patterns the code already uses, handle the edge cases and failure paths, and don't hard-code values or leave TODOs. No workarounds that hide a problem instead of fixing it.\n- Tests: aim for at least 95% coverage of the lines you changed or added, and 100% where reachable. Use the repo's own coverage tool on the diff. Cover the failure paths too, not just the happy path. Name any line you could not cover and why.\n- Before saying it is ready, run everything CI would run here: lint, type check, the full test suite and the build. All of it must pass. If something was already failing on the base branch, say so instead of hiding it.\n\nGit\n- Commit locally in logical commits, with messages that say why.\n- Do not push, open or edit pull requests or issues, comment on GitHub, or resolve review threads, even if you have permission to push from earlier in this chat.\n\nEnd your reply with exactly this, in this order:\n1. What was done: one short line per change, with the files.\n2. Checks: each command you ran and its result, and coverage of the changed lines as a percentage.\n3. Choices I made: each judgement call, in one line, so you can change it. Only if something truly could not be done here, add \"Blocked:\" with what it needs. If nothing was blocked, leave this line out.\n4. \"Ready to push.\" and the command in its own code block: git push -u origin <branch> (with --force-with-lease, and a note saying why, if you rebased).\n5. Follow-ups, after the push command, only if one is truly needed: work this change depends on or makes necessary that cannot go into this pull request (another repository, another team, or a change too unrelated to belong here). Anything that fits this pull request goes into it instead. Not for nice-to-haves, refactors you noticed, or ideas. For each: a title, two lines on why, and whether it blocks this one. Do not create them. If there are none, leave this out."
           },
-          "markdownDescription": "Words you can type to add a standing instruction to the prompt you just wrote. `/table fix the rollback` and `fix the rollback /table` both send your text with the instruction appended; the word itself never reaches the CLI. Yours are merged over the built-in ones \u2014 set a value to an empty string to switch that one off."
+          "markdownDescription": "Words you can type to add a standing instruction to the prompt you just wrote. `/table fix the rollback` and `fix the rollback /table` both send your text with the instruction appended; the word itself never reaches the CLI. Yours are merged over the built-in ones — set a value to an empty string to switch that one off."
         },
         "nikui.promptSnippetDescriptions": {
           "type": "object",
@@ -679,7 +747,7 @@
           "type": "number",
           "default": 400,
           "minimum": 0,
-          "description": "How many messages, tool calls and results an instance keeps in memory. Older ones are dropped from the panel \u2014 the full record stays in the transcript on disk. 0 keeps everything, at the cost of memory on very long conversations."
+          "description": "How many messages, tool calls and results an instance keeps in memory. Older ones are dropped from the panel — the full record stays in the transcript on disk. 0 keeps everything, at the cost of memory on very long conversations."
         },
         "nikui.keepHiddenPanelsWarm": {
           "type": "boolean",
@@ -688,8 +756,14 @@
         },
         "nikui.clock": {
           "type": "string",
-          "enum": ["24h", "12h"],
-          "enumDescriptions": ["13:05", "1:05 PM"],
+          "enum": [
+            "24h",
+            "12h"
+          ],
+          "enumDescriptions": [
+            "13:05",
+            "1:05 PM"
+          ],
           "default": "24h",
           "description": "How the time a message was sent, and an answer came back, is written."
         },
@@ -706,13 +780,13 @@
         "nikui.statusEmoji": {
           "type": "object",
           "default": {
-            "idle": "\u26aa",
-            "working": "\ud83d\udfe0",
-            "waiting": "\ud83d\udd34",
-            "done": "\ud83d\udfe2",
-            "error": "\ud83d\udd34",
-            "stopped": "\u26ab",
-            "unread": "\ud83d\udd35"
+            "idle": "⚪",
+            "working": "🟠",
+            "waiting": "🔴",
+            "done": "🟢",
+            "error": "🔴",
+            "stopped": "⚫",
+            "unread": "🔵"
           },
           "description": "Emoji used per status in panel titles. \"unread\" is a finished instance you have not opened since."
         },
@@ -770,17 +844,17 @@
         "nikui.remote.requireEncryption": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Require a paired device to seal the connection end to end before it may say anything. Both ends agree a throwaway key per connection and name it inside the signatures they already exchange, so the traffic is unreadable even to something holding a certificate for this address \u2014 a relay that terminates TLS, a profile installed on the phone, a compromised authority. On by default; turn it off only for a client too old to seal, and know that it is then readable by whatever is carrying it."
+          "markdownDescription": "Require a paired device to seal the connection end to end before it may say anything. Both ends agree a throwaway key per connection and name it inside the signatures they already exchange, so the traffic is unreadable even to something holding a certificate for this address — a relay that terminates TLS, a profile installed on the phone, a compromised authority. On by default; turn it off only for a client too old to seal, and know that it is then readable by whatever is carrying it."
         },
         "nikui.remote.appOnly": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Serve the app and nothing else. From anywhere but this machine, only pairing, the socket, the health probe and the push key exist \u2014 no page, no client, no service worker, no manifest. The app carries its own copy of the client, so it needs none of them. Off by default, because it turns off the browser at `/` that some people use instead of the app."
+          "markdownDescription": "Serve the app and nothing else. From anywhere but this machine, only pairing, the socket, the health probe and the push key exist — no page, no client, no service worker, no manifest. The app carries its own copy of the client, so it needs none of them. Off by default, because it turns off the browser at `/` that some people use instead of the app."
         },
         "nikui.apns.teamId": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Your Apple Developer team ID, for telling an iPhone something while the NikUI app is closed. iOS suspends an app the moment it leaves the screen, so Apple\u2019s own push network is the only way to reach one \u2014 and it needs an Apple Developer account. Leave this empty and nothing is sent; Android needs none of it."
+          "markdownDescription": "Your Apple Developer team ID, for telling an iPhone something while the NikUI app is closed. iOS suspends an app the moment it leaves the screen, so Apple’s own push network is the only way to reach one — and it needs an Apple Developer account. Leave this empty and nothing is sent; Android needs none of it."
         },
         "nikui.apns.keyId": {
           "type": "string",
@@ -790,17 +864,17 @@
         "nikui.apns.keyFile": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to the `.p8` file that key came in. The key itself is never copied into settings \u2014 only where to find it."
+          "markdownDescription": "Path to the `.p8` file that key came in. The key itself is never copied into settings — only where to find it."
         },
         "nikui.apns.bundleId": {
           "type": "string",
           "default": "com.nikoloz.nikui",
-          "markdownDescription": "The app\u2019s bundle identifier, which Apple calls the topic. Change this only if you rebuilt the app under an identifier of your own."
+          "markdownDescription": "The app’s bundle identifier, which Apple calls the topic. Change this only if you rebuilt the app under an identifier of your own."
         },
         "nikui.apns.production": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Send to Apple\u2019s production network. Turn off for a build installed straight from Xcode, which gets a sandbox token \u2014 a production token sent to sandbox, or the other way round, is refused as `BadDeviceToken`."
+          "markdownDescription": "Send to Apple’s production network. Turn off for a build installed straight from Xcode, which gets a sandbox token — a production token sent to sandbox, or the other way round, is refused as `BadDeviceToken`."
         },
         "nikui.voice.enabled": {
           "type": "boolean",
@@ -812,13 +886,13 @@
           "type": "boolean",
           "default": false,
           "scope": "application",
-          "markdownDescription": "Keep this laptop from going to sleep on its own while NikUI is listening for your phone, and while an instance is working, so the phone can always reach it. Also switchable from the phone, in Settings \u2192 Your laptop. The display still turns off. Closing the lid still puts a MacBook to sleep; `nikui.lidClosed` is the switch for that. Off by default: keeping your laptop awake is not a decision to make for you."
+          "markdownDescription": "Keep this laptop from going to sleep on its own while NikUI is listening for your phone, and while an instance is working, so the phone can always reach it. Also switchable from the phone, in Settings → Your laptop. The display still turns off. Closing the lid still puts a MacBook to sleep; `nikui.lidClosed` is the switch for that. Off by default: keeping your laptop awake is not a decision to make for you."
         },
         "nikui.lidClosed": {
           "type": "boolean",
           "default": false,
           "scope": "application",
-          "markdownDescription": "Keep working with the lid closed. While an instance is working, closing the lid will not put this Mac to sleep; two minutes after the last job is done it sleeps, the way a closed laptop should. On battery it gives up at 20% and tells your phone first. Needs your admin password once, to let NikUI run `pmset` to turn sleep off and back on \u2014 nothing else; undo it from the NikUI status bar item. Keep the laptop out of a bag while it works."
+          "markdownDescription": "Keep working with the lid closed. While an instance is working, closing the lid will not put this Mac to sleep; two minutes after the last job is done it sleeps, the way a closed laptop should. On battery it gives up at 20% and tells your phone first. Needs your admin password once, to let NikUI run `pmset` to turn sleep off and back on — nothing else; undo it from the NikUI status bar item. Keep the laptop out of a bag while it works."
         },
         "nikui.notifyDevices": {
           "type": "object",
@@ -836,7 +910,7 @@
             },
             "quota": {
               "type": "boolean",
-              "description": "The usage limit ran out and everything paused \u2014 and again when it resets."
+              "description": "The usage limit ran out and everything paused — and again when it resets."
             },
             "failed": {
               "type": "boolean",
@@ -861,25 +935,35 @@
         },
         "nikui.repoFolders": {
           "type": "object",
-          "additionalProperties": { "type": "string" },
+          "additionalProperties": {
+            "type": "string"
+          },
           "default": {},
           "description": "Where each GitHub repo's checkout lives, for \"Open in instance\" on a PR/issue link in Slack — e.g. \"peuka/frontend\": \"/Users/you/Codes/Peuka/frontend\". Set automatically the first time you choose a folder for a repo that could not be found; wins over anything NikUI would otherwise find on its own."
         },
         "nikui.codeRoots": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["~/Codes"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "~/Codes"
+          ],
           "description": "Folders to search, two levels deep, for a repo's local checkout when it is not already known from an open instance, its history, or nikui.repoFolders."
         },
         "nikui.slack.vips": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Whose DMs matter: a Slack member ID (U…), an email, or a display name or @handle."
         },
         "nikui.slack.muted": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Conversation ids muted from NikUI's side: still shown, but a VIP's DM or message there no longer pops up or rings the phone unless it @mentions you directly. Muting in Slack itself mutes it here too."
         },
@@ -916,6 +1000,28 @@
           "type": "boolean",
           "default": true,
           "description": "Put the message itself in the phone's notification. Off: only who wrote."
+        },
+        "nikui.codexPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the codex executable for the Codex workspace. Empty finds it: Homebrew, ~/.local/bin, or the copy inside the ChatGPT app."
+        },
+        "nikui.codexAccount": {
+          "type": "string",
+          "default": "work",
+          "enum": ["work", "personal"],
+          "enumDescriptions": ["~/.codex-work (`codex` in the terminal)", "~/.codex (the ChatGPT app's account)"],
+          "description": "The ChatGPT account the Codex workspace runs on. Work runs its own Codex; Personal shares the ChatGPT app's, so conversations it holds can be continued here."
+        },
+        "nikui.codexComputerUse": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let Codex see and use this Mac (screenshots, clicks, typing in apps) through the ChatGPT app's computer use, on whichever account it runs. macOS asks for Screen Recording and Accessibility the first time."
+        },
+        "nikui.codexXcode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Give Codex Xcode's tools (XcodeBuildMCP): build, run in the Simulator, tap and take screenshots, so it can test an app visually. Only where Xcode is installed."
         }
       }
     }

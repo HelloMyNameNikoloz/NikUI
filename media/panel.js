@@ -8,6 +8,7 @@
   // this file — or any other in media/ — depends on the answer.
   const vscode = window.nikTransport();
   const $ = (id) => document.getElementById(id);
+  const IN_APP = !!(window.NIKUI_REMOTE && window.NIKUI_REMOTE.app);
 
   /**
    * Plays an element's entry animation in reverse, then hides it -- so a
@@ -119,6 +120,10 @@
   let drainAt = null;
   let clearArmed = false;
   let clearTimer = null;
+  let steering = false;
+  let agentDialog = null;
+  let agentSheet = null;
+  let queueSheet = null;
 
   const esc = (s) => window.escapeHtml(String(s == null ? '' : s));
   const icon = window.icon;
@@ -162,7 +167,7 @@
     const was = clock;
     clock = next === '12h' ? '12h' : '24h';
     if (clock === was) return;
-    stream.querySelectorAll('time.sent-at, time.received-at').forEach(function (t) {
+    stream.querySelectorAll('time.sent-at, time.received-at, time.notice-at').forEach(function (t) {
       t.textContent = fmtClock(Date.parse(t.getAttribute('datetime')));
     });
   }
@@ -211,7 +216,7 @@
     const i = inputObj || {};
     const path = i.file_path || i.path;
     if (path && !i.command) return shortenPath(String(path).replace(/\s+/g, ' ')).slice(0, 160);
-    const first = i.command || i.url || i.query || i.pattern || i.description || i.prompt;
+    const first = i.command || i.url || i.query || i.pattern || i.description || i.prompt || i.title;
     if (first) return String(first).replace(/\s+/g, ' ').slice(0, 160);
     const keys = Object.keys(i);
     return keys.length ? keys.slice(0, 3).map((k) => k + '=' + short(i[k])).join(' ') : '';
@@ -468,6 +473,7 @@
     paintShells();
     paintContext();
     paintCi();
+    paintConversationSummary();
   }
 
   const PERMISSION_WORD = {
@@ -485,6 +491,7 @@
   function setControl(device) {
     const allowed = !device || device.control !== false;
     document.body.classList.toggle('read-only', !allowed);
+    if (!allowed && agentDialog && agentDialog.open) agentDialog.close();
     const banner = $('watching');
     if (banner) {
       banner.hidden = allowed;
@@ -570,9 +577,14 @@
     if (meta.model) bits.push(meta.model);
     if (meta.effort) bits.push('effort ' + meta.effort);
     let html = bits.map((b) => '<span>' + esc(b) + '</span>').join('');
+    // A Codex conversation is not one of ours; say whose it is up front.
+    const codex = meta.provider === 'codex';
+    document.body.dataset.provider = codex ? 'codex' : 'claude';
+    // Plan mode changes what a prompt does, so it is on show, and one tap ends it.
+    if (meta.mode === 'plan') html += '<button class="perm-chip plan-chip" data-codex="/plan off" title="Codex plans first and changes nothing until you agree. Tap to stop planning.">Plan</button>';
     // The permission mode decides whether anything can stop a tool call, so it
     // is stated in words, and flagged when nothing will.
-    if (meta.permissionMode) {
+    if (meta.permissionMode && (!IN_APP || !['default', 'bypassPermissions', 'plan'].includes(meta.permissionMode))) {
       const bypassing = meta.permissionMode === 'bypassPermissions';
       html += '<span class="perm-chip' + (bypassing ? ' warn' : '') + '" title="' +
         esc('Permission mode: ' + meta.permissionMode) + '">' +
@@ -580,8 +592,265 @@
         esc(PERMISSION_WORD[meta.permissionMode] || meta.permissionMode) + '</span>';
     }
     $('crumbs').innerHTML = html;
+    if (IN_APP) {
+      let warning = $('permission-warning');
+      if (!warning) { warning = document.createElement('div'); warning.id = 'permission-warning'; warning.className = 'permission-warning'; document.querySelector('.composer-wrap').prepend(warning); }
+      warning.hidden = !meta.permissionMode || ['default', 'bypassPermissions', 'plan'].includes(meta.permissionMode);
+      warning.textContent = PERMISSION_WORD[meta.permissionMode] || meta.permissionMode || '';
+    }
     if (prPane) prPane.setMeta(meta);
+    input.placeholder = steering ? 'Steer the current turn…' : codex ? 'Message Codex…' : 'Message Claude…';
+    paintCodexBars();
+    paintConversationControls();
   }
+
+  function command(text) {
+    if (document.body.classList.contains('read-only')) return;
+    vscode.postMessage({ type: 'send', text, attachments: [] });
+  }
+
+  function paintConversationSummary() {
+    const summary = $('conversation-summary');
+    if (!summary) return;
+    const cwd = String(meta.cwd || '').split(/[\\/]/).filter(Boolean).pop() || 'Conversation';
+    const parts = [cwd, meta.model, meta.effort ? meta.effort + ' effort' : ''];
+    if (meta.provider !== 'codex') {
+      if (statsBase.cost) parts.push('$' + statsBase.cost.toFixed(2));
+      if (statsBase.contextWindow && statsBase.contextTokens) parts.push(Math.round(statsBase.contextTokens / statsBase.contextWindow * 100) + '% context');
+    }
+    summary.textContent = parts.filter(Boolean).join(' · ');
+  }
+
+  // These controls use the same commands as the palette. They keep a draft
+  // intact while changing a model or goal, and work at editor width as well.
+  function paintConversationControls() {
+    const codex = meta.provider === 'codex';
+    let badge = $('conversation-provider');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.id = 'conversation-provider';
+      document.querySelector('.title-group').prepend(badge);
+      const summary = document.createElement('div');
+      summary.id = 'conversation-summary';
+      summary.className = 'conversation-summary';
+      document.querySelector('body > header').after(summary);
+    }
+    badge.className = 'provider-badge ' + (codex ? 'codex' : 'claude');
+    badge.textContent = codex ? 'Codex' : 'Claude';
+    let tools = $('conversation-tools');
+    if (!tools) {
+      tools = document.createElement('div');
+      tools.id = 'conversation-tools';
+      tools.className = 'conversation-tools';
+      tools.setAttribute('role', 'group');
+      tools.setAttribute('aria-label', 'Conversation controls');
+      // The phone shares the composer's action row; the editor keeps its
+      // labelled controls beside the rest of its conversation chrome.
+      if (IN_APP) document.querySelector('.composer-actions').insertBefore(tools, $('stop'));
+      else document.querySelector('.composer').before(tools);
+      tools.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-agent]');
+        if (!button) return;
+        const action = button.dataset.agent;
+        if (action === 'status') askForStatus();
+        else if (action === 'plan') command('/plan ' + (meta.mode === 'plan' ? 'off' : 'on'));
+        else openAgentDialog(action);
+      });
+    }
+    const permissionLabel = { default: 'Ask first', acceptEdits: 'Auto edits', bypassPermissions: 'Auto tools', plan: 'Plan mode' }[meta.permissionMode] || 'Permissions';
+    const controlsKey = (codex ? 'codex' : 'claude') + ':' + meta.mode + ':' + meta.permissionMode;
+    const label = (text) => '<span class="agent-label">' + text + '</span>';
+    if (IN_APP) {
+      if (tools.dataset.controls !== controlsKey) tools.innerHTML = '<button type="button" data-agent="more" aria-label="Conversation tools">' + icon('settings', 16) + label(meta.mode === 'plan' || meta.permissionMode === 'plan' ? 'Plan' : 'Tools') + '</button>';
+      tools.dataset.controls = controlsKey;
+      paintConversationSummary();
+      return;
+    }
+    if (tools.dataset.controls !== controlsKey) tools.innerHTML = (codex
+      ? '<button type="button" data-agent="plan" aria-label="Plan mode" title="Plan mode" aria-pressed="' + (meta.mode === 'plan') + '" class="' + (meta.mode === 'plan' ? 'selected' : '') + '">' + icon('sparkles', 13) + label('Plan ' + (meta.mode === 'plan' ? 'on' : 'off')) + '</button>' +
+        '<button type="button" data-agent="goal" aria-label="Set a goal" title="Set a goal">' + icon('target', 13) + label('Goal') + '</button>'
+      : '<button type="button" data-agent="status" aria-label="Conversation status" title="Conversation status">' + icon('activity', 13) + label('Status') + '</button>' +
+        '<button type="button" data-agent="permissions" title="Claude permissions" class="' + (meta.permissionMode === 'bypassPermissions' ? 'permission-warn' : '') + '" aria-label="' + esc('Permissions: ' + (PERMISSION_WORD[meta.permissionMode] || 'View permission mode')) + '">' + (IN_APP ? icon('shield', 13) : '') + label(permissionLabel) + '</button>') +
+      '<button type="button" data-agent="model" aria-label="Choose a model" title="Choose a model">' + (IN_APP ? icon('brain', 13) : '') + label('Model') + '</button><button type="button" data-agent="more" aria-label="More conversation tools" title="More conversation tools">' + icon(IN_APP ? 'settings' : 'chevron', 12) + label('More') + '</button>';
+    tools.dataset.controls = controlsKey;
+    paintConversationSummary();
+    tools.querySelector('[data-agent="model"]').title = ['Model: ' + (meta.model || 'Default'), meta.effort ? meta.effort + ' effort' : ''].filter(Boolean).join(' · ');
+  }
+
+  function openAgentDialog(action) {
+    if (document.body.classList.contains('read-only') && (!IN_APP || action !== 'more')) return;
+    if (!agentDialog) {
+      if (IN_APP) {
+        agentSheet = window.NikApp.sheet({ title: 'Conversation tools' });
+        agentSheet.heading.id = 'agent-dialog-title';
+        agentSheet.panel.setAttribute('aria-labelledby', 'agent-dialog-title');
+        agentDialog = agentSheet.body;
+        agentDialog.className += ' agent-dialog';
+        Object.defineProperty(agentDialog, 'open', { get: () => agentSheet.open });
+        agentDialog.close = agentSheet.close;
+        agentDialog.showModal = () => agentSheet.show(() => document.querySelector('[data-agent="more"]'));
+      } else {
+        agentDialog = document.createElement('dialog');
+        agentDialog.className = 'agent-dialog';
+        agentDialog.setAttribute('aria-labelledby', 'agent-dialog-title');
+        document.body.appendChild(agentDialog);
+        (window.NikBack = window.NikBack || []).push(() => {
+          if (!agentDialog.open) return false;
+          agentDialog.close();
+          return true;
+        });
+        agentDialog.addEventListener('click', (event) => { if (event.target === agentDialog) agentDialog.close(); });
+      }
+    }
+    const codex = meta.provider === 'codex';
+    const titles = { more: 'Conversation tools', goal: 'Set a goal', model: 'Choose a model', effort: 'Reasoning effort',
+      undo: 'Undo the last turn?', permissions: 'Claude permissions' };
+    if (IN_APP) { agentSheet.heading.textContent = titles[action]; agentDialog.textContent = ''; agentSheet.closeButton.focus({ preventScroll: true }); }
+    else {
+      agentDialog.innerHTML = '<div class="agent-dialog-head"><h2 id="agent-dialog-title">' + titles[action] + '</h2>' +
+      '<button type="button" class="ghost" data-close aria-label="Close conversation tools">' + icon('x', 18) + '</button></div>';
+      agentDialog.querySelector('[data-close]').addEventListener('click', () => agentDialog.close());
+    }
+    const note = document.createElement('p');
+    note.className = 'agent-dialog-note';
+    agentDialog.appendChild(note);
+    const add = (label, tap, disabled) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'agent-option'; b.textContent = label;
+      b.disabled = !!disabled; b.addEventListener('click', tap); agentDialog.appendChild(b); return b;
+    };
+    if (document.body.classList.contains('read-only')) {
+      note.textContent = 'Watching only';
+      add('Conversation status', () => { agentDialog.close(); askForStatus(); });
+    } else if (action === 'more') {
+      note.textContent = IN_APP ? $('conversation-summary').textContent : codex ? 'Work with Codex, your way.' : 'Quick controls for this Claude conversation.';
+      const busy = status === 'working' || status === 'waiting';
+      if (IN_APP) {
+        add('Plan · ' + (meta.mode === 'plan' || meta.permissionMode === 'plan' ? 'On' : 'Off'), () => {
+          agentDialog.close(); command(codex ? '/plan ' + (meta.mode === 'plan' ? 'off' : 'on') : '/plan');
+        });
+        if (codex) add('Goal · ' + (meta.goal && meta.goal.objective ? meta.goal.objective : 'None'), () => openAgentDialog('goal'));
+        add('Model · ' + (meta.model || 'Default'), () => openAgentDialog('model'));
+        if (!codex) add('Permissions · ' + permissionLabelForTools(), () => openAgentDialog('permissions'));
+      }
+      if (codex) {
+        add('Review changes', () => { agentDialog.close(); command('/review'); }, busy);
+        add('Fork conversation', () => { agentDialog.close(); command('/fork'); });
+        add('Undo last turn…', () => openAgentDialog('undo'), busy);
+        add(steering ? 'Cancel steering' : 'Steer the current turn', () => {
+          steering = !steering; agentDialog.close();
+          input.placeholder = steering ? 'Steer the current turn…' : 'Message Codex…';
+          $('send').title = steering ? 'Steer the current turn' : 'Send';
+          paintSendAction();
+          document.body.classList.toggle('steering', steering); input.focus();
+        });
+      }
+      add(IN_APP ? 'Reasoning effort · ' + (meta.effort || 'Default') : 'Reasoning effort…', () => openAgentDialog('effort'));
+      add('Conversation status', () => { agentDialog.close(); askForStatus(); });
+    } else if (action === 'undo') {
+      note.textContent = 'Remove the last turn from this conversation. Files on your laptop will keep their current changes.';
+      add('Undo last turn', () => { agentDialog.close(); command('/undo'); });
+    } else if (action === 'permissions') {
+      note.textContent = PERMISSION_WORD[meta.permissionMode] || 'Permission settings are managed on your laptop.';
+      add('Open conversation status', () => { agentDialog.close(); askForStatus(); });
+    } else {
+      note.textContent = action === 'goal' ? 'Tell Codex what to keep working toward.'
+        : action === 'model' ? 'Current model: ' + (meta.model || 'Default') : 'Current effort: ' + (meta.effort || 'Default');
+      const choices = action === 'goal' ? [] : (commandArgs[action] || []);
+      for (const choice of choices) {
+        const value = typeof choice === 'string' ? choice : choice.value;
+        if (value) add((typeof choice === 'object' && choice.label) || value,
+          () => { agentDialog.close(); command('/' + action + ' ' + value); });
+      }
+      if (action === 'goal' || !choices.length) {
+        const form = document.createElement('form');
+        const field = document.createElement('input');
+        field.type = 'text'; field.required = true;
+        field.setAttribute('aria-label', action === 'goal' ? 'Goal objective' : action === 'model' ? 'Model ID' : 'Reasoning effort');
+        field.placeholder = action === 'goal' ? 'What would you like to accomplish?' : action === 'model' ? 'Model ID' : 'Effort';
+        field.value = action === 'goal' ? (meta.goal && meta.goal.objective || '') : '';
+        const go = document.createElement('button'); go.type = 'submit'; go.textContent = action === 'goal' ? 'Save goal' : 'Apply';
+        form.append(field, go); agentDialog.appendChild(form);
+        form.addEventListener('submit', (event) => {
+          event.preventDefault(); const value = field.value.trim();
+          if (value) { agentDialog.close(); command('/' + action + ' ' + value); }
+        });
+      }
+      if (action === 'goal' && meta.goal && meta.goal.objective) {
+        const paused = /paus/i.test(meta.goal.status || '');
+        add(paused ? 'Resume goal' : 'Pause goal', () => { agentDialog.close(); command('/goal ' + (paused ? 'resume' : 'pause')); });
+        add('Clear goal', () => { agentDialog.close(); command('/goal clear'); });
+      }
+    }
+    if (!agentDialog.open) agentDialog.showModal();
+  }
+
+  function permissionLabelForTools() {
+    return { default: 'Ask first', bypassPermissions: 'Auto tools', acceptEdits: 'Auto edits', plan: 'Plan' }[meta.permissionMode] || meta.permissionMode || 'Default';
+  }
+
+  function paintSendAction() {
+    if (!IN_APP) return;
+    const label = steering ? 'Steer' : status === 'working' || status === 'waiting' ? 'Queue' : 'Send';
+    let text = $('send').querySelector('.send-label');
+    if (!text) {
+      [...$('send').childNodes].filter((n) => n.nodeType === 3).forEach((n) => n.remove());
+      text = document.createElement('span'); text.className = 'send-label'; $('send').append(text);
+    }
+    text.textContent = label;
+    $('send').setAttribute('aria-label', label);
+    $('send').title = label;
+  }
+
+  /**
+   * Codex at work on the Mac itself, and the goal it is pursuing. Driving the
+   * Mac is said plainly, with a Stop beside it, on every screen watching —
+   * somebody at the laptop has to know why the pointer is moving.
+   */
+  function paintCodexBars() {
+    const mac = $('mac-bar');
+    const using = meta.provider === 'codex' && meta.usingMac;
+    if (IN_APP) {
+      mac.hidden = status !== 'working';
+      mac.innerHTML = '<span class="mac-pulse"></span><span class="mac-text">' + (using ? 'Using your Mac' : 'Working') + '</span><button type="button" class="ghost mac-stop" data-codex-stop>' + icon('stop', 11) + 'Stop</button>';
+      const goal = meta.provider === 'codex' && meta.goal && meta.goal.objective && !/complete|done|achiev/i.test(meta.goal.status || '') ? meta.goal : null;
+      const bar = $('goal-bar'); bar.hidden = !goal;
+      if (goal) {
+        bar.innerHTML = '<button type="button" class="goal-chip">' + icon('target', 13) + '<span class="goal-text">' + esc(goal.objective) + (/paus/i.test(goal.status || '') ? ' · Paused' : '') + '</span></button>';
+        bar.querySelector('button').addEventListener('click', () => openAgentDialog('goal'));
+      }
+      return;
+    }
+    mac.hidden = !using;
+    if (using) {
+      mac.innerHTML = '<span class="mac-pulse"></span>' + icon('monitor', 13) +
+        '<span class="mac-text"><b>Codex is using your Mac</b>' +
+        (using.title ? '<span class="mac-what">' + esc(using.title) + '</span>' : '') + '</span>' +
+        '<button class="ghost mac-stop" data-codex-stop>' + icon('stop', 11) + 'Stop</button>';
+    }
+    const goalBar = $('goal-bar');
+    const goal = meta.provider === 'codex' && meta.goal && meta.goal.objective ? meta.goal : null;
+    goalBar.hidden = !goal;
+    if (goal) {
+      const status = String(goal.status || 'active');
+      const paused = /paus/i.test(status);
+      const done = /complete|done|achiev/i.test(status);
+      goalBar.className = 'goal-bar' + (paused ? ' paused' : '') + (done ? ' done' : '');
+      goalBar.innerHTML = icon('target', 13) +
+        '<span class="goal-text" title="' + esc(goal.objective) + '"><b>Goal</b> ' + esc(goal.objective) + '</span>' +
+        (paused || done ? '<span class="goal-state">' + esc(done ? 'reached' : 'paused') + '</span>' : '') +
+        (done ? '' : '<button class="ghost" data-codex="/goal ' + (paused ? 'resume' : 'pause') + '">' + (paused ? 'Resume' : 'Pause') + '</button>') +
+        '<button class="ghost icon-only" data-codex="/goal clear" title="Clear the goal" aria-label="Clear the goal">' + icon('x', 12) + '</button>';
+    }
+  }
+
+  // The bars' buttons are Codex's own commands, sent as if typed.
+  document.addEventListener('click', (e) => {
+    const stop = e.target.closest && e.target.closest('[data-codex-stop]');
+    if (document.body.classList.contains('read-only')) return;
+    if (stop) { vscode.postMessage({ type: 'interrupt' }); return; }
+    const cmd = e.target.closest && e.target.closest('[data-codex]');
+    if (cmd) command(cmd.dataset.codex);
+  });
 
   function setStatus(next, initial) {
     const was = status;
@@ -589,7 +858,19 @@
     paintReplies();
     if (next !== 'working' && next !== 'waiting') disarmEscape();
     $('dot').className = 'dot ' + next;
+    if (IN_APP) {
+      let state = $('conversation-state');
+      if (!state) {
+        state = document.createElement('span');
+        state.id = 'conversation-state';
+        state.className = 'conversation-state';
+        state.setAttribute('role', 'status');
+        document.querySelector('.title-group').appendChild(state);
+      }
+      state.textContent = { working: 'Working', waiting: 'Needs you', done: 'Done', error: 'Error', stopped: 'Stopped', idle: 'Ready' }[next] || next;
+    }
     $('stop').disabled = !(next === 'working' || next === 'waiting');
+    if (IN_APP) { paintCodexBars(); paintSendAction(); }
     // Sending to a stopped instance revives it with --resume, so this stays
     // enabled; disabling it left the panel a dead end after a crash.
     $('send').disabled = false;
@@ -685,8 +966,11 @@
           el.innerHTML = '<h4>' + esc(item.name) + '</h4><div class="result">' +
             (item.resolved === 'allow' ? 'Allowed' : 'Denied') + '</div>';
         } else {
-          el.innerHTML = '<h4>Allow ' + esc(item.name) + '?</h4><pre>' + esc(pretty(item.input)) +
-            '</pre><div class="actions"><button data-act="allow">Allow</button>' +
+          const preview = IN_APP && item.input && item.input.command
+            ? '<pre class="permission-command">' + esc(item.input.command) + '</pre><details class="permission-arguments"><summary>Arguments</summary><pre>' + esc(pretty(item.input)) + '</pre></details>'
+            : '<pre>' + esc(pretty(item.input)) + '</pre>';
+          el.innerHTML = '<h4>Allow ' + esc(item.name) + '?</h4>' + preview +
+            '<div class="actions"><button data-act="allow">Allow</button>' +
             '<button class="ghost" data-act="deny">Deny</button></div>';
           el.querySelectorAll('button').forEach(function (b) {
             b.addEventListener('click', function () {
@@ -726,7 +1010,7 @@
 
       case 'notice':
         el.className = 'notice' + (item.level === 'error' || item.level === 'stderr' ? ' error' : '');
-        el.textContent = item.text;
+        el.innerHTML = '<span class="notice-text">' + esc(item.text) + '</span>' + clockTag(item.at, 'notice-at', 'At');
         break;
 
       default:
@@ -763,7 +1047,7 @@
    */
   function decorateCode(el) {
     el.querySelectorAll('pre').forEach(function (pre) {
-      if (pre.querySelector('.copy')) return;
+      if (pre.querySelector('.copy') || pre.classList.contains('permission-command')) return;
       const code = pre.querySelector('code');
       const text = (code || pre).textContent;
 
@@ -784,7 +1068,7 @@
       const btn = document.createElement('button');
       btn.className = 'copy';
       btn.title = 'Copy';
-      btn.innerHTML = icon('check', 12);
+      btn.innerHTML = icon('copy', 12);
       btn.addEventListener('click', function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -836,6 +1120,26 @@
       ' are not shown here — the full conversation is in the transcript on disk.';
   }
 
+  // Phones reveal message actions on tap, without reserving a row for them.
+  if (IN_APP) scroller.addEventListener('click', function (event) {
+    // Keep links, code actions and text selection independent of the quiet
+    // message actions. A second tap on the message dismisses them.
+    if (event.target.closest('a, button, pre, img, summary') || !window.getSelection().isCollapsed) return;
+    const message = event.target.closest('.turn-user, .msg-text');
+    const reveal = message && !message.classList.contains('show-actions');
+    scroller.querySelectorAll('.show-actions').forEach((el) => el.classList.remove('show-actions'));
+    if (reveal) {
+      const bounds = message.getBoundingClientRect();
+      const viewport = scroller.getBoundingClientRect();
+      // A long reply can begin several screens above the tapped paragraph.
+      // Keep its Copy target beside what the reader can currently see.
+      const top = bounds.top < viewport.top
+        ? Math.max(viewport.top - bounds.top, Math.min(event.clientY - bounds.top - 22, viewport.bottom - bounds.top - 44)) : 0;
+      message.style.setProperty('--message-action-top', top + 'px');
+      message.classList.add('show-actions');
+    }
+  });
+
   /** A message is worth copying whole, not one code block at a time. */
   function decorateMessage(el, item) {
     if (item.kind !== 'text' && item.kind !== 'user') return;
@@ -843,7 +1147,8 @@
     const btn = document.createElement('button');
     btn.className = 'copy copy-all';
     btn.title = 'Copy this message';
-    btn.innerHTML = icon('check', 12);
+    btn.setAttribute('aria-label', 'Copy this message');
+    btn.innerHTML = icon('copy', 12);
     btn.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -933,6 +1238,7 @@
     if (!queued.length) {
       clearArmed = false;
       if (!el.hidden) { el.hidden = true; el.innerHTML = ''; }
+      if (queueSheet && queueSheet.open) queueSheet.close();
       return;
     }
     const left = drainAt ? Math.max(0, Math.ceil((drainAt - Date.now()) / 1000)) : null;
@@ -940,7 +1246,7 @@
       ? (left > 0 ? 'sending in ' + left + 's' : 'sending…')
       : 'waiting for this turn to finish';
     el.hidden = false;
-    el.innerHTML =
+    const html =
       '<div class="queue-head">' + icon('clock', 12) +
       '<span>' + queued.length + ' queued · ' + esc(when) + '</span>' +
       '<button class="link" data-clear="1">' + (clearArmed ? 'Clear ' + queued.length + '?' : 'Clear') + '</button></div>' +
@@ -954,9 +1260,21 @@
           '<button class="drop" data-edit="' + esc(q.id) + '" title="Take it back to the composer">' + icon('paperclip', 11) + '</button>' +
           '<button class="drop" data-unqueue="' + esc(q.id) + '" title="Remove">' + icon('x', 11) + '</button></div>';
       }).join('');
+    if (IN_APP) {
+      el.innerHTML = '<button type="button" class="queue-toggle">' + queued.length + ' queued · ' + esc(when) + '</button>';
+      el.querySelector('button').addEventListener('click', () => {
+        if (!queueSheet) {
+          queueSheet = window.NikApp.sheet({ title: 'Queued messages' });
+          queueSheet.body.addEventListener('click', queueAction);
+        }
+        queueSheet.body.innerHTML = html;
+        queueSheet.show(() => document.querySelector('#queue .queue-toggle'));
+      });
+      if (queueSheet && queueSheet.open) queueSheet.body.innerHTML = html;
+    } else el.innerHTML = html;
   }
 
-  $('queue').addEventListener('click', function (e) {
+  function queueAction(e) {
     const promote = e.target.closest('[data-promote]');
     if (promote) { vscode.postMessage({ type: 'promoteQueued', id: promote.dataset.promote }); return; }
 
@@ -975,23 +1293,26 @@
       clearTimer = setTimeout(function () { clearTimer = null; disarmClear(); }, 4000);
       return;
     }
-  });
+  }
+  $('queue').addEventListener('click', queueAction);
 
   // ── file references ──────────────────────────────────────────
 
   // Require either a directory separator or a known code extension, so prose
   // like "example.com" is not turned into a link.
   const PATH_RE = new RegExp(
-    '((?:[A-Za-z0-9._~-]+\\/)+[A-Za-z0-9._~-]+\\.[A-Za-z0-9]{1,8}' +
+    // A leading "/" belongs to the path: without it "/Users/me/a.pdf" would be
+    // looked for inside the session's folder.
+    '((?:\\/(?=[A-Za-z0-9._~-]))?(?:[A-Za-z0-9._~-]+\\/)+[A-Za-z0-9._~-]+\\.[A-Za-z0-9]{1,8}' +
     // Longest extensions first: otherwise "js" wins inside "json".
-    '|\\b[A-Za-z0-9._~-]+\\.(?:gradle|svelte|swift|scss|yaml|json|html|bash|toml|java|jsx|tsx|mjs|cjs|vue|php|sql|xml|txt|css|yml|zsh|cpp|hpp|md|py|kt|go|rs|rb|sh|js|ts|c|h))' +
+    '|\\b[A-Za-z0-9._~-]+\\.(?:gradle|svelte|swift|scss|yaml|json|html|jpeg|bash|toml|java|docx|xlsx|jsx|tsx|mjs|cjs|vue|php|sql|xml|txt|css|yml|zsh|cpp|hpp|pdf|png|jpg|svg|htm|csv|log|md|py|kt|go|rs|rb|sh|js|ts|c|h))' +
     // The extension must end here, so "package.json" is not read as "package.js".
     '(?![A-Za-z0-9])' +
     '(?::(\\d+))?(?::(\\d+))?', 'g');
 
   function insideUrl(text, index) {
     const back = text.slice(Math.max(0, index - 12), index);
-    return back.indexOf('://') >= 0 || /[\w)@]$/.test(back.slice(-1));
+    return back.indexOf('://') >= 0 || /[\w)@/:]$/.test(back.slice(-1));
   }
 
   function linkifyPaths(root) {
@@ -1126,6 +1447,18 @@
       vscode.postMessage({ type: 'openFile', path: ref.dataset.path, line: ref.dataset.line });
       return;
     }
+    // A markdown link to a file on this machine opens like a path does; web
+    // links are left to the editor, which sends them to the browser.
+    const link = e.target.closest('a[href]');
+    const href = link ? link.getAttribute('href') : '';
+    if (href && !/^(https?:|mailto:|vscode:|#)/i.test(href)) {
+      e.preventDefault();
+      const at = /^(.*?)(?:#L?(\d+)|:(\d+)(?::\d+)?)$/.exec(href);
+      let file = at ? at[1] : href;
+      try { file = decodeURI(file); } catch (_) { /* left as written */ }
+      vscode.postMessage({ type: 'openFile', path: file, line: at ? (at[2] || at[3]) : undefined });
+      return;
+    }
     const img = e.target.closest('.shots img');
     if (img) openLightbox(img.src);
   });
@@ -1206,7 +1539,8 @@
   }
 
   function send() {
-    const text = input.value.trim();
+    const draft = input.value.trim();
+    const text = steering && draft ? '/steer ' + draft : draft;
     if (!text && !attachments.length) return;
     if (window.NikHaptic) window.NikHaptic('light');
     // /status is answered here, from what the host measured, rather than being
@@ -1244,6 +1578,10 @@
     prompts.remember(text);
     prompts.reset();
     input.value = '';
+    steering = false;
+    paintSendAction();
+    document.body.classList.remove('steering');
+    input.placeholder = meta.provider === 'codex' ? 'Message Codex…' : 'Message Claude…';
     remember();
     attachments = [];
     paintAttachments();
@@ -1941,8 +2279,8 @@
         ownCommands = msg.ownCommands || [];
         snippetText = msg.snippets || {};
         if (msg.font) document.documentElement.style.setProperty('--nik-font', msg.font);
-        if (msg.fontSize) document.documentElement.style.setProperty('--nik-font-size', msg.fontSize + 'px');
-        stream.innerHTML = msg.items.length ? '' : '<div class="empty">Ask Claude anything to start.</div>';
+        if (msg.fontSize && !IN_APP) document.documentElement.style.setProperty('--nik-font-size', msg.fontSize + 'px');
+        stream.innerHTML = msg.items.length ? '' : '<div class="empty">Start something with ' + (msg.meta && msg.meta.provider === 'codex' ? 'Codex' : 'Claude') + '.<br>Send a message below to get going.</div>';
         nodes.clear();
         dropped = msg.dropped || 0;
         maxNodes = msg.maxItems || 0;
@@ -1982,7 +2320,7 @@
         if (msg.font !== undefined) {
           document.documentElement.style.setProperty('--nik-font', msg.font || '');
         }
-        if (msg.fontSize) {
+        if (msg.fontSize && !IN_APP) {
           document.documentElement.style.setProperty('--nik-font-size', msg.fontSize + 'px');
         }
         setMeta(msg.meta);
@@ -2047,6 +2385,7 @@
   });
 
   window.addEventListener('keydown', function (e) {
+    if (agentDialog && agentDialog.open) return;
     if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F') && !e.altKey) {
       e.preventDefault();
       openFind();
@@ -2077,5 +2416,5 @@
   });
 
   vscode.postMessage({ type: 'ready', hidden: !!document.hidden });
-  input.focus();
+  if (!IN_APP) input.focus();
 })();

@@ -21,12 +21,16 @@ module.exports = function () {
   check('no injectable img handler', !/<img[^>]*onerror/.test(html));
   check('neutralises javascript: urls', !/href="javascript:/i.test(html));
   check('keeps safe links', /href="https:\/\/example.com"/.test(html));
+  check('an inline picture is shown', /<img alt="s" src="data:image\/png;base64,AAAA">/.test(renderMarkdown('![s](data:image/png;base64,AAAA)')));
+  check('but data is never a link', /href="#"/.test(renderMarkdown('[s](data:text/html;base64,AAAA)')));
+  check('nor a picture of another kind', /src="#"/.test(renderMarkdown('![s](data:image/svg+xml;base64,AAAA)')));
   check('renders tables', /<table><thead>/.test(html));
   check('wraps tables for overflow', /<div class="table-wrap">/.test(html));
   check('renders nested lists', /<li>two<ul>|<ul><li>nested/.test(html));
   check('renders ordered lists', /<ol>/.test(html));
-  check('tags code fences with a language', /<pre data-lang="js">/.test(html));
-  check('escapes code contents', /1 &lt; 2 &amp;&amp;/.test(html));
+  check('tags code fences with a language', /<pre data-lang="js" data-label="js">/.test(html));
+  check('escapes code contents', /1<\/span> &lt; <span class="tk-num">2<\/span> &amp;&amp;/.test(html));
+  check('and colours it', /<span class="tk-kw">const<\/span>/.test(html));
   check('renders inline code', /<code>inline code<\/code>/.test(html));
   check('renders blockquotes', /<blockquote>/.test(html));
 

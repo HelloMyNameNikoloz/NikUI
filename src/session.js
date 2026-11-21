@@ -7,7 +7,6 @@ const { EventEmitter } = require('events');
 const path = require('path');
 const { nextTicket } = require('./ticket');
 const { prUrlIn } = require('./prlink');
-const { shortLabel } = require('./label');
 const { transcriptPath } = require('./history');
 const { pushedFrom } = require('./ci');
 
@@ -31,6 +30,14 @@ const AGENT_TASKS = new Set(['local_agent', 'remote_agent', 'in_process_teammate
 // tail. It does not keep an instance working; a check or a build does.
 const NEVER_ENDS = /\b(dev|serve|server|start|preview|watch|storybook|nodemon|tail\s+-f|logs?\s+-f)\b/i;
 
+// Appended to the system prompt of every instance (nikui.longCommandsInBackground).
+const BACKGROUND_HINT =
+  'You are running inside NikUI, where the user can keep chatting with you while commands run. ' +
+  'Run any command that may take more than a few minutes, or that repeats on a timer (a watcher, a polling loop, ' +
+  'a long test suite, waiting on CI), in the background (Bash with run_in_background: true) instead of blocking ' +
+  'your turn on it; you are told when it finishes. Never hold a turn open with a sleep loop. While such a command ' +
+  'runs, answer the user\'s messages normally, and do not stop the command unless they ask.';
+
 // When the last agent finishes, the CLI starts a turn of its own a moment
 // later to hand over what it found. Resting as done in between would flash
 // green and let the machine sleep, so that turn gets this long to begin.
@@ -50,6 +57,27 @@ const TOOL_RESULT_MAX = 20000;
 // its memory, its postMessage payload or its DOM without limit. Overridable
 // per user; 0 means keep everything.
 const DEFAULT_MAX_ITEMS = 400;
+
+// What a checkpoint is shaped like. Bumped when a field changes meaning, so a
+// window running newer code does not misread an older window's checkpoint.
+const SNAPSHOT_VERSION = 1;
+const ELSEWHERE = 'This instance is running in another VS Code window. Carry on there, or close it there first.';
+// Never part of a checkpoint: the process, the timers, the event wiring and
+// whatever only makes sense in this window. The item index is rebuilt from
+// the items, so the two cannot disagree.
+const NOT_SNAPSHOT = new Set([
+  'proc', 'spawner', '_events', '_eventsCount', '_maxListeners',
+  '_settleTimer', '_flushTimer', '_drainTimer', 'drainAt', '_dirty', '_itemIndex',
+  'disposed', 'catchingUp', '_clock', '_stdoutBuf', '_attaching', '_held', '_missed',
+  '_leaving', 'elsewhere', '_ciBefore', '_recheck', '_checkedAt', 'ciWatching',
+  // The window's, not the instance's: the account's pause and limits are
+  // set on every instance by the manager, which is newer than any checkpoint.
+  // CI is watched from outside, by a watcher a checkpoint cannot bring back.
+  'pausedUntil', 'pauseReason', '_quietPause', 'limits', 'ci'
+]);
+// Said while reading back, and still news once it is over: the account ran
+// out, the limits moved, a push to watch CI for. Told afterwards, newest each.
+const TOLD_AFTER_CATCH_UP = new Set(['limits', 'exhausted', 'pushed']);
 
 /** Cut a string to a budget, reporting what was there before. */
 function clip(text, max) {
@@ -74,6 +102,7 @@ class Session extends EventEmitter {
     this.model = opts.model || '';
     this.permissionMode = opts.permissionMode || 'bypassPermissions';
     this.extraArgs = opts.extraArgs || [];
+    this.longCommandsInBackground = opts.longCommandsInBackground !== false;
     this.effort = opts.effort || '';
     this.outputStyle = opts.outputStyle || '';
     this.autoTitle = opts.autoTitle !== false;
@@ -110,7 +139,7 @@ class Session extends EventEmitter {
     this.finishedAt = opts.finishedAt || 0;
     // What /status reports on: one record per finished turn, plus the running
     // tallies that cannot be recovered from the items list.
-    this.startedAt = opts.startedAt || Date.now();
+    this.startedAt = opts.startedAt || this.now();
     // Last time a turn started, waited or finished — bumped in `_setStatus`.
     // Restored instances have it from their newest item instead (see
     // `lastActiveAt`), since coming back as idle after a reload is not activity.
@@ -153,6 +182,17 @@ class Session extends EventEmitter {
     this.agentSettleMs = AGENT_SETTLE_MS;
 
     this.proc = null;
+    // What starts `claude`: a child of this window, or one the keeper holds
+    // so that a reload does not end it (src/keeperLink.js).
+    this.spawner = opts.spawner || null;
+    // Reading back what happened while the window was away: no side effects
+    // (no writes, timers, notifications) and the clock is when it happened.
+    this.catchingUp = false;
+    this._clock = null;
+    this._attaching = null;
+    this._missed = null;
+    // When a settle in progress is due: a checkpoint keeps it, a timer cannot.
+    this.settleAt = 0;
     // A restored instance has no process yet but is not "stopped" — it has
     // simply never been opened in this window. Anything that cleans up dead
     // instances has to tell those two apart.
@@ -192,6 +232,19 @@ class Session extends EventEmitter {
     this.droppedItems = 0;
   }
 
+  /** Now, or when the line being read back happened. */
+  now() {
+    return this._clock || Date.now();
+  }
+
+  emit(name, ...args) {
+    if (this.catchingUp) {
+      if (TOLD_AFTER_CATCH_UP.has(name)) (this._missed || (this._missed = new Map())).set(name, args);
+      return false;
+    }
+    return super.emit(name, ...args);
+  }
+
   get label() {
     // With automatic naming off, only a name somebody gave it, or its folder.
     const auto = this.autoTitle ? (this.ticket || this.autoLabel) : null;
@@ -212,6 +265,16 @@ class Session extends EventEmitter {
   }
 
   /**
+   * Claude is doing something: a turn, or agents it is waiting on. A command
+   * left running in the background is not that — the instance can be talked
+   * to meanwhile — though it still counts as busy, since closing the instance
+   * or letting the machine sleep would kill it.
+   */
+  get isWorking() {
+    return this.status === STATUS.WORKING || this.status === STATUS.WAITING;
+  }
+
+  /**
    * A turn is in flight. Agents in the background are not one: the CLI answers
    * a prompt sent meanwhile straight away. The queue waits for them all the
    * same (isReadyForQueue), since it is for after the run.
@@ -227,9 +290,11 @@ class Session extends EventEmitter {
 
   /**
    * Commands it left running that will end — `pnpm run check &`, a test
-   * suite — and that it said it is waiting for. The CLI starts a turn by
-   * itself when one finishes, so until then the work is not done. Not a dev
-   * server, and not one an agent left behind: neither is anybody waiting on.
+   * suite, a watcher that polls every ten minutes. They keep the instance
+   * busy (awake, asked before closing) but not working: they can run for
+   * hours, and the conversation carries on around them. The CLI starts a turn
+   * by itself when one finishes, to say what it found. Not a dev server, and
+   * not one an agent left behind: neither is anybody waiting on.
    */
   get backgroundShells() {
     return this.backgroundTasks.filter((t) => t.type === 'local_bash' &&
@@ -281,9 +346,8 @@ class Session extends EventEmitter {
 
   // ---- lifecycle ----------------------------------------------------------
 
-  start() {
-    if (this.isRunning || this.disposed) return;
-
+  /** What `claude` is started with. */
+  cliArgs() {
     const args = [
       '--output-format', 'stream-json',
       '--input-format', 'stream-json',
@@ -296,23 +360,65 @@ class Session extends EventEmitter {
     // Inline settings override the user's file for this instance only.
     if (this.outputStyle) args.push('--settings', JSON.stringify({ outputStyle: this.outputStyle }));
     if (this.claudeSessionId) args.push('--resume', this.claudeSessionId);
+    // A command that blocks the turn for hours blocks the conversation with it:
+    // nothing can be said to the instance without stopping the command. In the
+    // background it carries on and the chat stays open. Left out when the
+    // user passes a prompt of their own, which the CLI would let only one win.
+    if (this.longCommandsInBackground && !this.extraArgs.includes('--append-system-prompt')) {
+      args.push('--append-system-prompt', BACKGROUND_HINT);
+    }
     args.push(...this.extraArgs);
+    return args;
+  }
+
+  start() {
+    if (this.isRunning || this.disposed) return;
+    // Still finding out whether the last window left this one running: a
+    // second `claude` on the same conversation is the one thing not to do.
+    if (this._attaching) {
+      this._attaching.then(() => { if (!this.isRunning) this.start(); });
+      return;
+    }
+    // Another window has it running: a second `claude` here would talk over it.
+    if (this.elsewhere) {
+      // Ask again — that window may have closed — unless it was just asked.
+      if (this._recheck && Date.now() - (this._checkedAt || 0) > 5000) { this._recheck(); this.start(); return; }
+      if (!this.items.some((i) => i.kind === 'notice' && i.text === ELSEWHERE)) this._notice(ELSEWHERE, 'info');
+      return;
+    }
+
+    const args = this.cliArgs();
 
     let proc;
     try {
-      proc = spawn(this.claudePath, args, {
+      proc = (this.spawner || spawn)(this.claudePath, args, {
         cwd: this.cwd,
         env: { ...process.env, NIKUI: '1' },
         stdio: ['pipe', 'pipe', 'pipe']
-      });
+      }, this);
     } catch (err) {
       this._fail(spawnMessage(this.claudePath, err), err.code || null);
       return;
     }
     this.proc = proc;
     this.everStarted = true;
+    this._wire(proc);
 
-    proc.on('error', (err) => this._fail(spawnMessage(this.claudePath, err), err.code || null));
+    // total_cost_usd is cumulative per PROCESS and restarts at zero on resume,
+    // so anchor it to what this conversation has already cost.
+    this._costBaseline = this.totalCost;
+    this.processStartedAt = this.now();
+
+    this._clearBackground();
+    // A process starting is not news about the conversation: one that had
+    // finished is still finished, and stays the green it was before a reload.
+    if (this.status !== STATUS.DONE) this._setStatus(STATUS.IDLE);
+    this.emit('meta');
+  }
+
+  /** Listen to a process, started here or picked up from the keeper. */
+  _wire(proc) {
+    proc.on('error', (err) => { if (this.proc === proc) this._fail(spawnMessage(this.claudePath, err), err.code || null); });
     proc.stdout.setEncoding('utf8');
     // Only while this is still the process. A restart replaces it 300ms later
     // while the old one has up to five seconds to flush: its last `result`
@@ -320,33 +426,29 @@ class Session extends EventEmitter {
     // inventing a turn — and its half-line would corrupt the new init.
     proc.stdout.on('data', (chunk) => { if (this.proc === proc) this._onStdout(chunk); });
     proc.stderr.setEncoding('utf8');
+    // The same for what it says on stderr: an old process's last words are
+    // not the new one's.
     proc.stderr.on('data', (chunk) => {
+      if (this.proc !== proc) return;
       const text = String(chunk).trim();
       if (text) this._notice(text, 'stderr');
     });
-    proc.on('exit', (code, signal) => {
-      // A restart may already have replaced this process; if so, its exit is
-      // history and must not touch the live one.
-      if (this.proc !== proc && this.proc !== null) return;
-      this.proc = null;
-      this._streamMsgId = null;
-      this._clearBackground();
-      if (this.status !== STATUS.STOPPED) {
-        this._setStatus(code === 0 || code === null ? STATUS.STOPPED : STATUS.ERROR);
-        if (code) this._notice(`Instance exited with code ${code}${signal ? ` (${signal})` : ''}.`, 'exit');
-      }
-      this.emit('meta');
-    });
+    proc.on('exit', (code, signal) => this._exited(proc, code, signal));
+  }
 
-    // total_cost_usd is cumulative per PROCESS and restarts at zero on resume,
-    // so anchor it to what this conversation has already cost.
-    this._costBaseline = this.totalCost;
-    this.processStartedAt = Date.now();
-
+  _exited(proc, code, signal) {
+    // A restart may already have replaced this process; if so, its exit is
+    // history and must not touch the live one.
+    if (this.proc !== proc && this.proc !== null) return;
+    this.proc = null;
+    this._streamMsgId = null;
     this._clearBackground();
-    // A process starting is not news about the conversation: one that had
-    // finished is still finished, and stays the green it was before a reload.
-    if (this.status !== STATUS.DONE) this._setStatus(STATUS.IDLE);
+    // Nothing left to drain into: a timer waiting on it would wait forever.
+    this._clearDrain();
+    if (this.status !== STATUS.STOPPED) {
+      this._setStatus(code === 0 || code === null ? STATUS.STOPPED : STATUS.ERROR);
+      if (code) this._notice(`Instance exited with code ${code}${signal ? ` (${signal})` : ''}.`, 'exit');
+    }
     this.emit('meta');
   }
 
@@ -367,7 +469,8 @@ class Session extends EventEmitter {
     // SIGTERM would otherwise sit there holding memory.
     setTimeout(() => { try { proc.kill('SIGTERM'); } catch (_) { /* gone */ } }, 1500);
     setTimeout(() => {
-      try { if (proc.exitCode === null && !proc.killed) proc.kill('SIGKILL'); } catch (_) { /* gone */ }
+      // Not `proc.killed`: that says a signal was sent, not that it worked.
+      try { if (proc.exitCode === null && !proc.signalCode) proc.kill('SIGKILL'); } catch (_) { /* gone */ }
     }, 5000);
     this.emit('meta');
   }
@@ -413,7 +516,7 @@ class Session extends EventEmitter {
     this.compactions = 0;
     this.lastCompactedAt = 0;
     this._turnTools = [];
-    this.startedAt = Date.now();
+    this.startedAt = this.now();
     this.emit('reset');
   }
 
@@ -440,10 +543,15 @@ class Session extends EventEmitter {
     const outgoing = String((opts && opts.sent) || prompt).trim();
     const snippets = (opts && opts.snippets) || [];
     if (!outgoing && !files.length) return;
+    // Picking up the process the last window left: this goes after it, once
+    // the state it is picked up with has replaced this one's.
+    if (this._attaching) { this._hold('send', text, attachments, opts); return; }
     // Nothing goes out while the quota is spent; it waits in the queue instead
     // of being lost or bounced back as an error.
     if (this.isPaused && !(opts && opts.resumed)) { this.enqueue(text, attachments, opts); return; }
     if (!this.isRunning) this.start();
+    // Starting it meant asking the keeper again: this waits for the answer.
+    if (this._attaching) { this._hold('send', text, attachments, opts); return; }
     if (!this.isRunning) return;
 
     let renamedFrom = null;
@@ -464,7 +572,7 @@ class Session extends EventEmitter {
       text: prompt,
       snippets: snippets.slice(),
       images: files.map((f) => ({ name: f.name, mediaType: f.mediaType, data: f.data })),
-      at: Date.now()
+      at: this.now()
     });
     // A tab that renames itself is startling if it happens behind your back.
     // The first name is expected; a change of name is worth a line.
@@ -479,7 +587,7 @@ class Session extends EventEmitter {
     this._interrupted = false;
     this._limitThisTurn = false;
     this._turnTools = [];
-    this.turnStartedAt = Date.now();
+    this.turnStartedAt = this.now();
     if (!this.runStartedAt) this.runStartedAt = this.turnStartedAt;
     this._setStatus(STATUS.WORKING);
 
@@ -503,6 +611,7 @@ class Session extends EventEmitter {
     // A snippet on its own (`/review`) shows nothing of yours but still sends.
     const hasContent = String(text || '').trim() || String((opts && opts.sent) || '').trim() || (attachments && attachments.length);
     if (!hasContent) return null;
+    if (this._attaching) { this._hold('submit', text, attachments, opts); return 'queued'; }
     if (this.inTurn || this.queue.length) {
       this.enqueue(text, attachments, opts);
       return 'queued';
@@ -512,6 +621,7 @@ class Session extends EventEmitter {
   }
 
   enqueue(text, attachments, opts) {
+    if (this._attaching) { this._hold('enqueue', text, attachments, opts); return; }
     this.queue.push({
       id: 'q' + (this._seq++),
       text: String(text || ''),
@@ -588,8 +698,8 @@ class Session extends EventEmitter {
   }
 
   _scheduleDrain(delay) {
-    if (this._drainTimer || !this.queue.length) return;
-    this.drainAt = Date.now() + (delay === undefined ? QUEUE_DELAY_MS : delay);
+    if (this.catchingUp || this._drainTimer || !this.queue.length) return;
+    this.drainAt = this.now() + (delay === undefined ? QUEUE_DELAY_MS : delay);
     this.emit('queue');
     this._drainTimer = setTimeout(() => {
       this._drainTimer = null;
@@ -620,7 +730,7 @@ class Session extends EventEmitter {
       total: u.input + u.output + u.cacheRead + u.cacheCreate,
       cost: this.totalCost,
       turns: this.turns,
-      elapsedMs: this.runStartedAt ? Date.now() - this.runStartedAt : this.runDurationMs,
+      elapsedMs: this.runStartedAt ? this.now() - this.runStartedAt : this.runDurationMs,
       running: !!this.runStartedAt,
       background: this.backgroundAgents,
       shells: this.backgroundShells,
@@ -639,10 +749,26 @@ class Session extends EventEmitter {
 
   interrupt() {
     if (!this.isRunning || !this.isBusy) return;
-    // Between turns only agents in the background are running. An interrupt
-    // stops those as well, but no result follows to say so.
     if (this.inTurn) this._interrupted = true;
-    else this._stoppingAgents = true;
+    else {
+      // Between turns, stop means the agents. Commands in the background are
+      // left alone — an interrupt here would take them too, and a watcher
+      // hours into its job is not what anybody pressed stop for. Each one has
+      // its own stop on the commands chip.
+      if (!this.backgroundAgents) return;
+      this._stoppingAgents = true;
+      if (this.backgroundShells) {
+        for (const t of this.backgroundTasks) {
+          if (!AGENT_TASKS.has(t.type)) continue;
+          this._write({
+            type: 'control_request',
+            request_id: `nikui-${this._controlSeq++}`,
+            request: { subtype: 'stop_task', task_id: t.id }
+          });
+        }
+        return;
+      }
+    }
     this._write({
       type: 'control_request',
       request_id: `nikui-${this._controlSeq++}`,
@@ -680,7 +806,7 @@ class Session extends EventEmitter {
    * queued stays queued, anything sent meanwhile joins the queue, and a turn
    * that was in flight is remembered so it can be picked up again.
    */
-  pause({ until, reason }) {
+  pause({ until, reason, quiet }) {
     // Only a turn is cut off. Agents in the background may be on a model the
     // limit does not cover, and they are left to finish or fail on their own.
     const wasBusy = this.inTurn;
@@ -689,7 +815,10 @@ class Session extends EventEmitter {
     if (wasBusy) this.interruptedByPause = true;
     this._clearDrain();
     if (wasBusy) this._setStatus(STATUS.STOPPED);
-    this._notice(pauseMessage(this.pauseReason, this.pausedUntil), 'info');
+    // Quiet: a pause the window remembered whose reset has already passed. It
+    // holds things for the few seconds until the resume, and is not news.
+    this._quietPause = !!quiet && !wasBusy;
+    if (!this._quietPause) this._notice(pauseMessage(this.pauseReason, this.pausedUntil), 'info');
     this.emit('meta');
     this.emit('queue');
   }
@@ -709,7 +838,9 @@ class Session extends EventEmitter {
     this.pauseReason = null;
     this.interruptedByPause = false;
     this.cutByLimit = false;
-    this._notice(owed ? 'The quota reset. Picking up where this left off.' : 'The quota reset.', 'info');
+    const quiet = this._quietPause && !owed;
+    this._quietPause = false;
+    if (!quiet) this._notice(owed ? 'The quota reset. Picking up where this left off.' : 'The quota reset.', 'info');
     this.emit('meta');
 
     // Sent, not submitted: submitting would put the nudge at the back of the
@@ -734,9 +865,9 @@ class Session extends EventEmitter {
     this.emit('exhausted', {
       status: 'rejected', type: q.rateLimitType || q.rate_limit_type || null, used: 1,
       // The CLI's own number when it sends one, the words when it does not.
-      resetsAt: seconds(q.resetsAt !== undefined ? q.resetsAt : q.resets_at) || resetFromText(text, Date.now()),
+      resetsAt: seconds(q.resetsAt !== undefined ? q.resetsAt : q.resets_at) || resetFromText(text, this.now()),
       windows: { fiveHour: null, week: null, weekOverage: null },
-      at: Date.now(), fromMessage: true
+      at: this.now(), fromMessage: true
     });
   }
 
@@ -746,6 +877,7 @@ class Session extends EventEmitter {
   }
 
   _write(obj) {
+    if (this.catchingUp) return;
     if (!this.proc || !this.proc.stdin.writable) return;
     try { this.proc.stdin.write(JSON.stringify(obj) + '\n'); }
     catch (err) { this._notice(`Write failed: ${err.message}`, 'error'); }
@@ -783,6 +915,9 @@ class Session extends EventEmitter {
       rl.on('error', resolve);
     });
 
+    // Anything said since the reload (a pause, its reset) happened after all
+    // of this, so it goes back on after the conversation, not before it.
+    const since = this.items.splice(0);
     for (const entry of window) {
       // When the conversation last really moved, from its own timestamps:
       // the items rebuilt here are stamped with now, which is not when.
@@ -796,18 +931,19 @@ class Session extends EventEmitter {
         : Array.isArray(content) ? (content.filter((b) => b && b.type === 'text').map((b) => b.text).join('\n')) : '';
       text = String(text || '').trim();
       if (!text || text.startsWith('<')) continue;
-      this._upsert({ id: 'h' + (this._seq++), kind: 'user', text, images: [], at: Date.parse(entry.timestamp) || Date.now() });
+      this._upsert({ id: 'h' + (this._seq++), kind: 'user', text, images: [], at: Date.parse(entry.timestamp) || this.now() });
       if (this.autoTitle && !this.customTitle) {
         const t = nextTicket(this.ticket, text);
         if (t !== this.ticket) this.ticket = t;
       }
       this.prUrl = prUrlIn(text, this.ticket) || this.prUrl;
-      if (this.autoTitle && !this.autoLabel) this.autoLabel = shortLabel(text);
     }
 
     // Nothing replayed from a file is in flight, whatever the file ended on.
     this._abandonRunningTools();
-    if (window.length) { this._notice('Restored from the saved transcript.', 'info'); this.emit('meta'); }
+    if (window.length) this._notice('Restored from the saved transcript.', 'info');
+    if (since.length) { this.items.push(...since); this._trim(); }
+    if (window.length) this.emit('meta');
     return window.length > 0;
   }
 
@@ -834,7 +970,7 @@ class Session extends EventEmitter {
         week: window5(windows.seven_day || windows.sevenDay),
         weekOverage: window5(windows.seven_day_overage_included || windows.sevenDayOverageIncluded)
       },
-      at: Date.now()
+      at: this.now()
     };
 
     const was = this.limits && this.limits.status;
@@ -860,13 +996,13 @@ class Session extends EventEmitter {
     const before = Number(meta.pre_tokens || meta.preTokens || meta.tokens_before || 0) || 0;
 
     this.compactions += 1;
-    this.lastCompactedAt = Date.now();
+    this.lastCompactedAt = this.now();
     this._upsert({
       id: `c${this._seq++}`,
       kind: 'compact',
       trigger: String(trigger).toLowerCase() === 'manual' ? 'manual' : 'automatic',
       before,
-      at: Date.now()
+      at: this.now()
     });
     // The window the meter is measuring starts again here.
     this.contextTokens = 0;
@@ -896,15 +1032,117 @@ class Session extends EventEmitter {
     this._stdoutBuf += chunk;
     const lines = this._stdoutBuf.split('\n');
     this._stdoutBuf = lines.pop();
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      let event;
-      try { event = JSON.parse(trimmed); }
-      catch (_) { continue; } // partial or non-JSON chatter
-      try { this._handle(event); }
-      catch (err) { this._notice(`Parse error: ${err.message}`, 'error'); }
+    for (const line of lines) this._onLine(line);
+  }
+
+  _onLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let event;
+    try { event = JSON.parse(trimmed); }
+    catch (_) { return; } // partial or non-JSON chatter
+    try { this._handle(event); }
+    catch (err) { this._notice(`Parse error: ${err.message}`, 'error'); }
+  }
+
+  // ---- surviving a reload ---------------------------------------------------
+
+  /**
+   * Everything this instance knows, as plain data: what a window that picks
+   * it back up after a reload starts from. The keeper holds it, opaquely,
+   * with every line of output since (src/keeper.js).
+   */
+  snapshot() {
+    const out = { $v: SNAPSHOT_VERSION };
+    for (const key of Object.keys(this)) {
+      if (NOT_SNAPSHOT.has(key)) continue;
+      const value = this[key];
+      if (typeof value === 'function') continue;
+      if (value instanceof Map) out[key] = { $map: [...value] };
+      else if (value instanceof Set) out[key] = { $set: [...value] };
+      else out[key] = value;
     }
+    // CI itself is the watcher's, but that it was being watched is worth keeping.
+    out.ciWatching = !!(this.ci && !['passed', 'failed', 'none', 'error'].includes(this.ci.phase));
+    return out;
+  }
+
+  /** Become what a snapshot says, ready to read the lines that followed it. */
+  hydrate(snap) {
+    if (!snap || snap.$v !== SNAPSHOT_VERSION) return false;
+    // A CI run being watched when the window went: watched again by the manager.
+    this._ciBefore = !!snap.ciWatching;
+    for (const key of Object.keys(snap)) {
+      if (key === '$v' || NOT_SNAPSHOT.has(key)) continue;
+      const value = snap[key];
+      if (value && typeof value === 'object' && Array.isArray(value.$map)) this[key] = new Map(value.$map);
+      else if (value && typeof value === 'object' && Array.isArray(value.$set)) this[key] = new Set(value.$set);
+      else this[key] = value;
+    }
+    this._itemIndex = new Map(this.items.map((item) => [item.id, item]));
+    this._dirty = new Set();
+    this._stdoutBuf = '';
+    // What a snapshot holds is newer than any transcript.
+    this.replayed = true;
+    return true;
+  }
+
+  /**
+   * Read back what the process said while no window was listening, through
+   * the same code that reads it live, as of when it said it. Then — and only
+   * then — the timers and the queue that reading may have called for.
+   */
+  catchUp(entries, exit) {
+    this.catchingUp = true;
+    try {
+      for (const entry of entries || []) {
+        this._clock = entry.at || null;
+        if (entry.k === 'o') this._onLine(entry.d);
+        else if (entry.k === 'e' && String(entry.d).trim()) this._notice(String(entry.d).trim(), 'stderr');
+      }
+    } finally {
+      this._clock = null;
+      this.catchingUp = false;
+    }
+    if (exit && this.proc) this._exited(this.proc, exit.code, exit.signal);
+    // A settle that was due while nobody was listening: due from then, not now.
+    if (this.settleAt && this._inBackground && !this.backgroundAgents) this._armSettle(this.settleAt - Date.now());
+    else this.settleAt = 0;
+    if (this.queue.length && this.isReadyForQueue()) this._scheduleDrain();
+    const missed = this._missed;
+    this._missed = null;
+    if (missed) for (const [name, args] of missed) this.emit(name, ...args);
+    this.emit('meta');
+  }
+
+  _hold(how, text, attachments, opts) {
+    (this._held || (this._held = [])).push([how, text, attachments, opts]);
+  }
+
+  /** Picked up, or found nothing to pick up: what was said meanwhile goes now. */
+  attached() {
+    this._attaching = null;
+    const held = this._held || [];
+    this._held = null;
+    for (const [how, text, attachments, opts] of held) this[how](text, attachments, opts);
+  }
+
+  /**
+   * Let go of the process without stopping it: the window is going away and
+   * the keeper holds on to it until the next one picks it up. False when it
+   * is this window's own child, which goes with the window.
+   */
+  detach() {
+    const proc = this.proc;
+    if (!proc || !proc.kept || !this.isRunning) return false;
+    proc.release(this.snapshot());
+    this.proc = null;
+    this.disposed = true;
+    this._clearDrain();
+    if (this._settleTimer) clearTimeout(this._settleTimer);
+    if (this._flushTimer) clearTimeout(this._flushTimer);
+    this.removeAllListeners();
+    return true;
   }
 
   _handle(event) {
@@ -954,7 +1192,7 @@ class Session extends EventEmitter {
     this._interrupted = false;
     this._limitThisTurn = false;
     this._turnTools = [];
-    this.turnStartedAt = Date.now();
+    this.turnStartedAt = this.now();
     // Agents that came back belong to the run that sent them, even when it
     // was called done before the CLI got round to reporting.
     if (!this.runStartedAt) {
@@ -978,7 +1216,7 @@ class Session extends EventEmitter {
       // When a command started is when it was first seen, if nothing said sooner.
       if (t.type === 'local_bash' && !this._shells.has(t.id)) {
         if (this._shells.size > 64) this._shells.clear();
-        this._shells.set(t.id, { owned: false, at: Date.now() });
+        this._shells.set(t.id, { owned: false, at: this.now() });
       }
       const agent = this._agents.get(t.id);
       if (agent) agent.background = true;
@@ -986,7 +1224,7 @@ class Session extends EventEmitter {
     this.emit('background');
     // Inside a turn, the turn's end decides where the instance rests.
     if (this.inTurn) return;
-    if (this.backgroundWork) {
+    if (this.backgroundAgents) {
       if (this.status === STATUS.DONE) {
         // The turn that started them ended a moment before the CLI said so.
         if (!this.runStartedAt && this._lastRun) this.runStartedAt = this._lastRun.began;
@@ -998,11 +1236,21 @@ class Session extends EventEmitter {
     // Stopped on purpose, so nothing follows. Otherwise the CLI is about to
     // start a turn to hand over what the agents found.
     if (this._stoppingAgents) { this._setStatus(STATUS.DONE); return; }
+    this._armSettle();
+  }
+
+  _armSettle(ms) {
     if (this._settleTimer) clearTimeout(this._settleTimer);
+    this._settleTimer = null;
+    const wait = ms === undefined ? this.agentSettleMs : Math.max(0, ms);
+    this.settleAt = this.now() + wait;
+    // Read back from the keeper: armed once the reading is done, from then.
+    if (this.catchingUp) return;
     this._settleTimer = setTimeout(() => {
       this._settleTimer = null;
-      if (this._inBackground && !this.backgroundWork) this._setStatus(STATUS.DONE);
-    }, this.agentSettleMs);
+      this.settleAt = 0;
+      if (this._inBackground && !this.backgroundAgents) this._setStatus(STATUS.DONE);
+    }, wait);
     if (this._settleTimer.unref) this._settleTimer.unref();
   }
 
@@ -1011,7 +1259,7 @@ class Session extends EventEmitter {
     if (event.task_id && event.task_type === 'local_bash') {
       if (this._shells.size > 64) this._shells.clear();
       const known = this._shells.get(event.task_id);
-      this._shells.set(event.task_id, { owned: !!event.owned_by_subagent, at: (known && known.at) || Date.now() });
+      this._shells.set(event.task_id, { owned: !!event.owned_by_subagent, at: (known && known.at) || this.now() });
       return;
     }
     if (!event.task_id || !AGENT_TASKS.has(event.task_type)) return;
@@ -1047,14 +1295,16 @@ class Session extends EventEmitter {
     this._shells.clear();
     if (this._settleTimer) clearTimeout(this._settleTimer);
     this._settleTimer = null;
+    this.settleAt = 0;
   }
 
   /**
    * Where an instance rests once a turn is over. Agents that turn started may
    * still be running, and until they have reported back it is not done.
+   * Commands in the background do not hold it: it is done, and free to talk.
    */
   _settle() {
-    if (this.backgroundWork) this._setStatus(STATUS.WORKING, true);
+    if (this.backgroundAgents) this._setStatus(STATUS.WORKING, true);
     else this._setStatus(STATUS.DONE);
   }
 
@@ -1176,7 +1426,7 @@ class Session extends EventEmitter {
     const models = event.modelUsage ? Object.keys(event.modelUsage) : [];
     this.turnLog.push({
       n: this.turns,
-      at: Date.now(),
+      at: this.now(),
       durationMs: this.lastDurationMs || 0,
       costUsd,
       input: usage.input,
@@ -1247,10 +1497,10 @@ class Session extends EventEmitter {
         if (m && m.contextWindow) { this.contextWindow = m.contextWindow; break; }
       }
     }
-    this.lastDurationMs = event.duration_ms || (this.turnStartedAt ? Date.now() - this.turnStartedAt : 0);
+    this.lastDurationMs = event.duration_ms || (this.turnStartedAt ? this.now() - this.turnStartedAt : 0);
     this.turnStartedAt = null;
     // When the turn ended, so "done" can stop shouting after a while.
-    this.finishedAt = Date.now();
+    this.finishedAt = this.now();
     const interrupted = this._interrupted;
     this._interrupted = false;
     this._upsert({
@@ -1360,6 +1610,7 @@ class Session extends EventEmitter {
   }
 
   _touch(item) {
+    if (this.catchingUp) return;
     this._dirty.add(item.id);
     if (this._flushTimer) return;
     // Coalesce delta storms into one repaint per frame-ish.
@@ -1373,7 +1624,7 @@ class Session extends EventEmitter {
   }
 
   _notice(text, level) {
-    this._upsert({ id: `n${this._seq++}`, kind: 'notice', text, level: level || 'info' });
+    this._upsert({ id: `n${this._seq++}`, kind: 'notice', text, level: level || 'info', at: this.now() });
   }
 
   /**
@@ -1397,7 +1648,7 @@ class Session extends EventEmitter {
     if (!this._inBackground) this._stoppingAgents = false;
     // Nothing running and nothing asked: the run, and its clock, are over.
     if (this.runStartedAt && status !== STATUS.WORKING && status !== STATUS.WAITING) {
-      const ended = Date.now();
+      const ended = this.now();
       this.runDurationMs = ended - this.runStartedAt;
       this._lastRun = { began: this.runStartedAt, ended, agents: wasBackground };
       this.runStartedAt = null;
@@ -1409,7 +1660,7 @@ class Session extends EventEmitter {
     const was = this.status;
     this.status = status;
     if (status === STATUS.WORKING || status === STATUS.WAITING ||
-      (status === STATUS.DONE && (was === STATUS.WORKING || was === STATUS.WAITING))) this.activeAt = Date.now();
+      (status === STATUS.DONE && (was === STATUS.WORKING || was === STATUS.WAITING))) this.activeAt = this.now();
     // Before the event, so whoever is looking can take it straight back off.
     if (status === STATUS.DONE && (was === STATUS.WORKING || was === STATUS.WAITING)) this.unread = true;
     else if (status === STATUS.WORKING || status === STATUS.WAITING) this.unread = false;

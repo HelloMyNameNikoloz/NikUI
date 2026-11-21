@@ -205,6 +205,30 @@ module.exports = async function () {
     checkEqual('a tunnel pointing at a dead port is claimed', stale.exposed.length, 1);
     checkEqual('by the window that is alive', stale.exposed[0], third.port);
     await third.dispose();
+
+    // Logging in starts VS Code before Tailscale. The window is told "not
+    // running", then Tailscale comes up and resumes forwarding to it — and a
+    // window that only asked once refused every phone with a 403.
+    const late = fake(null);
+    late.up = false;
+    const realStatus = late.status;
+    late.status = async () => (late.up ? realStatus() : { installed: true, running: false, reason: 'Tailscale is not running.' });
+    late.forwardedPort = async () => { if (!late.up) throw new Error('not running'); return late.held; };
+    const early = open(late);
+    await settle();
+    check('a window that starts before Tailscale is not reachable yet', early.exposed === false);
+    late.up = true;
+    late.held = early.port;
+    const knock = () => new Promise((resolve) => {
+      require('http').get({ host: '127.0.0.1', port: early.port, path: '/health', headers: { host: 'laptop.example.ts.net' } },
+        (res) => { res.resume(); resolve(res.statusCode); }).on('error', () => resolve(0));
+    });
+    checkEqual('the first knock on the tailnet name is still refused', await knock(), 403);
+    await settle();
+    check('but it makes the window look again and learn its name', early.exposed === true);
+    checkEqual('so the phone gets in on the next try', await knock(), 200);
+    checkEqual('without taking the tunnel over', late.exposed.length, 0);
+    await early.dispose();
   }
 
   check('the flag is per window rather than shared between them',

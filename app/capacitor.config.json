@@ -3,12 +3,12 @@
   "appName": "NikUI",
   "webDir": "www",
   "android": {
-    "backgroundColor": "#17171a",
+    "backgroundColor": "#000000",
     "allowMixedContent": false,
     "captureInput": true
   },
   "ios": {
-    "backgroundColor": "#17171a",
+    "backgroundColor": "#000000",
     "contentInset": "never",
     "limitsNavigationsToAppBoundDomains": true
   },
@@ -20,7 +20,7 @@
   "plugins": {
     "StatusBar": {
       "style": "DARK",
-      "backgroundColor": "#17171a",
+      "backgroundColor": "#000000",
       "overlaysWebView": true
     }
   }

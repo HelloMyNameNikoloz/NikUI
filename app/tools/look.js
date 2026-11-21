@@ -106,8 +106,26 @@ function report() {
 
   return buildReport({
     session,
-    fleet: [session],
-    env: { vscode: '1.99.0', node: process.version, os: 'darwin 27.0.0', claude: '2.0.14' }
+    fleet: [session, {
+      id: 'cx-phone', provider: 'codex', label: 'Build the mobile workspace',
+      cwd: session.cwd, status: 'working', isBusy: true, isRunning: true,
+      meta: { model: 'gpt-5.5' }, startedAt: Date.now() - 600000,
+      usage: { input: 8000, output: 3200, cacheRead: 0, cacheCreate: 0 },
+      items: [], queue: [], turnLog: [], turns: 2
+    }],
+    env: {
+      vscode: '1.99.0', node: process.version, os: 'darwin 27.0.0', claude: '2.0.14',
+      limits: { status: 'allowed', at: Date.now() - 60000, windows: {
+        fiveHour: { used: 0.34, resetsAt: Date.now() + 1000 * 60 * 140 },
+        week: { used: 0.61, resetsAt: Date.now() + 1000 * 60 * 60 * 50 } } },
+      codexLimits: [
+        { id: '.codex-work', name: 'Work', email: 'work@example.com', plan: 'Pro Lite', at: Date.now() - 30000, resets: 0,
+          windows: [{ name: 'This week', mins: 10080, used: 0.12, resetsAt: Date.now() + 1000 * 60 * 60 * 110 }] },
+        { id: '.codex', name: 'Personal', email: 'me@example.com', plan: 'Plus', at: Date.now() - 30000, resets: 2,
+          windows: [{ name: 'Five-hour', mins: 300, used: 0.08, resetsAt: Date.now() + 1000 * 60 * 200 },
+            { name: 'This week', mins: 10080, used: 0.43, resetsAt: Date.now() + 1000 * 60 * 60 * 46 }] }
+      ]
+    }
   });
 }
 
@@ -287,7 +305,7 @@ if (require.main !== module) return;
         // than a number, because the number is the safe area plus a constant
         // and both move.
         const bar = document.querySelector('.bar');
-        const first = document.querySelector('.screen > *');
+        const first = document.querySelector('.screen > *:not(.pull-spinner):not(.sr-only)');
         const under = bar && first
           ? Math.round(bar.getBoundingClientRect().bottom - first.getBoundingClientRect().top)
           : 0;

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
+	<key>CFBundleDisplayName</key><string>NikUI</string>
+	<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key><string>com.nikoloz.nikui.pair</string>
+			<key>CFBundleURLSchemes</key><array><string>nikui</string></array>
+		</dict>
+	</array>
+	<key>LSRequiresIPhoneOS</key><true/>
+	<key>ITSAppUsesNonExemptEncryption</key><false/>
+	<key>NSMicrophoneUsageDescription</key><string>What you say is sent to your laptop, which writes it into the message for you to check before sending.</string>
+	<key>NSLocalNetworkUsageDescription</key><string>NikUI connects to your paired laptop on the local network to show chats and send the actions you choose.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict><key>NSAllowsLocalNetworking</key><true/></dict>
+	<key>NSFaceIDUsageDescription</key><string>Face ID unlocks NikUI when you have turned on the app lock.</string>
+	<key>NSCameraUsageDescription</key><string>Take a photo to attach to a message.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+	<key>UIBackgroundModes</key><array><string>remote-notification</string></array>
+	<key>UILaunchScreen</key><dict><key>UIColorName</key><string>LaunchBackground</string></dict>
+	<key>UISupportedInterfaceOrientations</key>
+	<array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+	<key>UIApplicationSupportsIndirectInputEvents</key><true/>
+</dict>
+</plist>

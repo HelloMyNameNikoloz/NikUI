@@ -214,6 +214,7 @@ function fleetMember(s, activeId, now) {
 
   return {
     id: s.id,
+    provider: s.provider === 'codex' ? 'codex' : 'claude',
     label: s.label,
     // Two different facts: how the conversation left off, and whether anything
     // is running behind it. A restored instance keeps the first and reports the
@@ -328,6 +329,7 @@ function buildReport({ session, fleet = [], env = {}, lifetime = null, now = Dat
     },
     instance: {
       id: session.id,
+      provider: session.provider === 'codex' ? 'codex' : 'claude',
       label: session.label,
       ticket: session.ticket || null,
       customTitle: session.customTitle || null,
@@ -473,6 +475,8 @@ function buildReport({ session, fleet = [], env = {}, lifetime = null, now = Dat
     // What is left of the plan's own five-hour and weekly windows. Account-wide
     // and reported by the CLI, so it is the same figure whichever instance asks.
     limits: env.limits || session.limits || null,
+    // ChatGPT's Codex limits, one entry per signed-in account (work, personal).
+    codexLimits: env.codexLimits || session.codexLimits || null,
     // Set while the whole window is holding for the quota to come back.
     pause: env.pause || null,
     env

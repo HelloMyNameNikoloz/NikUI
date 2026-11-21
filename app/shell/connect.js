@@ -254,13 +254,19 @@
 
   // The three ways out of the first screen.
   $('type-instead').addEventListener('click', () => show('typing'));
+  $('scan-instead').addEventListener('click', () => show('waiting'));
+  (window.NikBack = window.NikBack || []).push(() => {
+    if (!screen.classList.contains('typing')) return false;
+    show('waiting');
+    return true;
+  });
   $('accept').addEventListener('click', () => attempt());
   $('decline').addEventListener('click', () => {
     pinned = null;
     laptopName = null;
     codeField.value = '';
-    $('headline').textContent = 'Connect to your laptop';
-    $('lede').textContent = 'Two steps, and the second one is pointing this phone at a screen.';
+    $('headline').textContent = 'Connect your laptop';
+    $('lede').textContent = 'Pair once to see your conversations here.';
     say('');
     show('waiting');
   });
@@ -320,12 +326,12 @@
       if (held) held.textContent = WHERE[record.protection] || WHERE.software;
       // A phone that could have done better and did not should say so: the key
       // still works, and it is not the key this device was capable of.
-      if (record.fellBack) say('Note: ' + record.fellBack + '. The key is still safe here.', 'warn');
+      if (record.fellBack && held) held.textContent += ' ' + record.fellBack + '.';
       // Being silently unpaired is the confusing version of this. The key this
       // phone had is gone from the chip — usually a reinstall — so the pairing
       // that named it cannot be honoured by either end, and saying so is kinder
       // than letting it look like the laptop stopped answering.
-      else if (record.lostKey) say('This phone made a new key, so it needs pairing again.', 'warn');
+      if (record.lostKey) say('This phone made a new key, so it needs pairing again.', 'warn');
     } catch (err) {
       say('This device could not make a key: ' + ((err && err.message) || err), 'bad');
       busy(true);
