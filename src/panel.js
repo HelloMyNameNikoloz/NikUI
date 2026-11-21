@@ -1,7 +1,6 @@
 'use strict';
 
 const vscode = require('vscode');
-const { readConfig } = require('./manager');
 const { hubFor, closeHub } = require('./hub');
 const { theHost } = require('./host');
 const { renderPage, randomNonce } = require('./page');
@@ -62,6 +61,8 @@ class SessionPanel {
     this.context = context;
     this.disposables = [];
     this.clientId = 'panel-' + (panelSeq++);
+    const host = theHost(context, manager);
+    this.readConfig = host.config;
 
     // A hidden panel is rebuilt from the instance when it comes back — the
     // conversation lives in the session, not in the webview — so holding every
@@ -73,7 +74,7 @@ class SessionPanel {
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
-        retainContextWhenHidden: !!readConfig().keepPanelsWarm,
+        retainContextWhenHidden: !!this.readConfig().keepPanelsWarm,
         localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
       }
     );
@@ -84,8 +85,9 @@ class SessionPanel {
     };
     this.panel.webview.html = this.html();
 
-    this.hub = hubFor(session, theHost(context, manager));
-    this.hub.attach({ id: this.clientId, kind: 'webview', post: (m) => this.panel.webview.postMessage(m) });
+    this.hub = hubFor(session, host);
+    // The editor window this panel lives in: a file it asks for opens here.
+    this.hub.attach({ id: this.clientId, kind: 'webview', editor: (vscode.env && vscode.env.sessionId) || 'editor', post: (m) => this.panel.webview.postMessage(m) });
     // The tab's title and icon follow the instance for as long as this panel is
     // one of its clients, and stop following the moment it is not.
     this.hostOff = this.hub.onHost((event) => {
@@ -125,7 +127,7 @@ class SessionPanel {
 
   // Coloured tab icon + emoji title — status visible without opening the tab.
   refreshChrome() {
-    const cfg = readConfig();
+    const cfg = this.readConfig();
     const emoji = Object.assign({}, DEFAULT_EMOJI, cfg.statusEmoji || {});
     // Finished and not opened since: blue, as Mail marks a message unread.
     const unread = !!this.session.unread;

@@ -23,6 +23,53 @@ private func line(_ pipe: Pipe) throws -> JSONValue {
     return try JSONValue.decode(data)
 }
 @Suite("Actual Node server modules") struct NodeIntegrationTests {
+    @Test func swiftNegotiatedIntentsAndCanonicalBoundariesAgreeWithRealNodeDispatcher() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("nikcore-node-v2-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let (process, output, input) = try nodeProcess("protocol-v2-server", arguments: [directory.path])
+        defer { if process.isRunning { process.terminate() } }
+        func post(_ value: JSONValue) throws {
+            // readline also splits Unicode line separators; WebSocket frames do not.
+            let line = value.text.replacingOccurrences(of: "\u{2028}", with: "\\u2028").replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+            try input.fileHandleForWriting.write(contentsOf: Data(line.utf8) + Data([10]))
+        }
+        let challenge = try line(output)["challenge"], pairing = try record()
+        let proof = try await Handshake.authenticate(challenge: challenge, pairing: pairing, key: softwareKey())
+        try post(proof.auth)
+        var box = Box(sending: proof.keys.toServer, receiving: proof.keys.toClient)
+        let authenticated = try JSONValue.decode(Data(box.open(line(output)).utf8))
+        #expect(try proof.verifyWelcome(authenticated).id == pairing.deviceID)
+        try post(box.seal(ProtocolSession.hello(clientID: V2Wire.randomID()).text))
+        let welcome = try ProtocolWelcome(validating: JSONValue.decode(Data(box.open(line(output)).utf8)))
+        let session = ProtocolSession(welcome: welcome), context = IntentContext(pairing: pairing, role: .conversation("instance-7"), session: session)
+        let repository = PendingIntentRepository(store: ProtectedFileStore(directory: directory.appendingPathComponent("phone")))
+        let ready = try await repository.prepare(.ready(), context: context, at: Date())
+        try post(box.seal(ready.plaintext)); _ = try MutationAck(validating: JSONValue.decode(Data(box.open(line(output)).utf8)))
+        let prompt = "Swift → Node ქართული 👋\n" + String(repeating: "full input ", count: 1000)
+        let pending = try await repository.prepare(.send(text: prompt, attachments: PreviewFixtures.conversation.items[0].images, sent: "/snippet", snippets: ["snippet"]), context: context, at: Date())
+        try post(box.seal(pending.plaintext))
+        let ack = try MutationAck(validating: JSONValue.decode(Data(box.open(line(output)).utf8)))
+        #expect(ack.outcome == .applied); #expect(ack.result?.data["operation"].stringValue == pending.mid)
+        _ = try await repository.apply(.ack(ack), context: context)
+        try post(box.seal(pending.plaintext))
+        let duplicate = try MutationAck(validating: JSONValue.decode(Data(box.open(line(output)).utf8)))
+        #expect(duplicate.status == .duplicate); #expect(duplicate.result == ack.result)
+        try post(box.seal(JSONValue.object(["type": .string("receipt:get"), "scope": .string(pending.scope), "mid": .string(pending.mid)]).text))
+        let lookup = try MutationAck(validating: JSONValue.decode(Data(box.open(line(output)).utf8)))
+        #expect(lookup.status == .duplicate); #expect(lookup.result == ack.result)
+        var numbers: [JSONValue] = [Double.leastNonzeroMagnitude, Double.leastNormalMagnitude, Double.greatestFiniteMagnitude, 1e-7, 1e-6, 1e20, 1e21, 1e23, -0.0, 333333333.3333333, 1_000_000_000_000_000_128].map(JSONValue.number)
+        var bits: UInt64 = 0x123456789abcdef
+        for _ in 0..<500 { bits = bits &* 6364136223846793005 &+ 1; let number = Double(bitPattern: bits); if number.isFinite { numbers.append(.number(number)) } }
+        numbers.append(.object(["\u{10000}": .string("\n\t\u{1}\u{2028}👋"), "\u{e000}": .array([.null, .bool(false)]), "10": .number(1), "2": .number(2)]))
+        try post(.object(["fixture": .string("canonical"), "values": .array(numbers)]))
+        let expected = try line(output).arrayValue
+        #expect(expected.count == numbers.count)
+        for (value, reference) in zip(numbers, expected) { #expect(try IntentCanonicalJSON.text(value).utf8.elementsEqual(reference.stringValue!.utf8), "\(value)") }
+        try post(.object(["fixture": .string("stop")]))
+        let summary = try line(output); process.waitUntilExit()
+        #expect(process.terminationStatus == 0); #expect(summary["sends"].intValue == 1)
+    }
     @Test func swiftProofAndEnvelopeAcceptedByRealGateAndGuard() async throws {
         let v = try fixture(), key = try softwareKey()
         let proof = try await Handshake.authenticate(challenge: v["challenge"], pairing: record(v), key: key, clientNonce: v["clientNonce"].stringValue!, ephemeralRaw: unhex(v["clientEphemeralRaw"].stringValue!))

@@ -2,8 +2,6 @@
 
 const STORE_KEY = 'nikui.folders.v1';
 
-let seq = 0;
-
 // byConversation keeps this many entries, dropping the oldest by insertion
 // order once it fills up — enough conversations to matter, not a growing log.
 const MAX_CONVERSATIONS = 500;
@@ -28,6 +26,7 @@ class FolderStore {
   constructor(context, durable) {
     this.context = context;
     this.durable = durable || null;
+    this.seq = 0;
 
     const saved = context.workspaceState.get(STORE_KEY, null);
     let folders = (saved && Array.isArray(saved.folders)) ? saved.folders : [];
@@ -53,8 +52,17 @@ class FolderStore {
 
   save() {
     const data = { folders: this.folders, assign: this.assign, byConversation: this.byConversation };
-    this.context.workspaceState.update(STORE_KEY, data);
-    if (this.durable) this.durable.set(STORE_KEY, data);
+    const mirror = (value) => {
+      this.context.workspaceState.update(STORE_KEY, value);
+      if (this.durable) this.durable.set(STORE_KEY, value);
+    };
+    if (this.authorityCommit) {
+      const saved = structuredClone(data);
+      const pending = this.authorityCommit(saved).then(() => mirror(saved));
+      pending.catch(() => {}); // authoritative owner exposes failures via flush/status
+      return pending;
+    }
+    mirror(data);
   }
 
   /** Note the folder against the conversation, bounding the map as it grows. */
@@ -78,7 +86,7 @@ class FolderStore {
   create(name) {
     const clean = String(name || '').trim();
     if (!clean) return null;
-    const folder = { id: 'f' + Date.now().toString(36) + (seq++).toString(36), name: clean };
+    const folder = { id: this.nextId ? this.nextId() : 'f' + Date.now().toString(36) + (this.seq++).toString(36), name: clean };
     this.folders.push(folder);
     this.save();
     return folder;

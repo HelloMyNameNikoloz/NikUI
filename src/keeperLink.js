@@ -32,7 +32,14 @@ const CONNECT_MS = 4000;
 // Answers that mean the keeper was not heard, rather than that it said no.
 const UNHEARD = new Set(['keeper gone', 'no keeper', 'no answer']);
 
+function sessionMeta(session) {
+  return session ? { conversation: session.claudeSessionId || null, instance: session.id, cwd: session.cwd } : undefined;
+}
+
 function defaultDir() {
+  // Somewhere else entirely when asked: the test runner, and an engine run
+  // against a private root, must never find the keeper the real windows use.
+  if (process.env.NIKUI_KEEPER_DIR) return process.env.NIKUI_KEEPER_DIR;
   return process.platform === 'darwin'
     ? path.join(os.homedir(), 'Library', 'Application Support', 'NikUI', 'keeper')
     : path.join(os.homedir(), '.nikui', 'keeper');
@@ -75,7 +82,10 @@ class KeptProc extends EventEmitter {
       get writable() { return self.exitCode === null && self.signalCode === null && !self.released; },
       write(line) {
         if (self.local) return self.local.stdin.write(line);
-        self.send({ t: 'write', runId: self.runId, d: String(line).replace(/\n$/, '') });
+        if (self.session?._engineControls && self.state !== 'kept') throw Object.assign(new Error('Keeper write is not ready'), { delivery: 'not_written' });
+        const socket = self.link.socket;
+        const sent = self.send({ t: 'write', runId: self.runId, d: String(line).replace(/\n$/, '') });
+        if (self.session?._engineControls && (!sent || socket && (socket !== self.link.socket || socket.destroyed))) throw new Error('Keeper write could not be confirmed');
         // What was just said is part of the state now (the prompt, the
         // answer); a reload a moment later must not lose it.
         self.checkpointSoon();
@@ -116,7 +126,11 @@ class KeptProc extends EventEmitter {
       if (msg.seq <= this.seq) return; // already read back from the checkpoint
       this.seq = msg.seq;
       if (msg.k === 'e') { this.stderr.emit('data', msg.d + '\n'); return; }
+      const conversation = this.session && this.session.claudeSessionId;
       this.stdout.emit('data', msg.d + '\n');
+      // Init is where a fresh CLI first tells us its conversation ID. Publish
+      // it immediately, including when a turn never reaches a result.
+      if (msg.d.startsWith('{"type":"system"') || this.session && this.session.claudeSessionId !== conversation) this.checkpointSoon();
       this.sinceCheckpoint += msg.d.length;
       // After a turn the state is small and settled: the best moment.
       if (this.sinceCheckpoint > CHECKPOINT_BYTES || msg.d.startsWith('{"type":"result"')) this.checkpointSoon();
@@ -157,7 +171,7 @@ class KeptProc extends EventEmitter {
     this.sinceCheckpoint = 0;
     // Only the newest one matters while it waits to be sent.
     if (this.state === 'pending') this.outbox = this.outbox.filter((m) => m.t !== 'checkpoint');
-    this.send({ t: 'checkpoint', runId: this.runId, seq: this.seq, snapshot: snap });
+    this.send({ t: 'checkpoint', runId: this.runId, seq: this.seq, snapshot: snap, meta: sessionMeta(this.session) });
   }
 
   /** The window is going: hand over the newest state and let go. */
@@ -208,8 +222,10 @@ class KeeperLink {
     this.log = opts.log || (() => {});
     this.nodePath = opts.nodePath || process.execPath;
     this.source = opts.source || path.join(__dirname, 'keeper.js');
+    this.env = opts.env || process.env;
     this.socketPath = path.join(this.dir, 'k' + PROTO + '.sock');
     this.socket = null;
+    this.metaVersion = null;
     this.buf = '';
     this.nextId = 1;
     this.pending = new Map();
@@ -251,6 +267,7 @@ class KeeperLink {
       throw new Error(hello.message || ('keeper speaks protocol ' + hello.proto));
     }
     this.keeperPid = hello.pid;
+    this.metaVersion = hello.metaVersion || null;
     this.log('keeper: connected (pid ' + hello.pid + ')');
     return true;
   }
@@ -280,7 +297,7 @@ class KeeperLink {
       detached: true,
       stdio: 'ignore',
       cwd: this.dir,
-      env: Object.assign({}, process.env, { ELECTRON_RUN_AS_NODE: '1' })
+      env: Object.assign({}, this.env, { ELECTRON_RUN_AS_NODE: '1' })
     });
     child.on('error', () => { /* the connect that follows says so */ });
     child.unref();
@@ -288,6 +305,7 @@ class KeeperLink {
 
   _adopt(socket) {
     this.socket = socket;
+    this.metaVersion = null; // capability belongs to this connection's hello
     // Half a line from a connection that is gone is no part of this one.
     this.buf = '';
     socket.setEncoding('utf8');
@@ -295,6 +313,7 @@ class KeeperLink {
     const gone = () => {
       if (this.socket !== socket) return;
       this.socket = null;
+      this.metaVersion = null;
       for (const [, p] of this.pending) p.resolve({ ok: false, message: 'keeper gone' });
       this.pending.clear();
       this.ready = null;
@@ -374,7 +393,7 @@ class KeeperLink {
         const snapshot = session && typeof session.snapshot === 'function' ? session.snapshot() : null;
         this.request({
           t: 'spawn', runId, key: session ? session.id : runId,
-          cmd, args, cwd: opts.cwd, env: opts.env, snapshot
+          cmd, args, cwd: opts.cwd, env: opts.env, snapshot, meta: sessionMeta(session)
         }).then((r) => { if (r.pid) proc.pid = r.pid; });
         // The spawn is on the socket already; what was said meanwhile follows it.
         proc.kept_();
@@ -415,6 +434,10 @@ class KeeperLink {
       }
       return false;
     }
+    return this._attached(session, r);
+  }
+
+  _attached(session, r) {
     const held = this.held.get(r.runId) || [];
     this.held.delete(r.runId);
     // Taken away while the answer was on its way: the window going lets it
@@ -528,4 +551,4 @@ class KeeperLink {
   }
 }
 
-module.exports = { KeeperLink, KeptProc, defaultDir, CHECKPOINT_BYTES };
+module.exports = { KeeperLink, KeptProc, defaultDir, CHECKPOINT_BYTES, sessionMeta };

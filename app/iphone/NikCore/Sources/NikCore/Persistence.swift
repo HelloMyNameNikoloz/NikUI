@@ -8,6 +8,7 @@ public actor ProtectedFileStore: KeyValueStore {
     private func file(_ key: String) -> URL { directory.appendingPathComponent(SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()).appendingPathExtension("json") }
     private func prepare() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         #if os(iOS)
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: directory.path)
         #endif
@@ -23,6 +24,7 @@ public actor ProtectedFileStore: KeyValueStore {
         #else
         try data.write(to: file(key), options: .atomic)
         #endif
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file(key).path)
     }
     public func removeValue(forKey key: String) throws {
         let url = file(key); if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
@@ -42,6 +44,10 @@ public struct PersistedUIState: Sendable, Codable, Equatable {
     public var prDrafts: [String: [String: String]] = [:]
     public var prDraftsByURL: [String: [String: [String: String]]]?
     public var terminalDrafts: [String: String] = [:]
+    /// Pending intents retain an empty composition too, so clearing a composer survives restart.
+    public var protectedDraftIDs: [String]?
+    public var protectedSlackDraftIDs: [SlackThreadID]?
+    public var lastIntentOrder: UInt64?
     public init() {}
     /// Keeps the newest drafts within the retention budget; no transcripts, reports, terminal output or Slack messages.
     public func bounded(limits: DraftLimits = DraftLimits()) throws -> PersistedUIState {
@@ -52,18 +58,22 @@ public struct PersistedUIState: Sendable, Codable, Equatable {
                 guard let data = Data(base64Encoded: image.data), data.count <= limits.maximumAttachmentBytes else { throw CoreFailure(.tooLarge, "A draft image exceeds the protected storage limit.") }
             }
         }
-        value.drafts = Dictionary(uniqueKeysWithValues: drafts.sorted { $0.value.updatedAt > $1.value.updatedAt }.prefix(max(0, limits.maximumCount)).map { ($0.key, $0.value) })
-        value.slackDrafts = Dictionary(uniqueKeysWithValues: slackDrafts.sorted { $0.value.updatedAt > $1.value.updatedAt }.prefix(max(0, limits.maximumCount)).map { ($0.key, $0.value) })
+        let protected = Set(protectedDraftIDs ?? [])
+        let ordinary = drafts.filter { !protected.contains($0.key) }.sorted { $0.value.updatedAt > $1.value.updatedAt }.prefix(max(0, limits.maximumCount))
+        value.drafts = drafts.filter { protected.contains($0.key) }.merging(Dictionary(uniqueKeysWithValues: ordinary.map { ($0.key, $0.value) })) { a, _ in a }
+        let protectedSlack = Set(protectedSlackDraftIDs ?? [])
+        let ordinarySlack = slackDrafts.filter { !protectedSlack.contains($0.key) }.sorted { $0.value.updatedAt > $1.value.updatedAt }.prefix(max(0, limits.maximumCount))
+        value.slackDrafts = slackDrafts.filter { protectedSlack.contains($0.key) }.merging(Dictionary(uniqueKeysWithValues: ordinarySlack.map { ($0.key, $0.value) })) { a, _ in a }
         value.prDrafts = Dictionary(uniqueKeysWithValues: prDrafts.sorted { $0.key < $1.key }.prefix(max(0, limits.maximumCount)).map { ($0.key, $0.value) })
         value.prDraftsByURL = prDraftsByURL.map { Dictionary(uniqueKeysWithValues: $0.sorted { $0.key < $1.key }.prefix(max(0, limits.maximumCount)).map { ($0.key, $0.value) }) }
         value.terminalDrafts = Dictionary(uniqueKeysWithValues: terminalDrafts.sorted { $0.key < $1.key }.prefix(max(0, limits.maximumCount)).map { ($0.key, $0.value) })
         while try WireCoding.encode(value).count > limits.maximumTotalBytes {
-            if let oldest = value.drafts.min(by: { $0.value.updatedAt < $1.value.updatedAt })?.key { value.drafts.removeValue(forKey: oldest) }
-            else if let oldest = value.slackDrafts.min(by: { $0.value.updatedAt < $1.value.updatedAt })?.key { value.slackDrafts.removeValue(forKey: oldest) }
+            if let oldest = value.drafts.filter({ !protected.contains($0.key) }).min(by: { $0.value.updatedAt < $1.value.updatedAt })?.key { value.drafts.removeValue(forKey: oldest) }
+            else if let oldest = value.slackDrafts.filter({ !protectedSlack.contains($0.key) }).min(by: { $0.value.updatedAt < $1.value.updatedAt })?.key { value.slackDrafts.removeValue(forKey: oldest) }
             else if let key = value.prDrafts.keys.sorted().first { value.prDrafts.removeValue(forKey: key) }
             else if let key = value.prDraftsByURL?.keys.sorted().first { value.prDraftsByURL?.removeValue(forKey: key) }
             else if let key = value.terminalDrafts.keys.sorted().first { value.terminalDrafts.removeValue(forKey: key) }
-            else { throw CoreFailure(.tooLarge, "The fleet cache exceeds the protected storage limit.") }
+            else { throw CoreFailure(.tooLarge, "Pending drafts and fleet data exceed the protected storage limit; no pending draft was evicted.") }
         }
         return value
     }

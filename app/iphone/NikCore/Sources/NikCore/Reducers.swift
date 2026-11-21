@@ -9,6 +9,7 @@ extension ConversationState {
             stats = snapshot.stats; statsReceivedAt = now; configuration = snapshot.configuration
             queue = snapshot.queue; drainAt = snapshot.drainAt; dropped = snapshot.dropped; maxItems = max(0, snapshot.maxItems)
             initialized = true; trim()
+            run = snapshot.run; controlSnapshotFresh = true
         case .items(let incoming):
             var index = Dictionary(items.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { _, b in b })
             for item in incoming where !item.id.isEmpty {
@@ -19,16 +20,19 @@ extension ConversationState {
         case .meta(let metadata, let render):
             meta.raw = meta.raw.merged(with: metadata.raw); configuration.raw = configuration.raw.merged(with: render.raw)
         case .conversationStatus(let value): status = value
+        case .runStatus(let value, let run): status = value; self.run = run
+        case .runMeta(let metadata, let render, let run):
+            meta.raw = meta.raw.merged(with: metadata.raw); configuration.raw = configuration.raw.merged(with: render.raw); self.run = run
         case .stats(let value): stats = value; statsReceivedAt = now
         case .queue(let value, let at): queue = value; drainAt = at
         case .reset:
             items.removeAll(); dropped = 0; reading.findQuery = ""; reading.selectedMatch = nil; reading.expandedItemIDs.removeAll()
         case .presence(let clients): presence = clients.filter { $0.id != clientID }
         case .draft(let text):
-            if !text.isEmpty { draft.text += (draft.text.isEmpty ? "" : "\n") + text; draft.updatedAt = now; draft.delivery = .draft }
+            if !text.isEmpty { draft.text += (draft.text.isEmpty ? "" : "\n") + text; draft.updatedAt = now; draft.delivery = .draft; draft.compositionID = V2Wire.randomID(); draft.sent = nil; draft.snippets = nil }
         case .editPrompt(let text):
             editPromptRevision &+= 1
-            if !text.isEmpty { draft.text = text + (draft.text.isEmpty ? "" : "\n\n" + draft.text); draft.updatedAt = now; draft.delivery = .draft }
+            if !text.isEmpty { draft.text = text + (draft.text.isEmpty ? "" : "\n\n" + draft.text); draft.updatedAt = now; draft.delivery = .draft; draft.compositionID = V2Wire.randomID(); draft.sent = nil; draft.snippets = nil }
         case .statusReport(let value): report.receive(available: true, value: value, trouble: nil, at: now)
         case .report(let available, let value, let trouble): report.receive(available: available, value: value, trouble: trouble, at: now)
         case .settings(let value):
@@ -106,6 +110,12 @@ extension TerminalState {
     public mutating func reduce(_ event: TerminalEvent) {
         func replace(_ list: inout [TerminalDescriptor], _ terminal: TerminalDescriptor) {
             if let i = list.firstIndex(where: { $0.id == terminal.id }) { list[i] = terminal } else { list.append(terminal) }
+        }
+        switch event {
+        case .list(let values): freshControlIDs = Set(values.map(\.id))
+        case .opened(let value), .scrollback(let value, _), .began(let value, _), .done(let value, _): freshControlIDs.insert(value.id)
+        case .closed(let id): freshControlIDs.remove(id)
+        default: break
         }
         switch event {
         case .list(let list): terminals = list

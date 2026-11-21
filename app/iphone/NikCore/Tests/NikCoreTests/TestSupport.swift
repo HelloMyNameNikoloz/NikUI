@@ -84,13 +84,16 @@ actor ScriptedSocket: SocketTransport {
     private let nonce: String
     private let behavior: Behavior
     private let role: SocketRole
+    private let applicationWelcome: JSONValue?
+    private let holdNegotiation: Bool
     private(set) var actions: [JSONValue] = []
     private(set) var wireFrames: [JSONValue] = []
     private(set) var authValid = false
-    init(index: Int, role: SocketRole = .fleet, behavior: Behavior = .normal) throws {
+    init(index: Int, role: SocketRole = .fleet, behavior: Behavior = .normal, applicationWelcome: JSONValue? = nil, holdNegotiation: Bool = false) throws {
         let v = try fixture(); host = try P256.Signing.PrivateKey(rawRepresentation: unhex(v["hostRaw"].stringValue!))
         ephemeral = try P256.KeyAgreement.PrivateKey(rawRepresentation: unhex(v["serverEphemeralRaw"].stringValue!))
         deviceSPKI = try NikCrypto.decodeBase64URL(v["deviceSPKI"].stringValue!); nonce = NikCrypto.base64URL(Data(repeating: UInt8(index % 255 + 1), count: 32)); self.behavior = behavior; self.role = role
+        self.applicationWelcome = applicationWelcome; self.holdNegotiation = holdNegotiation
         if behavior != .noChallenge {
             inbox = [JSONValue.object(["type": .string("@challenge"), "nonce": .string(nonce), "epk": .string(NikCrypto.base64URL(ephemeral.publicKey.derRepresentation)), "serverKey": .string(NikCrypto.base64URL(host.publicKey.derRepresentation)), "fingerprint": .string(behavior == .wrongPin ? "wrong" : NikCrypto.fingerprint(host.publicKey.derRepresentation))]).text]
         }
@@ -122,6 +125,10 @@ actor ScriptedSocket: SocketTransport {
             let message = Data("nikui-host:\(nc):\(nonce):\(binding)".utf8)
             var welcome: JSONValue = .object(["type":.string("@welcome"),"device":.object(["id":.string("device1"),"name":.string("iPhone"),"kind":.string("device"),"control":.bool(true)]),"signature":.string(NikCrypto.base64URL(try host.signature(for: message).rawRepresentation)),"version":.string("0.2.0")])
             if behavior == .invalidWelcome { welcome["signature"] = .string(NikCrypto.base64URL(Data(repeating: 0, count: 64))) }
+            if let applicationWelcome {
+                welcome["proto"] = .object(["min": .number(1), "max": .number(2)])
+                welcome["caps"] = applicationWelcome["proto"].intValue == 2 ? applicationWelcome["caps"] : .array(ProtocolCapabilities.core.map(JSONValue.string))
+            }
             if behavior == .plaintextWelcome { push(welcome.text) } else { try enqueue(welcome) }; return
         }
         guard var current = channel else { throw CoreFailure(.protocolViolation, "No test channel") }
@@ -129,8 +136,19 @@ actor ScriptedSocket: SocketTransport {
         let action = try json(clear); actions.append(action)
         if behavior == .delayedSend { try await Task.sleep(for: .milliseconds(2)) }
         switch action["type"].stringValue {
+        case "hello":
+            if let applicationWelcome, !holdNegotiation { try enqueue(applicationWelcome) }
         case "ready":
-            if case .conversation(let id) = role { var snapshot = PreviewFixtures.conversation.raw; snapshot["sessionId"] = .string(id); try enqueue(snapshot) }
+            if case .conversation(let id) = role {
+                var snapshot = PreviewFixtures.conversation.raw; snapshot["sessionId"] = .string(id)
+                if applicationWelcome?["proto"].intValue == 2 {
+                    let run: JSONValue = .object(["id": .string("a81ec16e4ac74040a9107dbe669380b5"), "turn": .string("turn-9")])
+                    snapshot["run"] = run
+                    snapshot["items"] = .array(snapshot["items"].arrayValue.map { value in var item = value; if item["kind"].stringValue == "permission" { item["run"] = run }; return item })
+                    try enqueue(testAck(action, target: role.target, data: .object(["instance": .string(id), "run": run])))
+                }
+                try enqueue(snapshot)
+            }
             else { var fleet = PreviewFixtures.fleet.raw; fleet["type"] = .string("fleet"); try enqueue(fleet) }
         case "instance:new", "instance:resume": try enqueue(.object(["type":.string("instance:created"),"id":action["id"],"instance":.string("new-session")]))
         case "instance:place": try enqueue(.object(["type":.string("instance:placed"),"id":action["id"]]))
@@ -143,6 +161,10 @@ actor ScriptedSocket: SocketTransport {
     func closure() -> SocketClosure? { closeInfo }
     func fail(code: Int? = nil, reason: String = "") { if let code { closeInfo = SocketClosure(code: code, reason: reason) }; close() }
     func isClosed() -> Bool { closed }
+}
+func testAck(_ action: JSONValue, target: String, data: JSONValue, outcome: String = "applied", error: JSONValue = .null, replies: [JSONValue] = []) -> JSONValue {
+    let at = action["issuedAt"].intValue ?? 1_795_179_601_000
+    return .object(["type": .string("ack"), "scope": action["scope"], "mid": action["mid"], "what": action["type"], "target": .string(target), "status": .string(outcome), "outcome": .string(outcome), "admitted": .bool(true), "at": .number(Double(at)), "expiresAt": .number(Double(at + 86_400_000)), "result": outcome == "applied" ? .object(["code": .string(action["type"].stringValue == "send" ? "accepted" : "ok"), "data": data, "replies": .array(replies)]) : .null, "error": error])
 }
 actor ScriptedFactory: SocketFactory {
     private(set) var sockets: [ScriptedSocket] = []

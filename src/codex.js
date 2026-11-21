@@ -43,6 +43,23 @@ const CODEX_COMMANDS = ['plan', 'goal', 'review', 'fork', 'undo', 'model', 'effo
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 const REQUEST_TIMEOUT_MS = 120000;
 const RESULT_MAX = 20000;
+const deliveryError = (message, delivery = 'unknown') => Object.assign(new Error(message), { delivery });
+const unclosableTransports = new WeakSet();
+function closeTransport(proc, ownership, log = () => {}) {
+  if (!proc) return;
+  try {
+    if (ownership === 'borrowed') {
+      if (typeof proc.close === 'function') proc.close();
+      else if (typeof proc.disconnect === 'function') proc.disconnect();
+      else if (!unclosableTransports.has(proc)) {
+        unclosableTransports.add(proc);
+        log('codex: BORROWED_TRANSPORT_UNCLOSABLE (' + (proc.constructor?.name || 'handle') + '): no close/disconnect; connection may remain open');
+      }
+      // An untyped injected handle might be the external child's actual
+      // stdin. EOF can terminate it; never use that as borrowed cleanup.
+    } else proc.kill();
+  } catch (_) { /* already closed */ }
+}
 // The newest turns are what anybody opens a conversation to see; older ones
 // stay in Codex.
 const TURNS_SHOWN = 40;
@@ -78,18 +95,22 @@ function codexHome() {
 
 /** One `codex app-server` for the window, spoken to in JSON-RPC over stdio. */
 class CodexClient extends EventEmitter {
-  constructor({ codexPath, spawnFn, daemonFn, log, home, args } = {}) {
+  constructor({ codexPath, spawnFn, daemonFn, log, home, args, env, appAccount, unavailableReason } = {}) {
     super();
-    this.codexPath = findCodex(codexPath);
+    this.unavailableReason = unavailableReason || null;
+    this.codexPath = this.unavailableReason ? null : findCodex(codexPath);
     this.spawnFn = spawnFn || spawn;
     // The account's folder, and what the app-server is given on top for it.
     this.home = home || null;
     this.args = args || [];
+    this.env = env;
+    this._disposed = false;
     // Given a spawnFn (tests), only that; otherwise the daemon first — but
     // the daemon is the ChatGPT app's, so only on the app's own account.
-    const appAccount = !this.home || isAppHome(this.home);
-    this.daemonFn = daemonFn !== undefined ? daemonFn : (spawnFn || !appAccount ? null : openDaemon);
+    const canBorrow = appAccount === undefined ? !this.home || isAppHome(this.home) : appAccount;
+    this.daemonFn = daemonFn !== undefined ? daemonFn : (spawnFn || !canBorrow ? null : openDaemon);
     this.viaDaemon = false;
+    this.ownership = 'owned';
     this.log = log || (() => {});
     this.proc = null;
     this.ready = null;
@@ -103,6 +124,8 @@ class CodexClient extends EventEmitter {
   }
 
   start() {
+    if (this._disposed) return Promise.reject(new Error('Codex client is closed'));
+    if (this.unavailableReason) return Promise.reject(new Error(this.unavailableReason));
     if (this.ready) return this.ready;
     const opening = this.daemonFn ? Promise.resolve().then(this.daemonFn).catch(() => null) : Promise.resolve(null);
     this.ready = opening.then((daemon) => this._begin(daemon));
@@ -111,28 +134,34 @@ class CodexClient extends EventEmitter {
   }
 
   _begin(daemon) {
+    if (this._disposed) {
+      closeTransport(daemon, 'borrowed', this.log);
+      throw new Error('Codex client is closed');
+    }
     let proc = daemon;
     if (!proc) {
       try {
-        const env = this.home ? Object.assign({}, process.env, { CODEX_HOME: this.home }) : process.env;
+        const baseEnv = this.env === undefined ? process.env : this.env;
+        const env = this.home ? Object.assign({}, baseEnv, { CODEX_HOME: this.home }) : baseEnv;
         proc = this.spawnFn(this.codexPath, ['app-server'].concat(this.args), { stdio: ['pipe', 'pipe', 'pipe'], env });
       } catch (err) {
         return Promise.reject(err);
       }
     }
     this.viaDaemon = !!daemon;
+    this.ownership = daemon ? 'borrowed' : 'owned';
     this.log(daemon ? 'codex: using the Codex daemon' : 'codex: started an app-server of our own');
     this.proc = proc;
     proc.stdout.setEncoding && proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', (chunk) => this._read(chunk));
-    proc.stderr.on('data', (chunk) => this.log('codex: ' + String(chunk).trim().slice(0, 400)));
+    proc.stdout.on('data', (chunk) => { if (this.proc === proc) this._read(chunk); });
+    proc.stderr.on('data', (chunk) => { if (this.proc === proc) this.log('codex: ' + String(chunk).trim().slice(0, 400)); });
     const gone = (err) => {
       if (this.proc !== proc) return;
       this.proc = null;
       this.ready = null;
       this._parts = [];
       const why = err && err.message ? err.message : 'Codex stopped';
-      for (const { reject, timer } of this.pending.values()) { clearTimeout(timer); reject(new Error(why)); }
+      for (const { reject, timer } of this.pending.values()) { clearTimeout(timer); reject(deliveryError(why)); }
       this.pending.clear();
       this.emit('exit', why);
     };
@@ -148,7 +177,7 @@ class CodexClient extends EventEmitter {
       return info;
     });
     // A failed start must not be remembered as the start.
-    ready.catch(() => { if (this.proc === proc) { try { proc.kill(); } catch (_) { /* gone */ } } });
+    ready.catch(() => { if (this.proc === proc) closeTransport(proc, this.ownership, this.log); });
     return ready;
   }
 
@@ -177,7 +206,8 @@ class CodexClient extends EventEmitter {
       if (!waiting) return;
       this.pending.delete(msg.id);
       clearTimeout(waiting.timer);
-      if (msg.error) waiting.reject(new Error(msg.error.message || 'Codex refused'));
+      if (msg.error) waiting.reject(deliveryError(msg.error.message || 'Codex refused',
+        msg.error.data?.accepted === false ? 'not_written' : 'unknown'));
       else waiting.resolve(msg.result);
       return;
     }
@@ -190,24 +220,31 @@ class CodexClient extends EventEmitter {
   }
 
   _write(obj) {
-    if (!this.proc) return false;
-    try { this.proc.stdin.write(JSON.stringify(obj) + '\n'); return true; } catch (_) { return false; }
+    return this._writeOutcome(obj) === 'submitted';
+  }
+
+  _writeOutcome(obj) {
+    const proc = this.proc;
+    if (!proc || proc.stdin.writable === false) return 'not_written';
+    try { proc.stdin.write(JSON.stringify(obj) + '\n'); return this.proc === proc ? 'submitted' : 'unknown'; }
+    catch (error) { return error.delivery === 'not_written' ? 'not_written' : 'unknown'; }
   }
 
   request(method, params) {
-    if (!this.proc) return Promise.reject(new Error('Codex is not running'));
+    if (!this.proc) return Promise.reject(deliveryError('Codex is not running', 'not_written'));
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Codex did not answer ${method}`));
+        reject(deliveryError(`Codex did not answer ${method}`));
       }, REQUEST_TIMEOUT_MS);
       if (timer.unref) timer.unref();
       this.pending.set(id, { resolve, reject, timer });
-      if (!this._write({ jsonrpc: '2.0', id, method, params: params || {} })) {
+      const delivery = this._writeOutcome({ jsonrpc: '2.0', id, method, params: params || {} });
+      if (delivery !== 'submitted') {
         clearTimeout(timer);
         this.pending.delete(id);
-        reject(new Error('Codex is not running'));
+        reject(deliveryError('Codex write could not be confirmed', delivery));
       }
     });
   }
@@ -220,17 +257,21 @@ class CodexClient extends EventEmitter {
     return this._write({ jsonrpc: '2.0', id, result });
   }
 
+  respondOutcome(id, result) { return this._writeOutcome({ jsonrpc: '2.0', id, result }); }
+
   respondError(id, message) {
     return this._write({ jsonrpc: '2.0', id, error: { code: -32601, message } });
   }
 
   dispose() {
+    if (this._disposed) return;
+    this._disposed = true;
     const proc = this.proc;
     this.proc = null;
     this.ready = null;
-    for (const { reject, timer } of this.pending.values()) { clearTimeout(timer); reject(new Error('closed')); }
+    for (const { reject, timer } of this.pending.values()) { clearTimeout(timer); reject(deliveryError('closed')); }
     this.pending.clear();
-    if (proc) { try { proc.kill(); } catch (_) { /* gone */ } }
+    closeTransport(proc, this.ownership, this.log);
   }
 }
 
@@ -467,7 +508,7 @@ class CodexSession extends EventEmitter {
     this.workspace = workspace;
     this.threadId = thread.id;
     this.id = PREFIX + thread.id;
-    this.cwd = thread.cwd || os.homedir();
+    this.cwd = thread.cwd || workspace.defaultCwd || os.homedir();
     this.customTitle = null;
     this.autoLabel = null;
     this.items = [];
@@ -520,6 +561,7 @@ class CodexSession extends EventEmitter {
     this.proc = null;
     this.loaded = false;
     this.readOnly = false;
+    this.writerAuthority = 'unknown';
     this.turnId = null;
     this.status = STATUS.IDLE;
     this._seq = 0;
@@ -756,6 +798,7 @@ class CodexSession extends EventEmitter {
     const full = !known.size || page.data !== newest;
     const turns = ((page && page.data) || []).slice().reverse();
     if (version !== this._historyVersion) return;
+    this.emit('provider-evidence', turns);
     if (first && full && page && page.nextCursor && !this._more) {
       this._more = true;
       this._notice('Older turns are in Codex; these are the latest ' + turns.length + '.', 'info');
@@ -791,10 +834,12 @@ class CodexSession extends EventEmitter {
    * has open: then this one is read-only here until the app lets go.
    */
   async _takeWriter() {
+    if (this._durableQueueOwner?.blocked(this)) return false;
     try {
       const resumed = await this.workspace.client.request('thread/resume', { threadId: this.threadId, excludeTurns: true });
       if (resumed) this._settings(resumed);
       if (resumed && resumed.thread) this.update(resumed.thread);
+      this.writerAuthority = 'engine';
       if (this.readOnly) {
         this.readOnly = false;
         this._notice('The ChatGPT app let go of this conversation; it can be continued here now.', 'info');
@@ -802,7 +847,8 @@ class CodexSession extends EventEmitter {
       }
       return true;
     } catch (err) {
-      if (!/active writer/i.test(err.message)) throw err;
+      if (!/active writer/i.test(err.message)) { this.writerAuthority = 'unknown'; throw err; }
+      this.writerAuthority = 'external';
       if (!this.readOnly) {
         this.readOnly = true;
         this._notice('Open in the ChatGPT app, so read-only here: Codex lets one app write to a conversation at a time. ' +
@@ -838,6 +884,7 @@ class CodexSession extends EventEmitter {
   restart() { this._notice('Codex conversations carry on where they are; there is nothing to restart.', 'info'); }
 
   dispose() {
+    this.disposed = true;
     if (this._writerTimer) clearTimeout(this._writerTimer);
     if (this._appTimer) clearTimeout(this._appTimer);
     this._historyVersion += 1;
@@ -865,6 +912,7 @@ class CodexSession extends EventEmitter {
   // ---- talking ----
 
   submit(text, attachments, opts) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.submit(this, text, attachments, opts);
     const has = String(text || '').trim() || String((opts && opts.sent) || '').trim() || (attachments && attachments.length);
     if (!has) return null;
     const command = /^\/([a-z][a-z-]*)(?:\s+([\s\S]*))?$/.exec(String(text || '').trim());
@@ -968,7 +1016,7 @@ class CodexSession extends EventEmitter {
         if (args) throw new Error('Use /fork.');
         const session = await this.workspace.fork(this);
         this._notice('Conversation forked.');
-        this.emit('open', session.id);
+        this.emit('open', session.id, (opts && opts.from) || null);
         break;
       }
       case 'undo': {
@@ -1038,6 +1086,8 @@ class CodexSession extends EventEmitter {
 
   /** Add input to the turn already running, keeping its id as a precondition. */
   async steer(text, attachments, opts) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.submit(this, '/steer ' + text, attachments,
+      { ...opts, run: this._engineControls.run() });
     const expectedTurnId = this.turnId;
     if (!expectedTurnId) throw new Error('There is no running turn to steer.');
     const shown = String(text || '').trim();
@@ -1055,6 +1105,7 @@ class CodexSession extends EventEmitter {
   }
 
   enqueue(text, attachments, opts) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.submit(this, text, attachments, opts);
     this.queue.push({
       id: 'q' + (this._seq++), text: String(text || ''),
       sent: (opts && opts.sent) || null, snippets: (opts && opts.snippets) || [],
@@ -1065,6 +1116,7 @@ class CodexSession extends EventEmitter {
   }
 
   async send(text, attachments, opts) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.submit(this, text, attachments, opts);
     const shown = String(text || '').trim();
     const outgoing = String((opts && opts.sent) || shown).trim();
     const files = Array.isArray(attachments) ? attachments : [];
@@ -1104,6 +1156,7 @@ class CodexSession extends EventEmitter {
   }
 
   interrupt() {
+    if (this._durableQueueOwner) return this._durableQueueOwner.control(this, 'interrupt');
     this._historyVersion += 1;
     this._clearMac();
     if (!this.turnId) return;
@@ -1122,15 +1175,19 @@ class CodexSession extends EventEmitter {
       .catch((err) => this._notice('Could not stop it: ' + err.message, 'error'));
   }
 
-  stopTask() { /* Codex has no background tasks of its own to stop */ }
+  stopTask(taskId) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.control(this, 'stopTask', { taskId });
+  }
 
   unqueue(id) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.unqueue(this, id);
     const before = this.queue.length;
     this.queue = this.queue.filter((q) => q.id !== id);
     if (this.queue.length !== before) this.emit('queue');
   }
 
   promote(id) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.promote(this, id);
     const at = this.queue.findIndex((q) => q.id === id);
     if (at >= 0 && this.inTurn) {
       const next = this.queue[at];
@@ -1150,6 +1207,7 @@ class CodexSession extends EventEmitter {
   }
 
   reclaim(id) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.reclaim(this, id);
     const at = this.queue.findIndex((q) => q.id === id);
     if (at < 0) return null;
     const [item] = this.queue.splice(at, 1);
@@ -1158,12 +1216,14 @@ class CodexSession extends EventEmitter {
   }
 
   clearQueue() {
+    if (this._durableQueueOwner) return this._durableQueueOwner.clearQueue(this);
     if (!this.queue.length) return;
     this.queue = [];
     this.emit('queue');
   }
 
   _drain() {
+    if (this._durableQueueOwner) { this._durableQueueOwner.schedule(this); return; }
     if (!this.queue.length || this.queue[0]._steering || this.inTurn || this._sending || this._commanding || !this.loaded) return;
     if (this.readOnly) { this._sendViaApp(); return; }
     const next = this.queue.shift();
@@ -1262,8 +1322,14 @@ class CodexSession extends EventEmitter {
   // ---- approvals ----
 
   handleRequest(msg) {
+    if (this._engineControls) this._engineControls.run();
     const p = msg.params || {};
     const requestId = String(msg.id);
+    const reused = this._pendingRpc?.has(requestId);
+    if (this._engineControls && (reused || this._question && String(this._question.id) === requestId)) {
+      this._engineControls.resolved(requestId);
+      if (this._question && String(this._question.id) === requestId) this._question = null;
+    }
     let name, input;
     if (msg.method === 'item/commandExecution/requestApproval' || msg.method === 'execCommandApproval') {
       name = 'Bash';
@@ -1291,7 +1357,13 @@ class CodexSession extends EventEmitter {
     }
     this._pendingRpc = this._pendingRpc || new Map();
     if (!this._pendingRpc.has(requestId)) this._pendingRpc.set(requestId, { id: msg.id, legacy: !msg.method.startsWith('item/') });
+    if (msg._providerTransport === 'ipc') Object.assign(this._pendingRpc.get(requestId),
+      { transport: 'ipc', connection: msg._providerConnection });
     this._upsert({ id: 'p:' + requestId, kind: 'permission', name, input, requestId, resolved: null });
+    if (this._engineControls) {
+      const run = this._engineControls.approval(requestId, this._pendingRpc.get(requestId), p.turnId);
+      this._upsert({ id: 'p:' + requestId, run });
+    }
     this._setStatus(STATUS.WAITING);
     return true;
   }
@@ -1305,14 +1377,16 @@ class CodexSession extends EventEmitter {
       const opts = (q.options || []).map((o) => `- ${o.label}${o.description ? ' — ' + o.description : ''}`);
       return [head].concat(opts).join('\n');
     });
-    this._question = { id: msg.id, questions };
-    this._upsert({ id: 'q:' + msg.id, kind: 'text', text: lines.join('\n\n') + '\n\n*Reply below to answer.*', at: Date.now() });
+    this._question = { id: msg.id, questions, ...(msg._providerTransport === 'ipc' ? { transport: 'ipc', connection: msg._providerConnection } : {}) };
+    const answerTo = this._engineControls && this._engineControls.question(msg.id, this._question, p.turnId);
+    this._upsert({ id: 'q:' + msg.id, kind: 'text', text: lines.join('\n\n') + '\n\n*Reply below to answer.*', at: Date.now(),
+      ...(answerTo ? { answerTo } : {}) });
     this._setStatus(STATUS.WAITING);
     return true;
   }
 
   /** The user's reply to Codex's questions; one line per question when there are several. */
-  _answer(text) {
+  _answer(text, opts) {
     const asked = this._question;
     this._question = null;
     const parts = asked.questions.length > 1 ? String(text).split(/\n+/) : [String(text)];
@@ -1323,8 +1397,10 @@ class CodexSession extends EventEmitter {
       answers[q.id] = { answers: [picked ? picked.label : said] };
     });
     this._upsert({ id: 'u:a' + asked.id, kind: 'user', text: String(text), images: [], at: Date.now() });
-    this.workspace.client.respond(asked.id, { answers });
+    const written = asked.transport === 'ipc' ? this.workspace.ipc.respond(asked.id, { answers }, asked.connection)
+      : opts?.authoritative ? this.workspace.client.respondOutcome(asked.id, { answers }) : this.workspace.client.respond(asked.id, { answers });
     if (this.inTurn) this._setStatus(STATUS.WORKING);
+    return written;
   }
 
   /**
@@ -1347,9 +1423,10 @@ class CodexSession extends EventEmitter {
     }));
   }
 
-  respondToPermission(requestId, allow) {
+  respondToPermission(requestId, allow, opts) {
+    if (this._durableQueueOwner && !opts?.authoritative) return this._durableQueueOwner.control(this, 'permission', { requestId, allow });
     const pending = this._pendingRpc && this._pendingRpc.get(String(requestId));
-    if (!pending) return false;
+    if (!pending) return opts?.authoritative ? 'not_written' : false;
     this._pendingRpc.delete(String(requestId));
     let answer;
     if (pending.grant) {
@@ -1362,7 +1439,8 @@ class CodexSession extends EventEmitter {
     } else {
       answer = { decision: pending.legacy ? (allow ? 'approved' : 'denied') : (allow ? 'accept' : 'decline') };
     }
-    const ok = this.workspace.client.respond(pending.id, answer);
+    const ok = pending.transport === 'ipc' ? this.workspace.ipc.respond(pending.id, answer, pending.connection)
+      : opts?.authoritative ? this.workspace.client.respondOutcome(pending.id, answer) : this.workspace.client.respond(pending.id, answer);
     if (ok && this.inTurn) this._setStatus(STATUS.WORKING);
     return ok;
   }
@@ -1370,6 +1448,11 @@ class CodexSession extends EventEmitter {
   // ---- what Codex says ----
 
   handle(method, p) {
+    if (this._engineControls) this._engineControls.run();
+    if (method === 'turn/completed' && p.turn) this.emit('provider-evidence', [p.turn]);
+    if (['item/started', 'item/completed'].includes(method) && p.item?.type === 'userMessage' && p.turnId) {
+      this.emit('provider-evidence', [{ id: p.turnId, status: 'inProgress', items: [p.item] }]);
+    }
     const at = Date.now();
     if (method === 'turn/started' || method === 'turn/completed' || method === 'item/started' || method === 'item/completed') this._historyVersion += 1;
     switch (method) {
@@ -1411,6 +1494,7 @@ class CodexSession extends EventEmitter {
       }
       case 'turn/completed': {
         const turn = p.turn || {};
+        if (this._engineControls && this.turnId === turn.id) this._engineControls.endTurn();
         this.turnId = null;
         this._clearMac();
         if (!turn.id || !this._drawnTurns.has(turn.id)) this.turns += 1;
@@ -1468,6 +1552,7 @@ class CodexSession extends EventEmitter {
       case 'serverRequest/resolved': {
         // Answered somewhere else (the ChatGPT app): the prompt here is moot.
         const key = String(p.requestId);
+        if (this._engineControls) this._engineControls.resolved(key);
         if (this._question && String(this._question.id) === key) this._question = null;
         if (this._pendingRpc && this._pendingRpc.has(key)) {
           this._pendingRpc.delete(key);
@@ -1504,37 +1589,44 @@ class CodexSession extends EventEmitter {
 
 /** Every Codex conversation on this Mac, and the one app-server they share. */
 class CodexWorkspace extends EventEmitter {
-  constructor({ codexPath, log, client, ipc, cache, cacheDir, home, args } = {}) {
+  constructor({ codexPath, log, client, ipc, cache, cacheDir, home, args,
+    spawnFn, daemonFn, env, appAccount, createReader, defaultCwd, unavailableReason } = {}) {
     super();
     this.log = log || (() => {});
     this.home = home || null;
-    this.client = client || new CodexClient({ codexPath, log: this.log, home, args });
+    this.defaultCwd = defaultCwd;
+    this.unavailableReason = unavailableReason || null;
+    this.client = client || new CodexClient({ codexPath, log: this.log, home, args, spawnFn, daemonFn, env, appAccount, unavailableReason });
     // The ChatGPT app runs turns only for its own account.
-    const appAccount = !home || isAppHome(home);
-    this.ipc = ipc !== undefined ? ipc : (appAccount ? new CodexIpc({ log: this.log }) : null);
+    const canBorrow = appAccount === undefined ? !home || isAppHome(home) : appAccount;
+    this.ipc = ipc !== undefined ? ipc : (canBorrow ? new CodexIpc({ log: this.log }) : null);
     this.cache = cache || new CodexCache({ dir: cacheDir });
     this.cache.sweep();
     this.sessions = new Map();
     this.loadedOnce = false;
-    this.error = null;
+    this.error = this.unavailableReason;
     this._refreshing = null;
     this._poll = null;
     this._changeTimer = null;
     this._models = null;
+    this._disposed = false;
+    this._createReader = createReader || ((opts) => new CodexClient(opts));
 
-    this.client.on('notification', (method, params) => {
+    const notification = (method, params) => {
       const session = params && params.threadId ? this.sessions.get(PREFIX + params.threadId) : null;
       if (session) { session.handle(method, params); return; }
       if (method === 'thread/started' && params.thread) this._adopt(params.thread);
-    });
-    this.client.on('request', (msg) => {
+    };
+    const request = (msg) => {
       const threadId = msg.params && (msg.params.threadId || msg.params.conversationId);
       const session = threadId ? this.sessions.get(PREFIX + threadId) : null;
       if (!session || !session.handleRequest(msg)) this.client.respondError(msg.id, 'NikUI cannot answer this request');
-    });
-    this.client.on('exit', (why) => {
+    };
+    const exit = (why) => {
       this._models = null;
       for (const s of this.sessions.values()) {
+        if (s._engineControls) s._engineControls.rotate(null);
+        s.writerAuthority = 'unknown';
         s._historyVersion += 1;
         s._clearMac();
         if (!s.loaded) continue;
@@ -1547,7 +1639,9 @@ class CodexWorkspace extends EventEmitter {
         }
       }
       this._changed();
-    });
+    };
+    this._clientListeners = { notification, request, exit };
+    for (const [event, listener] of Object.entries(this._clientListeners)) this.client.on(event, listener);
   }
 
   /**
@@ -1557,18 +1651,30 @@ class CodexWorkspace extends EventEmitter {
    */
   async reader() {
     await this.client.start();
+    if (this._disposed) throw new Error('Codex workspace is closed');
     if (!this.client.viaDaemon) return this.client;
-    if (!this._reader) this._reader = new CodexClient({ codexPath: this.client.codexPath, daemonFn: null, log: this.log, home: this.client.home, args: this.client.args });
+    if (!this._reader) this._reader = this._createReader({
+      codexPath: this.client.codexPath, daemonFn: null, log: this.log,
+      home: this.client.home, args: this.client.args, spawnFn: this.client.spawnFn, env: this.client.env
+    });
     try {
       await this._reader.start();
       return this._reader;
     } catch (_) {
+      if (this._disposed) throw new Error('Codex workspace is closed');
       return this.client;
     }
   }
 
+  resourceOwnership() {
+    return { connection: { ownership: this.client.ownership, connected: this.client.alive },
+      reader: this._reader ? { ownership: 'owned', connected: this._reader.alive } : null,
+      ipc: this.ipc ? { ownership: 'borrowed', connected: !!this.ipc.sock } : null };
+  }
+
   /** Whether Codex is installed here at all. */
   get available() {
+    if (this.unavailableReason) return false;
     const bin = this.client.codexPath;
     if (bin !== 'codex' && fs.existsSync(bin)) return true;
     return fs.existsSync(this.home || codexHome());
@@ -1587,26 +1693,32 @@ class CodexWorkspace extends EventEmitter {
   }
 
   _adopt(thread) {
+    if (this._disposed) return null;
     if (!thread || !thread.id || thread.ephemeral || thread.parentThreadId) return null;
     const id = PREFIX + thread.id;
     let session = this.sessions.get(id);
     if (session) { session.update(thread); return session; }
     session = new CodexSession(thread, this);
+    if (this.prepareSession) this.prepareSession(session);
     for (const event of ['status', 'queue', 'unread', 'meta']) session.on(event, () => this._changed());
     this.sessions.set(id, session);
+    this.emit('session-added', session);
     this._changed();
     return session;
   }
 
   /** Ask Codex for the list again. Conversations started elsewhere turn up here. */
   refresh() {
+    if (this._disposed) return Promise.resolve();
     if (this._refreshing) return this._refreshing;
     this._refreshing = (async () => {
       await this.client.start();
       const seen = new Set();
       let cursor = null;
       for (let page = 0; page < 5; page++) {
+        if (this._disposed) return;
         const res = await this.client.request('thread/list', { limit: 100, cursor, sortKey: 'updated_at' });
+        if (this._disposed) return;
         for (const thread of (res && res.data) || []) {
           const s = this._adopt(thread);
           if (s) seen.add(s.id);
@@ -1631,7 +1743,7 @@ class CodexWorkspace extends EventEmitter {
 
   /** Keep the list current while anybody might be looking at it. */
   watch(everyMs) {
-    if (this._poll) return;
+    if (this._disposed || this._poll) return;
     this.refresh();
     this._poll = setInterval(() => this.refresh(), everyMs || 60000);
     if (this._poll.unref) this._poll.unref();
@@ -1640,11 +1752,13 @@ class CodexWorkspace extends EventEmitter {
   /** A new Codex conversation in a folder. */
   async create({ cwd }) {
     await this.client.start();
+    if (this._disposed) throw new Error('Codex workspace is closed');
     const res = await this.client.request('thread/start', { cwd });
     const session = this._adopt(Object.assign({}, res.thread, { preview: res.thread.preview || '' }));
     if (!session) throw new Error('Codex did not start a conversation');
     session._settings(res);
     session.loaded = true;
+    session.writerAuthority = 'engine';
     session.everStarted = true;
     session.activeAt = Date.now();
     this._changed();
@@ -1653,6 +1767,7 @@ class CodexWorkspace extends EventEmitter {
 
   /** The model catalog is shared by all conversations in this workspace. */
   models() {
+    if (this._disposed) return Promise.reject(new Error('Codex workspace is closed'));
     if (this._models) return this._models;
     this._models = (async () => {
       await this.client.start();
@@ -1675,6 +1790,7 @@ class CodexWorkspace extends EventEmitter {
     if (!session) throw new Error('Codex did not fork the conversation');
     session._settings(Object.assign({ collaborationMode: { mode: source.meta.mode } }, res));
     session.loaded = true;
+    session.writerAuthority = 'engine';
     session.everStarted = true;
     session.activeAt = Date.now();
     await session._loadTurns(true);
@@ -1685,7 +1801,7 @@ class CodexWorkspace extends EventEmitter {
   }
 
   _changed() {
-    if (this._changeTimer) return;
+    if (this._disposed || this._changeTimer) return;
     this._changeTimer = setTimeout(() => {
       this._changeTimer = null;
       this.emit('changed');
@@ -1694,14 +1810,23 @@ class CodexWorkspace extends EventEmitter {
   }
 
   dispose() {
-    if (this.ipc) this.ipc.dispose();
-    if (this._reader) this._reader.dispose();
+    if (this._disposed) return;
+    this._disposed = true;
+    for (const [event, listener] of Object.entries(this._clientListeners)) this.client.removeListener(event, listener);
     if (this._poll) clearInterval(this._poll);
     this._poll = null;
     if (this._changeTimer) clearTimeout(this._changeTimer);
-    for (const s of this.sessions.values()) s.dispose();
-    this.client.dispose();
+    this._changeTimer = null;
+    const close = (resource) => {
+      if (!resource || !resource.dispose) return;
+      try { resource.dispose(); } catch (err) { this.log('codex: could not dispose: ' + (err && err.message)); }
+    };
+    close(this.ipc);
+    close(this._reader);
+    for (const session of this.sessions.values()) close(session);
+    close(this.client);
+    close(this.cache);
   }
 }
 
-module.exports = { CodexClient, CodexSession, CodexWorkspace, itemFrom, itemsFrom, picturesFor, bareCommand, findCodex, PREFIX, CODEX_COMMANDS };
+module.exports = { CodexClient, CodexSession, CodexWorkspace, itemFrom, itemsFrom, picturesFor, bareCommand, findCodex, openDaemon, PREFIX, CODEX_COMMANDS };

@@ -5,47 +5,33 @@ const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
 const path = require('path');
-const { SessionManager, readConfig } = require('./manager');
+const { createWindowEngine, createWindowDelivery, createWindowRemote, createWindowPrCi, createWindowCi } = require('./extensionEngine');
+const { readConfig } = require('./editorHost');
 const { projectRoot } = require('./tree');
 const { SessionTree } = require('./tree');
-const { FolderStore } = require('./folders');
-const { Durable, placeOf } = require('./durable');
-const { Ledger } = require('./ledger');
 const { SessionPanel } = require('./panel');
 const { DoneNotifier, banner: plainBanner, chime } = require('./done');
-const { CiWatcher } = require('./ci');
-const { PrLinks } = require('./prlink');
-const { PrFeed, parseTicketUrl } = require('./prView');
+const { parseTicketUrl } = require('./prView');
 const { resolveRepoFolder, originOf } = require('./repoFolders');
 const { MacNotifier } = require('./notifier');
 const { closeHub, closeAllHubs, eachHub } = require('./hub');
 const { HistoryTree } = require('./historyTree');
-const { projectsRoot, listSessions } = require('./history');
+const legacyHistory = require('./history');
 const { nextTicket } = require('./ticket');
 const { labelFor } = require('./label');
 const { createHost, installHost, forgetHost } = require('./host');
-const { RemoteServer } = require('./remote');
-const { AppUpdate, defaultApk } = require('./appUpdate');
-const { Terminals } = require('./terminal');
-const { Audience } = require('./audience');
-const { DeviceStore } = require('./devices');
 const { DevicesTree } = require('./devicesTree');
-const { PairingWindow } = require('./pairing');
 const { PairPanel } = require('./pairPanel');
-const { loadIdentity } = require('./identity');
 const { Tailscale, Cloudflared } = require('./tunnel');
 const { Awake, KeepAwake } = require('./awake');
 const { LidGuard } = require('./lid');
-const { loadVapid } = require('./push');
-const { Notifier } = require('./notify');
 const { openSettings, schemaFrom, rememberModelsIn, useSwitch, write: writeSetting, registered,
   unloaded, offerReload, notLoaded } = require('./settingsMenu');
-const { loadApns } = require('./apns');
-const { Voice } = require('./voice');
 const { startSlack } = require('./slackHome');
 const { CodexWorkspace } = require('./codex');
 
 let manager;
+let engine = null;
 let ledger = null;
 // Holds the `claude` processes so that a window reload does not end them.
 let keeper = null;
@@ -54,6 +40,7 @@ let codex = null;
 const WORKSPACE_KEY = 'nikui.workspace';
 // The GitHub pane's feed and PR picker, for the host the server builds.
 let github = {};
+let developmentClient = null;
 
 /**
  * Bring a transcript back as an instance — the live one if it is already
@@ -126,7 +113,7 @@ async function openTicketInNikui(url, context, manager) {
   const live = manager.list.find((s) => String(s.ticket || '') === ticket && checkoutMatches(s.cwd, parsed));
   if (live) { SessionPanel.show(live, context, manager).focusInput(); return { ok: true, how: 'focused' }; }
 
-  const history = await listSessions({ limit: 200, scan: 800 });
+  const history = await (manager.history && manager.history.listSessions ? manager.history : legacyHistory).listSessions({ limit: 200, scan: 800 });
   const entry = history.find((e) => checkoutMatches(e.cwd, parsed) && String(nextTicket(null, e.title || '') || '') === ticket);
   if (entry) {
     const panel = resumeHistoryEntry(entry, context, manager);
@@ -164,48 +151,32 @@ async function openTicketInNikui(url, context, manager) {
 }
 
 function activate(context) {
-  manager = new SessionManager(context);
+  // Explicit development host only. An unavailable daemon remains visible and
+  // cannot fall through into keeper/window-engine construction.
+  let development;
+  try { development = require('./developmentExtension').developmentOptions(context); }
+  catch (error) {
+    void vscode.window.showWarningMessage('NikUI: ' + error.code + ' — isolated development window refused.');
+    return;
+  }
+  if (development) return require('./developmentExtension').activateDevelopment(context, development).then((client) => { developmentClient = client; return client; });
   // Started early, so the instances brought back below can be picked up from
   // wherever the last window left them running.
   if (vscode.workspace.getConfiguration('nikui').get('keepInstancesAcrossReloads', true)) {
     const { KeeperLink } = require('./keeperLink');
     keeper = new KeeperLink({ log: (line) => console.log('[nikui] ' + line) });
-    manager.spawner = keeper.spawner();
     keeper.connect();
   }
-  // A copy of the open instances and the folders that outlives this window's
-  // own storage, which an empty window loses the moment its process does.
-  const memoryDir = context.globalStorageUri && context.globalStorageUri.fsPath;
-  const durable = memoryDir ? new Durable({ dir: memoryDir, place: placeOf(vscode.workspace) }) : null;
-  if (durable) manager.useDurable(durable);
-  const folders = new FolderStore(context, durable);
-  // Every instance this machine has run and what it cost, for /status.
-  ledger = memoryDir ? new Ledger({ dir: memoryDir }) : null;
-  let remembering = null;
-  manager.on('changed', () => {
-    if (remembering) return;
-    remembering = setTimeout(() => {
-      remembering = null;
-      if (ledger) ledger.record(manager.list);
-      for (const s of manager.list) folders.remember(s);
-    }, 2000);
+  const core = createWindowEngine(context, {
+    spawner: keeper ? keeper.spawner() : null,
+    log: (line) => console.log('[nikui] ' + line)
   });
-  context.subscriptions.push({ dispose: () => { if (remembering) clearTimeout(remembering); if (ledger) { ledger.record(manager.list); ledger.flush(); } } });
-  // Which ChatGPT account Codex runs on, and computer use brought along to it.
-  const codexHomes = require('./codexHome');
-  const codexCfg = vscode.workspace.getConfiguration('nikui');
-  const codexDir = codexHomes.accountHome(codexCfg.get('codexAccount', 'work'));
-  codex = new CodexWorkspace({
-    codexPath: codexCfg.get('codexPath', '') || '',
-    home: codexDir,
-    args: codexHomes.homeArgs(codexDir, {
-      computerUse: codexCfg.get('codexComputerUse', true),
-      xcode: codexCfg.get('codexXcode', true)
-    }),
-    // Codex conversations kept for a week, so opening one again is instant.
-    cacheDir: context.globalStorageUri ? path.join(context.globalStorageUri.fsPath, 'codex-cache') : null
-  });
-  context.subscriptions.push({ dispose: () => { if (codex) codex.dispose(); codex = null; } });
+  engine = core;
+  manager = core.manager;
+  ledger = core.ledger;
+  codex = core.codex;
+  const folders = core.folders;
+  context.subscriptions.push(core);
   if (vscode.workspace.onDidChangeConfiguration) context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async (event) => {
     if (!event.affectsConfiguration('nikui.codexAccount') && !event.affectsConfiguration('nikui.codexComputerUse') && !event.affectsConfiguration('nikui.codexXcode')) return;
     const pick = await vscode.window.showInformationMessage('NikUI: Codex picks up the change after a reload.', 'Reload Window');
@@ -241,7 +212,7 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('nikui.showClaude', () => showWorkspace('claude')));
   context.subscriptions.push(vscode.commands.registerCommand('nikui.refreshCodex', () => codex.refresh()));
 
-  const history = new HistoryTree();
+  const history = new HistoryTree(core.history);
   const historyView = vscode.window.createTreeView('nikui.history', { treeDataProvider: history });
   context.subscriptions.push(historyView, history);
   // Scope and filter live in the header, not in a status-bar message that has
@@ -282,16 +253,11 @@ function activate(context) {
 
   followFocus(view, manager);
   watchForTrouble(manager, (session) => SessionPanel.show(session, context, manager));
-  watchForCi(manager, context, watchForDone(manager, context));
-  const prLinks = new PrLinks();
-  context.subscriptions.push({ dispose: prLinks.attach(manager) });
-  // One feed of pull request state for the window, shared by every instance's
-  // GitHub pane; it only polls while a pane is open in a visible tab.
-  const prFeed = new PrFeed();
-  context.subscriptions.push({ dispose: () => prFeed.dispose() });
-  const setPr = (session, url) => prLinks.pin(session, url);
+  const prCi = createWindowPrCi(context, { engine: core, notify: ciNotification(watchForDone(manager, context)) });
+  prCi.start();
+  const setPr = prCi.setPr;
   const pickPr = (session) => pickPullRequest(session, setPr);
-  github = { prFeed, pickPr, setPr };
+  github = { prFeed: prCi.feed, pickPr, setPr };
   watchForCrowding(manager);
   watchForQuota(manager);
 
@@ -686,7 +652,7 @@ function activate(context) {
     if (!entry || !entry.file) return;
     // Only ever a transcript. Nothing else on disk is this command's business,
     // whatever it is handed.
-    const root = projectsRoot();
+    const root = core.history.projectsRoot();
     if (!entry.file.startsWith(root + path.sep) || !entry.file.endsWith('.jsonl')) {
       vscode.window.showWarningMessage('NikUI: that is not a transcript.');
       return;
@@ -750,7 +716,7 @@ function activate(context) {
   // is asked whether it is listening only once there is one to ask.
   let server = null;
   const awake = keepAwake(context, manager, () => server);
-  server = serveLocally(context, manager, awake, folders, { refreshTree: () => tree.refresh() });
+  server = serveLocally(context, manager, awake, folders, { engine: core, delivery: core.delivery, refreshTree: () => tree.refresh() });
   useSwitch('nikui.lidClosed', (on) => awake.switchLid(on));
   if (server.onState) context.subscriptions.push({ dispose: server.onState(() => awake.reconsider()) });
   awake.reconsider();
@@ -766,7 +732,7 @@ function activate(context) {
     }));
   }
 
-  context.subscriptions.push({ dispose: () => { closeAllHubs(); manager.disposeAll(); } });
+  context.subscriptions.push({ dispose: () => { closeAllHubs(); core.dispose(); } });
 }
 
 /**
@@ -782,7 +748,7 @@ function activate(context) {
  */
 function offerModelsToComposer(store) {
   const { discover } = require('./models');
-  const { offerCommandArgs } = require('./session');
+  const { offerCommandArgs } = manager && manager.commandCatalog ? manager.commandCatalog : require('./session');
   let claudePath = 'claude';
   try { claudePath = vscode.workspace.getConfiguration('nikui').get('claudePath', 'claude'); } catch (_) { /* a stub */ }
   return discover({ claudePath, cache: store }).then((found) => {
@@ -936,13 +902,9 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   // The laptop's own key, the devices it knows, and the minute in which a new
   // one may introduce itself. All three outlive the server being started and
   // stopped, so they are made here rather than inside it.
-  const identity = loadIdentity(context.globalState);
-  const devices = new DeviceStore(context.globalState);
-  const pairing = new PairingWindow();
-  // The identity this window sends notifications under. Separate from the one
-  // devices pair against: one proves who the laptop is to a phone, the other
-  // proves who the sender is to a push service.
-  const vapid = loadVapid(context.globalState);
+  const delivery = injected.delivery || createWindowDelivery(context, { manager });
+  const { devices, pairing, audience, notifier } = delivery;
+  context.subscriptions.push(delivery);
 
   // Installed, not just built: the panel asks for this same object, so a hub
   // opened from the editor knows about devices and the trail as well — and so
@@ -964,54 +926,19 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     if (unloaded(schemaFrom(context.extensionUri.fsPath)).length) offerReload();
   } catch (_) { /* nothing to compare against */ }
 
-  const audience = new Audience();
-
   const served = installHost(createHost(context, manager, Object.assign({ devices, awake: awakeState || null, ledger, codex: () => codex }, github)));
   served.audience = audience;
 
-  /**
-   * Somewhere to run a command, when a device is allowed to.
-   *
-   * Made here rather than inside the server so the window owns it: closing the
-   * window has to take the processes with it, and a thing the server made would
-   * outlive the server being restarted.
-   *
-   * Off is a real answer. A terminal is a shell on this machine, and while a
-   * device with control can already cause anything a shell could — NikUI runs
-   * Claude with permissions bypassed — somebody who wants the phone to watch
-   * and only watch should be able to have that.
-   */
-  const terminals = vscode.workspace.getConfiguration('nikui').get('remote.terminal', true)
-    ? new Terminals({ onEvent: (event) => server.terminalSaid(event) })
-    : null;
-  context.subscriptions.push({ dispose: () => { if (terminals) terminals.closeAll(); } });
-
-  // Speech from the phone, heard here. Built once into NikUI's storage and
-  // run only while a recording is being turned into words.
-  const voice = new Voice({
-    dir: context.globalStorageUri ? context.globalStorageUri.fsPath : null,
-    enabled: () => vscode.workspace.getConfiguration('nikui').get('voice.enabled', true),
-    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
-  });
-
+  // The window resolves resource locations and runners; the engine owns their
+  // server lifetime. No exposure or compiler policy lives in the core factory.
   let slackRoom = null;
-  // The phone app's newest build, when this window runs from a checkout that
-  // has one, offered to paired phones so they update without a cable.
-  const appUpdate = new AppUpdate({
-    file: defaultApk(context.extensionUri.fsPath),
-    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
-  });
-  context.subscriptions.push({ dispose: () => appUpdate.stop() });
-  const server = new RemoteServer({
-    root: context.extensionUri.fsPath,
-    appUpdate,
+  const server = createWindowRemote(context, {
+    engine: injected.engine,
+    delivery,
     // A phone knocking on the tailnet name before this window knows it is
     // the moment to look again, rather than up to a minute later.
     onStrangeHost: () => reachAgain(),
     host: served,
-    terminals,
-    voice,
-    audience,
     // Made after the notifier, which it rings the phone through.
     slack: () => slackRoom,
     // Whether this laptop may sleep, readable by any paired device and
@@ -1056,7 +983,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       return { id: session.id };
     },
     refreshTree: () => { if (deps && deps.refreshTree) deps.refreshTree(); },
-    history: (ask) => require('./history').listSessions(ask),
+    history: (ask) => (manager.history && manager.history.listSessions ? manager.history : legacyHistory).listSessions(ask),
     // What /status draws, built exactly as the hub builds it — the instance
     // somebody is most likely asking about, with the rest as its fleet.
     report: () => {
@@ -1071,10 +998,6 @@ function serveLocally(context, manager, awakeState, folders, deps) {
         lifetime: ledger ? ledger.totals() : null
       });
     },
-    devices,
-    identity,
-    pairing,
-    vapid,
     watchFleet: (fn) => {
       const on = () => fn();
       manager.on('changed', on);
@@ -1110,6 +1033,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     }
   });
 
+  const { voice } = server.resources;
+
   // The mesh in front of the server, when there is one. Nothing binds anywhere
   // but loopback either way: this asks Tailscale's own proxy to forward to us.
   // Injectable so the one decision that can silently take every phone away
@@ -1121,55 +1046,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   });
   let weExposed = false;
 
-  /**
-   * Being told, rather than checking. Three things are worth a phone buzzing;
-   * a turn finishing is available and off, because four agents finishing
-   * overnight is a phone buzzing all night.
-   */
-  // The only door in this product that goes through anybody else's machine, and
-  // the only one that needs an account: an iPhone with the app closed. Inert
-  // until somebody fills in four settings.
-  const apns = loadApns(() => {
-    try {
-      const cfg = vscode.workspace.getConfiguration('nikui');
-      return {
-        teamId: cfg.get('apns.teamId', ''),
-        keyId: cfg.get('apns.keyId', ''),
-        keyFile: cfg.get('apns.keyFile', ''),
-        bundleId: cfg.get('apns.bundleId', 'com.nikoloz.nikui'),
-        production: cfg.get('apns.production', true)
-      };
-    } catch (_) { return {}; }
-  });
-
-  const notifier = new Notifier({
-    devices,
-    vapid,
-    apns,
-    audience,
-    // A notification whose instance cannot be opened is a notification that
-    // teaches you to ignore them.
-    reachable: () => server.listening,
-    // The app, when it is open, is already holding a socket — so it is told
-    // down that rather than through a push service, which needs a tunnel, an
-    // account somewhere, and a phone that is reachable from outside.
-    toSockets: (message) => server.notifyDevices(message),
-    // Whatever pops up on this laptop also goes to the phone — somebody out of
-    // the house has only the phone. notifyDevices can add to that, not take
-    // away from it: a turn finishing is sent when either says so.
-    settings: () => {
-      try {
-        const cfg = vscode.workspace.getConfiguration('nikui');
-        const phone = Object.assign({}, cfg.get('notifyDevices', {}) || {});
-        if (cfg.get('notifyWhenDone', false)) phone.turnFinished = true;
-        if (cfg.get('notifyCI', true)) phone.ci = true;
-        if (cfg.get('notifyOnAttention', true)) phone.needsYou = true;
-        return phone;
-      } catch (_) { return {}; }
-    },
-    log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  push: ' + line); }
-  });
-  context.subscriptions.push({ dispose: notifier.watch(manager) });
+  delivery.connect(server, { log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); } });
+  delivery.start();
 
   // Slack: a VIP waiting a minute pops up here, three minutes rings the phone.
   const slack = startSlack(context, {
@@ -1261,7 +1139,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // Built ahead of being needed, so the first thing said into the phone is
     // not the thing that waits minutes for a compiler. Once: after that the
     // program is kept, and only ever started for a recording.
-    if (voice.possible && voice.enabled() && voice.modelPresent() && !voice.isBuilt()) {
+    if (voice && voice.possible && voice.enabled() && voice.modelPresent() && !voice.isBuilt()) {
       const later = setTimeout(() => voice.ensure(), 20000);
       context.subscriptions.push({ dispose: () => clearTimeout(later) });
     }
@@ -2038,38 +1916,30 @@ function watchForDone(manager, context) {
  * CI on the PR an instance pushed to, watched by asking GitHub every fifteen
  * seconds, and a banner when it is over — unless you are looking at it.
  */
-const CI_DURATIONS = 'nikui.ciDurations';
-function watchForCi(manager, context, announce) {
+function ciNotification(announce) {
   const setting = (key, fallback) => vscode.workspace.getConfiguration('nikui').get(key, fallback);
-  const watcher = new CiWatcher({
-    autoWatch: () => setting('watchCIAfterPush', true),
-    history: {
-      get: (repo) => (context.globalState.get(CI_DURATIONS) || {})[repo] || [],
-      add: (repo, ms) => {
-        const all = Object.assign({}, context.globalState.get(CI_DURATIONS) || {});
-        all[repo] = [ms].concat(all[repo] || []).slice(0, 10);
-        context.globalState.update(CI_DURATIONS, all);
-      }
-    },
-    notify: (session, state) => {
-      // The phone hears it whatever the laptop's own banner is set to; which
-      // phones, and whether at all, is nikui.notifyDevices.ci.
-      manager.emit('ci-result', session, state);
-      if (!setting('notifyCI', true)) return;
-      if (!['passed', 'failed', 'none', 'error'].includes(state.phase)) return;
-      if (setting('notifyWhenDoneSound', true)) chime();
-      const looking = !!(vscode.window.state && vscode.window.state.focused) && SessionPanel.isVisible(session.id);
-      if (looking) return;
-      const pr = state.pr ? `PR #${state.pr.number}` : 'CI';
-      const title = state.phase === 'passed' ? `${pr} is green`
-        : state.phase === 'failed' ? `${pr} failed` : state.phase === 'none' ? `${pr} has no CI` : 'Cannot watch CI';
-      const body = state.phase === 'failed' ? `${(state.failing || []).join(', ')} · ${session.label}`
-        : state.phase === 'error' ? `${state.message} · ${session.label}`
-          : `${state.pr && state.pr.title ? state.pr.title + ' · ' : ''}${session.label}`;
-      announce(title, body, session);
-    }
-  });
-  context.subscriptions.push({ dispose: watcher.attach(manager) });
+  return (session, state) => {
+    if (!setting('notifyCI', true)) return;
+    if (!['passed', 'failed', 'none', 'error'].includes(state.phase)) return;
+    if (setting('notifyWhenDoneSound', true)) chime();
+    const looking = !!(vscode.window.state && vscode.window.state.focused) && SessionPanel.isVisible(session.id);
+    if (looking) return;
+    const pr = state.pr ? `PR #${state.pr.number}` : 'CI';
+    const title = state.phase === 'passed' ? `${pr} is green`
+      : state.phase === 'failed' ? `${pr} failed` : state.phase === 'none' ? `${pr} has no CI` : 'Cannot watch CI';
+    const body = state.phase === 'failed' ? `${(state.failing || []).join(', ')} · ${session.label}`
+      : state.phase === 'error' ? `${state.message} · ${session.label}`
+        : `${state.pr && state.pr.title ? state.pr.title + ' · ' : ''}${session.label}`;
+    announce(title, body, session);
+  };
+}
+
+// Retain the narrow window helper for callers that only need CI. Activation
+// composes the whole PR/CI graph through createWindowPrCi above.
+function watchForCi(manager, context, announce) {
+  const watcher = createWindowCi(context, { manager, notify: ciNotification(announce) });
+  const detach = watcher.attach(manager);
+  context.subscriptions.push({ dispose() { detach(); watcher.dispose(); } });
   return watcher;
 }
 
@@ -2095,19 +1965,39 @@ function watchInbox(dir, onClick) {
   const name = crypto.randomBytes(8).toString('hex');
   const file = path.join(folder, name);
   let watcher = null;
+  let polling = false;
+  let disposed = false;
+  const receive = () => {
+    if (disposed) return;
+    let id = '';
+    try { id = fs.readFileSync(file, 'utf8').trim(); fs.unlinkSync(file); } catch (_) { return; }
+    if (id) onClick(id);
+  };
+  // fs.watch can fail asynchronously (for example EMFILE from FSEvents).
+  // Keep click delivery alive with a stat poll of this window's file alone.
+  const poll = () => {
+    if (watcher) { watcher.close(); watcher = null; }
+    if (disposed || polling) return;
+    polling = true;
+    fs.watchFile(file, { interval: 200, persistent: false }, receive);
+    receive();
+  };
   try {
     fs.mkdirSync(folder, { recursive: true });
-    watcher = fs.watch(folder, (event, changed) => {
-      if (changed !== name) return;
-      let id = '';
-      try { id = fs.readFileSync(file, 'utf8').trim(); fs.unlinkSync(file); } catch (_) { return; }
-      if (id) onClick(id);
-    });
   } catch (_) { return { path: null, dispose() {} }; }
+  try {
+    watcher = fs.watch(folder, (event, changed) => {
+      if (changed == null || String(changed) === name) receive();
+    });
+    watcher.on('error', poll);
+  } catch (_) { poll(); }
   return {
     path: file,
     dispose() {
+      disposed = true;
       if (watcher) watcher.close();
+      watcher = null;
+      if (polling) fs.unwatchFile(file, receive);
       try { fs.unlinkSync(file); } catch (_) { /* never written */ }
     }
   };
@@ -2246,12 +2136,15 @@ async function pickPullRequest(session, setPr) {
 }
 
 function deactivate() {
+  if (developmentClient) { developmentClient.dispose(); developmentClient = null; return Promise.resolve(); }
   forgetHost();
   closeAllHubs();
-  if (ledger) { ledger.record(manager ? manager.list : []); ledger.flush(); }
-  if (manager) manager.disposeAll();
+  const closing = engine ? engine.dispose() : null;
+  engine = null;
+  codex = null;
   // Waits for the keeper to have every instance's newest state.
-  if (keeper) { const k = keeper; keeper = null; return k.close(); }
+  const k = keeper; keeper = null;
+  return Promise.all([closing, k ? k.close() : null]).then(() => {});
 }
 
 module.exports = { activate, deactivate, followFocus, serveLocally, watchForTrouble, watchForCrowding, watchForQuota, watchInbox, openClicked, watchForCi };

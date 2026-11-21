@@ -1,0 +1,935 @@
+{
+  "fixtureVersion": 1,
+  "category": "seats-grants",
+  "vectors": [
+    {
+      "id": "seat-watch-send",
+      "polarity": "negative",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "refuse"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": false,
+            "at": 1795179601000,
+            "expiresAt": null,
+            "result": null,
+            "error": {
+              "code": "FORBIDDEN",
+              "message": "Synthetic fixture: FORBIDDEN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-forged-local",
+      "polarity": "negative",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "allSettings",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "from": {
+              "local": true
+            },
+            "client": {
+              "kind": "mac"
+            },
+            "caps": [
+              "editor-route-v1"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "allSettings",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": false,
+            "at": 1795179601000,
+            "expiresAt": null,
+            "result": null,
+            "error": {
+              "code": "LOCAL_REQUIRED",
+              "message": "Synthetic fixture: LOCAL_REQUIRED",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-control-local-only",
+      "polarity": "negative",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "openPr",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "openPr",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": false,
+            "at": 1795179601000,
+            "expiresAt": null,
+            "result": null,
+            "error": {
+              "code": "LOCAL_REQUIRED",
+              "message": "Synthetic fixture: LOCAL_REQUIRED",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-watch-visible",
+      "polarity": "positive",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true,
+        "unread": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "visible",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "on": true
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "visible",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "on": true
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-watch-pane",
+      "polarity": "positive",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:pane",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "open": true,
+            "prUrl": null
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:pane",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": null,
+                "pane": {
+                  "open": true,
+                  "tab": "conversation",
+                  "width": null,
+                  "full": false
+                }
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-watch-slack-open",
+      "polarity": "positive",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:open",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "conversation": "C1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:open",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": "C1",
+                "thread": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-watch-apple-self",
+      "polarity": "positive",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "@apple",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "token": "abababababababababababababababababababababababababababababababab"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "@apple",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "registered": true
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-watch-listener-self",
+      "polarity": "positive",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "@listen",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "@listen",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {},
+              "replies": [
+                {
+                  "type": "@listener",
+                  "secret": "synthetic-private-bearer"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-watch-forget-self",
+      "polarity": "positive",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "forget",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "phone-1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "forget",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "device": "phone-1"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "ackBeforeRevokeClose": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "seat-watch-forget-other",
+      "polarity": "negative",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "forget",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "phone-2"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "forget",
+            "target": "fleet",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": false,
+            "at": 1795179601000,
+            "expiresAt": null,
+            "result": null,
+            "error": {
+              "code": "FORBIDDEN",
+              "message": "Synthetic fixture: FORBIDDEN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-terminal-cap-no-grant",
+      "polarity": "negative",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "paired": true,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:open",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "caps": [
+              "terminal-v1"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:open",
+            "target": "fleet",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": false,
+            "at": 1795179601000,
+            "expiresAt": null,
+            "result": null,
+            "error": {
+              "code": "FORBIDDEN",
+              "message": "Synthetic fixture: FORBIDDEN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-local-editor",
+      "polarity": "positive",
+      "covers": [
+        "T11",
+        "T12",
+        "T42"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "paired": false,
+        "receiptViewAuthorized": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "runInTerminal",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "command": "echo fixture"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "runInTerminal",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": "terminal"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "seat-slack-link-paired",
+      "polarity": "positive",
+      "covers": [
+        "T12"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:link",
+            "conversation": "C1",
+            "ts": "1.2"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "slack:link",
+            "url": "https://slack.com/fixture"
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "classification": "Q"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "seat-slack-link-local",
+      "polarity": "positive",
+      "covers": [
+        "T12"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:link",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "conversation": "C1",
+            "ts": "1.2"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:link",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "system",
+                "destination": "https://slack.com/fixture"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {
+          "classification": "M"
+        },
+        "close": null
+      }
+    }
+  ]
+}

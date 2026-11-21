@@ -114,6 +114,7 @@ class SlackRoom {
     }, live, {
       enabled: !!settings.enabled,
       hasTokens: !!settings.hasTokens,
+      authMode: settings.authMode || null,
       vipList: (settings.vipList || []).slice(),
       mutedList: (settings.mutedList || []).slice(),
       clock: settings.clock === '12h' ? '12h' : '24h',
@@ -184,7 +185,8 @@ class SlackRoom {
       case 'slack:reply': {
         const reply = String(message.text || '');
         const conversation = text(message.conversation, 40);
-        const answer = (ok, reason) => post({ type: 'slack:sent', id: message.id, ok, reason });
+        const answer = (ok, reason, result) => post(Object.assign(
+          { type: 'slack:sent', id: message.id, ok, reason }, result && result.ts ? { ts: result.ts } : {}));
         if (!this.mayAct(seat)) {
           this.note(seat, 'slack reply', false, conversation);
           return void answer(false, 'This phone can only watch. Let it send prompts to reply.');
@@ -192,19 +194,20 @@ class SlackRoom {
         if (!service) return void answer(false, 'Slack is not connected.');
         if (!conversation || !reply.trim()) return void answer(false, 'There is nothing to send.');
         if (reply.length > 12000) return void answer(false, 'That is longer than Slack allows.');
+        let result;
         try {
-          await service.reply(conversation, reply, text(message.thread, 40) || undefined);
+          result = await service.reply(conversation, reply, text(message.thread, 40) || undefined);
         } catch (err) {
           this.note(seat, 'slack reply', false, conversation);
           return void answer(false, sayError(err));
         }
         this.note(seat, 'slack reply', true, conversation);
-        answer(true);
+        answer(true, undefined, result);
         // Everybody looking at that conversation sees the reply land.
         for (const other of this.clients.values()) {
           if (other.open === conversation) this.sendThread(other).catch(() => {});
         }
-        return;
+        return result;
       }
 
       // A nudge, not an act on Slack: any seat may ask for a fresher sidebar,

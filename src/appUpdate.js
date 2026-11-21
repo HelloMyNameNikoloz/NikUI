@@ -25,23 +25,27 @@ const ENTRY = 'assets/public/version.json';
 
 class AppUpdate {
   constructor(opts) {
+    this.fs = opts.fs || fs;
+    this.now = opts.now || Date.now;
+    this.timers = Object.assign({ setInterval, clearInterval }, opts.timers);
     this.file = opts.file;
     this.log = opts.log || (() => {});
     this.cached = null;
     this.tokens = new Map();
     this.watching = null;
+    this.watchers = new Set();
   }
 
   /** What the APK on disk is, or null when there is none to offer. */
   current() {
     let stat;
-    try { stat = fs.statSync(this.file); } catch (_) { return null; }
+    try { stat = this.fs.statSync(this.file); } catch (_) { return null; }
     if (!stat.isFile()) return null;
     const key = stat.size + ':' + stat.mtimeMs;
     if (this.cached && this.cached.key === key) return this.cached.info;
     let info = null;
     try {
-      const body = fs.readFileSync(this.file);
+      const body = this.fs.readFileSync(this.file);
       const inside = readZipEntry(body, ENTRY);
       const version = inside ? JSON.parse(inside.toString('utf8')) : null;
       if (version && typeof version.build === 'string') {
@@ -68,7 +72,7 @@ class AppUpdate {
     if (!info) return null;
     this.sweep();
     const token = crypto.randomBytes(24).toString('base64url');
-    this.tokens.set(token, { device: deviceId || null, sha256: info.sha256, until: Date.now() + TOKEN_MS });
+    this.tokens.set(token, { device: deviceId || null, sha256: info.sha256, until: this.now() + TOKEN_MS });
     return token;
   }
 
@@ -87,32 +91,39 @@ class AppUpdate {
   }
 
   sweep() {
-    const now = Date.now();
+    const now = this.now();
     for (const [token, held] of this.tokens) if (held.until < now) this.tokens.delete(token);
   }
 
   /** Told when the APK changes, so a phone that is looking hears at once. */
   watch(changed) {
-    if (this.watching) return;
+    this.watchers.add(changed);
+    const unwatch = () => {
+      this.watchers.delete(changed);
+      if (!this.watchers.size) this.stop();
+    };
+    if (this.watching) return unwatch;
     let last = this.stamp();
-    this.watching = setInterval(() => {
+    this.watching = this.timers.setInterval(() => {
       const now = this.stamp();
       if (now === last) return;
       last = now;
       // A build still being written changes size twice in a row; the
       // fingerprint is read when somebody asks, so this only says "ask".
-      changed();
+      for (const fn of this.watchers) fn();
     }, 4000);
     if (this.watching.unref) this.watching.unref();
+    return unwatch;
   }
 
   stamp() {
-    try { const s = fs.statSync(this.file); return s.size + ':' + s.mtimeMs; } catch (_) { return null; }
+    try { const s = this.fs.statSync(this.file); return s.size + ':' + s.mtimeMs; } catch (_) { return null; }
   }
 
   stop() {
-    if (this.watching) clearInterval(this.watching);
+    if (this.watching) this.timers.clearInterval(this.watching);
     this.watching = null;
+    this.watchers.clear();
   }
 }
 

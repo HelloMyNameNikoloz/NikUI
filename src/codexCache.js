@@ -42,10 +42,14 @@ function lean(turn) {
 }
 
 class CodexCache {
-  constructor({ dir, maxAgeMs, shrink, writeDelayMs } = {}) {
+  constructor({ dir, maxAgeMs, shrink, writeDelayMs, home, cleanupDir } = {}) {
     // Without a home of its own (tests, a window with no storage) the turns
     // are not kept, but pictures are still made small somewhere temporary.
     this.dir = dir || null;
+    this.home = home;
+    // Only an adapter's private temporary cache opts into removal. Persistent
+    // account caches and provider-owned image sources are never removed here.
+    this.cleanupDir = cleanupDir || null;
     this.thumbDir = path.join(dir || path.join(os.tmpdir(), 'nikui-codex'), 'pictures');
     this.threadDir = dir ? path.join(dir, 'threads') : null;
     this.maxAgeMs = maxAgeMs || WEEK_MS;
@@ -55,6 +59,7 @@ class CodexCache {
     this._waiting = [];
     this._making = new Map();
     this._writes = new Map();
+    this._disposed = false;
   }
 
   _threadFile(threadId) {
@@ -81,6 +86,7 @@ class CodexCache {
    * what is new.
    */
   write(threadId, { turns, more, savedAt }) {
+    if (this._disposed) return;
     const file = this._threadFile(threadId);
     if (!file) return;
     // Written once things settle: a running turn rereads its history often.
@@ -113,8 +119,23 @@ class CodexCache {
     }
   }
 
+  dispose() {
+    if (this._disposed) return;
+    this._disposed = true;
+    for (const timer of this._writes.values()) clearTimeout(timer);
+    this._writes.clear();
+    this._cleanup();
+  }
+
+  _cleanup() {
+    if (this.cleanupDir) {
+      try { fs.rmSync(this.cleanupDir, { recursive: true, force: true }); } catch (_) { /* temporary derived data */ }
+    }
+  }
+
   /** A picture as the panel shows it, {mediaType, data, name}, made small if it is big; null if unreadable. */
   async picture(src) {
+    if (this._disposed) return null;
     const ref = String(src || '').trim();
     const inline = /^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(ref);
     if (inline) {
@@ -132,13 +153,13 @@ class CodexCache {
     if (/^file:\/\//i.test(file)) {
       try { file = decodeURIComponent(new URL(file).pathname); } catch (_) { return null; }
     }
-    if (file.startsWith('~/')) file = path.join(os.homedir(), file.slice(2));
+    if (file.startsWith('~/')) file = path.join(this.home || os.homedir(), file.slice(2));
     if (!path.isAbsolute(file)) return null;
     const type = IMAGE_TYPES[path.extname(file).slice(1).toLowerCase()];
     if (!type) return null;
     let stat;
     try { stat = await fs.promises.stat(file); } catch (_) { return null; }
-    if (!stat.isFile()) return null;
+    if (this._disposed || !stat.isFile()) return null;
     const name = path.basename(file);
     try {
       if (stat.size <= SMALL_BYTES || type === 'image/gif') {
@@ -162,7 +183,10 @@ class CodexCache {
   // The same picture asked for twice at once is made once.
   _once(key, make) {
     if (!this._making.has(key)) {
-      this._making.set(key, Promise.resolve().then(make).catch(() => {}).finally(() => this._making.delete(key)));
+      this._making.set(key, Promise.resolve().then(make).catch(() => {}).finally(() => {
+        this._making.delete(key);
+        if (this._disposed) this._cleanup();
+      }));
     }
     return this._making.get(key);
   }
@@ -171,6 +195,7 @@ class CodexCache {
   _limit(job) {
     return new Promise((resolve, reject) => {
       const run = () => {
+        if (this._disposed) { resolve(); return; }
         this._running += 1;
         Promise.resolve().then(job).then(resolve, reject).finally(() => {
           this._running -= 1;

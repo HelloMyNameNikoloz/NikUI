@@ -65,7 +65,7 @@ module.exports = async function () {
   suite('the panel offers your snippets as commands');
 
   stub.__config.promptSnippets = { table: 'TABLE INSTRUCTION', quiet: '   ' };
-  const { readConfig } = require('../src/manager.js');
+  const { readConfig } = require('../src/editorHost.js');
   const cfg = readConfig();
   checkEqual('a configured snippet becomes one of ours', panel.hub.ownCommands(cfg).sort(), ['commands', 'settings', 'slack', 'status', 'table']);
   check('an emptied one is not offered', panel.hub.ownCommands(cfg).indexOf('quiet') < 0);

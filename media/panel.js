@@ -49,6 +49,11 @@
   // included), and where the reader had scrolled to. The conversation itself comes back from the host.
   const saved = vscode.getState() || {};
   let sessionId = saved.sessionId || null;
+  let draftVersion = saved.draftVersion || 0;
+  let retryOf = saved.retryOf || null;
+  const intents = new Map();
+  let protocol = null;
+  const supports = (cap) => !protocol || protocol.proto !== 2 || protocol.caps.includes(cap);
   let rememberTimer = null;
 
   function saveNow() {
@@ -56,6 +61,8 @@
     vscode.setState({
       sessionId: sessionId,
       draft: input.value,
+      draftVersion: draftVersion,
+      retryOf: retryOf,
       attachments: attachments.map((a) => ({ name: a.name, mediaType: a.mediaType, data: a.data })),
       scrollTop: scroller.scrollTop,
       follow: follow
@@ -97,6 +104,59 @@
   let escArmedUntil = 0;
   let escTimer = null;
   let attachments = [];
+  const intentBox = document.createElement('div');
+  intentBox.className = 'intent-state'; intentBox.setAttribute('role', 'status'); intentBox.hidden = true;
+  if (attachBar.parentNode) attachBar.parentNode.insertBefore(intentBox, attachBar);
+  function composition() { return { draftVersion, draft: input.value,
+    attachments: attachments.map((a) => ({ name: a.name, mediaType: a.mediaType, data: a.data })) }; }
+  function paintIntent(record) {
+    if (!record || record.payload.type !== 'send') return;
+    intents.set(record.mid, record);
+    const state = record.quarantined ? 'quarantined' : record.operation?.state || record.state;
+    const text = state === 'unknown' ? 'The earlier send may have completed. Review before sending again.'
+      : state === 'quarantined' ? 'The earlier send belongs to another connection scope. It has been kept for review.'
+        : state === 'pending' ? 'Waiting for the engine’s receipt. Your draft and images are kept.'
+          : state === 'rejected' ? 'The earlier action was refused. Your draft and images are kept.'
+            : state === 'accepted' || state === 'queued' ? 'Accepted by the engine · ' + state : 'Send · ' + state;
+    intentBox.replaceChildren(); intentBox.hidden = false;
+    if (intents.size > 1) {
+      const picker = document.createElement('select'); picker.setAttribute('aria-label', 'Retained sends');
+      for (const r of intents.values()) {
+        const option = document.createElement('option'); option.value = r.mid;
+        option.textContent = (r.operation?.state || r.state) + ' · ' + String(r.payload.sent || r.payload.text || 'Image').slice(0, 60);
+        option.selected = r.mid === record.mid; picker.appendChild(option);
+      }
+      picker.addEventListener('change', () => paintIntent(intents.get(picker.value))); intentBox.appendChild(picker);
+    }
+    const label = document.createElement('span'); label.textContent = text; intentBox.appendChild(label);
+    const review = document.createElement('button'); review.type = 'button'; review.textContent = 'Review';
+    review.addEventListener('click', () => {
+      // Review is explicit. It never overwrites a newer draft or sends it.
+      if (input.value || attachments.length) {
+        const preview = document.createElement('textarea'); preview.readOnly = true;
+        preview.setAttribute('aria-label', 'Earlier retained draft');
+        preview.value = (record.composition?.draft ?? record.payload.sent ?? record.payload.text) +
+          ((record.payload.attachments || []).length ? '\n[' + record.payload.attachments.length + ' retained images]' : '');
+        intentBox.appendChild(preview); return;
+      }
+      input.value = record.composition?.draft ?? record.payload.sent ?? record.payload.text;
+      retryOf = record.state === 'unknown' || record.operation?.state === 'unknown' || record.quarantined ? record.mid : null;
+      attachments = (record.payload.attachments || []).map((a) => ({ ...a, id: 'a' + (attachSeq++) }));
+      draftVersion++; paintAttachments(); autoGrow(); saveNow(); input.focus();
+    });
+    intentBox.appendChild(review);
+    const check = document.createElement('button'); check.type = 'button'; check.textContent = 'Check status';
+    check.addEventListener('click', () => vscode.application?.reconcile()); intentBox.appendChild(check);
+    if (['completed', 'rejected'].includes(record.state) || ['completed', 'rejected'].includes(record.operation?.state)) {
+      const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.textContent = 'Dismiss';
+      dismiss.addEventListener('click', async () => { if (await vscode.application?.dismiss(record.mid)) { intents.delete(record.mid); intentBox.hidden = true; } });
+      intentBox.appendChild(dismiss);
+    }
+    if (vscode.application?.acceptsComposition(record, composition())) {
+      input.value = ''; attachments = []; draftVersion++; steering = false; retryOf = null;
+      document.body.classList.remove('steering'); paintAttachments(); paintSendAction(); autoGrow(); saveNow();
+    }
+  }
   let commands = [];
   // What the palette is offering: media/palette.js works out the list and what
   // picking one writes, so this file only draws it and moves the highlight.
@@ -598,7 +658,8 @@
       warning.hidden = !meta.permissionMode || ['default', 'bypassPermissions', 'plan'].includes(meta.permissionMode);
       warning.textContent = PERMISSION_WORD[meta.permissionMode] || meta.permissionMode || '';
     }
-    if (prPane) prPane.setMeta(meta);
+    if (prPane && supports('pr-v1')) prPane.setMeta(meta);
+    else if (!supports('pr-v1')) { $('pr-chip').hidden = true; $('pr-pane').hidden = true; }
     input.placeholder = steering ? 'Steer the current turn…' : codex ? 'Message Codex…' : 'Message Claude…';
     paintCodexBars();
     paintConversationControls();
@@ -1191,6 +1252,7 @@
     const chip = e.target.closest && e.target.closest('.reply-chip');
     if (!chip) return;
     input.value = chip.dataset.reply;
+    draftVersion++;
     const box = $('replies');
     if (box) box.remove();
     send();
@@ -1379,6 +1441,7 @@
           mediaType: file.type,
           data: result.slice(comma + 1)
         });
+        draftVersion++;
         paintAttachments();
       };
       reader.readAsDataURL(file);
@@ -1398,6 +1461,7 @@
     const drop = e.target.closest('[data-drop]');
     if (drop) {
       attachments = attachments.filter((a) => a.id !== drop.dataset.drop);
+      draftVersion++;
       paintAttachments();
       return;
     }
@@ -1515,6 +1579,7 @@
     const taken = window.palette.apply(slashPlan, slashIndex, slashSources());
     if (!taken) return null;
     input.value = taken.value;
+    draftVersion++;
     autoGrow();
     // A command that takes values shows them straight away; anything else
     // closes, leaving a trailing space so another "/" opens the palette again.
@@ -1559,6 +1624,7 @@
       else if (which === 'commands') askForCommands();
       // The app has a Slack page of its own; the editor opens a tab beside.
       else if (which === 'slack') {
+        if (!supports('slack-v1')) { input.value = text; intentBox.hidden = false; intentBox.textContent = 'Slack is unavailable on this connection.'; autoGrow(); return; }
         if (window.NikApp && window.NikApp.go) window.NikApp.go('slack.html');
         else vscode.postMessage({ type: 'slack' });
       }
@@ -1568,13 +1634,20 @@
     // A snippet adds a standing instruction to what you typed. The panel keeps
     // showing your words; the model gets yours plus the instruction.
     const shaped = window.snippets.expand(text, snippetText);
-    vscode.postMessage({
+    const held = composition();
+    const previous = [...intents.values()].find((r) => r.composition && JSON.stringify(r.composition) === JSON.stringify(held) &&
+      ['pending', 'unknown', 'accepted'].includes(r.state));
+    if (previous?.state === 'pending' || previous?.state === 'accepted' && previous.operation?.state !== 'unknown') { vscode.application?.reconcile(); return; }
+    const pending = vscode.postMessage({
       type: 'send',
       text: shaped.text,
       sent: shaped.sent,
       snippets: shaped.used,
-      attachments: attachments.map((a) => ({ name: a.name, mediaType: a.mediaType, data: a.data }))
-    });
+      attachments: held.attachments,
+      ...(retryOf || previous?.state === 'unknown' || previous?.operation?.state === 'unknown' ? { retryOf: retryOf || previous.mid } : {})
+    }, held);
+    if (pending === false) return;
+    if (pending?.pending) { saveNow(); return; }
     prompts.remember(text);
     prompts.reset();
     input.value = '';
@@ -1594,6 +1667,8 @@
 
   // Typing over a recalled prompt makes it the user's own text again.
   input.addEventListener('input', function () {
+    draftVersion++;
+    retryOf = null;
     if (prompts.browsing() && input.value !== prompts.current()) prompts.reset();
     autoGrow();
     refreshSlash();
@@ -1603,6 +1678,7 @@
 
   function recall(text) {
     input.value = text;
+    draftVersion++;
     slashBox.hidden = true; // a recalled "/command" must not steal the arrows
     autoGrow();
     const end = input.value.length;
@@ -2343,6 +2419,7 @@
       case 'draft':
         if (msg.text) {
           input.value = input.value ? input.value + '\n' + msg.text : msg.text;
+          draftVersion++;
           autoGrow();
           input.focus();
         }
@@ -2352,7 +2429,25 @@
       // over a socket the welcome says what this device was granted, and
       // @device says so again whenever that changes underneath it.
       case '@welcome':
+        setControl(msg.proto && !msg.negotiated ? { control: false } : msg.device); break;
       case '@device': setControl(msg.device); break;
+      case 'protocol':
+        protocol = msg;
+        setControl(msg.ready ? msg.seat : { control: false });
+        if (msg.proto === 2) {
+          if ($('pr-chip')) $('pr-chip').hidden = !msg.caps.includes('pr-v1');
+          document.body.classList.toggle('no-editor-route', !msg.caps.includes('editor-route-v1'));
+        }
+        break;
+      case 'bridge:offline': setControl({ control: false }); intentBox.hidden = false; intentBox.textContent = 'Isolated daemon unavailable. Reopen this view to reconnect.'; break;
+      case 'intent': paintIntent(msg.record); break;
+      case 'intent:error': intentBox.hidden = false; intentBox.textContent = msg.message; break;
+      case '@navigate':
+        if (msg.intentMid && !input.value && !attachments.length && msg.session) {
+          if (window.NIKUI_DEV_BRIDGE) vscode.postMessage({ type: 'bridge:open', session: msg.session });
+          else window.location.assign((window.NIKUI_REMOTE?.conversation || '/s/') + encodeURIComponent(msg.session));
+        }
+        break;
       case '@denied': setControl({ control: false }); break;
       case '@refused': flashRefusal(msg); commandsRefused(msg); break;
 
@@ -2367,6 +2462,8 @@
         // place underneath the prompt that came back out of the queue.
         const draft = input.value.trim();
         input.value = draft ? msg.text + '\n\n' + draft : msg.text;
+        for (const a of msg.attachments || []) attachments.push({ ...a, id: 'a' + (attachSeq++) });
+        draftVersion++; paintAttachments();
         autoGrow();
         remember();
         input.focus();
@@ -2415,6 +2512,7 @@
     }
   });
 
+  if (vscode.application && !vscode.application.ready) setControl({ control: false });
   vscode.postMessage({ type: 'ready', hidden: !!document.hidden });
   if (!IN_APP) input.focus();
 })();

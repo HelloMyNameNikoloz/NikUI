@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const https = require('https');
 const http = require('http');
+const { validatePair } = require('./identity');
 
 /**
  * Web Push, by hand, because the alternative is a dependency tree in something
@@ -32,12 +33,25 @@ const TOKEN_LIFE_MS = 12 * 60 * 60 * 1000; // twelve hours; the spec's ceiling i
 const DEFAULT_TTL = 12 * 60 * 60;          // how long a push service should hold it
 
 /** This window's sending identity, made once and kept. */
-function loadVapid(store) {
-  const saved = store && store.get ? store.get(VAPID, null) : null;
-  if (saved && saved.publicKey && saved.privateKey) {
-    try { return build(fromBase64(saved.publicKey), fromBase64(saved.privateKey)); }
-    catch (_) { /* unreadable: make another rather than refusing to notify */ }
+function loadVapid(store, { required = false, applicationServerKey } = {}) {
+  let saved;
+  try { saved = store && store.get ? store.get(VAPID, null) : null; }
+  catch (err) {
+    if (required) throw new Error('Selected VAPID identity unavailable: store inaccessible');
+    throw err;
   }
+  if (saved && saved.publicKey && saved.privateKey) {
+    try {
+      const publicDer = fromBase64(saved.publicKey), privateDer = fromBase64(saved.privateKey);
+      if (required) validatePair(publicDer, privateDer);
+      const vapid = build(publicDer, privateDer);
+      if (required && applicationServerKey && vapid.applicationServerKey !== applicationServerKey) throw new Error('pin mismatch');
+      return vapid;
+    } catch (_) {
+      if (required) throw new Error('Selected VAPID identity unavailable: corrupt key or pin mismatch');
+    }
+  }
+  if (required) throw new Error('Selected VAPID identity unavailable: missing key');
   const pair = crypto.generateKeyPairSync('ec', {
     namedCurve: 'prime256v1',
     publicKeyEncoding: { type: 'spki', format: 'der' },

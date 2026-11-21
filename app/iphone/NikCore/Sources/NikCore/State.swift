@@ -44,8 +44,14 @@ public struct Draft: Sendable, Codable, Equatable {
     public var attachments: [Attachment]
     public var delivery: DeliveryState
     public var updatedAt: Date
-    public init(text: String = "", attachments: [Attachment] = [], delivery: DeliveryState = .draft, updatedAt: Date = Date()) {
+    public var answerTo: QuestionRef?
+    public var sent: String?
+    public var snippets: [String]?
+    public var compositionID: String?
+    public init(text: String = "", attachments: [Attachment] = [], delivery: DeliveryState = .draft, updatedAt: Date = Date(), answerTo: QuestionRef? = nil, sent: String? = nil, snippets: [String]? = nil) {
         self.text = text; self.attachments = attachments; self.delivery = delivery; self.updatedAt = updatedAt
+        self.answerTo = answerTo; self.sent = sent; self.snippets = snippets
+        compositionID = V2Wire.randomID()
     }
 }
 public struct ReadingState: Sendable, Equatable {
@@ -82,6 +88,7 @@ public struct PRFeatureState: Sendable, Equatable {
     public var tabsByURL: [String: String] = [:]
     public var pending: PendingOperation?
     public var tab = "conversation"
+    public var draftRevision = UUID().uuidString
     public init() {}
 }
 public struct ConversationState: Sendable, Equatable, Identifiable {
@@ -90,6 +97,12 @@ public struct ConversationState: Sendable, Equatable, Identifiable {
     public var items: [TranscriptItem] = []
     public var meta = ConversationMeta()
     public var status: ConversationStatus = .idle
+    public var run: RunRef?
+    public var controlSnapshotFresh = false
+    public var activeQuestion: QuestionRef? {
+        guard status == .waiting else { return nil }
+        return items.last(where: { $0.answerTo?.run == run && $0.answerTo != nil && $0.resolved == nil })?.answerTo
+    }
     public var stats = Stats()
     public var statsReceivedAt: Date?
     public var configuration = RenderConfiguration()
@@ -117,6 +130,7 @@ public struct TerminalState: Sendable, Equatable {
     public var drafts: [String: String] = [:]
     public var error: String?
     public var pending: PendingOperation?
+    public var freshControlIDs: Set<String> = []
     public init() {}
     public var selected: TerminalDescriptor? { terminals.first { $0.id == selectedID } }
     public var runs: [TerminalRun] { selectedID.flatMap { runsByTerminal[$0] } ?? [] }

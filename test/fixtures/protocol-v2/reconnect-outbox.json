@@ -1,0 +1,1248 @@
+{
+  "fixtureVersion": 1,
+  "category": "reconnect-outbox",
+  "vectors": [
+    {
+      "id": "outbox-same-scope-missing",
+      "polarity": "positive",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "now": 1795179602000,
+        "storeTrustworthy": true
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "persist",
+            "record": {
+              "hostFingerprint": "synthetic-pin",
+              "engineId": "ae6a9e02284843bb9868f91637382219",
+              "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+              "principal": "device:phone-1",
+              "target": "session:instance-7",
+              "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+              "issuedAt": 1795179601000,
+              "payload": {
+                "type": "send",
+                "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+                "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+                "issuedAt": 1795179601000,
+                "text": "draft ქართული 👋",
+                "attachments": [
+                  {
+                    "name": "synthetic.png",
+                    "mediaType": "image/png",
+                    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+                  }
+                ],
+                "snippets": [
+                  "first",
+                  "second"
+                ]
+              },
+              "state": "pending"
+            }
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "boot": "22222222222222222222222222222222"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "receipt:get",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae"
+          }
+        },
+        {
+          "direction": "server",
+          "message": {
+            "type": "receipt:missing",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "reason": "not_found"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": true,
+          "sameEnvelope": true,
+          "outstandingResends": 1,
+          "reseal": true,
+          "replayCiphertext": false,
+          "retained": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-no-replay-scope",
+      "polarity": "negative",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "scope": "22222222222222222222222222222222"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "outbox": "quarantined"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-no-replay-engine",
+      "polarity": "negative",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "engineId": "22222222222222222222222222222222"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "outbox": "quarantined"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-no-replay-host",
+      "polarity": "negative",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "hostFingerprint": "different-pin"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "outbox": "quarantined"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-no-replay-downgrade",
+      "polarity": "negative",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "proto": 1
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "outbox": "quarantined"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-no-replay-expired",
+      "polarity": "negative",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "now": 1795266001001
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "outbox": "quarantined"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-no-replay-unknown",
+      "polarity": "negative",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "receiptOutcome": "unknown"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "outbox": "quarantined"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-no-replay-pending",
+      "polarity": "negative",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "receiptOutcome": "pending"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "outbox": "unresolved"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-no-replay-query-error",
+      "polarity": "negative",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "queryCode": "STORAGE_UNAVAILABLE"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "outbox": "unresolved"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-no-replay-view-revoked",
+      "polarity": "negative",
+      "covers": [
+        "T35",
+        "T36",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect",
+            "queryCode": "FORBIDDEN"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "outbox": "unresolved"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-storage-failure",
+      "polarity": "negative",
+      "covers": [
+        "T37"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "persistFailure": "IO_ERROR"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "composerPreserved": true,
+          "claimAccepted": false
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-count-capacity",
+      "polarity": "negative",
+      "covers": [
+        "T37"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "persistFailure": "128-intents"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "composerPreserved": true,
+          "claimAccepted": false
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-byte-capacity",
+      "polarity": "negative",
+      "covers": [
+        "T37"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "persistFailure": "32MiB"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "composerPreserved": true,
+          "claimAccepted": false
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-late-ack-edited-draft",
+      "polarity": "positive",
+      "covers": [
+        "T37"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "edit-draft",
+            "text": "new draft"
+          }
+        },
+        {
+          "direction": "server",
+          "message": {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "draft": "new draft",
+          "retained": true,
+          "consumeOriginalResultOnce": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-accepted-operation-query",
+      "polarity": "positive",
+      "covers": [
+        "T34",
+        "T38"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "draft ქართული 👋",
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ],
+            "snippets": [
+              "first",
+              "second"
+            ]
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "server",
+          "message": {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "operation:get",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "unknown",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": null,
+              "ownership": "borrowed",
+              "writer": "external"
+            },
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            },
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "acceptedReceiptUnchanged": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "outbox-controls-wait-for-snapshot",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T35",
+        "T36"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "record": {
+          "hostFingerprint": "synthetic-pin",
+          "engineId": "ae6a9e02284843bb9868f91637382219",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "principal": "device:phone-1",
+          "target": "session:instance-7",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "issuedAt": 1795179601000,
+          "payload": {
+            "type": "interrupt",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          },
+          "state": "pending"
+        }
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "waitForSnapshot": true
+        },
+        "close": null
+      }
+    }
+  ]
+}

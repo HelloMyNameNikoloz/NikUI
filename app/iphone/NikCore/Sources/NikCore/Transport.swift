@@ -50,11 +50,14 @@ public struct TransportConfiguration: Sendable, Equatable {
     public var maximumReceiveBytes = 64 * 1024 * 1024
     public var maximumSendBytes = 24 * 1024 * 1024
     public var handshakeTimeout: Duration = .seconds(10)
+    public var negotiationTimeout: Duration = .seconds(10)
+    public var clientID = V2Wire.randomID()
     public init() {}
 }
 public enum ConnectionUpdate: Sendable, Equatable {
     case state(SocketRole, ConnectionState), welcome(SocketRole, Seat, version: String?)
     case event(SocketRole, ServerEvent), failure(SocketRole, CoreFailure)
+    case negotiated(SocketRole, ProtocolSession), intent(SocketRole, IntentChange)
 }
 public struct ConnectionExit: Sendable {
     public var failure: CoreFailure?
@@ -86,6 +89,12 @@ public actor SocketConnection {
     private let clock: any Clock
     private let configuration: TransportConfiguration
     private let replayCache: NonceReplayCache
+    private let outbox: PendingIntentRepository
+    private var context: IntentContext?
+    private var snapshot = ControlSnapshot()
+    private var updateSink: (@Sendable (ConnectionUpdate) async -> Void)?
+    private var receiptPollTask: Task<Void, Never>?
+    private var legacyQuarantineTask: Task<Void, Never>?
     private var transport: (any SocketTransport)?
     private var box: Box?
     private var generation: UInt64 = 0
@@ -97,8 +106,9 @@ public actor SocketConnection {
         let continuation: CheckedContinuation<Void, any Error>
     }
     private var writes: [Write] = []
-    public init(factory: any SocketFactory = URLSessionSocketFactory(), clock: any Clock = SystemClock(), configuration: TransportConfiguration = TransportConfiguration(), replayCache: NonceReplayCache = NonceReplayCache()) {
+    public init(factory: any SocketFactory = URLSessionSocketFactory(), clock: any Clock = SystemClock(), configuration: TransportConfiguration = TransportConfiguration(), replayCache: NonceReplayCache = NonceReplayCache(), outbox: PendingIntentRepository = PendingIntentRepository(store: MemoryKeyValueStore())) {
         self.factory = factory; self.clock = clock; self.configuration = configuration; self.replayCache = replayCache
+        self.outbox = outbox
     }
     public static func url(base: URL, role: SocketRole) throws -> URL {
         let validated = try PairingInvitation.address(base.absoluteString)
@@ -109,6 +119,7 @@ public actor SocketConnection {
     }
     public func run(pairing: PairedConnection, key: any SigningKeyProvider, role: SocketRole, sink: @escaping @Sendable (ConnectionUpdate) async -> Void) async -> ConnectionExit {
         generation &+= 1; let attempt = generation
+        updateSink = sink; snapshot = ControlSnapshot(); context = nil
         var wasLive = false
         do {
             await sink(.state(role, .connecting))
@@ -136,15 +147,59 @@ public actor SocketConnection {
                 return (proof, welcome, channel)
             }
             guard generation == attempt, !Task.isCancelled else { throw CancellationError() }
-            let seat = try proof.verifyWelcome(welcome)
+            var seat = try proof.verifyWelcome(welcome)
             guard seat.id == pairing.deviceID else { throw CoreFailure(.crypto, "The laptop welcomed a different device.") }
-            box = channel; live = true
-            // ready is always the first application message, before exposing live state to the UI.
-            try await send(.ready(hidden: false))
+            var negotiatedChannel = channel
+            var session = ProtocolSession(receivedAt: clock.now())
+            if try ProtocolSession.advertised(welcome) {
+                let (selected, selectedChannel) = try await withDeadline(configuration.negotiationTimeout, clock: clock) { [configuration, negotiatedChannel] in
+                    var current = negotiatedChannel
+                    let hello = ProtocolSession.hello(clientID: configuration.clientID)
+                    try await socket.send(current.seal(hello.text).text)
+                    let response = try await socket.receive()
+                    guard response.utf8.count <= configuration.maximumReceiveBytes else { throw CoreFailure(.tooLarge, "The negotiation message is too large.") }
+                    let clear = try JSONValue.decode(Data(current.open(JSONValue.decode(Data(response.utf8))).utf8))
+                    if clear["type"].stringValue == "protocol:error" { throw CoreFailure(.unsupported, clear["message"].stringValue ?? "Application protocol negotiation failed.") }
+                    let selected = try ProtocolWelcome(validating: clear)
+                    let advertisedRange = try V2Wire.range(welcome["proto"])
+                    let advertisedCaps = try V2Wire.caps(welcome["caps"])
+                    let eligible = advertisedRange.contains(2) && ProtocolCapabilities.core.allSatisfy(advertisedCaps.contains) ? 2 : (advertisedRange.contains(1) ? 1 : 0)
+                    let intersection = Set(advertisedCaps).intersection(ProtocolCapabilities.supported)
+                    try V2Wire.require(selected.version.rawValue == eligible && (selected.version == .v1 || Set(selected.capabilities) == intersection), "selected protocol")
+                    return (selected, current)
+                }
+                guard selected.seat.id == pairing.deviceID else { throw CoreFailure(.crypto, "The negotiated seat is a different device.") }
+                seat = selected.seat; negotiatedChannel = selectedChannel; session = ProtocolSession(welcome: selected, receivedAt: clock.now())
+            }
+            guard generation == attempt, !Task.isCancelled else { throw CancellationError() }
+            let baseContext = IntentContext(pairing: pairing, role: role, session: session)
+            let intentContext = session.version == .v2 ? try await outbox.authorizedContext(baseContext) : baseContext
+            guard generation == attempt, !Task.isCancelled else { throw CancellationError() }
+            box = negotiatedChannel; live = true; context = intentContext
+            let recovery = session.version == .v2 ? try await outbox.recoveryQueries(context: intentContext, at: clock.now()) : (changes: [IntentChange](), queries: [JSONValue]())
+            guard generation == attempt, !Task.isCancelled else { throw CancellationError() }
+            for change in recovery.changes { await sink(.intent(role, change)) }
+            await sink(.negotiated(role, session))
+            // Legacy ready stays immediate. V2 ready is a durable, immutable view intent.
+            if session.version == .v2, role != .fleet, let ready = try await outbox.pendingDeclaration(.ready(hidden: false), context: intentContext) {
+                try await write(ready.plaintext)
+            } else { try await send(.ready(hidden: false)) }
             guard generation == attempt, !Task.isCancelled else { throw CancellationError() }
             wasLive = true
             await sink(.welcome(role, seat, version: welcome["version"].stringValue))
             await sink(.state(role, .live))
+            for query in recovery.queries { try await write(query.text) }
+            if session.version == .v2 {
+                receiptPollTask = Task { [weak self, clock] in
+                    while !Task.isCancelled {
+                        do { try await clock.sleep(for: .seconds(3)); try Task.checkCancellation(); try await self?.pollReceipts(attempt: attempt) }
+                        catch { return }
+                    }
+                }
+            } else {
+                // Protected v2 recovery must never delay legacy ready or gate v1 writes.
+                legacyQuarantineTask = Task { [weak self] in await self?.quarantineLegacy(context: intentContext, attempt: attempt) }
+            }
             while generation == attempt, !Task.isCancelled {
                 let text = try await socket.receive()
                 guard generation == attempt, !Task.isCancelled else { throw CancellationError() }
@@ -155,7 +210,24 @@ public actor SocketConnection {
                 if value["type"].stringValue?.hasPrefix("@") == true, ["@welcome", "@challenge", "@auth", "@box"].contains(value["type"].stringValue ?? "") {
                     throw CoreFailure(.protocolViolation, "Unexpected authentication message after welcome.")
                 }
-                await sink(.event(role, try ServerEvent.decode(value, role: role)))
+                if ["hello", "welcome", "protocol:error"].contains(value["type"].stringValue ?? "") { throw CoreFailure(.protocolViolation, "Unexpected repeated application negotiation.") }
+                let event = try ServerEvent.decode(value, role: role)
+                snapshot.observe(event)
+                if session.version == .v2 {
+                    if let change = try await outbox.apply(event, context: intentContext) { await sink(.intent(role, change)) }
+                    if case .initialized(let initValue) = event {
+                        for operation in initValue.operations {
+                            if let change = try await outbox.apply(.operation(operation), context: intentContext) { await sink(.intent(role, change)) }
+                        }
+                    }
+                    for intent in try await outbox.takeResends(context: intentContext, snapshot: snapshot, at: clock.now()) {
+                        try await write(intent.plaintext)
+                    }
+                    if case .ack(let ack) = event, ack.what == "send", ack.outcome == .applied, let mid = ack.mid {
+                        try await write(JSONValue.object(["type": .string("operation:get"), "scope": .string(ack.scope), "mid": .string(mid)]).text)
+                    }
+                }
+                await sink(.event(role, event))
             }
             throw CancellationError()
         } catch {
@@ -171,11 +243,44 @@ public actor SocketConnection {
             return ConnectionExit(failure: failure, wasLive: wasLive, retryable: retryable)
         }
     }
-    public func send(_ action: ClientAction) async throws {
+    @discardableResult public func send(_ action: ClientAction, metadata: IntentMetadata = IntentMetadata()) async throws -> PendingIntent? {
+        if let capability = action.optionalCapability, context?.session.supports(capability) == false { throw CoreFailure(.unsupported, "The laptop did not negotiate " + capability + ".") }
+        if let context, context.session.version == .v2, action.needsIntent(on: context.role) {
+            let attempt = generation
+            let intent = try await outbox.prepare(action, context: context, metadata: metadata, at: clock.now())
+            await updateSink?(.intent(context.role, IntentChange(intent: intent, consumesResult: false)))
+            guard attempt == generation, live else { throw CoreFailure(.offline, "The connection changed after the intent was saved.") }
+            try await write(intent.plaintext); return intent
+        }
+        try await write(action.json.text); return nil
+    }
+    /// Reattaching a subscription must not mint a replacement for an unresolved mutation.
+    func restore(_ action: ClientAction) async throws {
+        if let context, context.session.version == .v2, action.needsIntent(on: context.role), try await outbox.pendingDeclaration(action, context: context, includeUncertain: true) != nil { return }
+        try await send(action)
+    }
+    private func pollReceipts(attempt: UInt64) async throws {
+        guard generation == attempt, live, let context else { return }
+        let recovery = try await outbox.recoveryQueries(context: context, at: clock.now())
+        guard generation == attempt, live else { return }
+        for change in recovery.changes { await updateSink?(.intent(context.role, change)) }
+        for query in recovery.queries { try await write(query.text) }
+        for intent in try await outbox.takeResends(context: context, snapshot: snapshot, at: clock.now()) { try await write(intent.plaintext) }
+    }
+    private func quarantineLegacy(context: IntentContext, attempt: UInt64) async {
+        do {
+            let recovery = try await outbox.recoveryQueries(context: context, at: clock.now())
+            guard attempt == generation, live else { return }
+            for change in recovery.changes { await updateSink?(.intent(context.role, change)) }
+        } catch {
+            guard attempt == generation, live else { return }
+            await updateSink?(.failure(context.role, CoreFailure(.persistence, "The retained v2 intents could not be read or quarantined. Legacy delivery remains available.")))
+        }
+    }
+    private func write(_ text: String) async throws {
         guard live, transport != nil else { throw CoreFailure(.offline, "The laptop is not connected.") }
-        let data = try action.json.encoded()
-        guard data.count <= configuration.maximumSendBytes else { throw CoreFailure(.tooLarge, "The message and attachments exceed the laptop's wire limit.") }
-        let text = String(decoding: data, as: UTF8.self); let attempt = generation
+        guard text.utf8.count <= configuration.maximumSendBytes else { throw CoreFailure(.tooLarge, "The message and attachments exceed the laptop's wire limit.") }
+        let attempt = generation
         try await withCheckedThrowingContinuation { continuation in
             writes.append(Write(text: text, generation: attempt, continuation: continuation))
             if !writing { writing = true; Task { await drain() } }
@@ -201,10 +306,14 @@ public actor SocketConnection {
     }
     public func close() async {
         generation &+= 1; live = false; box = nil
+        receiptPollTask?.cancel(); receiptPollTask = nil
+        legacyQuarantineTask?.cancel(); legacyQuarantineTask = nil
         let old = transport; transport = nil
+        let oldContext = context; context = nil; snapshot = ControlSnapshot()
         let pending = writes; writes.removeAll()
         for write in pending { write.continuation.resume(throwing: CoreFailure(.offline, "The connection closed before the message was written.")) }
         await old?.close()
+        if let oldContext { await outbox.disconnected(target: oldContext.role.target) }
     }
 }
 
@@ -215,12 +324,13 @@ public enum ReconnectPolicy {
     }
 }
 
-/// Owns one fleet socket and at most one selected conversation socket. Mutations are never replayed.
+/// Owns independent fleet/conversation negotiation and restores queries on reconnect.
 public actor ConnectionManager {
     private let key: any SigningKeyProvider
     private let factory: any SocketFactory
     private let clock: any Clock
     private let configuration: TransportConfiguration
+    private let outbox: PendingIntentRepository
     private let sink: @Sendable (ConnectionUpdate) async -> Void
     private let replay = NonceReplayCache()
     private var pairing: PairedConnection?
@@ -235,8 +345,9 @@ public actor ConnectionManager {
     private var closingCount = 0
     private struct Slot { let connection: SocketConnection; let task: Task<Void, Never>; let epoch: UInt64 }
     private var slots: [SocketRole: Slot] = [:]
-    public init(key: any SigningKeyProvider, factory: any SocketFactory = URLSessionSocketFactory(), clock: any Clock = SystemClock(), configuration: TransportConfiguration = TransportConfiguration(), sink: @escaping @Sendable (ConnectionUpdate) async -> Void) {
+    public init(key: any SigningKeyProvider, factory: any SocketFactory = URLSessionSocketFactory(), clock: any Clock = SystemClock(), configuration: TransportConfiguration = TransportConfiguration(), outbox: PendingIntentRepository = PendingIntentRepository(store: MemoryKeyValueStore()), sink: @escaping @Sendable (ConnectionUpdate) async -> Void) {
         self.key = key; self.factory = factory; self.clock = clock; self.configuration = configuration; self.sink = sink
+        self.outbox = outbox
     }
     public func connect(_ pairing: PairedConnection) async {
         wantsConnection = true
@@ -247,7 +358,7 @@ public actor ConnectionManager {
     private func start(_ role: SocketRole) {
         guard wantsConnection, closingCount == 0, slots[role] == nil, pairing != nil, lifecycle == .foreground else { return }
         epoch &+= 1; let current = epoch
-        let connection = SocketConnection(factory: factory, clock: clock, configuration: configuration, replayCache: replay)
+        let connection = SocketConnection(factory: factory, clock: clock, configuration: configuration, replayCache: replay, outbox: outbox)
         let task = Task { await self.runLoop(role, connection: connection, epoch: current) }
         slots[role] = Slot(connection: connection, task: task, epoch: current)
     }
@@ -275,12 +386,13 @@ public actor ConnectionManager {
         await sink(update)
         if case .welcome = update { await resubscribe(role) }
     }
-    public func send(_ action: ClientAction, on role: SocketRole) async throws {
+    @discardableResult public func send(_ action: ClientAction, on role: SocketRole, metadata: IntentMetadata = IntentMetadata()) async throws -> PendingIntent? {
         guard lifecycle == .foreground, let slot = slots[role] else { throw CoreFailure(.offline, "The laptop is not connected.") }
-        try await slot.connection.send(action)
+        let intent = try await slot.connection.send(action, metadata: metadata)
         if case .terminalAttach(let id) = action { terminalID = id }
         if case .slackOpen(let conversation, let thread) = action { slackSelection = SlackThreadID(conversation: conversation, thread: thread) }
         if case .appleToken(let token) = action { appleToken = token }
+        return intent
     }
     /// Registration is idempotent metadata; retain it before welcome and resend after each authenticated reconnect.
     public func rememberAppleToken(_ token: String) { appleToken = token }
@@ -299,7 +411,10 @@ public actor ConnectionManager {
             if visibility.commands { actions += [.commandsOpen(true), .commands] }
             if visibility.pr { actions.append(.prWatch(true)) }
         }
-        for action in actions { do { try await send(action, on: role) } catch { /* A lost subscription will restore after the next welcome. */ } }
+        for action in actions {
+            do { if let slot = slots[role] { try await slot.connection.restore(action) } }
+            catch { /* A lost subscription will restore after the next welcome. */ }
+        }
     }
     public func selectConversation(_ id: String?) async {
         guard selected != id else { return }
@@ -312,10 +427,10 @@ public actor ConnectionManager {
         let old = visibility; visibility = value
         if let selected {
             let role = SocketRole.conversation(selected)
-            if old.report != value.report { try? await send(.statusOpen(value.report), on: role) }
-            if old.settings != value.settings { try? await send(.settingsOpen(value.settings), on: role) }
-            if old.commands != value.commands { try? await send(.commandsOpen(value.commands), on: role) }
-            if old.pr != value.pr { try? await send(.prWatch(value.pr), on: role) }
+            if old.report != value.report { _ = try? await send(.statusOpen(value.report), on: role) }
+            if old.settings != value.settings { _ = try? await send(.settingsOpen(value.settings), on: role) }
+            if old.commands != value.commands { _ = try? await send(.commandsOpen(value.commands), on: role) }
+            if old.pr != value.pr { _ = try? await send(.prWatch(value.pr), on: role) }
         }
         for role in Array(slots.keys) { await resubscribe(role) }
     }

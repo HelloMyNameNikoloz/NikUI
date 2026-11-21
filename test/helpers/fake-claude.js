@@ -18,7 +18,7 @@ function answer(text) {
   busy = true;
   turn += 1;
   const id = 'msg_' + turn;
-  out({ type: 'system', subtype: 'init', session_id: 'fake-session', model: 'fake', tools: [], slash_commands: [] });
+  out({ type: 'system', subtype: 'init', session_id: process.env.FAKE_SESSION_ID || 'fake-session', model: 'fake', tools: [], slash_commands: [] });
   const go = () => {
     out({ type: 'stream_event', event: { type: 'message_start', message: { id } } });
     out({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } });

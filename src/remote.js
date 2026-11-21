@@ -1,12 +1,12 @@
 'use strict';
 
 const http = require('http');
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { renderPage, randomNonce, jsonForScript } = require('./page');
 const { Gate, LocalKey, localDevice, forwarded } = require('./auth');
 const wire = require('./wire');
+const { NotificationStream } = require('./notificationStream');
 const voiceMaxBytes = () => require('./voice').MAX_BYTES;
 
 /**
@@ -82,6 +82,9 @@ class RemoteServer {
    * @param {(line: string) => void} [deps.log]
    */
   constructor(deps) {
+    this.fs = deps.fs || fs;
+    this.delivery = deps.delivery || null;
+    if (this.delivery) deps = Object.assign({}, deps, this.delivery.serverOptions());
     this.root = deps.root;
     this.host = deps.host;
     this.sessions = deps.sessions;
@@ -121,6 +124,9 @@ class RemoteServer {
     this.refreshTree = deps.refreshTree || null;
     this.history = deps.history || null;
     this.report = deps.report || null;
+    // Ordinary construction remains v1. Only the completed private daemon
+    // installs the P1-24 network authority in isolatedProtocol.
+    this.applicationProtocol = deps.applicationProtocol || null;
     this.requireSealed = deps.requireSealed || (() => true);
     this.appOnly = deps.appOnly || (() => false);
     this.gate = deps.gate || new Gate({
@@ -136,7 +142,7 @@ class RemoteServer {
     // The phone app's newest build, offered to paired phones (appUpdate.js).
     this.appUpdate = deps.appUpdate || null;
     if (this.appUpdate && this.appUpdate.watch) {
-      this.appUpdate.watch(() => {
+      this.stopWatchingApp = this.appUpdate.watch(() => {
         // Every socket, the fleet's and each conversation's: a phone left
         // reading one chat should hear about it as much as one on the list.
         for (const client of this.clients || []) client.post({ type: 'app:update:changed' });
@@ -149,11 +155,15 @@ class RemoteServer {
     // kind of problem that presents as everything being subtly wrong.
     this.version = deps.version || require('../package.json').version;
     this.server = null;
+    this.binding = null;
+    this.disposed = false;
     this.port = 0;
     this.clients = new Set();
     // Android phones' background services, each holding the notification
     // stream open: { device, hash, res, timer }.
-    this.listeners = new Set();
+    this.notificationStream = deps.notificationStream || new NotificationStream({ devices: this.devices, log: this.log });
+    this.ownsNotificationStream = !deps.notificationStream;
+    this.listeners = this.notificationStream.listeners;
     this.fleetClients = new Set();
     this.seq = 0;
     this.refusals = [];
@@ -178,6 +188,7 @@ class RemoteServer {
     if (typeof deps.watchFleet === 'function') {
       this.stopWatching = deps.watchFleet(() => this.broadcastFleet());
     }
+    if (this.delivery) this.delivery.connect(this);
   }
 
   get listening() {
@@ -222,12 +233,7 @@ class RemoteServer {
       client.post(Object.assign({ type: '@notify' }, message));
       told++;
     }
-    const event = 'event: notify\ndata: ' + JSON.stringify(Object.assign({ type: '@notify' }, message)) + '\n\n';
-    for (const listener of [...this.listeners]) {
-      if (only && listener.device !== only) continue;
-      if (this.writeListener(listener, event)) told++;
-    }
-    return told;
+    return told + this.notificationStream.notify(message);
   }
 
   /**
@@ -237,13 +243,7 @@ class RemoteServer {
    * is closed the next time anything is written to it.
    */
   issueListener(client) {
-    const device = client && client.device;
-    if (!this.devices || !device || device.kind !== 'device') return false;
-    const secret = crypto.randomBytes(32).toString('base64url');
-    if (!this.devices.setListener(device.id, sha256(secret))) return false;
-    client.post({ type: '@listener', secret });
-    this.log(`${device.name} can be told things while NikUI is closed`);
-    return true;
+    return this.notificationStream.issue(client);
   }
 
   /**
@@ -255,42 +255,18 @@ class RemoteServer {
    * the secret is worth exactly the notifications that phone is shown anyway.
    */
   serveListener(req, res) {
-    const offered = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(String(req.headers.authorization || ''));
-    const device = offered && this.devices ? this.devices.byListener(sha256(offered[1])) : null;
+    const device = this.notificationStream.authenticate(req);
     if (!device) {
       if (!this.allowAttempt(req, 'listen')) return plain(res, 429, 'Too many tries; wait a minute');
       this.refuse(req, 'listener: no such secret');
       return plain(res, 401, 'Not a listener');
     }
-    res.writeHead(200, {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-store',
-      'x-accel-buffering': 'no'
-    });
-    if (req.socket) { req.socket.setTimeout(0); req.socket.setKeepAlive(true, LISTENER_PING_MS); }
-    res.write(': listening\n\n');
-    const listener = { device: device.id, hash: device.listener.hash, res, timer: null };
-    // Something every half minute, so neither end — nor tailscale between
-    // them — takes a quiet line for a dead one.
-    listener.timer = setInterval(() => this.writeListener(listener, ': ping\n\n'), LISTENER_PING_MS);
-    if (listener.timer.unref) listener.timer.unref();
-    this.listeners.add(listener);
-    const gone = () => { clearInterval(listener.timer); this.listeners.delete(listener); };
-    req.on('close', gone);
-    res.on('close', gone);
-    this.log(`${device.name} is listening in the background`);
+    return this.notificationStream.open(req, res, device);
   }
 
   /** Written only while the device still holds this secret; closed otherwise. */
   writeListener(listener, text) {
-    const device = this.devices && this.devices.get(listener.device);
-    if (!device || !device.listener || device.listener.hash !== listener.hash) {
-      clearInterval(listener.timer);
-      this.listeners.delete(listener);
-      try { listener.res.end(); } catch (_) { /* already gone */ }
-      return false;
-    }
-    try { listener.res.write(text); return true; } catch (_) { return false; }
+    return this.notificationStream.write(listener, text);
   }
 
   /**
@@ -363,7 +339,10 @@ class RemoteServer {
   }
 
   listen(port) {
+    if (this.disposed) return Promise.reject(new Error('Remote server is closed'));
+    if (this.delivery) this.delivery.assertAvailable();
     if (this.listening) return Promise.resolve(this);
+    if (this.binding) return this.binding;
     const server = http.createServer((req, res) => {
       this.handle(req, res).catch((err) => {
         this.log('request failed: ' + ((err && err.stack) || err));
@@ -378,14 +357,14 @@ class RemoteServer {
     server.keepAliveTimeout = 65000;
     server.headersTimeout = 70000;
 
-    return new Promise((resolve, reject) => {
+    this.binding = new Promise((resolve, reject) => {
       const failed = (err) => { server.removeListener('listening', ok); reject(err); };
       const ok = () => {
         server.removeListener('error', failed);
         this.server = server;
         this.port = server.address().port;
         this.log(`listening on 127.0.0.1:${this.port}`);
-        this.announceState();
+        if (!this.disposed) this.announceState();
         resolve(this);
       };
       server.once('error', failed);
@@ -393,19 +372,17 @@ class RemoteServer {
       // Loopback, explicitly, every time. There is no configuration that
       // changes this and there should never be one.
       server.listen(Number(port) || 0, '127.0.0.1');
-    });
+    }).finally(() => { this.binding = null; });
+    return this.binding;
   }
 
   stop() {
+    if (this.binding) return this.binding.catch(() => {}).then(() => this.stop());
     const server = this.server;
+    this.notificationStream.stop();
     if (!server) return Promise.resolve();
     this.server = null;
     for (const client of [...this.clients]) client.close(wire.CLOSE.GOING_AWAY, 'server stopping');
-    for (const listener of [...this.listeners]) {
-      clearInterval(listener.timer);
-      try { listener.res.end(); } catch (_) { /* already gone */ }
-    }
-    this.listeners.clear();
     this.clients.clear();
     this.fleetClients.clear();
     this.announceState();
@@ -417,8 +394,11 @@ class RemoteServer {
   }
 
   dispose() {
+    this.disposed = true;
+    if (this.stopWatchingApp) { this.stopWatchingApp(); this.stopWatchingApp = null; }
     if (this.stopWatching) { this.stopWatching(); this.stopWatching = null; }
     if (this.stopWatchingDevices) { this.stopWatchingDevices(); this.stopWatchingDevices = null; }
+    if (this.ownsNotificationStream) this.notificationStream.dispose();
     return this.stop();
   }
 
@@ -483,6 +463,7 @@ class RemoteServer {
    * the request may proceed, or the reason it may not.
    */
   guard(req) {
+    if (this.delivery && !this.delivery.available) return { status: 503, reason: 'Delivery identity unavailable' };
     const address = (req.socket && (req.socket.remoteAddress || '')) || '';
     const local = address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
     if (!local) return { status: 403, reason: 'not from this machine' };
@@ -694,7 +675,7 @@ ${this.appHead(nonce)}</head>
   }
 
   sendFile(res, name, type, extra) {
-    fs.readFile(path.join(this.root, 'media', name), (err, body) => {
+    this.fs.readFile(path.join(this.root, 'media', name), (err, body) => {
       if (err) return plain(res, 404, 'No such file');
       res.writeHead(200, Object.assign({
         'content-type': type,
@@ -894,7 +875,7 @@ ${this.appHead(nonce)}</head>
     const type = ASSET_TYPES[path.extname(file).toLowerCase()];
     if (!type) return plain(res, 403, 'Not a servable type');
 
-    fs.realpath(file, (err, real) => {
+    this.fs.realpath(file, (err, real) => {
       if (err) return plain(res, 404, 'No such file');
       if (real !== dir && !real.startsWith(dir + path.sep)) return plain(res, 403, 'Outside media');
       this.readAsset(res, real, type);
@@ -902,7 +883,7 @@ ${this.appHead(nonce)}</head>
   }
 
   readAsset(res, file, type) {
-    fs.readFile(file, (err, body) => {
+    this.fs.readFile(file, (err, body) => {
       if (err) return plain(res, 404, 'No such file');
       res.writeHead(200, {
         'content-type': type,
@@ -974,6 +955,7 @@ ${this.appHead(nonce)}</head>
       const session = this.sessions.get(client.wants);
       if (!session) return client.deny('that instance is not open any more');
       const hub = this.hubs.hubFor(session, this.host);
+      client.hub = hub;
       hub.attach({ id: client.id, kind: 'socket', device: client.device, post: (m) => client.post(m) });
       client.bind({
         receive: (message) => {
@@ -1107,7 +1089,7 @@ ${this.appHead(nonce)}</head>
     }
     // The other workspace. Sent alongside rather than mixed in, so nothing that
     // reads `instances` ever mistakes a Codex conversation for an instance.
-    const codexList = this.codex ? this.codex.list() : [];
+    const codexList = this.codex ? typeof this.codex.list === 'function' ? this.codex.list() : this.codex.list : [];
     const codex = codexList.map((session) => ({
       id: session.id,
       label: session.label,
@@ -1124,7 +1106,7 @@ ${this.appHead(nonce)}</head>
       type: 'fleet',
       instances,
       codex,
-      codexState: this.codex ? this.codex.state() : null,
+      codexState: typeof this.codex?.state === 'function' ? this.codex.state() : null,
       // Folders that exist but have nothing in them are still folders.
       folders: placed.map((f) => ({ id: f.id, name: f.name })),
       projects,
@@ -1251,7 +1233,7 @@ ${this.appHead(nonce)}</head>
       'x-content-type-options': 'nosniff'
     });
     if (req.method === 'HEAD') return res.end();
-    const stream = fs.createReadStream(held.file);
+    const stream = this.fs.createReadStream(held.file);
     stream.on('error', () => res.destroy());
     stream.pipe(res);
   }
@@ -1847,10 +1829,24 @@ class RemoteClient {
     // Set before the welcome goes out, so the welcome is the first thing inside
     // the envelope rather than the last thing outside it.
     this.box = box || null;
+    if (this.server.applicationProtocol) {
+      const { createNegotiation } = require('./protocolV2');
+      const local = device.kind === 'local';
+      const options = { ...this.server.applicationProtocol,
+        authenticated: true, testOnlyV2: false, sealed: !!this.box,
+        context: { authenticated: true, principal: local ? 'local:browser' : 'device:' + device.id,
+          role: this.wants ? 'conversation' : 'fleet', target: this.wants ? 'session:' + this.wants : 'fleet',
+          seat: { id: device.id, control: !!device.control, local, editor: false } },
+        post: this.post.bind(this), close: (code, reason) => this.close(code, reason),
+        legacy: (message) => this.deliverApplication(message) };
+      if (this.wants && !this.server.sessions.get(this.wants)) return this.deny('that instance is not open any more');
+      this.applicationProtocol = require('./isolatedProtocol').applicationSocket(this.server, this, options) || createNegotiation(options);
+    }
     // Said once, to a client that has proved who it is: an app carrying its own
     // copy of the client needs to know whether it is the same copy.
     this.post(Object.assign({ type: '@welcome', device }, welcomeMessage || null,
-      this.version ? { version: this.version } : null));
+      this.version ? { version: this.version } : null,
+      this.applicationProtocol ? this.applicationProtocol.advertisement : null));
     this.server.seat(this);
   }
 
@@ -1893,6 +1889,7 @@ class RemoteClient {
   }
 
   deliver(text) {
+    if (!this.open) return;
     let msg = null;
     try { msg = JSON.parse(text); } catch (_) {
       this.log(`${this.id} sent something that is not JSON`);
@@ -1946,6 +1943,13 @@ class RemoteClient {
       return;
     }
 
+    if (this.applicationProtocol) {
+      return void this.applicationProtocol.receive(msg).catch((err) => this.log(`${this.id} application message failed: ${err && err.message}`));
+    }
+    return this.deliverApplication(msg);
+  }
+
+  deliverApplication(msg) {
     // Where to reach this device when it is not running. Only an app has one,
     // it only ever arrives on a socket the device has already proved itself on,
     // and it is stored against that device's record — so forgetting the device
@@ -1991,6 +1995,7 @@ class RemoteClient {
     this.finished = true;
     if (this.beat) clearInterval(this.beat);
     if (this.deadline) clearTimeout(this.deadline);
+    if (this.applicationProtocol) this.applicationProtocol.dispose();
     this.beat = null;
     this.deadline = null;
     if (this.binding && this.binding.detach) this.binding.detach();
@@ -2061,12 +2066,9 @@ function isAppRoute(method, route) {
   return false;
 }
 
-const SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
-
-// How often a background listener hears something, even if only a ping.
-const LISTENER_PING_MS = 30000;
-
-const sha256 = (text) => crypto.createHash('sha256').update(String(text)).digest('hex');
+// Service instances use generationUUID:instanceUUID (73 bytes). Keep the
+// shell route's allowlist while accepting the IDs the service actually owns.
+const SESSION_ID = /^[A-Za-z0-9_:-]{1,128}$/;
 
 // A subscription is only accepted for a minute after the device signed for it.
 const SUBSCRIBE_WINDOW_MS = 60000;

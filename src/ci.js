@@ -140,7 +140,7 @@ class CiWatch {
     try {
       await this.poll();
     } catch (err) {
-      this.finish({ phase: 'error', message: String((err && err.message) || err) });
+      if (!this.stopped) this.finish({ phase: 'error', message: String((err && err.message) || err) });
     }
     if (!this.state.finished) this.later();
   }
@@ -168,6 +168,7 @@ class CiWatch {
     if (data.state && data.state !== 'OPEN') return this.finish({ phase: data.state === 'MERGED' ? 'merged' : 'closed', pr });
 
     const head = await this.run('git', ['rev-parse', 'HEAD'], { cwd: this.cwd });
+    if (this.stopped) return;
     const local = head.ok ? head.stdout.trim() : null;
     if (local && data.headRefOid && local !== data.headRefOid) {
       if (now - this.startedAt > PR_WAIT_MS) return this.finish({ phase: 'error', pr, message: 'This commit was never pushed.' });
@@ -175,6 +176,7 @@ class CiWatch {
     }
     if (!this.headSeenAt) this.headSeenAt = now;
     if (this.averageMs === undefined) this.averageMs = await this.expected(pr, data.headRefOid);
+    if (this.stopped) return;
 
     const checks = (data.statusCheckRollup || []).map(readCheck);
     if (!checks.length) {
@@ -208,6 +210,7 @@ class CiWatch {
     for (const only of [['--event', 'pull_request'], []]) {
       const runs = await this.run('gh', ['run', 'list', '--limit', '60', ...only, '--json',
         'headSha,createdAt,updatedAt,status,conclusion'], { cwd: this.cwd });
+      if (this.stopped) return null;
       if (!runs.ok) break;
       try { durations = runDurations(JSON.parse(runs.stdout), sha); } catch (_) { durations = []; }
       if (durations.length) break;
@@ -261,6 +264,10 @@ class CiWatcher {
     this.history = deps.history;
     this.notify = deps.notify || (() => {});
     this.autoWatch = deps.autoWatch || (() => true);
+    this.now = deps.now;
+    this.setTimer = deps.setTimeout || setTimeout;
+    this.clearTimer = deps.clearTimeout || clearTimeout;
+    this.disposed = false;
     this.watches = new Map();
     this.clearTimers = new Map();
     this.sessions = new Map();
@@ -268,7 +275,7 @@ class CiWatcher {
 
   /** Listen to a manager: pushes Claude makes. */
   attach(manager) {
-    const pushed = (session, cwd) => { if (this.autoWatch()) this.watch(session, { cwd }); };
+    const pushed = (session, cwd) => { if (this.autoWatch(session)) this.watch(session, { cwd }); };
     const gone = (session) => this.forget(session.id);
     manager.on('pushed', pushed);
     manager.on('removed', gone);
@@ -280,20 +287,25 @@ class CiWatcher {
   }
 
   watch(session, opts) {
+    if (this.disposed) return null;
     const o = opts || {};
     this.forget(session.id, true);
     const w = new CiWatch({
       cwd: o.cwd || session.cwd,
       run: this.run,
       history: this.history,
+      now: this.now, setTimeout: this.setTimer, clearTimeout: this.clearTimer,
       onChange: (state) => { session.setCi(state); },
       onFinish: (state) => {
+        if (this.disposed || this.watches.get(session.id) !== w) return;
         if (state.quiet) { this.forget(session.id); return; }
         // Already over when it was first looked at: a push that changed
         // nothing is not news.
         if (w.sawUnfinished) this.notify(session, state);
+        // A result callback may close the owner or remove this instance.
+        if (this.disposed || this.watches.get(session.id) !== w) return;
         // A finished strip stays long enough to be seen, then goes.
-        const t = setTimeout(() => { if (this.watches.get(session.id) === w) this.forget(session.id); }, 30 * 60000);
+        const t = this.setTimer(() => { if (this.watches.get(session.id) === w) this.forget(session.id); }, 30 * 60000);
         if (t.unref) t.unref();
         this.clearTimers.set(session.id, t);
       }
@@ -310,12 +322,18 @@ class CiWatcher {
     if (w) w.stop();
     this.watches.delete(id);
     const t = this.clearTimers.get(id);
-    if (t) clearTimeout(t);
+    if (t) this.clearTimer(t);
     this.clearTimers.delete(id);
     const session = this.sessions.get(id);
     this.sessions.delete(id);
     if (w && !keepStrip && session) session.setCi(null);
   }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const id of [...this.watches.keys()]) this.forget(id);
+  }
 }
 
-module.exports = { CiWatch, CiWatcher, pushedFrom, readCheck, runDurations, repoOf, describe, remaining, average, PUSHED };
+module.exports = { CiWatch, CiWatcher, pushedFrom, readCheck, runDurations, repoOf, describe, remaining, average, PUSHED, defaultRun };

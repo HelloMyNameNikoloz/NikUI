@@ -18,12 +18,26 @@ const KEY = 'nikui.identity';
 const ALGORITHM = 'sha256';
 const CURVE = 'prime256v1'; // P-256, what WebCrypto calls ECDSA/P-256
 
-function loadIdentity(store) {
-  const saved = store && store.get ? store.get(KEY, null) : null;
-  if (saved && saved.publicKey && saved.privateKey) {
-    try { return build(fromBase64(saved.publicKey), fromBase64(saved.privateKey), store); }
-    catch (_) { /* unreadable: make a new one rather than refusing to start */ }
+function loadIdentity(store, { required = false, fingerprint } = {}) {
+  let saved;
+  try { saved = store && store.get ? store.get(KEY, null) : null; }
+  catch (err) {
+    if (required) throw new Error('Selected host identity unavailable: store inaccessible');
+    throw err;
   }
+  if (saved && saved.publicKey && saved.privateKey) {
+    try {
+      const publicDer = fromBase64(saved.publicKey), privateDer = fromBase64(saved.privateKey);
+      if (required) validatePair(publicDer, privateDer);
+      const identity = build(publicDer, privateDer);
+      if (required && fingerprint && identity.fingerprint !== fingerprint) throw new Error('pin mismatch');
+      return identity;
+    } catch (_) {
+      if (required) throw new Error('Selected host identity unavailable: corrupt key or pin mismatch');
+      // Preserve the legacy window's regeneration policy.
+    }
+  }
+  if (required) throw new Error('Selected host identity unavailable: missing key');
   const pair = crypto.generateKeyPairSync('ec', {
     namedCurve: CURVE,
     publicKeyEncoding: { type: 'spki', format: 'der' },
@@ -33,6 +47,18 @@ function loadIdentity(store) {
     store.update(KEY, { publicKey: toBase64(pair.publicKey), privateKey: toBase64(pair.privateKey) });
   }
   return build(pair.publicKey, pair.privateKey, store);
+}
+
+// Strict imported records must contain a matching P-256 pair. Merely parsing
+// two DER blobs also accepts unrelated keys and other curves.
+function validatePair(publicDer, privateDer) {
+  const publicKey = crypto.createPublicKey({ key: publicDer, format: 'der', type: 'spki' });
+  const privateKey = crypto.createPrivateKey({ key: privateDer, format: 'der', type: 'pkcs8' });
+  for (const key of [publicKey, privateKey]) {
+    if (key.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails.namedCurve !== CURVE) throw new Error('not P-256');
+  }
+  const derived = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'der' });
+  if (!derived.equals(publicKey.export({ type: 'spki', format: 'der' }))) throw new Error('key pair mismatch');
 }
 
 function build(publicDer, privateDer) {
@@ -93,4 +119,4 @@ function readPublicKey(spkiBase64) {
 const toBase64 = (buffer) => Buffer.from(buffer).toString('base64url');
 const fromBase64 = (text) => Buffer.from(String(text || ''), 'base64url');
 
-module.exports = { loadIdentity, verifyWith, readPublicKey, fingerprintOf, toBase64, fromBase64 };
+module.exports = { loadIdentity, validatePair, verifyWith, readPublicKey, fingerprintOf, toBase64, fromBase64 };

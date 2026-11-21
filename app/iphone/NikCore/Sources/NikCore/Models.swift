@@ -246,6 +246,8 @@ public struct TranscriptItem: WireModel, Identifiable {
     public var `text`: String { string("text") }
     public var `name`: String { string("name") }
     public var `requestId`: String { string("requestId") }
+    public var run: RunRef? { try? RunRef(validating: raw["run"]) }
+    public var answerTo: QuestionRef? { try? QuestionRef(validating: raw["answerTo"]) }
     public var `at`: Date? { WireDate.date(raw["at"]) }
     public var `streaming`: Bool { flag("streaming") }
     public var `isError`: Bool { flag("isError") }
@@ -277,6 +279,7 @@ public struct BackgroundShell: WireModel, Identifiable {
     public var `command`: String { string("command") }
     public var `startedAt`: Date? { WireDate.date(raw["startedAt"]) }
     public var `stopping`: Bool { flag("stopping") }
+    public var run: RunRef? { try? RunRef(validating: raw["run"]) }
     public var id: String { string("id") }
 }
 
@@ -323,6 +326,8 @@ public struct ConversationInit: WireModel {
     public init(_ raw: JSONValue = .object([:])) { self.raw = raw }
     public var `sessionId`: String { string("sessionId") }
     public var `client`: String? { raw["client"].stringValue }
+    public var run: RunRef? { try? RunRef(validating: raw["run"]) }
+    public var operations: [ProviderOperation] { raw["operations"].arrayValue.compactMap { try? ProviderOperation(validating: $0) } }
     public var `items`: [TranscriptItem] { models("items") }
     public var `dropped`: Int { integer("dropped") }
     public var `maxItems`: Int { integer("maxItems", default: 400) }
@@ -615,6 +620,7 @@ public struct TerminalDescriptor: WireModel, Identifiable {
     public var `name`: String { string("name") }
     public var `cwd`: String { string("cwd") }
     public var `busy`: Bool { flag("busy") }
+    public var activeRun: String? { raw["activeRun"].stringValue }
     public var `command`: String? { raw["command"].stringValue }
     public var id: String { string("id") }
 }

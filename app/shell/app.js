@@ -132,6 +132,7 @@
     return {
       session: sessionId || null,
       origin: base,
+      hostFingerprint: where.fingerprint || null,
       socket: base.replace(/^http/, 'ws') + '/socket' +
         (sessionId ? '?session=' + encodeURIComponent(sessionId) : ''),
       // Where a client should go when it is told to open another instance.

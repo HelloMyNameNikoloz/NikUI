@@ -1,0 +1,557 @@
+{
+  "fixtureVersion": 1,
+  "cases": [
+    {
+      "id": "missing-vector-id",
+      "base": "negotiation-v2-fleet",
+      "patches": [
+        {
+          "op": "remove",
+          "path": [
+            "id"
+          ]
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "invalid-polarity",
+      "base": "negotiation-v2-fleet",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "polarity"
+          ],
+          "value": "maybe"
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "missing-expected-effects",
+      "base": "receipt-applied",
+      "patches": [
+        {
+          "op": "remove",
+          "path": [
+            "expected",
+            "effects"
+          ]
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "fractional-effect-count",
+      "base": "receipt-applied",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "effects",
+            "provider"
+          ],
+          "value": 0.5
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "unknown-vector-key",
+      "base": "receipt-applied",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "typo"
+          ],
+          "value": true
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "missing-role",
+      "base": "receipt-applied",
+      "patches": [
+        {
+          "op": "remove",
+          "path": [
+            "context",
+            "role"
+          ]
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "target-role-mismatch",
+      "base": "receipt-applied",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "context",
+            "target"
+          ],
+          "value": "fleet"
+        }
+      ],
+      "error": "identity"
+    },
+    {
+      "id": "pending-with-result",
+      "base": "receipt-pending",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "result"
+          ],
+          "value": {
+            "code": "accepted",
+            "data": {
+              "instance": "instance-7",
+              "queueId": "q-29",
+              "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+            },
+            "replies": []
+          }
+        }
+      ],
+      "error": "ack"
+    },
+    {
+      "id": "ack-missing-expiry",
+      "base": "receipt-applied",
+      "patches": [
+        {
+          "op": "remove",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "expiresAt"
+          ]
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "duplicate-without-admission",
+      "base": "receipt-applied",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "1",
+            "admitted"
+          ],
+          "value": false
+        }
+      ],
+      "error": "ack"
+    },
+    {
+      "id": "status-outcome-mismatch",
+      "base": "receipt-applied",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "outcome"
+          ],
+          "value": "rejected"
+        }
+      ],
+      "error": "ack"
+    },
+    {
+      "id": "ttl-refreshed-on-duplicate",
+      "base": "receipt-applied",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "1",
+            "expiresAt"
+          ],
+          "value": 1795266001001
+        }
+      ],
+      "error": "ack"
+    },
+    {
+      "id": "wrong-canonical-bytes",
+      "base": "hash-base",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "hash",
+            "canonical"
+          ],
+          "value": "{}"
+        }
+      ],
+      "error": "hash"
+    },
+    {
+      "id": "wrong-sha256",
+      "base": "hash-base",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "hash",
+            "sha256"
+          ],
+          "value": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "error": "hash"
+    },
+    {
+      "id": "unknown-automatic-replay",
+      "base": "codex-rpc-send-reply-lost",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "state",
+            "autoResend"
+          ],
+          "value": true
+        }
+      ],
+      "error": "unknown"
+    },
+    {
+      "id": "unknown-payload-discarded",
+      "base": "codex-rpc-send-reply-lost",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "state",
+            "retained"
+          ],
+          "value": false
+        }
+      ],
+      "error": "unknown"
+    },
+    {
+      "id": "operation-error-on-accepted",
+      "base": "codex-reconcile-exact-echo",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "error"
+          ],
+          "value": {
+            "code": "OUTCOME_UNKNOWN",
+            "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+            "retryable": false
+          }
+        }
+      ],
+      "error": "operation"
+    },
+    {
+      "id": "zero-operation-revision",
+      "base": "codex-reconcile-exact-echo",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "revision"
+          ],
+          "value": 0
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "invalid-successful-apns",
+      "base": "mutation-either-apple-default",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "input",
+            "0",
+            "message",
+            "token"
+          ],
+          "value": "synthetic-apns"
+        }
+      ],
+      "error": "ack"
+    },
+    {
+      "id": "wrong-cleared-count",
+      "base": "mutation-conversation-clearqueue-default",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "result",
+            "data",
+            "removed"
+          ],
+          "value": 3
+        }
+      ],
+      "error": "ack"
+    },
+    {
+      "id": "reclaimed-draft-drift",
+      "base": "mutation-conversation-editqueued-default",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "result",
+            "replies",
+            "0",
+            "text"
+          ],
+          "value": "different draft"
+        }
+      ],
+      "error": "ack"
+    },
+    {
+      "id": "invalid-reclaimed-attachment",
+      "base": "mutation-conversation-editqueued-default",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "result",
+            "replies",
+            "0",
+            "attachments",
+            "0",
+            "data"
+          ],
+          "value": "data:image/png;base64,aW1hZ2U="
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "invalid-retained-attachment",
+      "base": "outbox-same-scope-missing",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "input",
+            "0",
+            "message",
+            "record",
+            "payload",
+            "attachments",
+            "0",
+            "mediaType"
+          ],
+          "value": "text/plain"
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "malformed-server-input-ack",
+      "base": "outbox-late-ack-edited-draft",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "input",
+            "1",
+            "message",
+            "mid"
+          ],
+          "value": "bad"
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "error-byte-limit",
+      "base": "receipt-rejected",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "error",
+            "message"
+          ],
+          "value": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "turn-byte-limit",
+      "base": "binding-permission-current",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "result",
+            "data",
+            "run",
+            "turn"
+          ],
+          "value": "👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋👋"
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "non-ascii-selected-capability",
+      "base": "negotiation-v2-fleet",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "caps"
+          ],
+          "value": [
+            "mid-ack-v1",
+            "receipts-v1",
+            "run-precondition-v1",
+            "operation-state-v1",
+            "ქართული"
+          ]
+        }
+      ],
+      "error": "schema"
+    },
+    {
+      "id": "retained-signin-credential",
+      "base": "mutation-fleet-slack-signin-default",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "result",
+            "data",
+            "who"
+          ],
+          "value": {
+            "token": "xoxc-synthetic-fixture"
+          }
+        }
+      ],
+      "error": "ack"
+    },
+    {
+      "id": "unicode-reclaimed-draft-drift",
+      "base": "mutation-conversation-editqueued-default",
+      "patches": [
+        {
+          "op": "replace",
+          "path": [
+            "initial",
+            "queue",
+            "0",
+            "text"
+          ],
+          "value": "café"
+        },
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "result",
+            "replies",
+            "0",
+            "text"
+          ],
+          "value": "café"
+        },
+        {
+          "op": "replace",
+          "path": [
+            "expected",
+            "replies",
+            "1",
+            "result",
+            "replies",
+            "0",
+            "text"
+          ],
+          "value": "café"
+        }
+      ],
+      "error": "ack"
+    },
+    {
+      "id": "incomplete-pane-result",
+      "base": "mutation-conversation-pr-pane-default",
+      "patches": [
+        {
+          "op": "remove",
+          "path": [
+            "expected",
+            "replies",
+            "0",
+            "result",
+            "data",
+            "pane",
+            "tab"
+          ]
+        }
+      ],
+      "error": "schema"
+    }
+  ]
+}

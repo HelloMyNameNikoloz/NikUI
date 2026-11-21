@@ -2,6 +2,7 @@
 
 const { spawn } = require('child_process');
 const os = require('os');
+const fs = require('fs');
 const path = require('path');
 // One implementation of "is that a command", shared with the client that draws
 // the button: two copies of a guess drift into two different guesses.
@@ -50,16 +51,28 @@ class Terminals {
     this.now = d.now || (() => Date.now());
     this.onEvent = d.onEvent || (() => {});
     this.limitMs = d.limitMs || LIMIT_MS;
+    this.home = d.home || os.homedir();
+    this.env = Object.assign({}, d.env === undefined ? process.env : d.env);
+    this.fs = d.fs || fs;
+    this.setTimer = d.setTimeout || setTimeout;
+    this.clearTimer = d.clearTimeout || clearTimeout;
+    this.listeners = new Set();
+    this.disposed = false;
     this.sessions = new Map();
   }
 
+  subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+  emit(event) { this.onEvent(event); for (const fn of this.listeners) fn(event); }
+
   /** A place to run things, rooted somewhere. */
-  open({ cwd, name }) {
-    const id = 't' + (++counter) + '-' + Math.random().toString(36).slice(2, 8);
+  open({ cwd, name, id: reservedId }) {
+    if (this.disposed) throw new Error('Terminals are closed');
+    const id = reservedId || 't' + (++counter) + '-' + Math.random().toString(36).slice(2, 8);
+    if (this.sessions.has(id)) throw new Error('Terminal ID already exists');
     const session = {
       id,
       name: name || (cwd ? path.basename(cwd) : 'Terminal'),
-      cwd: cwd || os.homedir(),
+      cwd: cwd || this.home,
       openedAt: this.now(),
       running: null,
       history: []
@@ -84,16 +97,26 @@ class Terminals {
     };
   }
 
-  close(id) {
+  close(id, { authoritative = false } = {}) {
     const session = this.get(id);
     if (!session) return false;
-    this.stop(id);
+    const observedRun = session.running;
+    const stopped = this.stop(id, { authoritative });
+    if (authoritative && session.running && session.running !== observedRun) return { delivery: 'unknown' };
+    if (authoritative && session.running && stopped?.delivery !== 'submitted') return stopped;
     this.sessions.delete(session.id);
-    return true;
+    return authoritative ? { delivery: 'submitted' } : true;
   }
 
   closeAll() {
     for (const id of [...this.sessions.keys()]) this.close(id);
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.closeAll();
+    this.listeners.clear();
   }
 
   /**
@@ -101,7 +124,7 @@ class Terminals {
    *
    * @returns {{ok: true, run: object} | {ok: false, reason: string}}
    */
-  run(id, command) {
+  run(id, command, { runId, authoritative = false } = {}) {
     const session = this.get(id);
     if (!session) return { ok: false, reason: 'that terminal is not open' };
     if (session.running) return { ok: false, reason: 'that terminal is busy' };
@@ -119,22 +142,22 @@ class Terminals {
     if (moved) {
       const wanted = (moved[2] !== undefined ? moved[2] : moved[3]) || '';
       const to = !wanted || wanted === '~'
-        ? os.homedir()
-        : path.resolve(session.cwd, wanted.replace(/^~(?=\/|$)/, os.homedir()));
+        ? this.home
+        : path.resolve(session.cwd, wanted.replace(/^~(?=\/|$)/, this.home));
       let ok = false;
-      try { ok = require('fs').statSync(to).isDirectory(); } catch (_) { ok = false; }
+      try { ok = this.fs.statSync(to).isDirectory(); } catch (_) { ok = false; }
       if (!ok) {
-        const run = this.began(session, text);
+        const run = this.began(session, text, runId);
         this.say(session, run, 'err', 'cd: no such directory: ' + wanted + '\n');
         return { ok: true, run: this.ended(session, run, 1, null) };
       }
       session.cwd = to;
-      const run = this.began(session, text);
+      const run = this.began(session, text, runId);
       this.say(session, run, 'out', to + '\n');
       return { ok: true, run: this.ended(session, run, 0, null) };
     }
 
-    const run = this.began(session, text);
+    const run = this.began(session, text, runId);
     let child;
     try {
       // Through a login shell, so what runs is what would run if you typed it:
@@ -143,7 +166,7 @@ class Terminals {
       // because there is no terminal for an interactive one to talk to.
       child = this.spawn(this.shell, ['-lc', text], {
         cwd: session.cwd,
-        env: Object.assign({}, process.env, {
+        env: Object.assign({}, this.env, {
           // Tools that draw progress bars and colour when they see a terminal
           // are looking at this. There is no terminal.
           TERM: 'dumb',
@@ -153,6 +176,7 @@ class Terminals {
       });
     } catch (err) {
       this.say(session, run, 'err', ((err && err.message) || 'could not start a shell') + '\n');
+      if (authoritative) return { ok: false, delivery: 'unknown', run: this.ended(session, run, null, 'Launch outcome unknown') };
       return { ok: true, run: this.ended(session, run, null, 'could not start a shell') };
     }
 
@@ -162,7 +186,7 @@ class Terminals {
     if (child.stdout) child.stdout.on('data', (chunk) => this.say(session, run, 'out', String(chunk)));
     if (child.stderr) child.stderr.on('data', (chunk) => this.say(session, run, 'err', String(chunk)));
 
-    const giveUp = setTimeout(() => {
+    const giveUp = this.setTimer(() => {
       this.say(session, run, 'err', '\n[stopped after ' + Math.round(this.limitMs / 60000) + ' minutes]\n');
       this.stop(session.id);
     }, this.limitMs);
@@ -181,24 +205,35 @@ class Terminals {
   }
 
   /** Stop whatever is running, without closing the terminal. */
-  stop(id) {
+  stop(id, { authoritative = false } = {}) {
     const session = this.get(id);
     if (!session || !session.running) return false;
     const run = session.running;
-    try { if (run.child) run.child.kill('SIGTERM'); } catch (_) { /* already gone */ }
+    if (run.stopping) return authoritative ? { delivery: run.stopDelivery || 'submitted' } : true;
+    run.stopping = true;
+    try {
+      if (run.child && run.child.kill('SIGTERM') === false && authoritative) {
+        run.stopping = false; return { delivery: 'not_written' };
+      }
+    } catch (_) {
+      if (authoritative) { run.stopDelivery = 'unknown'; return { delivery: 'unknown' }; }
+    }
+    run.stopDelivery = 'submitted';
+    if (run.done) return authoritative ? { delivery: 'submitted' } : true;
     // A process that ignores a polite ask gets an impolite one, once.
-    const harder = setTimeout(() => {
+    const harder = this.setTimer(() => {
       try { if (run.child && !run.done) run.child.kill('SIGKILL'); } catch (_) { /* gone */ }
     }, 2000);
     if (harder.unref) harder.unref();
-    return true;
+    run.harder = harder;
+    return authoritative ? { delivery: 'submitted' } : true;
   }
 
   // ---- what a run looks like from outside --------------------------------------
 
-  began(session, command) {
+  began(session, command, reservedId) {
     const run = {
-      id: session.id + ':' + (session.history.length + 1),
+      id: reservedId || session.id + ':' + (session.history.length + 1),
       terminal: session.id,
       command,
       cwd: session.cwd,
@@ -210,7 +245,7 @@ class Terminals {
     };
     session.history.push(run);
     while (session.history.length > 60) session.history.shift();
-    this.onEvent({ type: 'term:began', run: this.shape(run), terminal: this.describe(session) });
+    this.emit({ type: 'term:began', run: this.shape(run), terminal: this.describe(session) });
     return run;
   }
 
@@ -220,7 +255,7 @@ class Terminals {
     if (run.output.length > KEEP_BYTES) {
       run.output = '…\n' + run.output.slice(-KEEP_BYTES);
     }
-    this.onEvent({ type: 'term:out', run: run.id, terminal: session.id, stream, text });
+    this.emit({ type: 'term:out', run: run.id, terminal: session.id, stream, text });
   }
 
   ended(session, run, exit, note) {
@@ -229,10 +264,11 @@ class Terminals {
     run.exit = exit === undefined ? null : exit;
     run.note = note || null;
     run.tookMs = this.now() - run.at;
-    if (run.timer) clearTimeout(run.timer);
+    if (run.timer) this.clearTimer(run.timer);
+    if (run.harder) this.clearTimer(run.harder);
     run.child = null;
     if (session.running === run) session.running = null;
-    this.onEvent({ type: 'term:done', run: this.shape(run), terminal: this.describe(session) });
+    this.emit({ type: 'term:done', run: this.shape(run), terminal: this.describe(session) });
     return this.shape(run);
   }
 

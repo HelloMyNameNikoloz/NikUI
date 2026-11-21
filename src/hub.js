@@ -91,7 +91,7 @@ class SessionHub {
     on('status', (status) => {
       // A phone with this conversation on its screen saw it finish.
       this.seenElsewhere();
-      this.broadcast({ type: 'status', status });
+      this.broadcast({ type: 'status', status, ...this.runFields() });
       this.broadcastStats();
       this.refreshStatus();
       this.emitHost('chrome');
@@ -101,11 +101,18 @@ class SessionHub {
       this.emitHost('chrome');
       this.syncPr();
     });
-    // A fork of a Codex conversation: whoever asked for it goes there.
-    on('open', (id) => {
-      const entry = this.clients.get(this.lastSender);
-      if (entry && entry.device) this.send(this.lastSender, { type: '@navigate', session: id });
-      else if (typeof this.host.switchTo === 'function') this.host.switchTo(id, null);
+    // A fork of a Codex conversation: whoever asked for it goes there. Who
+    // asked travels with the /fork itself rather than being looked up when it
+    // lands, because somebody else may have sent something in between.
+    on('open', (id, asked) => {
+      const from = asked || (this.lastSender ? this.requester(this.lastSender, this.clients.get(this.lastSender)) : null);
+      const entry = from ? this.clients.get(from.client) : null;
+      if (from?.proto === 2 && !from.editor) {
+        if (entry) this.send(from.client, { type: '@navigate', session: id });
+        return;
+      }
+      if (entry && entry.device) this.send(from.client, { type: '@navigate', session: id });
+      else if (typeof this.host.switchTo === 'function') this.host.switchTo(id, null, from);
     });
 
     // The pull request beside the conversation: one feed for the whole window,
@@ -120,6 +127,7 @@ class SessionHub {
       this.listeners.push(() => feed.unwatch(this.session.id));
     }
     on('background', () => {
+      if (session._engineControls) this.broadcast({ type: 'status', status: session.status, ...this.runFields() });
       this.broadcastStats();
       this.refreshStatus();
     });
@@ -162,6 +170,9 @@ class SessionHub {
       // Who this is, when anybody knows: a socket always carries a device, the
       // editor's own webview carries none and is trusted like the editor.
       device: client.device || null,
+      // Which editor window this client is, when it is one: where a file it
+      // opens should open.
+      editor: client.editor || null,
       since: Date.now(),
       ready: false,
       // Whether the page says it is on screen. Assumed so until it says not.
@@ -202,6 +213,22 @@ class SessionHub {
     for (const entry of this.clients.values()) {
       if ((entry.ready || entry === arriving) && !entry.hidden && !this.isLocal(entry)) return void session.setUnread(false);
     }
+  }
+
+  /**
+   * Who asked, as the host needs to know it: which client, from which device,
+   * whether somebody is at this machine, and which editor window it is. Taken
+   * when the request arrives and carried with it, so an answer that comes back
+   * later still goes to whoever asked.
+   */
+  requester(clientId, entry) {
+    const device = entry && entry.device;
+    return Object.freeze({
+      client: clientId || null,
+      device: device ? (device.id || device.name || null) : null,
+      local: this.isLocal(entry),
+      editor: (entry && entry.editor) || null
+    });
   }
 
   /** The editor's own panel, or a browser on this machine: somebody at this screen. */
@@ -479,7 +506,7 @@ class SessionHub {
 
       // Picking a PR is a quick pick on the laptop; a phone has nowhere to show it.
       case 'pr:link':
-        if (this.isLocal(entry) && typeof this.host.pickPr === 'function') await this.host.pickPr(session);
+        if (this.isLocal(entry) && typeof this.host.pickPr === 'function') await this.host.pickPr(session, this.requester(clientId, entry));
         break;
 
       case 'pr:unlink':
@@ -489,7 +516,7 @@ class SessionHub {
       case 'pr:open': {
         const url = String(msg.url || '');
         if (/^https:\/\/github\.com\//.test(url) && this.isLocal(entry) && typeof this.host.openUrl === 'function') {
-          await this.host.openUrl(url);
+          await this.host.openUrl(url, this.requester(clientId, entry));
         }
         break;
       }
@@ -499,7 +526,7 @@ class SessionHub {
         // stale — the limit reset early, or more was bought. Only the editor
         // can ask; a phone's prompt joins the queue as before.
         if (session.isPaused && this.isLocal(entry) && typeof this.host.confirmPausedSend === 'function') {
-          await this.host.confirmPausedSend(session);
+          await this.host.confirmPausedSend(session, this.requester(clientId, entry));
         }
         this.lastSender = clientId;
         // "/codex <task>" from a Claude conversation hands the task to Codex.
@@ -508,7 +535,7 @@ class SessionHub {
           await this.handOff(clientId, entry, msg);
           break;
         }
-        session.submit(msg.text, msg.attachments, { sent: msg.sent, snippets: msg.snippets });
+        session.submit(msg.text, msg.attachments, { sent: msg.sent, snippets: msg.snippets, from: this.requester(clientId, entry) });
         break;
 
       case 'interrupt':
@@ -530,8 +557,8 @@ class SessionHub {
       case 'editQueued': {
         // Straight back to whoever asked: a prompt pulled out of the queue
         // belongs in that person's composer, not in everyone's.
-        const item = session.reclaim(msg.id);
-        if (item) this.send(clientId, { type: 'editPrompt', text: item.text || '' });
+        const item = await session.reclaim(msg.id);
+        if (item) this.send(clientId, session._durableQueueOwner ? { ...item, type: 'editPrompt' } : { type: 'editPrompt', text: item.text || '' });
         break;
       }
 
@@ -543,9 +570,18 @@ class SessionHub {
         // Answer first, then say so. Marking the prompt resolved before knowing
         // the answer went anywhere showed "Allowed" for an instance that had
         // already died.
-        const delivered = session.respondToPermission(msg.requestId, msg.allow);
+        const service = !!session._durableQueueOwner;
+        const capturedItem = service ? session.items.filter((i) => i.kind === 'permission' && i.requestId === msg.requestId && !i.resolved).at(-1) : null;
+        const delivered = service ? await session.respondToPermission(msg.requestId, msg.allow) : session.respondToPermission(msg.requestId, msg.allow);
+        if (service && delivered?.outcome !== 'applied') {
+          this.send(clientId, { type: '@refused', what: 'permission', reason: delivered?.outcome === 'unknown'
+            ? 'The answer may have been sent. Refresh the conversation to check its state.' : 'This approval is no longer current. Refresh the conversation.' });
+          break;
+        }
         if (!delivered) break;
-        const item = session.items.find((i) => i.kind === 'permission' && i.requestId === msg.requestId);
+        const run = delivered?.result?.data.run;
+        const item = service ? capturedItem?.run?.id === run?.id && capturedItem?.run?.turn === run?.turn ? capturedItem : null
+          : session.items.find((i) => i.kind === 'permission' && i.requestId === msg.requestId);
         if (item) {
           item.resolved = msg.allow ? 'allow' : 'deny';
           this.broadcast({ type: 'items', items: [item] });
@@ -630,20 +666,20 @@ class SessionHub {
 
       case 'allSettings':
         // Only the editor has the full list, and only on this machine.
-        if (this.isLocal(entry) && typeof this.host.openAllSettings === 'function') this.host.openAllSettings();
+        if (this.isLocal(entry) && typeof this.host.openAllSettings === 'function') this.host.openAllSettings(this.requester(clientId, entry));
         break;
 
       // Only the PR this instance already names, and only from the editor:
       // a phone opening it would open it on the laptop.
       case 'openPr':
         if (session.prUrl && this.isLocal(entry) && typeof this.host.openUrl === 'function') {
-          await this.host.openUrl(session.prUrl);
+          await this.host.openUrl(session.prUrl, this.requester(clientId, entry));
         }
         break;
 
       case 'openFile':
         if (typeof this.host.openFile === 'function') {
-          await this.host.openFile({ path: msg.path, line: msg.line, cwd: session.cwd });
+          await this.host.openFile({ path: msg.path, line: msg.line, cwd: session.cwd }, this.requester(clientId, entry));
         }
         break;
 
@@ -653,7 +689,7 @@ class SessionHub {
       // is not a command you have agreed to run.
       case 'runInTerminal':
         if (typeof this.host.runInTerminal === 'function') {
-          await this.host.runInTerminal({ command: msg.command, cwd: session.cwd, label: session.label });
+          await this.host.runInTerminal({ command: msg.command, cwd: session.cwd, label: session.label }, this.requester(clientId, entry));
         }
         break;
 
@@ -662,7 +698,7 @@ class SessionHub {
         // another instance moves the phone; it does not reach across and
         // rearrange the tabs on the laptop.
         if (entry.device) this.send(clientId, { type: '@navigate', session: msg.id });
-        else if (typeof this.host.switchTo === 'function') this.host.switchTo(msg.id, session);
+        else if (typeof this.host.switchTo === 'function') this.host.switchTo(msg.id, session, this.requester(clientId, entry));
         break;
 
       default:
@@ -688,10 +724,10 @@ class SessionHub {
   }
 
   /** A client has loaded and wants the whole picture. */
-  async hello(entry) {
+  async hello(entry, { snapshotOnly = false } = {}) {
     const session = this.session;
     // Opened on a phone is opened. The panel says so itself, when it is in view.
-    this.seenElsewhere(entry);
+    if (!snapshotOnly) this.seenElsewhere(entry);
     // Being picked up from the keeper after a reload: what it has is the
     // conversation as it stands, so wait for that rather than the transcript.
     if (session._attaching) { try { await session._attaching; } catch (_) { /* nothing to pick up */ } }
@@ -708,7 +744,7 @@ class SessionHub {
     // Opening an instance starts it — but only for a client that could steer it
     // anyway. Spawning a CLI process on this machine is not something a
     // watch-only device should be able to do by looking.
-    if (!session.isRunning && this.host.autoStart !== false) {
+    if (!snapshotOnly && !session.isRunning && this.host.autoStart !== false) {
       if (this.mayControl(entry)) session.start();
       else if (!session.items.length) {
         // Watching an instance that is not running would otherwise be an empty
@@ -749,7 +785,7 @@ class SessionHub {
   // ---- what a client is told -----------------------------------------------
 
   config() {
-    return typeof this.host.config === 'function' ? (this.host.config() || {}) : {};
+    return typeof this.host.config === 'function' ? (this.host.config(this.session.cwd) || {}) : {};
   }
 
   meta() {
@@ -829,7 +865,7 @@ class SessionHub {
     try {
       const id = await this.host.handOffToCodex({ cwd: session.cwd, text: lines.join('\n'), attachments: msg.attachments || [] });
       if (entry && entry.device) this.send(clientId, { type: '@navigate', session: id });
-      else if (typeof this.host.switchTo === 'function') this.host.switchTo(id, null);
+      else if (typeof this.host.switchTo === 'function') this.host.switchTo(id, null, this.requester(clientId, entry));
     } catch (err) {
       if (typeof session._notice === 'function') session._notice('Codex could not take it: ' + ((err && err.message) || err), 'error');
     }
@@ -862,9 +898,11 @@ class SessionHub {
     const cfg = this.config();
     return {
       type: 'meta',
+      ...this.runFields(),
       meta: this.meta(),
       slashCommands: this.commandList(),
-      commandArgs: this.session.provider === 'codex' ? this.codexArgs() : commandArgs(),
+      commandArgs: this.session.provider === 'codex' ? this.codexArgs()
+        : (this.session.commandCatalog ? this.session.commandCatalog.commandArgs() : commandArgs()),
       ownCommands: this.ownCommands(cfg),
       snippets: cfg.promptSnippets || {},
       // The settings the page draws itself with. They were only ever sent in
@@ -884,6 +922,7 @@ class SessionHub {
     const cfg = this.config();
     return {
       type: 'init',
+      ...this.runFields(),
       sessionId: session.id,
       // So a client can tell its own row in the presence list from everybody
       // else's, without having to guess at names.
@@ -899,7 +938,8 @@ class SessionHub {
       queue: this.queueSummary(),
       drainAt: session.drainAt || null,
       slashCommands: this.commandList(),
-      commandArgs: this.session.provider === 'codex' ? this.codexArgs() : commandArgs(),
+      commandArgs: this.session.provider === 'codex' ? this.codexArgs()
+        : (this.session.commandCatalog ? this.session.commandCatalog.commandArgs() : commandArgs()),
       ownCommands: this.ownCommands(cfg),
       snippets: cfg.promptSnippets || {},
       showThinking: cfg.showThinking,
@@ -910,6 +950,8 @@ class SessionHub {
       fontSize: cfg.fontSize || 13
     };
   }
+
+  runFields() { return this.session._engineControls ? { run: this.session._engineControls.run() } : {}; }
 
   /**
    * Everything /status draws. The facts only the host knows — the transcript on
@@ -1018,37 +1060,30 @@ function safePost(client, message) {
  * the hub rather than making one, so the second viewer of an instance joins the
  * first rather than starting a rival copy.
  */
-const hubs = new Map();
-
-function hubFor(session, host) {
-  let hub = hubs.get(session.id);
-  if (!hub) {
-    hub = new SessionHub(session, host);
-    hubs.set(session.id, hub);
-  }
-  // A later transport joins what is already there: the host is the window's, not
-  // any one client's, so replacing it underneath the first would change what
-  // "open this file" means depending on who asked last.
-  return hub;
+function createHubRegistry() {
+  const hubs = new Map();
+  const registry = {
+    hubFor(session, host) {
+      let hub = hubs.get(session.id);
+      if (!hub) { hub = new SessionHub(session, host); hubs.set(session.id, hub); }
+      // A later viewer joins the existing host; it cannot replace its routes.
+      return hub;
+    },
+    closeHub(sessionId) {
+      const hub = hubs.get(sessionId);
+      if (!hub) return false;
+      hub.dispose(); hubs.delete(sessionId); return true;
+    },
+    closeAllHubs() { for (const id of [...hubs.keys()]) registry.closeHub(id); },
+    eachHub(fn) {
+      for (const hub of hubs.values()) { try { fn(hub); } catch (_) { /* one viewer */ } }
+    }
+  };
+  return registry;
 }
 
-function closeHub(sessionId) {
-  const hub = hubs.get(sessionId);
-  if (!hub) return false;
-  hub.dispose();
-  hubs.delete(sessionId);
-  return true;
-}
+// Editor panels and their window's server retain the legacy shared registry.
+// Headless factories construct a registry per engine/server generation.
+const { hubFor, closeHub, closeAllHubs, eachHub } = createHubRegistry();
 
-function closeAllHubs() {
-  for (const id of [...hubs.keys()]) closeHub(id);
-}
-
-/** Every hub in this window — for anything that changed for all of them. */
-function eachHub(fn) {
-  for (const hub of hubs.values()) {
-    try { fn(hub); } catch (_) { /* one hub's problem */ }
-  }
-}
-
-module.exports = { SessionHub, hubFor, closeHub, closeAllHubs, eachHub, OWN_COMMANDS, STEERING, STATUS_REFRESH_MS, STATS_MIN_MS };
+module.exports = { createHubRegistry, SessionHub, hubFor, closeHub, closeAllHubs, eachHub, OWN_COMMANDS, STEERING, STATUS_REFRESH_MS, STATS_MIN_MS };

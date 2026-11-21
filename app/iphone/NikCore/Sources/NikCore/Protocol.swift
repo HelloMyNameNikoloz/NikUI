@@ -19,6 +19,10 @@ public enum SlackEvent: Sendable, Equatable {
 }
 /// Decode with the originating socket role; fleet `status` and conversation `status` are distinct.
 public enum ServerEvent: Sendable, Equatable {
+    case protocolWelcome(ProtocolWelcome), ack(MutationAck), operation(ProviderOperation)
+    case receiptMissing(LookupMissing), operationMissing(LookupMissing), receiptError(LookupFailure), operationError(LookupFailure)
+    case runMeta(ConversationMeta, RenderConfiguration, RunRef?), runStatus(ConversationStatus, RunRef?)
+    indirect case correlated(mid: String, event: ServerEvent)
     case fleet(Fleet), history(HistorySnapshot), devices(DevicesSnapshot), awake(AwakeState)
     case initialized(ConversationInit), items([TranscriptItem]), meta(ConversationMeta, RenderConfiguration)
     case conversationStatus(ConversationStatus), stats(Stats), queue([QueueEntry], drainAt: Date?)
@@ -36,15 +40,32 @@ public enum ServerEvent: Sendable, Equatable {
         guard case .object = j, let type = j["type"].stringValue else { throw CoreFailure(.protocolViolation, "Expected a JSON event with a type.") }
         func s(_ key: String) -> String { j[key].stringValue ?? "" }
         func list<T: WireModel>(_ key: String, _ t: T.Type) -> [T] { j[key].arrayValue.map(T.init) }
+        if let mid = j["mid"].stringValue, ["instance:created", "instance:placed", "@navigate", "editPrompt", "draft", "slack:link"].contains(type) {
+            var fields = j.objectValue; fields.removeValue(forKey: "mid")
+            return .correlated(mid: mid, event: try decode(.object(fields), role: role))
+        }
         switch type {
+        case "welcome": return .protocolWelcome(try ProtocolWelcome(validating: j))
+        case "ack": return .ack(try MutationAck(validating: j))
+        case "operation": return .operation(try ProviderOperation(validating: j))
+        case "receipt:missing": return .receiptMissing(try LookupMissing(validating: j))
+        case "operation:missing": return .operationMissing(try LookupMissing(validating: j))
+        case "receipt:error": return .receiptError(try LookupFailure(validating: j))
+        case "operation:error": return .operationError(try LookupFailure(validating: j))
         case "fleet": return .fleet(Fleet(j))
         case "history": return .history(HistorySnapshot(j))
         case "devices": return .devices(DevicesSnapshot(j))
         case "awake": return .awake(AwakeState(j))
-        case "init": return .initialized(ConversationInit(j))
+        case "init":
+            if !j["run"].isNull { _ = try RunRef(validating: j["run"]) }
+            for operation in j["operations"].arrayValue { _ = try ProviderOperation(validating: operation) }
+            return .initialized(ConversationInit(j))
         case "items": return .items(list("items", TranscriptItem.self))
-        case "meta": return .meta(ConversationMeta(j["meta"]), RenderConfiguration.fromEnvelope(j))
+        case "meta":
+            if j.objectValue["run"] != nil { return .runMeta(ConversationMeta(j["meta"]), RenderConfiguration.fromEnvelope(j), j["run"].isNull ? nil : try RunRef(validating: j["run"])) }
+            return .meta(ConversationMeta(j["meta"]), RenderConfiguration.fromEnvelope(j))
         case "status":
+            if case .conversation = role, j["status"].stringValue != nil, j.objectValue["run"] != nil { return .runStatus(ConversationStatus(rawValue: s("status")) ?? .unknown, j["run"].isNull ? nil : try RunRef(validating: j["run"])) }
             if case .conversation = role, j["status"].stringValue != nil { return .conversationStatus(ConversationStatus(rawValue: s("status")) ?? .unknown) }
             return .report(available: j["available"].boolValue ?? true, report: j["report"].isNull ? nil : Report(j["report"]), trouble: j["trouble"].stringValue)
         case "stats": return .stats(Stats(j["stats"]))

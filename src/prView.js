@@ -431,6 +431,10 @@ class PrFeed extends EventEmitter {
     super();
     o = o || {};
     this.run = o.run || defaultRun;
+    const run = this.run;
+    this.run = (...args) => this.disposed
+      ? Promise.resolve({ ok: false, stdout: '', stderr: 'PR feed is closed.' }) : run(...args);
+    this.disposed = false;
     this.now = o.now || Date.now;
     this.setTimer = o.setTimeout || setTimeout;
     this.clearTimer = o.clearTimeout || clearTimeout;
@@ -455,6 +459,7 @@ class PrFeed extends EventEmitter {
 
   /** Registers or updates a watcher. `active` says the pane is open and visible. */
   watch(key, opts) {
+    if (this.disposed) return;
     const o = opts || {};
     const url = o.url;
     const prevUrl = this.keyToUrl.get(key);
@@ -502,6 +507,7 @@ class PrFeed extends EventEmitter {
   }
 
   schedule(url) {
+    if (this.disposed) return;
     const e = this.entries.get(url);
     if (!e) return;
     if (e.timer) this.clearTimer(e.timer);
@@ -523,6 +529,7 @@ class PrFeed extends EventEmitter {
 
   /** Forces a fetch now; a fetch already in flight for this URL is reused. */
   refresh(url) {
+    if (this.disposed) return Promise.resolve({ state: null, loading: false, error: 'PR feed is closed.', prUrl: url });
     const e = this.entry(url);
     if (e.fetching) return e.fetching;
     const prevState = e.last ? e.last.state : null;
@@ -551,6 +558,7 @@ class PrFeed extends EventEmitter {
       } catch (err) {
         result = { state: prevState, loading: false, error: String((err && err.message) || err), prUrl: url };
       }
+      if (this.disposed) return result;
       e.last = result;
       e.lastFetchAt = this.now();
       this.emit('state', url, result);
@@ -562,6 +570,51 @@ class PrFeed extends EventEmitter {
   }
 
   /** `gh api graphql` for a mutation, as plain `{ok, stderr}`. */
+  freezeMutation(action, url, message) {
+    const { immutable, requireThat } = require('./protocolV2');
+    requireThat(PR_URL.test(url), 'BAD_MESSAGE');
+    const e = this.entries.get(url);
+    const cwd = e?.cwd || (e?.watchers.size ? e.watchers.values().next().value.cwd : null) || null;
+    let calls, done;
+    if (action === 'comment') {
+      calls = [['pr', 'comment', url, '--body', message.body]]; done = 'Commented.';
+    } else if (action === 'rerun') {
+      const ids = [...new Set((e?.last?.state?.checks || []).filter((c) => c.status === 'fail' && c.runId).map((c) => String(c.runId)))];
+      requireThat(ids.length > 0, 'NOT_FOUND');
+      calls = ids.map((id) => ['run', 'rerun', id, '--failed', '--repo', repoOf(url)]);
+      done = `Re-ran ${ids.length} failed check(s).`;
+    } else {
+      const query = action === 'reply'
+        ? 'mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id, body:$body}){comment{id}}}'
+        : `mutation($id:ID!){${message.resolved === false ? 'unresolveReviewThread' : 'resolveReviewThread'}(input:{threadId:$id}){thread{id}}}`;
+      calls = [['api', 'graphql', '-f', 'query=' + query, '-f', 'id=' + message.threadId,
+        ...(action === 'reply' ? ['-f', 'body=' + message.body] : [])]];
+      done = action === 'reply' ? 'Replied.' : message.resolved === false ? 'Marked unresolved.' : 'Resolved.';
+    }
+    return immutable({ action, prUrl: url, cwd, calls, message: done });
+  }
+
+  async executeMutation(plan, revalidate) {
+    const { wireError } = require('./receiptDispatcher');
+    let providerId = null, crossed = false;
+    for (const args of plan.calls) {
+      try { revalidate(); }
+      catch (error) { return { outcome: crossed ? 'unknown' : 'rejected', error: wireError(crossed ? 'OUTCOME_UNKNOWN' : error.code) }; }
+      const r = await this.run('gh', args, { cwd: plan.cwd || undefined });
+      if (r?.ok !== true) return { outcome: !crossed && r?.delivery === 'not_written' ? 'rejected' : 'unknown',
+        error: wireError(!crossed && r?.delivery === 'not_written' ? 'PROVIDER_REJECTED' : 'OUTCOME_UNKNOWN') };
+      crossed = true;
+      try {
+        const data = JSON.parse(r.stdout).data;
+        const id = data?.addPullRequestReviewThreadReply?.comment?.id || data?.resolveReviewThread?.thread?.id || data?.unresolveReviewThread?.thread?.id;
+        if (typeof id === 'string' && id.length <= 1024) providerId = id;
+      } catch (_) { /* gh comment/rerun need not return JSON */ }
+    }
+    this.refresh(plan.prUrl);
+    return { outcome: 'applied', result: { code: 'ok', data: { prUrl: plan.prUrl, action: plan.action, message: plan.message, providerId },
+      replies: [{ type: 'pr:done', action: plan.action, ok: true, message: plan.message }] } };
+  }
+
   async mutate(url, query, fields) {
     const e = this.entries.get(url);
     const cwd = (e && e.cwd) || (e && e.watchers.size ? e.watchers.values().next().value.cwd : undefined);
@@ -648,6 +701,7 @@ class PrFeed extends EventEmitter {
       viewer: (data && data.viewer && data.viewer.login) || null,
       complete: !found || (found.totalCount || 0) <= list.length
     };
+    if (this.disposed) return value;
     this.mentionCache.set(key, { at: this.now(), value });
     if (this.mentionCache.size > 200) this.mentionCache.delete(this.mentionCache.keys().next().value);
     return value;
@@ -694,10 +748,14 @@ class PrFeed extends EventEmitter {
   }
 
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
     for (const e of this.entries.values()) if (e.timer) this.clearTimer(e.timer);
     this.entries.clear();
     this.keyToUrl.clear();
+    if (this.mentionCache) this.mentionCache.clear();
+    this.removeAllListeners();
   }
 }
 
-module.exports = { PrFeed, normalize, QUERY, parsePrUrl, parseTicketUrl, threadPrompt, checkPrompt, conflictPrompt };
+module.exports = { PrFeed, normalize, QUERY, parsePrUrl, parseTicketUrl, threadPrompt, checkPrompt, conflictPrompt, defaultRun };

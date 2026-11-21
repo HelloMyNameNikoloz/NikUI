@@ -1,0 +1,839 @@
+{
+  "fixtureVersion": 1,
+  "category": "canonical-hashing",
+  "vectors": [
+    {
+      "id": "hash-base",
+      "polarity": "positive",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "same"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "7fc6eecc39885045bbe5d6cd5cf6b3e2d25e938de620ec43f317e58f7328de9a"
+      }
+    },
+    {
+      "id": "hash-key-order",
+      "polarity": "positive",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "extra": {
+              "z": null,
+              "a": 1.25
+            },
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "attachments": [],
+            "text": "ქართული 👋 / café\n",
+            "issuedAt": 1795179601000,
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "type": "send"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "same"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "7fc6eecc39885045bbe5d6cd5cf6b3e2d25e938de620ec43f317e58f7328de9a",
+        "sameAs": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-new-mid-scope",
+      "polarity": "positive",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "11111111111111111111111111111111",
+            "scope": "22222222222222222222222222222222",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "same"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "7fc6eecc39885045bbe5d6cd5cf6b3e2d25e938de620ec43f317e58f7328de9a",
+        "sameAs": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-array-order",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "two",
+              "one"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"issuedAt\":1795179601000,\"snippets\":[\"two\",\"one\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "2a6bf87379681c705a7ef0c0afa9b35e4c4f243d4a4d91cb8245d8f2c57a5395",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-absent",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "dd2abbffd4f2ab13d2bd2165ac75565151b9818a8c2ef948a644a2f93d82aa9f",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-null",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": null
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":null,\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "be4df282a344161f22e4f4cfdbf480bf3a596098fa68c52e1859260fedd02ed8",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-unknown-field",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            },
+            "futureFlag": {
+              "mid": "nested-intent-id",
+              "scope": "nested-intent-scope",
+              "enabled": true
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"futureFlag\":{\"enabled\":true,\"mid\":\"nested-intent-id\",\"scope\":\"nested-intent-scope\"},\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "dd0cbf53fd06ddf3f8e7c65f77dc7fab4775cc386cb2f3c53ced9614766044b1",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-issued-at",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601001,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"issuedAt\":1795179601001,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "b34b8935d0a7b1a9fb3d7873246e255d4013ed52c1bde691a0c9ebb9e15ebf8b",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-other-target",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-8",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-8\"}",
+        "sha256": "7eb35f89b2f9b43cff67d485ffef7743c7418578e5664b1aba1959318b7ef399",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-fleet-role",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"fleet\"}",
+        "sha256": "d47cb045ea62c39e6600ad2ee7abaff037e70a419b7044e58f35ad26c0229e58",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-run-turn",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            },
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"issuedAt\":1795179601000,\"run\":{\"id\":\"a81ec16e4ac74040a9107dbe669380b5\",\"turn\":\"turn-9\"},\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "79b5574715acd92cb35bb81a79aab8ad042ee542bf79e3496f22ad55dcf2df84",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-correlation-id",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            },
+            "id": "legacy-2"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"id\":\"legacy-2\",\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "3131ccbe982e44f2056413c9eb1740019719a7bcdff094ddfa7b7de5afeddbd4",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-unicode-decomposed",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "z": null,
+              "a": 1.25
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"a\":1.25,\"z\":null},\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "9e9114537ef56fa62c5ed5571bd48e202e11405738adb9ca74d97fb02f22be06",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    },
+    {
+      "id": "hash-numeric-and-unicode-keys",
+      "polarity": "negative",
+      "covers": [
+        "T13"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ქართული 👋 / café\n",
+            "attachments": [],
+            "snippets": [
+              "one",
+              "two"
+            ],
+            "extra": {
+              "2": 2,
+              "10": 10,
+              "": 1,
+              "😀": 2,
+              "nested": {
+                "b": 0,
+                "a": false
+              },
+              "empty": []
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "comparison": "different"
+        },
+        "close": null
+      },
+      "hash": {
+        "canonical": "{\"message\":{\"attachments\":[],\"extra\":{\"10\":10,\"2\":2,\"empty\":[],\"nested\":{\"a\":false,\"b\":0},\"😀\":2,\"\":1},\"issuedAt\":1795179601000,\"snippets\":[\"one\",\"two\"],\"text\":\"ქართული 👋 / café\\n\",\"type\":\"send\"},\"target\":\"session:instance-7\"}",
+        "sha256": "9e9cac286225eae38708e1b4452a05d2d287a7894da8f8e99ea9916d50036a53",
+        "differentFrom": [
+          "hash-base"
+        ]
+      }
+    }
+  ]
+}

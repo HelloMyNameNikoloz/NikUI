@@ -1,0 +1,2134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NikUI protocol v2 fixture consistency corpus, not runtime conformance",
+  "type": "object",
+  "required": [
+    "fixtureVersion",
+    "category",
+    "vectors"
+  ],
+  "properties": {
+    "fixtureVersion": {
+      "const": 1
+    },
+    "category": {
+      "enum": [
+        "negotiation",
+        "canonical-hashing",
+        "receipts",
+        "run-turn-binding",
+        "codex-unknown",
+        "seats-grants",
+        "reconnect-outbox",
+        "mutation-results"
+      ]
+    },
+    "vectors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/vector"
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "required": [
+        "fixtureVersion",
+        "protocol",
+        "evidence",
+        "hashInput",
+        "totalVectors",
+        "totalInvalid",
+        "files",
+        "invalidFile",
+        "inventory"
+      ],
+      "properties": {
+        "fixtureVersion": {
+          "const": 1
+        },
+        "protocol": {
+          "const": 2
+        },
+        "evidence": {
+          "const": "fixture consistency, not runtime conformance"
+        },
+        "hashInput": {
+          "const": "canonical JSON of {message: request without top-level mid/scope, target: normalized socket target}"
+        },
+        "totalVectors": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "totalInvalid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "file",
+              "category",
+              "sha256",
+              "count",
+              "positive",
+              "negative",
+              "ids"
+            ],
+            "properties": {
+              "file": {
+                "type": "string",
+                "pattern": "^[a-z0-9-]+[.]json$"
+              },
+              "category": {
+                "enum": [
+                  "negotiation",
+                  "canonical-hashing",
+                  "receipts",
+                  "run-turn-binding",
+                  "codex-unknown",
+                  "seats-grants",
+                  "reconnect-outbox",
+                  "mutation-results"
+                ]
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "positive": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "negative": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "invalidFile": {
+          "type": "object",
+          "required": [
+            "file",
+            "sha256"
+          ],
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "role",
+              "type",
+              "branch",
+              "vector"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "fleet",
+                  "conversation",
+                  "either"
+                ]
+              },
+              "type": {
+                "type": "string"
+              },
+              "branch": {
+                "enum": [
+                  "default",
+                  "local",
+                  "slash-command",
+                  "handoff"
+                ]
+              },
+              "vector": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "invalidCorpus": {
+      "type": "object",
+      "required": [
+        "fixtureVersion",
+        "cases"
+      ],
+      "properties": {
+        "fixtureVersion": {
+          "const": 1
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "base",
+              "patches",
+              "error"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "base": {
+                "type": "string"
+              },
+              "patches": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "op",
+                    "path"
+                  ],
+                  "properties": {
+                    "op": {
+                      "enum": [
+                        "replace",
+                        "remove"
+                      ]
+                    },
+                    "path": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "minItems": 1
+                    },
+                    "value": {}
+                  },
+                  "additionalProperties": false
+                },
+                "minItems": 1
+              },
+              "error": {
+                "enum": [
+                  "schema",
+                  "identity",
+                  "ack",
+                  "hash",
+                  "operation",
+                  "unknown"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "vector": {
+      "type": "object",
+      "required": [
+        "id",
+        "polarity",
+        "covers",
+        "context",
+        "initial",
+        "input",
+        "expected"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]+$"
+        },
+        "polarity": {
+          "enum": [
+            "positive",
+            "negative"
+          ]
+        },
+        "covers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^T[0-9]{2}$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "context": {
+          "type": "object",
+          "required": [
+            "role",
+            "target",
+            "principal",
+            "seat"
+          ],
+          "properties": {
+            "role": {
+              "enum": [
+                "fleet",
+                "conversation"
+              ]
+            },
+            "target": {
+              "type": "string",
+              "pattern": "^(fleet|session:.+)$"
+            },
+            "principal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "seat": {
+              "$ref": "#/$defs/seat"
+            }
+          },
+          "additionalProperties": false
+        },
+        "initial": {
+          "type": "object"
+        },
+        "input": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "direction",
+              "message"
+            ],
+            "properties": {
+              "direction": {
+                "enum": [
+                  "client",
+                  "server",
+                  "harness"
+                ]
+              },
+              "message": {
+                "$ref": "#/$defs/message"
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "expected": {
+          "type": "object",
+          "required": [
+            "replies",
+            "effects",
+            "state",
+            "close"
+          ],
+          "properties": {
+            "replies": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/message"
+              },
+              "minItems": 0
+            },
+            "effects": {
+              "type": "object",
+              "required": [
+                "engine",
+                "provider",
+                "ui"
+              ],
+              "properties": {
+                "engine": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "provider": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "ui": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "additionalProperties": false
+            },
+            "state": {
+              "type": "object"
+            },
+            "close": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1000,
+              "maximum": 4999
+            }
+          },
+          "additionalProperties": false
+        },
+        "hash": {
+          "type": "object",
+          "required": [
+            "canonical",
+            "sha256"
+          ],
+          "properties": {
+            "canonical": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "sameAs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "differentFrom": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "message": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "seat": {
+      "type": "object",
+      "required": [
+        "id",
+        "control",
+        "local",
+        "editor"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "control": {
+          "type": "boolean"
+        },
+        "local": {
+          "type": "boolean"
+        },
+        "editor": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "code",
+        "data",
+        "replies"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "accepted",
+            "ok",
+            "noop"
+          ]
+        },
+        "data": {
+          "type": "object"
+        },
+        "replies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/message"
+          },
+          "minItems": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "BAD_MESSAGE",
+            "MID_REQUIRED",
+            "MID_CONFLICT",
+            "SCOPE_CHANGED",
+            "EXPIRED",
+            "CLOCK_SKEW",
+            "FORBIDDEN",
+            "LOCAL_REQUIRED",
+            "UNSUPPORTED",
+            "NOT_FOUND",
+            "STALE_RUN",
+            "STALE_TURN",
+            "STALE_RESOURCE",
+            "APPROVAL_RESOLVED",
+            "EDITOR_UNAVAILABLE",
+            "UI_UNAVAILABLE",
+            "CANCELLED",
+            "RECEIPT_FULL",
+            "STORAGE_UNAVAILABLE",
+            "ENGINE_RESTARTED",
+            "PROVIDER_REJECTED",
+            "OUTCOME_UNKNOWN"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ack": {
+      "type": "object",
+      "required": [
+        "type",
+        "scope",
+        "mid",
+        "what",
+        "target",
+        "status",
+        "outcome",
+        "admitted",
+        "at",
+        "expiresAt",
+        "result",
+        "error"
+      ],
+      "properties": {
+        "type": {
+          "const": "ack"
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "mid": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "what": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^(fleet|session:.+)$"
+        },
+        "status": {
+          "enum": [
+            "applied",
+            "rejected",
+            "pending",
+            "unknown",
+            "duplicate"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "applied",
+            "rejected",
+            "pending",
+            "unknown"
+          ]
+        },
+        "admitted": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/result"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "provider": {
+      "type": "object",
+      "required": [
+        "kind",
+        "account",
+        "threadId",
+        "clientUserMessageId",
+        "turnId",
+        "ownership",
+        "writer"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "claude",
+            "codex"
+          ]
+        },
+        "account": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "clientUserMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ownership": {
+          "enum": [
+            "owned",
+            "borrowed"
+          ]
+        },
+        "writer": {
+          "enum": [
+            "engine",
+            "external",
+            "unknown"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "operation": {
+      "type": "object",
+      "required": [
+        "type",
+        "scope",
+        "mid",
+        "target",
+        "revision",
+        "state",
+        "provider",
+        "error",
+        "at"
+      ],
+      "properties": {
+        "type": {
+          "const": "operation"
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "mid": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "target": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "dispatching",
+            "accepted",
+            "completed",
+            "rejected",
+            "unknown"
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/provider"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "id",
+        "turn"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-@apple": {
+      "type": "object",
+      "required": [
+        "registered"
+      ],
+      "properties": {
+        "registered": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-@listen": {
+      "type": "object",
+      "required": [],
+      "properties": {},
+      "additionalProperties": false
+    },
+    "data-forget": {
+      "type": "object",
+      "required": [
+        "device"
+      ],
+      "properties": {
+        "device": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-awake:set": {
+      "type": "object",
+      "required": [
+        "id",
+        "value"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "data-lid:set": {
+      "type": "object",
+      "required": [
+        "id",
+        "value"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "data-instance:new": {
+      "type": "object",
+      "required": [
+        "instance"
+      ],
+      "properties": {
+        "instance": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-instance:resume": {
+      "type": "object",
+      "required": [
+        "instance"
+      ],
+      "properties": {
+        "instance": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-instance:place": {
+      "type": "object",
+      "required": [
+        "instance",
+        "folderId"
+      ],
+      "properties": {
+        "instance": {
+          "type": "string"
+        },
+        "folderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-ready": {
+      "type": "object",
+      "required": [
+        "instance",
+        "run"
+      ],
+      "properties": {
+        "instance": {
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/run"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-visible": {
+      "type": "object",
+      "required": [
+        "on"
+      ],
+      "properties": {
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-send": {
+      "type": "object",
+      "required": [
+        "instance",
+        "queueId",
+        "operation"
+      ],
+      "properties": {
+        "instance": {
+          "type": "string"
+        },
+        "queueId": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-interrupt": {
+      "type": "object",
+      "required": [
+        "run",
+        "taskId",
+        "delivery"
+      ],
+      "properties": {
+        "run": {
+          "$ref": "#/$defs/run"
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "delivery": {
+          "const": "submitted"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-stopTask": {
+      "type": "object",
+      "required": [
+        "run",
+        "taskId",
+        "delivery"
+      ],
+      "properties": {
+        "run": {
+          "$ref": "#/$defs/run"
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "delivery": {
+          "const": "submitted"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-unqueue": {
+      "type": "object",
+      "required": [
+        "queueId"
+      ],
+      "properties": {
+        "queueId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-promoteQueued": {
+      "type": "object",
+      "required": [
+        "queueId"
+      ],
+      "properties": {
+        "queueId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-editQueued": {
+      "type": "object",
+      "required": [
+        "queueId"
+      ],
+      "properties": {
+        "queueId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-clearQueue": {
+      "type": "object",
+      "required": [
+        "removed"
+      ],
+      "properties": {
+        "removed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-permission": {
+      "type": "object",
+      "required": [
+        "requestId",
+        "run",
+        "allow",
+        "delivery"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/run"
+        },
+        "allow": {
+          "type": "boolean"
+        },
+        "delivery": {
+          "const": "submitted"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-setSetting": {
+      "type": "object",
+      "required": [
+        "id",
+        "value"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "data-saveCommand": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-removeCommand": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-restoreCommand": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-allSettings": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-slack": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-openPr": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-openFile": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-runInTerminal": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-switch": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-pr:open": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-pr:pane": {
+      "type": "object",
+      "required": [
+        "prUrl",
+        "pane"
+      ],
+      "properties": {
+        "prUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pane"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-pr:reply": {
+      "type": "object",
+      "required": [
+        "prUrl",
+        "action",
+        "message",
+        "providerId"
+      ],
+      "properties": {
+        "prUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "action": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-pr:resolve": {
+      "type": "object",
+      "required": [
+        "prUrl",
+        "action",
+        "message",
+        "providerId"
+      ],
+      "properties": {
+        "prUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "action": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-pr:comment": {
+      "type": "object",
+      "required": [
+        "prUrl",
+        "action",
+        "message",
+        "providerId"
+      ],
+      "properties": {
+        "prUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "action": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-pr:rerun": {
+      "type": "object",
+      "required": [
+        "prUrl",
+        "action",
+        "message",
+        "providerId"
+      ],
+      "properties": {
+        "prUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "action": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-pr:link": {
+      "type": "object",
+      "required": [
+        "prUrl",
+        "pane"
+      ],
+      "properties": {
+        "prUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pane"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-pr:unlink": {
+      "type": "object",
+      "required": [
+        "prUrl",
+        "pane"
+      ],
+      "properties": {
+        "prUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/pane"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-term:open": {
+      "type": "object",
+      "required": [
+        "terminal"
+      ],
+      "properties": {
+        "terminal": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-term:run": {
+      "type": "object",
+      "required": [
+        "terminal",
+        "terminalRun"
+      ],
+      "properties": {
+        "terminal": {
+          "type": "string"
+        },
+        "terminalRun": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-term:stop": {
+      "type": "object",
+      "required": [
+        "terminal",
+        "terminalRun"
+      ],
+      "properties": {
+        "terminal": {
+          "type": "string"
+        },
+        "terminalRun": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-term:close": {
+      "type": "object",
+      "required": [
+        "terminal",
+        "terminalRun"
+      ],
+      "properties": {
+        "terminal": {
+          "type": "string"
+        },
+        "terminalRun": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-slack:open": {
+      "type": "object",
+      "required": [
+        "conversation",
+        "thread"
+      ],
+      "properties": {
+        "conversation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thread": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-slack:reply": {
+      "type": "object",
+      "required": [
+        "conversation",
+        "thread",
+        "ts"
+      ],
+      "properties": {
+        "conversation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thread": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ts": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-slack:mute": {
+      "type": "object",
+      "required": [
+        "conversation",
+        "value"
+      ],
+      "properties": {
+        "conversation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "data-slack:vips": {
+      "type": "object",
+      "required": [
+        "conversation",
+        "value"
+      ],
+      "properties": {
+        "conversation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "data-slack:enable": {
+      "type": "object",
+      "required": [
+        "conversation",
+        "value"
+      ],
+      "properties": {
+        "conversation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "data-slack:connect": {
+      "type": "object",
+      "required": [
+        "connected",
+        "who"
+      ],
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        },
+        "who": {}
+      },
+      "additionalProperties": false
+    },
+    "data-slack:disconnect": {
+      "type": "object",
+      "required": [
+        "connected",
+        "who"
+      ],
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        },
+        "who": {}
+      },
+      "additionalProperties": false
+    },
+    "data-slack:signIn": {
+      "type": "object",
+      "required": [
+        "connected",
+        "who"
+      ],
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        },
+        "who": {}
+      },
+      "additionalProperties": false
+    },
+    "data-slack:settings": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-slack:setup": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-slack:link": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data-slack:openTicket": {
+      "type": "object",
+      "required": [
+        "provider",
+        "destination"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "wire-welcome": {
+      "type": "object",
+      "required": [
+        "type",
+        "proto",
+        "caps",
+        "engine",
+        "seat",
+        "receipts"
+      ],
+      "properties": {
+        "type": {
+          "const": "welcome"
+        },
+        "proto": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "caps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[\\u0000-\\u007f]+$"
+          },
+          "minItems": 0,
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "engine": {
+          "type": "object",
+          "required": [
+            "id",
+            "boot",
+            "version",
+            "mode"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "boot": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "version": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "mode": {
+              "enum": [
+                "window",
+                "service"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "seat": {
+          "$ref": "#/$defs/seat"
+        },
+        "receipts": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "scope",
+                "retentionMs",
+                "maxEntries",
+                "maxBytes",
+                "maxMessageBytes",
+                "maxResultBytes",
+                "now"
+              ],
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                "retentionMs": {
+                  "const": 86400000
+                },
+                "maxEntries": {
+                  "const": 10000
+                },
+                "maxBytes": {
+                  "const": 134217728
+                },
+                "maxMessageBytes": {
+                  "const": 16777216
+                },
+                "maxResultBytes": {
+                  "const": 16777216
+                },
+                "now": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "wire-protocol:error": {
+      "type": "object",
+      "required": [
+        "type",
+        "code",
+        "message",
+        "supported"
+      ],
+      "properties": {
+        "type": {
+          "const": "protocol:error"
+        },
+        "code": {
+          "enum": [
+            "BAD_HELLO",
+            "NO_COMMON_PROTOCOL",
+            "REQUIRED_CAPABILITY",
+            "NEGOTIATION_TIMEOUT"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "supported": {
+          "type": "object",
+          "required": [
+            "min",
+            "max"
+          ],
+          "properties": {
+            "min": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "wire-receipt:missing": {
+      "type": "object",
+      "required": [
+        "type",
+        "scope",
+        "mid",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "const": "receipt:missing"
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "mid": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "reason": {
+          "enum": [
+            "not_found",
+            "expired",
+            "scope_changed"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "wire-operation:missing": {
+      "type": "object",
+      "required": [
+        "type",
+        "scope",
+        "mid",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "const": "operation:missing"
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "mid": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "reason": {
+          "enum": [
+            "not_found",
+            "expired",
+            "scope_changed"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "wire-receipt:error": {
+      "type": "object",
+      "required": [
+        "type",
+        "scope",
+        "mid",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "type": {
+          "const": "receipt:error"
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "mid": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "code": {
+          "enum": [
+            "BAD_MESSAGE",
+            "FORBIDDEN",
+            "STORAGE_UNAVAILABLE"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "wire-operation:error": {
+      "type": "object",
+      "required": [
+        "type",
+        "scope",
+        "mid",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "type": {
+          "const": "operation:error"
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "mid": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "code": {
+          "enum": [
+            "BAD_MESSAGE",
+            "FORBIDDEN",
+            "STORAGE_UNAVAILABLE"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "attachment": {
+      "type": "object",
+      "required": [
+        "name",
+        "mediaType",
+        "data"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "mediaType": {
+          "type": "string",
+          "pattern": "^image/(png|jpeg|gif|webp)$"
+        },
+        "data": {
+          "type": "string",
+          "minLength": 4,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pane": {
+      "type": "object",
+      "required": [
+        "open",
+        "tab",
+        "width",
+        "full"
+      ],
+      "properties": {
+        "open": {
+          "type": "boolean"
+        },
+        "tab": {
+          "type": "string"
+        },
+        "width": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 280,
+          "maximum": 2000
+        },
+        "full": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

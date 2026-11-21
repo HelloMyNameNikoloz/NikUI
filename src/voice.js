@@ -89,7 +89,26 @@ class Voice {
   constructor(deps) {
     const d = deps || {};
     this.dir = d.dir || null;
-    this.run = d.run || defaultRun;
+    this.fs = d.fs || fs;
+    this.tmp = d.tmp || os.tmpdir();
+    this.models = d.models || path.join(os.homedir(), 'Library', 'Application Support', 'FluidAudio', 'Models');
+    this.now = d.now || Date.now;
+    this.setTimer = d.setTimeout || setTimeout;
+    this.clearTimer = d.clearTimeout || clearTimeout;
+    this.controller = new AbortController();
+    this.disposed = false;
+    this.running = new Set();
+    const run = d.run || defaultRun;
+    const environment = d.env && Object.assign({}, d.env);
+    this.run = (file, args, options) => {
+      if (this.disposed) return Promise.resolve({ ok: false, code: 1, stdout: '', stderr: 'Voice is closed' });
+      const job = Promise.resolve(run(file, args, Object.assign({}, environment ? { env: environment } : {}, d.cwd ? { cwd: d.cwd } : {},
+        options, { signal: this.controller.signal })));
+      this.running.add(job);
+      const finished = () => { this.running.delete(job); };
+      job.then(finished, finished);
+      return job;
+    };
     this.platform = d.platform || process.platform;
     this.arch = d.arch || process.arch;
     this.enabled = d.enabled || (() => true);
@@ -107,9 +126,9 @@ class Voice {
 
   /** VoiceInk's Parakeet model is on this Mac — a file check, nothing run. */
   modelPresent() {
-    const base = path.join(os.homedir(), 'Library', 'Application Support', 'FluidAudio', 'Models');
+    const base = this.models;
     return ['parakeet-tdt-0.6b-v3', 'parakeet-tdt-0.6b-v3-coreml'].some((name) =>
-      fs.existsSync(path.join(base, name, 'Encoder.mlmodelc')));
+      this.fs.existsSync(path.join(base, name, 'Encoder.mlmodelc')));
   }
 
   /** Whether this machine could ever do it — a Mac with Apple silicon. */
@@ -120,22 +139,22 @@ class Voice {
   stamp() {
     const hash = crypto.createHash('sha256');
     for (const file of SOURCES) {
-      try { hash.update(fs.readFileSync(path.join(this.package, file))); } catch (_) { hash.update(file); }
+      try { hash.update(this.fs.readFileSync(path.join(this.package, file))); } catch (_) { hash.update(file); }
     }
     return hash.digest('hex').slice(0, 16);
   }
 
   isBuilt() {
-    if (this.fixed) return fs.existsSync(this.fixed);
+    if (this.fixed) return this.fs.existsSync(this.fixed);
     try {
-      return fs.readFileSync(path.join(this.home, 'stamp'), 'utf8') === this.stamp() &&
-        fs.existsSync(this.binary);
+      return this.fs.readFileSync(path.join(this.home, 'stamp'), 'utf8') === this.stamp() &&
+        this.fs.existsSync(this.binary);
     } catch (_) { return false; }
   }
 
   /** Build it if it is not built. One build at a time, however many ask. */
   ensure() {
-    if (!this.possible || this.broken) return Promise.resolve(false);
+    if (this.disposed || !this.enabled() || !this.possible || this.broken) return Promise.resolve(false);
     if (this.isBuilt()) return Promise.resolve(true);
     if (!this.building) {
       this.building = this.build()
@@ -154,26 +173,31 @@ class Voice {
   async build() {
     // Every window of the editor has its own copy of this, and they share one
     // place to build in. Whoever takes the lock builds; the rest wait for it.
-    fs.mkdirSync(this.home, { recursive: true });
+    this.fs.mkdirSync(this.home, { recursive: true });
     const lock = path.join(this.home, 'building');
     try {
-      fs.mkdirSync(lock);
+      this.fs.mkdirSync(lock);
     } catch (_) {
       let age = 0;
-      try { age = Date.now() - fs.statSync(lock).mtimeMs; } catch (__) { age = Infinity; }
+      try { age = this.now() - this.fs.statSync(lock).mtimeMs; } catch (__) { age = Infinity; }
       if (age < 25 * 60 * 1000) return this.waitForOther(lock);
-      fs.rmSync(lock, { recursive: true, force: true });
+      this.fs.rmSync(lock, { recursive: true, force: true });
       return this.build();
     }
-    try { return await this.compile(); } finally { fs.rmSync(lock, { recursive: true, force: true }); }
+    try { return await this.compile(); } finally { this.fs.rmSync(lock, { recursive: true, force: true }); }
   }
 
   async waitForOther(lock) {
-    const until = Date.now() + 25 * 60 * 1000;
-    while (Date.now() < until) {
-      await new Promise((r) => setTimeout(r, 3000));
+    const until = this.now() + 25 * 60 * 1000;
+    while (!this.disposed && this.now() < until) {
+      await new Promise((resolve) => {
+        const done = () => { this.clearTimer(timer); this.controller.signal.removeEventListener('abort', done); resolve(); };
+        const timer = this.setTimer(done, 3000);
+        this.controller.signal.addEventListener('abort', done, { once: true });
+      });
+      if (this.disposed) return false;
       if (this.isBuilt()) return true;
-      if (!fs.existsSync(lock)) return this.isBuilt() || this.build();
+      if (!this.fs.existsSync(lock)) return this.isBuilt() || this.build();
     }
     return false;
   }
@@ -181,17 +205,18 @@ class Voice {
   async compile() {
     const source = path.join(this.home, 'package');
     const scratch = path.join(this.home, 'build');
-    fs.mkdirSync(this.home, { recursive: true });
-    fs.rmSync(source, { recursive: true, force: true });
+    this.fs.mkdirSync(this.home, { recursive: true });
+    this.fs.rmSync(source, { recursive: true, force: true });
     for (const file of SOURCES) {
       const from = path.join(this.package, file);
-      if (!fs.existsSync(from)) continue;
-      fs.mkdirSync(path.dirname(path.join(source, file)), { recursive: true });
-      fs.copyFileSync(from, path.join(source, file));
+      if (!this.fs.existsSync(from)) continue;
+      this.fs.mkdirSync(path.dirname(path.join(source, file)), { recursive: true });
+      this.fs.copyFileSync(from, path.join(source, file));
     }
     this.log('voice: building the transcriber (the first time takes a few minutes)');
     const built = await this.run('/usr/bin/nice', ['-n', '10', '/usr/bin/xcrun', 'swift', 'build',
       '-c', 'release', '--package-path', source, '--scratch-path', scratch], { timeout: 20 * 60 * 1000 });
+    if (this.disposed) return false;
     if (!built.ok) {
       const said = (built.stderr || built.stdout || '').trim().split('\n').filter((l) => /error/i.test(l)).pop();
       this.broken = 'the transcriber did not build' + (said ? ': ' + said.trim() : '') +
@@ -201,17 +226,18 @@ class Voice {
     }
     const bin = await this.run('/usr/bin/xcrun', ['swift', 'build', '-c', 'release', '--package-path', source,
       '--scratch-path', scratch, '--show-bin-path']);
+    if (this.disposed) return false;
     const made = path.join(bin.stdout.trim(), EXECUTABLE);
-    if (!bin.ok || !fs.existsSync(made)) {
+    if (!bin.ok || !this.fs.existsSync(made)) {
       this.broken = 'the transcriber built but could not be found';
       return false;
     }
-    fs.copyFileSync(made, this.binary);
-    fs.chmodSync(this.binary, 0o755);
-    fs.writeFileSync(path.join(this.home, 'stamp'), this.stamp());
+    this.fs.copyFileSync(made, this.binary);
+    this.fs.chmodSync(this.binary, 0o755);
+    this.fs.writeFileSync(path.join(this.home, 'stamp'), this.stamp());
     this.log('voice: built ' + this.binary);
     await this.warm();
-    return true;
+    return !this.disposed;
   }
 
   /**
@@ -222,7 +248,9 @@ class Voice {
   async warm() {
     const quiet = Buffer.alloc(44 + 16000 * 2);
     writeHeader(quiet, 16000 * 2);
-    try { await this.transcribe(quiet, { warming: true }); } catch (_) { /* best effort */ }
+    // A queued recording may itself be awaiting ensure(). Queueing the warmup
+    // behind it would make the build and that recording wait on each other.
+    try { await this.once(quiet, { warming: true }); } catch (_) { /* best effort */ }
   }
 
   /**
@@ -230,7 +258,7 @@ class Voice {
    * but the program's own one-line check, once.
    */
   async state() {
-    if (!this.enabled()) return { available: false, code: 'OFF', reason: 'Voice is turned off on the laptop.' };
+    if (this.disposed || !this.enabled()) return { available: false, code: 'OFF', reason: 'Voice is turned off on the laptop.' };
     if (!this.possible) {
       return { available: false, code: 'UNSUPPORTED', reason: 'The laptop needs to be a Mac with Apple silicon.' };
     }
@@ -239,6 +267,7 @@ class Voice {
     if (!this.isBuilt()) return { available: true, building: false, needsBuild: true, model: 'parakeet-tdt-0.6b-v3' };
     if (!this.model) {
       const checked = await this.run(this.binary, ['check'], { timeout: 15000 });
+      if (this.disposed) return { available: false, code: 'OFF', reason: 'Voice is closed.' };
       const said = parse(checked.stdout);
       if (!said) return { available: false, code: 'BROKEN', reason: 'The transcriber did not answer.' };
       // Only a yes is remembered: a model downloaded in VoiceInk later should
@@ -262,8 +291,13 @@ class Voice {
     return job;
   }
 
+  dispose() {
+    if (!this.disposed) { this.disposed = true; this.controller.abort(); }
+    return Promise.allSettled([this.queue, this.building, ...this.running]);
+  }
+
   async once(audio, options) {
-    if (!options.warming && !this.enabled()) throw voiceError('OFF', 'Voice is turned off on the laptop.');
+    if (this.disposed || (!options.warming && !this.enabled())) throw voiceError('OFF', 'Voice is turned off on the laptop.');
     if (!Buffer.isBuffer(audio) || !audio.length) throw voiceError('NO_AUDIO', 'Nothing was recorded.');
     if (audio.length > MAX_BYTES) throw voiceError('TOO_LONG', 'That recording is longer than five minutes.');
     const wav = readWav(audio);
@@ -275,14 +309,16 @@ class Voice {
       throw voiceError('BROKEN', this.broken || 'The transcriber is not available on this Mac.');
     }
 
-    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'nikui-voice-'));
+    if (this.disposed) throw voiceError('OFF', 'Voice is closed.');
+    const folder = this.fs.mkdtempSync(path.join(this.tmp, 'nikui-voice-'));
     const file = path.join(folder, 'said.wav');
     try {
-      fs.writeFileSync(file, audio, { mode: 0o600 });
+      this.fs.writeFileSync(file, audio, { mode: 0o600 });
       // Long enough for the slowest first run, and in proportion to the
       // recording after that; never left to hang.
       const timeout = 90000 + Math.ceil(wav.seconds) * 1000;
       const ran = await this.run(this.binary, ['transcribe', file], { timeout });
+      if (this.disposed) throw voiceError('OFF', 'Voice is closed.');
       const said = parse(ran.stdout);
       if (ran.killed) throw voiceError('TIMEOUT', 'The laptop took too long to transcribe that.');
       if (!said) throw voiceError('FAILED', 'The transcriber did not answer.' + (ran.stderr ? ' ' + ran.stderr.trim().split('\n').pop() : ''));
@@ -292,7 +328,7 @@ class Voice {
       }
       return { text: String(said.text || ''), seconds: Number(said.seconds) || wav.seconds, ms: Number(said.ms) || 0 };
     } finally {
-      fs.rmSync(folder, { recursive: true, force: true });
+      this.fs.rmSync(folder, { recursive: true, force: true });
     }
   }
 }
@@ -325,4 +361,4 @@ function voiceError(code, message) {
   return err;
 }
 
-module.exports = { Voice, readWav, writeHeader, MAX_SECONDS, MAX_BYTES };
+module.exports = { Voice, readWav, writeHeader, MAX_SECONDS, MAX_BYTES, defaultRun };

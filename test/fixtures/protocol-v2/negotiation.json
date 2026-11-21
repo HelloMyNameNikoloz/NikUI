@@ -1,0 +1,1486 @@
+{
+  "fixtureVersion": 1,
+  "category": "negotiation",
+  "vectors": [
+    {
+      "id": "negotiation-v2-fleet",
+      "polarity": "positive",
+      "covers": [
+        "T09"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "authenticated": true,
+        "sealed": true
+      },
+      "input": [
+        {
+          "direction": "server",
+          "message": {
+            "type": "@welcome",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ]
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "welcome",
+            "proto": 2,
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "engine": {
+              "id": "ae6a9e02284843bb9868f91637382219",
+              "boot": "b8be34d36b164aeb84fc417dd4304e9b",
+              "version": "fixture",
+              "mode": "service"
+            },
+            "seat": {
+              "id": "phone-1",
+              "control": true,
+              "local": false,
+              "editor": false
+            },
+            "receipts": {
+              "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+              "retentionMs": 86400000,
+              "maxEntries": 10000,
+              "maxBytes": 134217728,
+              "maxMessageBytes": 16777216,
+              "maxResultBytes": 16777216,
+              "now": 1795179601000
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": true,
+          "proto": 2
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "negotiation-v2-conversation",
+      "polarity": "positive",
+      "covers": [
+        "T09"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "authenticated": true,
+        "sealed": true
+      },
+      "input": [
+        {
+          "direction": "server",
+          "message": {
+            "type": "@welcome",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ]
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "welcome",
+            "proto": 2,
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "engine": {
+              "id": "ae6a9e02284843bb9868f91637382219",
+              "boot": "b8be34d36b164aeb84fc417dd4304e9b",
+              "version": "fixture",
+              "mode": "service"
+            },
+            "seat": {
+              "id": "phone-1",
+              "control": true,
+              "local": false,
+              "editor": false
+            },
+            "receipts": {
+              "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+              "retentionMs": 86400000,
+              "maxEntries": 10000,
+              "maxBytes": 134217728,
+              "maxMessageBytes": 16777216,
+              "maxResultBytes": 16777216,
+              "now": 1795179601000
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": true,
+          "proto": 2
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "negotiation-new-client-old-host",
+      "polarity": "positive",
+      "covers": [
+        "T09"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "server",
+          "message": {
+            "type": "@welcome",
+            "version": "legacy"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "ready"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "proto": 1,
+          "waitForWelcome": false,
+          "autoResend": false
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "negotiation-old-client-ready",
+      "polarity": "positive",
+      "covers": [
+        "T09"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "authenticated": true,
+        "advertised": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "ready"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "proto": 1,
+          "unchangedDispatch": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "negotiation-old-client-apple",
+      "polarity": "positive",
+      "covers": [
+        "T09"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "authenticated": true,
+        "advertised": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "@apple",
+            "token": "abababababababababababababababababababababababababababababababab"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "proto": 1,
+          "unchangedDispatch": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "negotiation-old-client-listen",
+      "polarity": "positive",
+      "covers": [
+        "T09"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "authenticated": true,
+        "advertised": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "@listen"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "@listener",
+            "secret": "synthetic-private-bearer"
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "proto": 1,
+          "unchangedDispatch": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "negotiation-core-missing-fallback",
+      "polarity": "positive",
+      "covers": [
+        "T09",
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "welcome",
+            "proto": 1,
+            "caps": [],
+            "engine": {
+              "id": "ae6a9e02284843bb9868f91637382219",
+              "boot": "b8be34d36b164aeb84fc417dd4304e9b",
+              "version": "fixture",
+              "mode": "service"
+            },
+            "seat": {
+              "id": "phone-1",
+              "control": true,
+              "local": false,
+              "editor": false
+            },
+            "receipts": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "proto": 1,
+          "autoResend": false
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "negotiation-direct-webview-legacy",
+      "polarity": "positive",
+      "covers": [
+        "T09"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "bridgeOptedIn": false,
+        "providerRunning": true,
+        "unread": false
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "ready"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "proto": 1,
+          "autoResend": false
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "negotiation-optional-disabled",
+      "polarity": "positive",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "implementedCaps": [
+          "mid-ack-v1",
+          "receipts-v1",
+          "run-precondition-v1",
+          "operation-state-v1"
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1",
+              "terminal-v1",
+              "editor-route-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "welcome",
+            "proto": 2,
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "engine": {
+              "id": "ae6a9e02284843bb9868f91637382219",
+              "boot": "b8be34d36b164aeb84fc417dd4304e9b",
+              "version": "fixture",
+              "mode": "service"
+            },
+            "seat": {
+              "id": "phone-1",
+              "control": true,
+              "local": false,
+              "editor": false
+            },
+            "receipts": {
+              "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+              "retentionMs": 86400000,
+              "maxEntries": 10000,
+              "maxBytes": 134217728,
+              "maxMessageBytes": 16777216,
+              "maxResultBytes": 16777216,
+              "now": 1795179601000
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "proto": 2
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "negotiation-bad-range",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 2,
+              "max": 1
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "BAD_HELLO",
+            "message": "Synthetic incompatibility",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-fractional-range",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1.5,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "BAD_HELLO",
+            "message": "Synthetic incompatibility",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-duplicate-caps",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1",
+              "mid-ack-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "BAD_HELLO",
+            "message": "Synthetic incompatibility",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-too-many-caps",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "cap-0",
+              "cap-1",
+              "cap-2",
+              "cap-3",
+              "cap-4",
+              "cap-5",
+              "cap-6",
+              "cap-7",
+              "cap-8",
+              "cap-9",
+              "cap-10",
+              "cap-11",
+              "cap-12",
+              "cap-13",
+              "cap-14",
+              "cap-15",
+              "cap-16",
+              "cap-17",
+              "cap-18",
+              "cap-19",
+              "cap-20",
+              "cap-21",
+              "cap-22",
+              "cap-23",
+              "cap-24",
+              "cap-25",
+              "cap-26",
+              "cap-27",
+              "cap-28",
+              "cap-29",
+              "cap-30",
+              "cap-31",
+              "cap-32",
+              "cap-33",
+              "cap-34",
+              "cap-35",
+              "cap-36",
+              "cap-37",
+              "cap-38",
+              "cap-39",
+              "cap-40",
+              "cap-41",
+              "cap-42",
+              "cap-43",
+              "cap-44",
+              "cap-45",
+              "cap-46",
+              "cap-47",
+              "cap-48",
+              "cap-49",
+              "cap-50",
+              "cap-51",
+              "cap-52",
+              "cap-53",
+              "cap-54",
+              "cap-55",
+              "cap-56",
+              "cap-57",
+              "cap-58",
+              "cap-59",
+              "cap-60",
+              "cap-61",
+              "cap-62",
+              "cap-63",
+              "cap-64"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "BAD_HELLO",
+            "message": "Synthetic incompatibility",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-long-cap",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "BAD_HELLO",
+            "message": "Synthetic incompatibility",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-non-ascii-cap",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "ქართული"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "BAD_HELLO",
+            "message": "Synthetic incompatibility",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-bad-client-id",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "client": {
+              "id": "UNTRUSTED",
+              "kind": "mac",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "BAD_HELLO",
+            "message": "Synthetic incompatibility",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-no-overlap",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 3,
+              "max": 3
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "NO_COMMON_PROTOCOL",
+            "message": "Synthetic incompatibility",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-required-core",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 2,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "REQUIRED_CAPABILITY",
+            "message": "Synthetic incompatibility",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-repeated-hello",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 1,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "welcome",
+            "proto": 2,
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "engine": {
+              "id": "ae6a9e02284843bb9868f91637382219",
+              "boot": "b8be34d36b164aeb84fc417dd4304e9b",
+              "version": "fixture",
+              "mode": "service"
+            },
+            "seat": {
+              "id": "phone-1",
+              "control": true,
+              "local": false,
+              "editor": false
+            },
+            "receipts": {
+              "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+              "retentionMs": 86400000,
+              "maxEntries": 10000,
+              "maxBytes": 134217728,
+              "maxMessageBytes": 16777216,
+              "maxResultBytes": 16777216,
+              "now": 1795179601000
+            }
+          },
+          {
+            "type": "protocol:error",
+            "code": "BAD_HELLO",
+            "message": "hello accepted once",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-timeout",
+      "polarity": "negative",
+      "covers": [
+        "T10"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "advance-time",
+            "milliseconds": 10000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "NEGOTIATION_TIMEOUT",
+            "message": "Synthetic timeout",
+            "supported": {
+              "min": 1,
+              "max": 2
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "live": false
+        },
+        "close": 1002
+      }
+    },
+    {
+      "id": "negotiation-unsealed-paired-v2",
+      "polarity": "negative",
+      "covers": [
+        "T10",
+        "T11"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "authenticated": true,
+        "sealed": false
+      },
+      "input": [
+        {
+          "direction": "server",
+          "message": {
+            "type": "@welcome",
+            "proto": {
+              "min": 1,
+              "max": 1
+            },
+            "caps": []
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "hello",
+            "proto": {
+              "min": 2,
+              "max": 2
+            },
+            "caps": [
+              "mid-ack-v1",
+              "receipts-v1",
+              "run-precondition-v1",
+              "operation-state-v1"
+            ],
+            "client": {
+              "id": "a2d8215b7d67433c980d81359dd02120",
+              "kind": "iphone",
+              "version": "fixture"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "protocol:error",
+            "code": "NO_COMMON_PROTOCOL",
+            "message": "Sealing required",
+            "supported": {
+              "min": 1,
+              "max": 1
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": 1002
+      }
+    }
+  ]
+}

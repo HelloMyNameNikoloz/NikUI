@@ -1,0 +1,1513 @@
+{
+  "fixtureVersion": 1,
+  "category": "codex-unknown",
+  "vectors": [
+    {
+      "id": "codex-rpc-send-reply-lost",
+      "polarity": "negative",
+      "covers": [
+        "T28",
+        "T34"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "transport": "rpc",
+        "ownership": "owned",
+        "writer": "engine"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "retained input"
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-accept-drop-reply"
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "unknown",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": null,
+              "ownership": "owned",
+              "writer": "engine"
+            },
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            },
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "blocked",
+          "outbox": "quarantined",
+          "writerTakeovers": 0
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-rpc-steer-reply-lost",
+      "polarity": "negative",
+      "covers": [
+        "T28",
+        "T34"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "transport": "rpc",
+        "ownership": "owned",
+        "writer": "engine"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "/steer retained input",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-accept-drop-reply"
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "unknown",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": null,
+              "ownership": "owned",
+              "writer": "engine"
+            },
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            },
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "blocked",
+          "outbox": "quarantined",
+          "writerTakeovers": 0
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-rpc-approval-reply-lost",
+      "polarity": "negative",
+      "covers": [
+        "T28",
+        "T34"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "transport": "rpc",
+        "ownership": "owned",
+        "writer": "engine"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": true,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-accept-drop-reply"
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "unknown",
+            "outcome": "unknown",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "blocked",
+          "outbox": "quarantined",
+          "writerTakeovers": 0
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-ipc-send-reply-lost",
+      "polarity": "negative",
+      "covers": [
+        "T28",
+        "T34"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "transport": "ipc",
+        "ownership": "borrowed",
+        "writer": "external"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "retained input"
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-accept-drop-reply"
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "unknown",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": null,
+              "ownership": "borrowed",
+              "writer": "external"
+            },
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            },
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "blocked",
+          "outbox": "quarantined",
+          "writerTakeovers": 0
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-ipc-steer-reply-lost",
+      "polarity": "negative",
+      "covers": [
+        "T28",
+        "T34"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "transport": "ipc",
+        "ownership": "borrowed",
+        "writer": "external"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "/steer retained input",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-accept-drop-reply"
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "unknown",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": null,
+              "ownership": "borrowed",
+              "writer": "external"
+            },
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            },
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "blocked",
+          "outbox": "quarantined",
+          "writerTakeovers": 0
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-ipc-approval-reply-lost",
+      "polarity": "negative",
+      "covers": [
+        "T28",
+        "T34"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "transport": "ipc",
+        "ownership": "borrowed",
+        "writer": "external"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": true,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-accept-drop-reply"
+          }
+        },
+        {
+          "direction": "harness",
+          "message": {
+            "type": "reconnect"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "unknown",
+            "outcome": "unknown",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "blocked",
+          "outbox": "quarantined",
+          "writerTakeovers": 0
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-reconcile-no-match",
+      "polarity": "negative",
+      "covers": [
+        "T29"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "operation": {
+          "type": "operation",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "target": "session:instance-7",
+          "revision": 3,
+          "state": "unknown",
+          "provider": {
+            "kind": "codex",
+            "account": "synthetic-home-1",
+            "threadId": "thread-3",
+            "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+            "turnId": null,
+            "ownership": "borrowed",
+            "writer": "external"
+          },
+          "error": {
+            "code": "OUTCOME_UNKNOWN",
+            "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+            "retryable": false
+          },
+          "at": 1795179602000
+        },
+        "retainedInput": "retained input"
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-evidence",
+            "history": []
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "unknown",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": null,
+              "ownership": "borrowed",
+              "writer": "external"
+            },
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            },
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "blocked"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-reconcile-same-text-wrong-id",
+      "polarity": "negative",
+      "covers": [
+        "T29"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "operation": {
+          "type": "operation",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "target": "session:instance-7",
+          "revision": 3,
+          "state": "unknown",
+          "provider": {
+            "kind": "codex",
+            "account": "synthetic-home-1",
+            "threadId": "thread-3",
+            "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+            "turnId": null,
+            "ownership": "borrowed",
+            "writer": "external"
+          },
+          "error": {
+            "code": "OUTCOME_UNKNOWN",
+            "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+            "retryable": false
+          },
+          "at": 1795179602000
+        },
+        "retainedInput": "retained input"
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-evidence",
+            "text": "retained input",
+            "clientId": "other"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "unknown",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": null,
+              "ownership": "borrowed",
+              "writer": "external"
+            },
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            },
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "blocked"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-reconcile-timeout",
+      "polarity": "negative",
+      "covers": [
+        "T29"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "operation": {
+          "type": "operation",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "target": "session:instance-7",
+          "revision": 3,
+          "state": "unknown",
+          "provider": {
+            "kind": "codex",
+            "account": "synthetic-home-1",
+            "threadId": "thread-3",
+            "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+            "turnId": null,
+            "ownership": "borrowed",
+            "writer": "external"
+          },
+          "error": {
+            "code": "OUTCOME_UNKNOWN",
+            "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+            "retryable": false
+          },
+          "at": 1795179602000
+        },
+        "retainedInput": "retained input"
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-evidence",
+            "elapsedMs": 20000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "unknown",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": null,
+              "ownership": "borrowed",
+              "writer": "external"
+            },
+            "error": {
+              "code": "OUTCOME_UNKNOWN",
+              "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+              "retryable": false
+            },
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "blocked"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-reconcile-exact-echo",
+      "polarity": "positive",
+      "covers": [
+        "T29"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "operation": {
+          "type": "operation",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "target": "session:instance-7",
+          "revision": 3,
+          "state": "unknown",
+          "provider": {
+            "kind": "codex",
+            "account": "synthetic-home-1",
+            "threadId": "thread-3",
+            "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+            "turnId": null,
+            "ownership": "borrowed",
+            "writer": "external"
+          },
+          "error": {
+            "code": "OUTCOME_UNKNOWN",
+            "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+            "retryable": false
+          },
+          "at": 1795179602000
+        },
+        "retainedInput": "retained input"
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-evidence",
+            "clientId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+            "turnId": "turn-9"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 4,
+            "state": "accepted",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": "turn-9",
+              "ownership": "borrowed",
+              "writer": "external"
+            },
+            "error": null,
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "reconciled"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-reconcile-authoritative-nonacceptance",
+      "polarity": "positive",
+      "covers": [
+        "T29"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "operation": {
+          "type": "operation",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "target": "session:instance-7",
+          "revision": 3,
+          "state": "unknown",
+          "provider": {
+            "kind": "codex",
+            "account": "synthetic-home-1",
+            "threadId": "thread-3",
+            "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+            "turnId": null,
+            "ownership": "borrowed",
+            "writer": "external"
+          },
+          "error": {
+            "code": "OUTCOME_UNKNOWN",
+            "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+            "retryable": false
+          },
+          "at": 1795179602000
+        },
+        "retainedInput": "retained input"
+      },
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "provider-evidence",
+            "authoritativeNonAcceptance": true
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 4,
+            "state": "rejected",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": null,
+              "ownership": "borrowed",
+              "writer": "external"
+            },
+            "error": {
+              "code": "PROVIDER_REJECTED",
+              "message": "Synthetic fixture: PROVIDER_REJECTED",
+              "retryable": false
+            },
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "autoResend": false,
+          "retained": true,
+          "lane": "reconciled"
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-explicit-new-intent",
+      "polarity": "positive",
+      "covers": [
+        "T29"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "oldUnknown": {
+          "type": "operation",
+          "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+          "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+          "target": "session:instance-7",
+          "revision": 3,
+          "state": "unknown",
+          "provider": {
+            "kind": "codex",
+            "account": "synthetic-home-1",
+            "threadId": "thread-3",
+            "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+            "turnId": null,
+            "ownership": "borrowed",
+            "writer": "external"
+          },
+          "error": {
+            "code": "OUTCOME_UNKNOWN",
+            "message": "Synthetic fixture: OUTCOME_UNKNOWN",
+            "retryable": false
+          },
+          "at": 1795179602000
+        },
+        "userAuthorizedNewIntent": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "22222222222222222222222222222222",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "explicit new input",
+            "retryOf": "ad1bccaf7de84efcb4067845cad1f0ae"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "oldRecordRetained": true,
+          "newIntentNeedsNormalAdmission": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-axes-owned-engine",
+      "polarity": "positive",
+      "covers": [
+        "T30"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "inspect-ownership"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "accepted",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": "turn-9",
+              "ownership": "owned",
+              "writer": "engine"
+            },
+            "error": null,
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "borrowedProcessStops": 0,
+          "ownedReaderTracked": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-axes-owned-external",
+      "polarity": "positive",
+      "covers": [
+        "T30"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "inspect-ownership"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "accepted",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": "turn-9",
+              "ownership": "owned",
+              "writer": "external"
+            },
+            "error": null,
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "borrowedProcessStops": 0,
+          "ownedReaderTracked": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-axes-owned-unknown",
+      "polarity": "positive",
+      "covers": [
+        "T30"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "inspect-ownership"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "accepted",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": "turn-9",
+              "ownership": "owned",
+              "writer": "unknown"
+            },
+            "error": null,
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "borrowedProcessStops": 0,
+          "ownedReaderTracked": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-axes-borrowed-engine",
+      "polarity": "positive",
+      "covers": [
+        "T30"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "inspect-ownership"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "accepted",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": "turn-9",
+              "ownership": "borrowed",
+              "writer": "engine"
+            },
+            "error": null,
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "borrowedProcessStops": 0,
+          "ownedReaderTracked": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-axes-borrowed-external",
+      "polarity": "positive",
+      "covers": [
+        "T30"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "inspect-ownership"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "accepted",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": "turn-9",
+              "ownership": "borrowed",
+              "writer": "external"
+            },
+            "error": null,
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "borrowedProcessStops": 0,
+          "ownedReaderTracked": true
+        },
+        "close": null
+      }
+    },
+    {
+      "id": "codex-axes-borrowed-unknown",
+      "polarity": "positive",
+      "covers": [
+        "T30"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "harness",
+          "message": {
+            "type": "inspect-ownership"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "operation",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "target": "session:instance-7",
+            "revision": 3,
+            "state": "accepted",
+            "provider": {
+              "kind": "codex",
+              "account": "synthetic-home-1",
+              "threadId": "thread-3",
+              "clientUserMessageId": "nikui-ae6a9e02284843bb9868f91637382219-c47a61de298b16cc-ad1bccaf7de84efcb4067845cad1f0ae",
+              "turnId": "turn-9",
+              "ownership": "borrowed",
+              "writer": "unknown"
+            },
+            "error": null,
+            "at": 1795179602000
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "borrowedProcessStops": 0,
+          "ownedReaderTracked": true
+        },
+        "close": null
+      }
+    }
+  ]
+}

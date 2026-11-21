@@ -15,6 +15,11 @@ global.checkEqual = (name, actual, expected) => {
   results.push({ suite: currentSuite, name, ok, actual, expected });
 };
 
+// No suite may reach the keeper the real windows are using: anything that
+// builds a KeeperLink without naming a folder gets a throwaway one instead.
+// An inherited override may itself name a live keeper. Never reuse it.
+process.env.NIKUI_KEEPER_DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'nk-test-'));
+
 (async () => {
   const dir = __dirname;
   const files = fs.readdirSync(dir)

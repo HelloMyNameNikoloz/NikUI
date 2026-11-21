@@ -57,12 +57,33 @@ let born = 0;
 const clients = new Set();
 let idleTimer = null;
 
+// Opt-in daemon checks are atomic with spawn/adoption on this event loop.
+// Legacy protocol-1 windows continue using their existing key-based policy.
+const completeMeta = (meta) => meta && typeof meta.instance === 'string' && !!meta.instance &&
+  typeof meta.cwd === 'string' && path.isAbsolute(meta.cwd) &&
+  (meta.conversation === null || typeof meta.conversation === 'string' && !!meta.conversation);
+const completeRun = (run) => completeMeta(run.meta) && run.meta.instance === run.key && run.meta.cwd === run.cwd;
+function guardFailure(meta, except) {
+  if (!completeMeta(meta)) return 'KEEPER_META_INCOMPLETE';
+  for (const other of runs.values()) {
+    if (other === except || other.exit) continue;
+    if (other.key === meta.instance) return 'KEEPER_INSTANCE_LIVE';
+    if (meta.conversation === null) continue; // a fresh conversation is not a resume
+    if (!completeRun(other) || other.meta.conversation === null) return 'KEEPER_META_INCOMPLETE';
+    if (other.meta.conversation === meta.conversation) return 'KEEPER_CONVERSATION_LIVE';
+  }
+  return null;
+}
+
 function log() { /* stdio is ignored; nothing to say to anybody */ }
 
 class Run {
   constructor(msg, owner) {
     this.id = msg.runId;
     this.key = msg.key;
+    this.cwd = msg.cwd;
+    // Additive protocol-1 routing evidence; checkpoints remain opaque.
+    this.meta = msg.meta;
     this.born = ++born;
     this.owner = owner;          // the window's client, or null once it went away
     this.checkpoint = msg.snapshot === undefined ? null : msg.snapshot;
@@ -189,9 +210,12 @@ class Run {
     this.killTimers.push(setTimeout(() => this.kill('SIGKILL'), 7000));
   }
 
-  takeCheckpoint(seq, snapshot) {
+  takeCheckpoint(seq, snapshot, meta) {
     if (seq > this.seq) return;
     this.checkpoint = snapshot;
+    // A legacy/meta-less checkpoint downgrades eligibility. Keeping old meta
+    // here could bind a newer opaque checkpoint to an obsolete conversation.
+    this.meta = meta;
     this.checkpointSeq = seq;
     // A checkpoint is a fresh base, even after an overflow.
     this.overflow = false;
@@ -228,7 +252,7 @@ class Run {
   }
 
   describe() {
-    return { runId: this.id, key: this.key, pid: this.child ? this.child.pid : null, owned: !!this.owner, exit: this.exit };
+    return { runId: this.id, key: this.key, pid: this.child ? this.child.pid : null, owned: !!this.owner, exit: this.exit, meta: this.meta };
   }
 }
 
@@ -291,9 +315,14 @@ class Client {
     const run = msg.runId ? runs.get(msg.runId) : null;
     switch (msg.t) {
       case 'hello':
-        return this.reply(msg, { proto: PROTO, pid: process.pid });
+        return this.reply(msg, { proto: PROTO, pid: process.pid, metaVersion: 1 });
       case 'spawn': {
         if (runs.has(msg.runId)) return this.reply(msg, { ok: false, message: 'run exists' });
+        if (msg.guard) {
+          const refused = msg.key !== msg.guard.instance || msg.cwd !== msg.guard.cwd || JSON.stringify(msg.meta) !== JSON.stringify(msg.guard)
+            ? 'KEEPER_META_INCOMPLETE' : guardFailure(msg.guard);
+          if (refused) return this.reply(msg, { ok: false, message: refused });
+        }
         const fresh = new Run(msg, this);
         runs.set(fresh.id, fresh);
         idleCheck();
@@ -306,7 +335,7 @@ class Client {
       // cannot leave it running, nor pick it up again.
       case 'stop': if (run && run.owner === this) { run.stopping = true; run.stop(); } return;
       case 'kill': if (run && run.owner === this) run.kill(msg.signal); return;
-      case 'checkpoint': if (run && run.owner === this) run.takeCheckpoint(msg.seq, msg.snapshot); return;
+      case 'checkpoint': if (run && run.owner === this) run.takeCheckpoint(msg.seq, msg.snapshot, msg.meta); return;
       case 'forget': {
         const mine = run && run.owner === this;
         if (mine) {
@@ -328,8 +357,14 @@ class Client {
         // the last line it read.
         if (!run || run.stopping) return this.reply(msg, { ok: false, message: 'none' });
         if (run.owner && run.owner !== this && !run.owner.closed) return this.reply(msg, { ok: false, message: 'owned' });
+        if (msg.guard) {
+          const refused = !completeRun(run) || run.meta.instance !== msg.guard.instance || run.meta.cwd !== msg.guard.cwd ||
+            msg.guard.conversation !== null && run.meta.conversation !== msg.guard.conversation ? 'KEEPER_META_INCOMPLETE' : guardFailure(run.meta, run);
+          if (refused) return this.reply(msg, { ok: false, message: refused });
+        }
         const after = Number(msg.after) || 0;
         if (run.overflow || run.checkpointSeq > after) {
+          if (msg.guard) return this.reply(msg, { ok: false, message: 'KEEPER_UNREPLAYABLE' });
           run.adopt(this);
           return this.reply(msg, { ok: false, message: 'unreplayable', runId: run.id, pid: run.child ? run.child.pid : null });
         }
@@ -337,16 +372,22 @@ class Client {
         return this.reply(msg, { ok: true, runId: run.id, lines: run.tail.filter((l) => l.seq > after), exit: run.exit, seq: run.seq });
       }
       case 'list':
-        return this.reply(msg, { runs: [...runs.values()].map((r) => r.describe()) });
+        return this.reply(msg, { runs: [...runs.values()].map((r) => r.describe()), metaVersion: 1 });
       case 'attach': {
         // Just after a restart the old process may still be on its way out:
         // the live one, and the newest, is the instance.
         const found = [...runs.values()]
-          .filter((r) => r.key === msg.key && !r.stopping)
+          .filter((r) => r.key === msg.key && (!msg.guard || r.id === msg.runId) && !r.stopping)
           .sort((a, b) => (!!a.exit - !!b.exit) || (b.born - a.born))[0];
         if (!found) return this.reply(msg, { ok: false, message: 'none' });
         if (found.owner && found.owner !== this && !found.owner.closed) return this.reply(msg, { ok: false, message: 'owned' });
+        if (msg.guard) {
+          const refused = !completeRun(found) || found.meta.instance !== msg.guard.instance || found.meta.cwd !== msg.guard.cwd ||
+            msg.guard.conversation !== null && found.meta.conversation !== msg.guard.conversation ? 'KEEPER_META_INCOMPLETE' : guardFailure(found.meta, found);
+          if (refused) return this.reply(msg, { ok: false, message: refused });
+        }
         if (found.overflow || found.checkpoint === null) {
+          if (msg.guard) return this.reply(msg, { ok: false, message: 'KEEPER_UNREPLAYABLE' });
           // Nothing to rebuild from; the window will start it afresh.
           found.adopt(this);
           return this.reply(msg, { ok: false, message: 'unreplayable', runId: found.id, pid: found.child ? found.child.pid : null });

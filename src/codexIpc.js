@@ -52,6 +52,7 @@ class CodexIpc extends EventEmitter {
     this._pending = new Map();
     this._buf = Buffer.alloc(0);
     this._owners = new Map(); // threadId -> {owner, at}
+    this._disposed = false;
   }
 
   get available() {
@@ -60,13 +61,14 @@ class CodexIpc extends EventEmitter {
 
   /** Connected and introduced; later calls share the one connection. */
   connect() {
+    if (this._disposed) return Promise.reject(Object.assign(new Error('Codex IPC is closed'), { delivery: 'not_written' }));
     if (this._ready) return this._ready;
     this._ready = new Promise((resolve, reject) => {
       const sock = this.connectFn(this.sockPath || socketPath());
       this.sock = sock;
-      sock.on('data', (chunk) => this._read(chunk));
-      sock.on('error', (err) => { this.log('codex ipc: ' + err.message); this._closed(err); reject(err); });
-      sock.on('close', () => this._closed(new Error('the ChatGPT app closed the connection')));
+      sock.on('data', (chunk) => { if (this.sock === sock) this._read(chunk); });
+      sock.on('error', (err) => { this.log('codex ipc: ' + err.message); if (this.sock === sock) this._closed(err); reject(err); });
+      sock.on('close', () => { if (this.sock === sock) this._closed(new Error('the ChatGPT app closed the connection')); });
       sock.on('connect', () => {
         this._send({ type: 'request', requestId: crypto.randomUUID(), sourceClientId: 'initializing-client',
           version: 0, method: 'initialize', params: { clientType: 'nikui' } }, 5000)
@@ -78,13 +80,15 @@ class CodexIpc extends EventEmitter {
   }
 
   _closed(err) {
+    const connection = this.sock;
     this.sock = null;
     this.clientId = null;
     this._ready = null;
     this._buf = Buffer.alloc(0);
     this._owners.clear();
-    for (const p of this._pending.values()) { clearTimeout(p.timer); p.reject(err); }
+    for (const p of this._pending.values()) { clearTimeout(p.timer); p.reject(Object.assign(new Error(err.message), { delivery: 'unknown' })); }
     this._pending.clear();
+    if (connection) this.emit('exit', connection);
   }
 
   _read(chunk) {
@@ -108,12 +112,13 @@ class CodexIpc extends EventEmitter {
       this._pending.delete(msg.requestId);
       clearTimeout(p.timer);
       if (msg.resultType === 'success') p.resolve(Object.assign({}, msg.result, { _from: msg.handledByClientId }));
-      else p.reject(new Error(typeof msg.error === 'string' ? msg.error : JSON.stringify(msg.error)));
+      else p.reject(Object.assign(new Error(typeof msg.error === 'string' ? msg.error : JSON.stringify(msg.error)),
+        { delivery: msg.error?.accepted === false ? 'not_written' : 'unknown' }));
     } else if (msg.type === 'client-discovery-request') {
       // Asked whether we can handle someone else's request: we never can.
       this._write({ type: 'client-discovery-response', requestId: msg.requestId, response: { canHandle: false } });
     } else if (msg.type === 'request') {
-      this._write({ type: 'response', requestId: msg.requestId, resultType: 'error', error: 'no-handler-for-request' });
+      if (!this.emit('request', msg)) this.respondError(msg.requestId);
     } else if (msg.type === 'broadcast') {
       if (msg.method === 'client-status-changed' && msg.params && msg.params.status === 'disconnected') {
         for (const [id, o] of this._owners) if (o.owner === msg.params.clientId) this._owners.delete(id);
@@ -123,26 +128,30 @@ class CodexIpc extends EventEmitter {
   }
 
   _write(obj) {
-    if (this.sock) this.sock.write(frame(obj));
+    if (!this.sock || this.sock.writable === false) throw Object.assign(new Error('Codex IPC is disconnected'), { delivery: 'not_written' });
+    this.sock.write(frame(obj));
   }
 
   _send(msg, timeoutMs) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this._pending.delete(msg.requestId);
-        reject(new Error('the ChatGPT app did not answer'));
+        reject(Object.assign(new Error('the ChatGPT app did not answer'), { delivery: 'unknown' }));
       }, timeoutMs || 15000);
       if (timer.unref) timer.unref();
       this._pending.set(msg.requestId, { resolve, reject, timer });
-      this._write(msg);
+      try { this._write(msg); }
+      catch (error) { clearTimeout(timer); this._pending.delete(msg.requestId); reject(error); }
     });
   }
 
-  async request(method, params, { target, timeoutMs, version } = {}) {
-    await this.connect();
+  async request(method, params, { target, timeoutMs, version, beforeWrite } = {}) {
+    try { await this.connect(); }
+    catch (error) { throw Object.assign(error, { delivery: 'not_written' }); }
     const msg = { type: 'request', requestId: crypto.randomUUID(), sourceClientId: this.clientId,
       version: version != null ? version : VERSIONS[method] || 0, method, params };
     if (target) msg.targetClientId = target;
+    if (beforeWrite) beforeWrite();
     return this._send(msg, timeoutMs);
   }
 
@@ -169,13 +178,26 @@ class CodexIpc extends EventEmitter {
     }, { target: owner, timeoutMs: 30000 });
   }
 
-  interrupt(owner, threadId, turnId) {
+  interrupt(owner, threadId, turnId, options = {}) {
     const params = { conversationId: threadId, mode: 'user-stop' };
     if (turnId) params.expectedTurnId = turnId;
-    return this.request('thread-follower-interrupt-turn', params, { target: owner, version: turnId ? 4 : 3 });
+    return this.request('thread-follower-interrupt-turn', params, { ...options, target: owner, version: turnId ? 4 : 3 });
+  }
+
+  respond(requestId, result, connection = this.sock) {
+    if (!connection || connection !== this.sock) return 'not_written';
+    try {
+      this._write({ type: 'response', requestId, resultType: 'success', result });
+      return connection === this.sock && !connection.destroyed ? 'submitted' : 'unknown';
+    } catch (error) { return error.delivery === 'not_written' ? 'not_written' : 'unknown'; }
+  }
+
+  respondError(requestId) {
+    this._write({ type: 'response', requestId, resultType: 'error', error: 'no-handler-for-request' });
   }
 
   dispose() {
+    this._disposed = true;
     if (this.sock) this.sock.destroy();
     this._closed(new Error('closed'));
   }

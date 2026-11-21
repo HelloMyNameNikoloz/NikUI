@@ -7,7 +7,8 @@ const { listSessions } = require('./history');
 const PAGE = 40;
 
 class HistoryTree {
-  constructor() {
+  constructor(history = { listSessions }) {
+    this.history = history;
     this._onDidChangeTreeData = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
     this.scope = 'workspace'; // or 'all'
@@ -121,7 +122,7 @@ class HistoryTree {
     };
 
     // One more than asked for, so "show more" appears only when there is more.
-    const entries = await listSessions({ limit: this.limit + 1, keep });
+    const entries = await this.history.listSessions({ limit: this.limit + 1, keep });
     const page = entries.slice(0, this.limit);
     if (entries.length > page.length) {
       page.push({ __more: true, more: null, sessionId: 'more' });

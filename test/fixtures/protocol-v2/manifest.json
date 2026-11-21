@@ -1,0 +1,653 @@
+{
+  "fixtureVersion": 1,
+  "protocol": 2,
+  "evidence": "fixture consistency, not runtime conformance",
+  "hashInput": "canonical JSON of {message: request without top-level mid/scope, target: normalized socket target}",
+  "totalVectors": 179,
+  "totalInvalid": 30,
+  "files": [
+    {
+      "file": "negotiation.json",
+      "category": "negotiation",
+      "sha256": "088ab53ffbbffdec42afbe4d6db2033ca72c01cb08c521a6bde0dcd7dd3a5460",
+      "count": 21,
+      "positive": 9,
+      "negative": 12,
+      "ids": [
+        "negotiation-v2-fleet",
+        "negotiation-v2-conversation",
+        "negotiation-new-client-old-host",
+        "negotiation-old-client-ready",
+        "negotiation-old-client-apple",
+        "negotiation-old-client-listen",
+        "negotiation-core-missing-fallback",
+        "negotiation-direct-webview-legacy",
+        "negotiation-optional-disabled",
+        "negotiation-bad-range",
+        "negotiation-fractional-range",
+        "negotiation-duplicate-caps",
+        "negotiation-too-many-caps",
+        "negotiation-long-cap",
+        "negotiation-non-ascii-cap",
+        "negotiation-bad-client-id",
+        "negotiation-no-overlap",
+        "negotiation-required-core",
+        "negotiation-repeated-hello",
+        "negotiation-timeout",
+        "negotiation-unsealed-paired-v2"
+      ]
+    },
+    {
+      "file": "canonical-hashing.json",
+      "category": "canonical-hashing",
+      "sha256": "b83d36bdb2ac2482981420ce2fd453c33ea979f888916f7f7a8dc2fd29d8bb47",
+      "count": 14,
+      "positive": 3,
+      "negative": 11,
+      "ids": [
+        "hash-base",
+        "hash-key-order",
+        "hash-new-mid-scope",
+        "hash-array-order",
+        "hash-absent",
+        "hash-null",
+        "hash-unknown-field",
+        "hash-issued-at",
+        "hash-other-target",
+        "hash-fleet-role",
+        "hash-run-turn",
+        "hash-correlation-id",
+        "hash-unicode-decomposed",
+        "hash-numeric-and-unicode-keys"
+      ]
+    },
+    {
+      "file": "receipts.json",
+      "category": "receipts",
+      "sha256": "6414d41c6ed8b6914e73932cef2c8a8bce1c1f7deb60e79bcce144590bdda6d7",
+      "count": 20,
+      "positive": 5,
+      "negative": 15,
+      "ids": [
+        "receipt-applied",
+        "receipt-rejected",
+        "receipt-pending",
+        "receipt-unknown",
+        "receipt-missing-mid",
+        "receipt-uppercase-mid",
+        "receipt-conflict",
+        "receipt-scope-change",
+        "receipt-expired",
+        "receipt-clock-skew",
+        "receipt-capacity",
+        "receipt-unavailable",
+        "receipt-view-revoked",
+        "receipt-principal-isolation",
+        "receipt-lookup-fleet-after-removal",
+        "receipt-missing-not-found",
+        "receipt-missing-expired",
+        "receipt-missing-scope-changed",
+        "receipt-query-error-forbidden",
+        "receipt-query-error-storage-unavailable"
+      ]
+    },
+    {
+      "file": "run-turn-binding.json",
+      "category": "run-turn-binding",
+      "sha256": "68835777cf51e214c071324e8eb0a4f473d68774c3bfeb091b6fbd69b582ce65",
+      "count": 21,
+      "positive": 7,
+      "negative": 14,
+      "ids": [
+        "binding-permission-current",
+        "binding-permission-stale-run",
+        "binding-permission-stale-turn",
+        "binding-permission-not-pending",
+        "binding-permission-competing-mid",
+        "binding-permission-nonboolean",
+        "binding-interrupt-delayed-turn",
+        "binding-interrupt-background",
+        "binding-interrupt-background-changed",
+        "binding-stop-task-older-turn",
+        "binding-codex-stop-task",
+        "binding-steer-delayed",
+        "binding-promote-reorder",
+        "binding-promote-steer-stale",
+        "binding-question-matching",
+        "binding-question-missing-marker",
+        "binding-question-stale-marker",
+        "binding-terminal-run-replaced",
+        "binding-terminal-close-idle",
+        "binding-pr-relinked",
+        "binding-historical-duplicate-before-run-check"
+      ]
+    },
+    {
+      "file": "codex-unknown.json",
+      "category": "codex-unknown",
+      "sha256": "1fe086b7c981b52736f2018f020b50c55fe2bc270e797cd140a35a1270c4073f",
+      "count": 18,
+      "positive": 9,
+      "negative": 9,
+      "ids": [
+        "codex-rpc-send-reply-lost",
+        "codex-rpc-steer-reply-lost",
+        "codex-rpc-approval-reply-lost",
+        "codex-ipc-send-reply-lost",
+        "codex-ipc-steer-reply-lost",
+        "codex-ipc-approval-reply-lost",
+        "codex-reconcile-no-match",
+        "codex-reconcile-same-text-wrong-id",
+        "codex-reconcile-timeout",
+        "codex-reconcile-exact-echo",
+        "codex-reconcile-authoritative-nonacceptance",
+        "codex-explicit-new-intent",
+        "codex-axes-owned-engine",
+        "codex-axes-owned-external",
+        "codex-axes-owned-unknown",
+        "codex-axes-borrowed-engine",
+        "codex-axes-borrowed-external",
+        "codex-axes-borrowed-unknown"
+      ]
+    },
+    {
+      "file": "seats-grants.json",
+      "category": "seats-grants",
+      "sha256": "878b277310f8dd9291c071737762b28bf2d015b60cdce3dfa9f012f48aa0635a",
+      "count": 14,
+      "positive": 9,
+      "negative": 5,
+      "ids": [
+        "seat-watch-send",
+        "seat-forged-local",
+        "seat-control-local-only",
+        "seat-watch-visible",
+        "seat-watch-pane",
+        "seat-watch-slack-open",
+        "seat-watch-apple-self",
+        "seat-watch-listener-self",
+        "seat-watch-forget-self",
+        "seat-watch-forget-other",
+        "seat-terminal-cap-no-grant",
+        "seat-local-editor",
+        "seat-slack-link-paired",
+        "seat-slack-link-local"
+      ]
+    },
+    {
+      "file": "reconnect-outbox.json",
+      "category": "reconnect-outbox",
+      "sha256": "ea0035cde506429ed88714013fd45e4733f203c7059cfb73c14e3f3f4ed6a9b7",
+      "count": 16,
+      "positive": 3,
+      "negative": 13,
+      "ids": [
+        "outbox-same-scope-missing",
+        "outbox-no-replay-scope",
+        "outbox-no-replay-engine",
+        "outbox-no-replay-host",
+        "outbox-no-replay-downgrade",
+        "outbox-no-replay-expired",
+        "outbox-no-replay-unknown",
+        "outbox-no-replay-pending",
+        "outbox-no-replay-query-error",
+        "outbox-no-replay-view-revoked",
+        "outbox-storage-failure",
+        "outbox-count-capacity",
+        "outbox-byte-capacity",
+        "outbox-late-ack-edited-draft",
+        "outbox-accepted-operation-query",
+        "outbox-controls-wait-for-snapshot"
+      ]
+    },
+    {
+      "file": "mutation-results.json",
+      "category": "mutation-results",
+      "sha256": "e54768d78ce9361c16c307e08f0fa05ad283cecdbfa91f35fb0fa7a6a053e40e",
+      "count": 55,
+      "positive": 54,
+      "negative": 1,
+      "ids": [
+        "mutation-either-apple-default",
+        "mutation-either-listen-default",
+        "mutation-fleet-forget-default",
+        "mutation-fleet-awake-set-default",
+        "mutation-fleet-lid-set-default",
+        "mutation-fleet-instance-new-default",
+        "mutation-fleet-instance-resume-default",
+        "mutation-fleet-instance-place-default",
+        "mutation-conversation-ready-default",
+        "mutation-conversation-visible-default",
+        "mutation-conversation-send-default",
+        "mutation-conversation-send-slash-command",
+        "mutation-conversation-send-handoff",
+        "mutation-conversation-interrupt-default",
+        "mutation-conversation-stoptask-default",
+        "mutation-conversation-unqueue-default",
+        "mutation-conversation-promotequeued-default",
+        "mutation-conversation-editqueued-default",
+        "mutation-conversation-clearqueue-default",
+        "mutation-conversation-permission-default",
+        "mutation-conversation-setsetting-default",
+        "mutation-conversation-savecommand-default",
+        "mutation-conversation-removecommand-default",
+        "mutation-conversation-restorecommand-default",
+        "mutation-conversation-allsettings-default",
+        "mutation-conversation-slack-default",
+        "mutation-conversation-openpr-default",
+        "mutation-conversation-openfile-default",
+        "mutation-conversation-runinterminal-default",
+        "mutation-conversation-switch-default",
+        "mutation-conversation-pr-open-default",
+        "mutation-conversation-pr-pane-default",
+        "mutation-conversation-pr-reply-default",
+        "mutation-conversation-pr-resolve-default",
+        "mutation-conversation-pr-comment-default",
+        "mutation-conversation-pr-rerun-default",
+        "mutation-conversation-pr-link-default",
+        "mutation-conversation-pr-unlink-default",
+        "mutation-fleet-term-open-default",
+        "mutation-fleet-term-run-default",
+        "mutation-fleet-term-stop-default",
+        "mutation-fleet-term-close-default",
+        "mutation-fleet-slack-open-default",
+        "mutation-fleet-slack-reply-default",
+        "mutation-fleet-slack-mute-default",
+        "mutation-fleet-slack-vips-default",
+        "mutation-fleet-slack-enable-default",
+        "mutation-fleet-slack-connect-default",
+        "mutation-fleet-slack-disconnect-default",
+        "mutation-fleet-slack-signin-default",
+        "mutation-fleet-slack-settings-default",
+        "mutation-fleet-slack-setup-local",
+        "mutation-fleet-slack-link-local",
+        "mutation-fleet-slack-openticket-default",
+        "mutation-unsupported"
+      ]
+    }
+  ],
+  "invalidFile": {
+    "file": "invalid-vectors.json",
+    "sha256": "2308d7493cfab084e164c4cc3ffb0128dc96a1c1cab076549d57d34a2e0d036e"
+  },
+  "inventory": [
+    {
+      "id": "either/@apple/default",
+      "role": "either",
+      "type": "@apple",
+      "branch": "default",
+      "vector": "mutation-either-apple-default"
+    },
+    {
+      "id": "either/@listen/default",
+      "role": "either",
+      "type": "@listen",
+      "branch": "default",
+      "vector": "mutation-either-listen-default"
+    },
+    {
+      "id": "fleet/forget/default",
+      "role": "fleet",
+      "type": "forget",
+      "branch": "default",
+      "vector": "mutation-fleet-forget-default"
+    },
+    {
+      "id": "fleet/awake:set/default",
+      "role": "fleet",
+      "type": "awake:set",
+      "branch": "default",
+      "vector": "mutation-fleet-awake-set-default"
+    },
+    {
+      "id": "fleet/lid:set/default",
+      "role": "fleet",
+      "type": "lid:set",
+      "branch": "default",
+      "vector": "mutation-fleet-lid-set-default"
+    },
+    {
+      "id": "fleet/instance:new/default",
+      "role": "fleet",
+      "type": "instance:new",
+      "branch": "default",
+      "vector": "mutation-fleet-instance-new-default"
+    },
+    {
+      "id": "fleet/instance:resume/default",
+      "role": "fleet",
+      "type": "instance:resume",
+      "branch": "default",
+      "vector": "mutation-fleet-instance-resume-default"
+    },
+    {
+      "id": "fleet/instance:place/default",
+      "role": "fleet",
+      "type": "instance:place",
+      "branch": "default",
+      "vector": "mutation-fleet-instance-place-default"
+    },
+    {
+      "id": "conversation/ready/default",
+      "role": "conversation",
+      "type": "ready",
+      "branch": "default",
+      "vector": "mutation-conversation-ready-default"
+    },
+    {
+      "id": "conversation/visible/default",
+      "role": "conversation",
+      "type": "visible",
+      "branch": "default",
+      "vector": "mutation-conversation-visible-default"
+    },
+    {
+      "id": "conversation/send/default",
+      "role": "conversation",
+      "type": "send",
+      "branch": "default",
+      "vector": "mutation-conversation-send-default"
+    },
+    {
+      "id": "conversation/send/slash-command",
+      "role": "conversation",
+      "type": "send",
+      "branch": "slash-command",
+      "vector": "mutation-conversation-send-slash-command"
+    },
+    {
+      "id": "conversation/send/handoff",
+      "role": "conversation",
+      "type": "send",
+      "branch": "handoff",
+      "vector": "mutation-conversation-send-handoff"
+    },
+    {
+      "id": "conversation/interrupt/default",
+      "role": "conversation",
+      "type": "interrupt",
+      "branch": "default",
+      "vector": "mutation-conversation-interrupt-default"
+    },
+    {
+      "id": "conversation/stopTask/default",
+      "role": "conversation",
+      "type": "stopTask",
+      "branch": "default",
+      "vector": "mutation-conversation-stoptask-default"
+    },
+    {
+      "id": "conversation/unqueue/default",
+      "role": "conversation",
+      "type": "unqueue",
+      "branch": "default",
+      "vector": "mutation-conversation-unqueue-default"
+    },
+    {
+      "id": "conversation/promoteQueued/default",
+      "role": "conversation",
+      "type": "promoteQueued",
+      "branch": "default",
+      "vector": "mutation-conversation-promotequeued-default"
+    },
+    {
+      "id": "conversation/editQueued/default",
+      "role": "conversation",
+      "type": "editQueued",
+      "branch": "default",
+      "vector": "mutation-conversation-editqueued-default"
+    },
+    {
+      "id": "conversation/clearQueue/default",
+      "role": "conversation",
+      "type": "clearQueue",
+      "branch": "default",
+      "vector": "mutation-conversation-clearqueue-default"
+    },
+    {
+      "id": "conversation/permission/default",
+      "role": "conversation",
+      "type": "permission",
+      "branch": "default",
+      "vector": "mutation-conversation-permission-default"
+    },
+    {
+      "id": "conversation/setSetting/default",
+      "role": "conversation",
+      "type": "setSetting",
+      "branch": "default",
+      "vector": "mutation-conversation-setsetting-default"
+    },
+    {
+      "id": "conversation/saveCommand/default",
+      "role": "conversation",
+      "type": "saveCommand",
+      "branch": "default",
+      "vector": "mutation-conversation-savecommand-default"
+    },
+    {
+      "id": "conversation/removeCommand/default",
+      "role": "conversation",
+      "type": "removeCommand",
+      "branch": "default",
+      "vector": "mutation-conversation-removecommand-default"
+    },
+    {
+      "id": "conversation/restoreCommand/default",
+      "role": "conversation",
+      "type": "restoreCommand",
+      "branch": "default",
+      "vector": "mutation-conversation-restorecommand-default"
+    },
+    {
+      "id": "conversation/allSettings/default",
+      "role": "conversation",
+      "type": "allSettings",
+      "branch": "default",
+      "vector": "mutation-conversation-allsettings-default"
+    },
+    {
+      "id": "conversation/slack/default",
+      "role": "conversation",
+      "type": "slack",
+      "branch": "default",
+      "vector": "mutation-conversation-slack-default"
+    },
+    {
+      "id": "conversation/openPr/default",
+      "role": "conversation",
+      "type": "openPr",
+      "branch": "default",
+      "vector": "mutation-conversation-openpr-default"
+    },
+    {
+      "id": "conversation/openFile/default",
+      "role": "conversation",
+      "type": "openFile",
+      "branch": "default",
+      "vector": "mutation-conversation-openfile-default"
+    },
+    {
+      "id": "conversation/runInTerminal/default",
+      "role": "conversation",
+      "type": "runInTerminal",
+      "branch": "default",
+      "vector": "mutation-conversation-runinterminal-default"
+    },
+    {
+      "id": "conversation/switch/default",
+      "role": "conversation",
+      "type": "switch",
+      "branch": "default",
+      "vector": "mutation-conversation-switch-default"
+    },
+    {
+      "id": "conversation/pr:open/default",
+      "role": "conversation",
+      "type": "pr:open",
+      "branch": "default",
+      "vector": "mutation-conversation-pr-open-default"
+    },
+    {
+      "id": "conversation/pr:pane/default",
+      "role": "conversation",
+      "type": "pr:pane",
+      "branch": "default",
+      "vector": "mutation-conversation-pr-pane-default"
+    },
+    {
+      "id": "conversation/pr:reply/default",
+      "role": "conversation",
+      "type": "pr:reply",
+      "branch": "default",
+      "vector": "mutation-conversation-pr-reply-default"
+    },
+    {
+      "id": "conversation/pr:resolve/default",
+      "role": "conversation",
+      "type": "pr:resolve",
+      "branch": "default",
+      "vector": "mutation-conversation-pr-resolve-default"
+    },
+    {
+      "id": "conversation/pr:comment/default",
+      "role": "conversation",
+      "type": "pr:comment",
+      "branch": "default",
+      "vector": "mutation-conversation-pr-comment-default"
+    },
+    {
+      "id": "conversation/pr:rerun/default",
+      "role": "conversation",
+      "type": "pr:rerun",
+      "branch": "default",
+      "vector": "mutation-conversation-pr-rerun-default"
+    },
+    {
+      "id": "conversation/pr:link/default",
+      "role": "conversation",
+      "type": "pr:link",
+      "branch": "default",
+      "vector": "mutation-conversation-pr-link-default"
+    },
+    {
+      "id": "conversation/pr:unlink/default",
+      "role": "conversation",
+      "type": "pr:unlink",
+      "branch": "default",
+      "vector": "mutation-conversation-pr-unlink-default"
+    },
+    {
+      "id": "fleet/term:open/default",
+      "role": "fleet",
+      "type": "term:open",
+      "branch": "default",
+      "vector": "mutation-fleet-term-open-default"
+    },
+    {
+      "id": "fleet/term:run/default",
+      "role": "fleet",
+      "type": "term:run",
+      "branch": "default",
+      "vector": "mutation-fleet-term-run-default"
+    },
+    {
+      "id": "fleet/term:stop/default",
+      "role": "fleet",
+      "type": "term:stop",
+      "branch": "default",
+      "vector": "mutation-fleet-term-stop-default"
+    },
+    {
+      "id": "fleet/term:close/default",
+      "role": "fleet",
+      "type": "term:close",
+      "branch": "default",
+      "vector": "mutation-fleet-term-close-default"
+    },
+    {
+      "id": "fleet/slack:open/default",
+      "role": "fleet",
+      "type": "slack:open",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-open-default"
+    },
+    {
+      "id": "fleet/slack:reply/default",
+      "role": "fleet",
+      "type": "slack:reply",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-reply-default"
+    },
+    {
+      "id": "fleet/slack:mute/default",
+      "role": "fleet",
+      "type": "slack:mute",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-mute-default"
+    },
+    {
+      "id": "fleet/slack:vips/default",
+      "role": "fleet",
+      "type": "slack:vips",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-vips-default"
+    },
+    {
+      "id": "fleet/slack:enable/default",
+      "role": "fleet",
+      "type": "slack:enable",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-enable-default"
+    },
+    {
+      "id": "fleet/slack:connect/default",
+      "role": "fleet",
+      "type": "slack:connect",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-connect-default"
+    },
+    {
+      "id": "fleet/slack:disconnect/default",
+      "role": "fleet",
+      "type": "slack:disconnect",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-disconnect-default"
+    },
+    {
+      "id": "fleet/slack:signIn/default",
+      "role": "fleet",
+      "type": "slack:signIn",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-signin-default"
+    },
+    {
+      "id": "fleet/slack:settings/default",
+      "role": "fleet",
+      "type": "slack:settings",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-settings-default"
+    },
+    {
+      "id": "fleet/slack:setup/local",
+      "role": "fleet",
+      "type": "slack:setup",
+      "branch": "local",
+      "vector": "mutation-fleet-slack-setup-local"
+    },
+    {
+      "id": "fleet/slack:link/local",
+      "role": "fleet",
+      "type": "slack:link",
+      "branch": "local",
+      "vector": "mutation-fleet-slack-link-local"
+    },
+    {
+      "id": "fleet/slack:openTicket/default",
+      "role": "fleet",
+      "type": "slack:openTicket",
+      "branch": "default",
+      "vector": "mutation-fleet-slack-openticket-default"
+    }
+  ]
+}

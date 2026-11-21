@@ -1,0 +1,5134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "anyOf": [
+            {
+              "enum": [
+                "menu.snapshot",
+                "tools.refresh",
+                "engine.settings.get",
+                "engine.settings.update",
+                "session.rename",
+                "session.stop",
+                "session.restart",
+                "session.restartAll",
+                "quota.resume",
+                "session.remove",
+                "session.clearStopped",
+                "selection.cycle",
+                "folder.create",
+                "folder.rename",
+                "folder.delete",
+                "folder.order",
+                "folder.place",
+                "history.list",
+                "history.resume",
+                "history.delete",
+                "device.list",
+                "device.rename",
+                "device.grant",
+                "device.revoke",
+                "device.forget",
+                "pairing.status",
+                "pairing.open",
+                "pairing.close",
+                "localClient.list",
+                "localClient.revoke",
+                "localClient.forget",
+                "network.status",
+                "network.start",
+                "network.stop",
+                "network.open",
+                "settings.get",
+                "settings.update",
+                "project.list",
+                "project.save",
+                "project.remove",
+                "client.state.get",
+                "client.state.save",
+                "editor.request"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ok": {
+          "const": false
+        },
+        "outcome": {
+          "enum": [
+            "refused",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,79}$"
+        },
+        "data": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "menu.snapshot"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "root": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "generation": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "engine": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "boot": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "boot",
+                    "version"
+                  ]
+                },
+                "listener": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "const": "127.0.0.1"
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535
+                    }
+                  },
+                  "required": [
+                    "host",
+                    "port"
+                  ],
+                  "additionalProperties": false
+                },
+                "account": {
+                  "type": "object",
+                  "properties": {
+                    "home": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "borrowed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "home",
+                    "borrowed"
+                  ]
+                },
+                "bridge": {
+                  "type": "object",
+                  "properties": {
+                    "connected": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "editors": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "pendingEditorRequests": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "connected",
+                    "editors",
+                    "pendingEditorRequests"
+                  ],
+                  "additionalProperties": false
+                },
+                "tools": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "enum": [
+                          "resolved",
+                          "missing"
+                        ]
+                      },
+                      "path": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "source": {
+                        "enum": [
+                          "configured",
+                          "known-directory",
+                          "login-shell-binary",
+                          "missing"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "path",
+                      "source"
+                    ]
+                  }
+                },
+                "blockers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ]
+                  },
+                  "maxItems": 1000
+                }
+              },
+              "required": [
+                "ok",
+                "root",
+                "generation",
+                "pid",
+                "state",
+                "engine",
+                "listener",
+                "account",
+                "bridge",
+                "tools",
+                "blockers"
+              ]
+            },
+            "fleet": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "fleet"
+                },
+                "instances": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "maxItems": 1000
+                },
+                "codex": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "maxItems": 1000
+                },
+                "projects": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "maxItems": 1000
+                }
+              },
+              "required": [
+                "type",
+                "instances",
+                "codex",
+                "projects"
+              ]
+            },
+            "browserURL": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "settings": {
+              "type": "object",
+              "properties": {
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "tools": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "codex": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "node": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "gh": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "claude",
+                    "codex",
+                    "node",
+                    "gh"
+                  ],
+                  "additionalProperties": false
+                },
+                "codexHome": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "bind": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": [
+                "revision",
+                "tools",
+                "codexHome",
+                "port",
+                "bind"
+              ],
+              "additionalProperties": false
+            },
+            "requiresRestart": {
+              "type": "boolean"
+            },
+            "importBlocker": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "updateBlockers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "status",
+            "fleet",
+            "browserURL",
+            "settings",
+            "requiresRestart",
+            "importBlocker",
+            "updateBlockers"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "tools.refresh"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "const": true
+                },
+                "root": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "generation": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "engine": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "boot": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "boot",
+                    "version"
+                  ]
+                },
+                "listener": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "const": "127.0.0.1"
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 65535
+                    }
+                  },
+                  "required": [
+                    "host",
+                    "port"
+                  ],
+                  "additionalProperties": false
+                },
+                "account": {
+                  "type": "object",
+                  "properties": {
+                    "home": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "borrowed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "home",
+                    "borrowed"
+                  ]
+                },
+                "bridge": {
+                  "type": "object",
+                  "properties": {
+                    "connected": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "editors": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "pendingEditorRequests": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "connected",
+                    "editors",
+                    "pendingEditorRequests"
+                  ],
+                  "additionalProperties": false
+                },
+                "tools": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "enum": [
+                          "resolved",
+                          "missing"
+                        ]
+                      },
+                      "path": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "source": {
+                        "enum": [
+                          "configured",
+                          "known-directory",
+                          "login-shell-binary",
+                          "missing"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "path",
+                      "source"
+                    ]
+                  }
+                },
+                "blockers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ]
+                  },
+                  "maxItems": 1000
+                }
+              },
+              "required": [
+                "ok",
+                "root",
+                "generation",
+                "pid",
+                "state",
+                "engine",
+                "listener",
+                "account",
+                "bridge",
+                "tools",
+                "blockers"
+              ]
+            },
+            "fleet": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "fleet"
+                },
+                "instances": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "maxItems": 1000
+                },
+                "codex": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "maxItems": 1000
+                },
+                "projects": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "maxItems": 1000
+                }
+              },
+              "required": [
+                "type",
+                "instances",
+                "codex",
+                "projects"
+              ]
+            },
+            "browserURL": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "settings": {
+              "type": "object",
+              "properties": {
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "tools": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "codex": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "node": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "gh": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "claude",
+                    "codex",
+                    "node",
+                    "gh"
+                  ],
+                  "additionalProperties": false
+                },
+                "codexHome": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "bind": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": [
+                "revision",
+                "tools",
+                "codexHome",
+                "port",
+                "bind"
+              ],
+              "additionalProperties": false
+            },
+            "requiresRestart": {
+              "type": "boolean"
+            },
+            "importBlocker": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "updateBlockers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "status",
+            "fleet",
+            "browserURL",
+            "settings",
+            "requiresRestart",
+            "importBlocker",
+            "updateBlockers"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "engine.settings.get"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "settings": {
+              "type": "object",
+              "properties": {
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "tools": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "codex": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "node": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "gh": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "claude",
+                    "codex",
+                    "node",
+                    "gh"
+                  ],
+                  "additionalProperties": false
+                },
+                "codexHome": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "bind": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": [
+                "revision",
+                "tools",
+                "codexHome",
+                "port",
+                "bind"
+              ],
+              "additionalProperties": false
+            },
+            "requiresRestart": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "settings",
+            "requiresRestart"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "engine.settings.update"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "settings": {
+              "type": "object",
+              "properties": {
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "tools": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "codex": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "node": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "gh": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "claude",
+                    "codex",
+                    "node",
+                    "gh"
+                  ],
+                  "additionalProperties": false
+                },
+                "codexHome": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "bind": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": [
+                "revision",
+                "tools",
+                "codexHome",
+                "port",
+                "bind"
+              ],
+              "additionalProperties": false
+            },
+            "requiresRestart": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "settings",
+            "requiresRestart"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "session.rename"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "session.stop"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "retained": {
+              "const": true
+            }
+          },
+          "required": [
+            "id",
+            "retained"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "session.restart"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "mode": {
+              "enum": [
+                "context",
+                "fresh"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "session.restartAll"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "ids"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "quota.resume"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "resumed": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "resumed"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "session.remove"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "transcriptRetained": {
+              "const": true
+            }
+          },
+          "required": [
+            "id",
+            "transcriptRetained"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "session.clearStopped"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "removed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "transcriptRetained": {
+              "const": true
+            }
+          },
+          "required": [
+            "removed",
+            "transcriptRetained"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "selection.cycle"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "selected": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "selected"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "folder.create"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "folder": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "folder"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "folder.rename"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "folder.delete"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "instancesRetained": {
+              "const": true
+            }
+          },
+          "required": [
+            "id",
+            "instancesRetained"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "folder.order"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "maxItems": 1000,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "ids"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "folder.place"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "folder": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "folder"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "history.list"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "file": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "cwd": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "modified": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "mtimeMs": {
+                    "type": "number"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "sessionId",
+                  "file",
+                  "label",
+                  "cwd",
+                  "modified"
+                ]
+              },
+              "maxItems": 200
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "hasMore": {
+              "type": "boolean"
+            },
+            "exhausted": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "entries",
+            "offset",
+            "hasMore",
+            "exhausted"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "history.resume"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "resumed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "resumed"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "history.delete"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "conversation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "deleted": {
+              "const": true
+            }
+          },
+          "required": [
+            "conversation",
+            "deleted"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "device.list"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "devices": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "\\S"
+                  },
+                  "control": {
+                    "type": "boolean"
+                  },
+                  "pairedAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "lastSeenAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "fingerprint": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "control"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "devices"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "device.rename"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "\\S"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "device.grant"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "control": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "control"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "device.revoke"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "control": {
+              "const": false
+            }
+          },
+          "required": [
+            "id",
+            "control"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "device.forget"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "forgotten": {
+              "const": true
+            }
+          },
+          "required": [
+            "id",
+            "forgotten"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "pairing.status"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "const": false
+                },
+                "qr": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "open",
+                "qr"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "const": true
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "expiresAt": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "msLeft": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "link": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "appLink": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "host": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scheme": {
+                  "enum": [
+                    "http",
+                    "https"
+                  ]
+                },
+                "fingerprint": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "laptop": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "qr": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "appText": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "appText"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "open",
+                "code",
+                "expiresAt",
+                "msLeft",
+                "link",
+                "appLink",
+                "host",
+                "scheme",
+                "fingerprint",
+                "laptop",
+                "qr"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "pairing.open"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "const": false
+                },
+                "qr": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "open",
+                "qr"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "const": true
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "expiresAt": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "msLeft": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "link": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "appLink": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "host": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scheme": {
+                  "enum": [
+                    "http",
+                    "https"
+                  ]
+                },
+                "fingerprint": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "laptop": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "qr": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "appText": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "appText"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "open",
+                "code",
+                "expiresAt",
+                "msLeft",
+                "link",
+                "appLink",
+                "host",
+                "scheme",
+                "fingerprint",
+                "laptop",
+                "qr"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "pairing.close"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "const": false
+                },
+                "qr": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "open",
+                "qr"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "open": {
+                  "const": true
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "expiresAt": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "msLeft": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "link": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "appLink": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "host": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scheme": {
+                  "enum": [
+                    "http",
+                    "https"
+                  ]
+                },
+                "fingerprint": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "laptop": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "qr": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "appText": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "appText"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "open",
+                "code",
+                "expiresAt",
+                "msLeft",
+                "link",
+                "appLink",
+                "host",
+                "scheme",
+                "fingerprint",
+                "laptop",
+                "qr"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "localClient.list"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "clients": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "kind": {
+                    "enum": [
+                      "local",
+                      "editor"
+                    ]
+                  },
+                  "revoked": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "revoked"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "clients"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "localClient.revoke"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "revoked": {
+              "const": true
+            },
+            "forgotten": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "revoked",
+            "forgotten"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "localClient.forget"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "revoked": {
+              "const": true
+            },
+            "forgotten": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "revoked",
+            "forgotten"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "network.status"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "status",
+                "start",
+                "stop",
+                "open"
+              ]
+            },
+            "synthetic": {
+              "const": true
+            },
+            "kind": {
+              "enum": [
+                "tailnet",
+                "public"
+              ]
+            },
+            "state": {
+              "enum": [
+                "disabled",
+                "running",
+                "stopped"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "action",
+            "synthetic"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "network.start"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "status",
+                "start",
+                "stop",
+                "open"
+              ]
+            },
+            "synthetic": {
+              "const": true
+            },
+            "kind": {
+              "enum": [
+                "tailnet",
+                "public"
+              ]
+            },
+            "state": {
+              "enum": [
+                "disabled",
+                "running",
+                "stopped"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "action",
+            "synthetic"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "network.stop"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "status",
+                "start",
+                "stop",
+                "open"
+              ]
+            },
+            "synthetic": {
+              "const": true
+            },
+            "kind": {
+              "enum": [
+                "tailnet",
+                "public"
+              ]
+            },
+            "state": {
+              "enum": [
+                "disabled",
+                "running",
+                "stopped"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "action",
+            "synthetic"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "network.open"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "status",
+                "start",
+                "stop",
+                "open"
+              ]
+            },
+            "synthetic": {
+              "const": true
+            },
+            "kind": {
+              "enum": [
+                "tailnet",
+                "public"
+              ]
+            },
+            "state": {
+              "enum": [
+                "disabled",
+                "running",
+                "stopped"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "action",
+            "synthetic"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "settings.get"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "enum": [
+                "user",
+                "project",
+                "editor"
+              ]
+            },
+            "root": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provenance": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "workspace": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "rawScope": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": [
+                "profile",
+                "workspace",
+                "rawScope"
+              ],
+              "additionalProperties": false
+            },
+            "settings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "disposition": {
+                    "enum": [
+                      "editor-only",
+                      "engine-user",
+                      "machine-policy-local-only"
+                    ]
+                  },
+                  "default": {},
+                  "explicit": {
+                    "type": "boolean"
+                  },
+                  "value": {},
+                  "effective": {},
+                  "effectiveSource": {
+                    "type": "object",
+                    "properties": {
+                      "scope": {
+                        "enum": [
+                          "default",
+                          "user",
+                          "project",
+                          "editor"
+                        ]
+                      },
+                      "root": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "provenance": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "profile": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "workspace": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              },
+                              "rawScope": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                              }
+                            },
+                            "required": [
+                              "profile",
+                              "workspace",
+                              "rawScope"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "scope",
+                      "root",
+                      "provenance"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "provenance": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "profile": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "workspace": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          "rawScope": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          }
+                        },
+                        "required": [
+                          "profile",
+                          "workspace",
+                          "rawScope"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "disposition",
+                  "default",
+                  "explicit",
+                  "value",
+                  "effective",
+                  "effectiveSource",
+                  "provenance"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 1000
+            }
+          },
+          "required": [
+            "scope",
+            "root",
+            "provenance",
+            "settings"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "settings.update"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "enum": [
+                "user",
+                "project",
+                "editor"
+              ]
+            },
+            "root": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "requiresRestart": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "scope",
+            "root",
+            "key",
+            "requiresRestart"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "project.list"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "saved": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "root": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "approved": {
+                    "const": true
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "properties": {
+                      "profile": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "workspace": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "rawScope": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      }
+                    },
+                    "required": [
+                      "profile",
+                      "workspace",
+                      "rawScope"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "root",
+                  "approved",
+                  "provenance"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 1000
+            },
+            "announced": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "maxItems": 1000
+            },
+            "provenance": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "workspace": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "rawScope": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": [
+                "profile",
+                "workspace",
+                "rawScope"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "saved",
+            "announced",
+            "provenance"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "project.save"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "approved": {
+              "const": true
+            }
+          },
+          "required": [
+            "root",
+            "approved"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "project.remove"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "root"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "client.state.get"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "selected": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "panels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "maxItems": 200,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "selected",
+            "panels"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "client.state.save"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "selected": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "panels": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "maxItems": 200,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "selected",
+            "panels"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "local:result"
+        },
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "op": {
+          "const": "editor.request"
+        },
+        "ok": {
+          "const": true
+        },
+        "outcome": {
+          "const": "applied"
+        },
+        "code": {
+          "type": "null"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "dispatched"
+              ]
+            },
+            "method": {
+              "enum": [
+                "settings",
+                "slack",
+                "ticket",
+                "prPicker",
+                "prLink",
+                "credentials",
+                "quotaConfirm",
+                "lidConfirm"
+              ]
+            },
+            "target": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "requestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "status",
+            "method",
+            "target",
+            "requestId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "id",
+        "generation",
+        "op",
+        "ok",
+        "outcome",
+        "code",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

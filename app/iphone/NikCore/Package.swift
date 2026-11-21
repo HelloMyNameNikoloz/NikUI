@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "NikCore",
-    platforms: [.iOS(.v18), .macOS(.v15)],
+    platforms: [.iOS(.v18), .macOS(.v14)],
     products: [.library(name: "NikCore", targets: ["NikCore"])],
     targets: [
         .target(name: "NikCore"),

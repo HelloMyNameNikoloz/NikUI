@@ -31,8 +31,7 @@ const TOKEN_LIFE_MS = 50 * 60 * 1000;
  * @param {() => {teamId?: string, keyId?: string, keyFile?: string, bundleId?: string,
  *   production?: boolean}} read  where the settings come from, read fresh
  */
-function loadApns(read) {
-  const fs = require('fs');
+function loadApns(read, { fs = require('fs'), readKey = (file) => fs.readFileSync(file, 'utf8') } = {}) {
   let cached = null;
 
   const settings = () => {
@@ -69,7 +68,9 @@ function loadApns(read) {
     const at = now || Date.now();
     if (cached && at - cached.at < TOKEN_LIFE_MS) return cached.jwt;
     const { teamId, keyId, keyFile } = settings();
-    const key = crypto.createPrivateKey(fs.readFileSync(keyFile, 'utf8'));
+    let key;
+    try { key = crypto.createPrivateKey(readKey(keyFile)); }
+    catch (_) { throw new Error('APNs signing key unavailable'); }
     const head = base64({ alg: 'ES256', kid: keyId });
     const claims = base64({ iss: teamId, iat: Math.floor(at / 1000) });
     const signature = crypto.sign('sha256', Buffer.from(head + '.' + claims),
@@ -130,22 +131,22 @@ async function send(deviceToken, message, opts) {
   if (hex.length < 32) return { ok: false, gone: true, reason: 'that is not a device token' };
 
   const urgent = message.kind === 'needs-you';
-  const headers = {
-    ':method': 'POST',
-    ':path': '/3/device/' + hex,
-    authorization: 'bearer ' + apns.token(opts.now),
-    'apns-topic': ready.bundleId,
-    'apns-push-type': 'alert',
-    'apns-priority': urgent ? '10' : '5',
-    // A notification about a state that has already changed is worse than none,
-    // so nothing here outlives the hour it was made in.
-    'apns-expiration': String(Math.floor((opts.now || Date.now()) / 1000) + 3600)
-  };
-  // The same news replaces the old news rather than stacking under it.
-  if (message.tag) headers['apns-collapse-id'] = String(message.tag).slice(0, 64);
-
-  const post = opts.request || request;
   try {
+    const headers = {
+      ':method': 'POST',
+      ':path': '/3/device/' + hex,
+      authorization: 'bearer ' + apns.token(opts.now),
+      'apns-topic': ready.bundleId,
+      'apns-push-type': 'alert',
+      'apns-priority': urgent ? '10' : '5',
+      // A notification about a state that has already changed is worse than none,
+      // so nothing here outlives the hour it was made in.
+      'apns-expiration': String(Math.floor((opts.now || Date.now()) / 1000) + 3600)
+    };
+    // The same news replaces the old news rather than stacking under it.
+    if (message.tag) headers['apns-collapse-id'] = String(message.tag).slice(0, 64);
+
+    const post = opts.request || request;
     const answer = await post(ready.host, headers, JSON.stringify(payload(message)));
     if (answer.status === 200) return { ok: true, status: 200 };
     const said = read(answer.body);

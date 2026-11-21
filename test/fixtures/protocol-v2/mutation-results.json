@@ -1,0 +1,6124 @@
+{
+  "fixtureVersion": 1,
+  "category": "mutation-results",
+  "vectors": [
+    {
+      "id": "mutation-either-apple-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "@apple",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "token": "abababababababababababababababababababababababababababababababab"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "@apple",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "token": "abababababababababababababababababababababababababababababababab"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "@apple",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "registered": true
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "@apple",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "registered": true
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "either/@apple/default"
+      ]
+    },
+    {
+      "id": "mutation-either-listen-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "@listen",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "@listen",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "@listen",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {},
+              "replies": [
+                {
+                  "type": "@listener",
+                  "secret": "synthetic-private-bearer"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "@listen",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {},
+              "replies": [
+                {
+                  "type": "@listener",
+                  "secret": "synthetic-private-bearer"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "either/@listen/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-forget-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "devices": [
+          {
+            "id": "phone-1",
+            "control": true
+          },
+          {
+            "id": "phone-2",
+            "control": false
+          }
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "forget",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "phone-2"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "forget",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "phone-2"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "forget",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "device": "phone-2"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "forget",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "device": "phone-2"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/forget/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-awake-set-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "awake:set",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "on": true
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "awake:set",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "on": true
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "awake:set",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "id": "awake",
+                "value": true
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "awake:set",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "id": "awake",
+                "value": true
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/awake:set/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-lid-set-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "lidApproved": true,
+        "lidOn": false
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "lid:set",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "on": true
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "lid:set",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "on": true
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "lid:set",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "id": "lid",
+                "value": true
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "lid:set",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "id": "lid",
+                "value": true
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/lid:set/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-instance-new-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "projects": [
+          {
+            "path": "/synthetic/project",
+            "name": "project"
+          }
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "instance:new",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "legacy-1",
+            "cwd": "/synthetic/project",
+            "provider": "claude"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "instance:new",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "legacy-1",
+            "cwd": "/synthetic/project",
+            "provider": "claude"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "instance:new",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "instance": "instance-8"
+              },
+              "replies": [
+                {
+                  "type": "instance:created",
+                  "id": "legacy-1",
+                  "instance": "instance-8"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "instance:new",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "instance": "instance-8"
+              },
+              "replies": [
+                {
+                  "type": "instance:created",
+                  "id": "legacy-1",
+                  "instance": "instance-8"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/instance:new/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-instance-resume-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "history": [
+          {
+            "sessionId": "conversation-1",
+            "cwd": "/synthetic/project",
+            "title": "fixture"
+          }
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "instance:resume",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "legacy-1",
+            "sessionId": "conversation-1"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "instance:resume",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "legacy-1",
+            "sessionId": "conversation-1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "instance:resume",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "instance": "instance-8"
+              },
+              "replies": [
+                {
+                  "type": "instance:created",
+                  "id": "legacy-1",
+                  "instance": "instance-8"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "instance:resume",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "instance": "instance-8"
+              },
+              "replies": [
+                {
+                  "type": "instance:created",
+                  "id": "legacy-1",
+                  "instance": "instance-8"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/instance:resume/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-instance-place-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "instance:place",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "legacy-1",
+            "instance": "instance-7",
+            "folderId": null
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "instance:place",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "legacy-1",
+            "instance": "instance-7",
+            "folderId": null
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "instance:place",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "instance": "instance-7",
+                "folderId": null
+              },
+              "replies": [
+                {
+                  "type": "instance:placed",
+                  "id": "legacy-1"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "instance:place",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "instance": "instance-7",
+                "folderId": null
+              },
+              "replies": [
+                {
+                  "type": "instance:placed",
+                  "id": "legacy-1"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/instance:place/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-ready-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "providerRunning": true,
+        "unread": true,
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "ready",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "ready",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "ready",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "instance": "instance-7",
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                }
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "init",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            },
+            "operations": []
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "ready",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "instance": "instance-7",
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                }
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "init",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            },
+            "operations": []
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {
+          "freshInitCount": 2
+        },
+        "close": null
+      },
+      "inventory": [
+        "conversation/ready/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-visible-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "unread": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "visible",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "on": true
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "visible",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "on": true
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "visible",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "on": true
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "visible",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "on": true
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/visible/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-send-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "full input",
+            "attachments": [],
+            "snippets": []
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "full input",
+            "attachments": [],
+            "snippets": []
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/send/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-send-slash-command",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "/model synthetic-model",
+            "attachments": [],
+            "snippets": []
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "/model synthetic-model",
+            "attachments": [],
+            "snippets": []
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/send/slash-command"
+      ]
+    },
+    {
+      "id": "mutation-conversation-send-handoff",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "/codex full input",
+            "attachments": [],
+            "snippets": []
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "/codex full input",
+            "attachments": [],
+            "snippets": []
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/send/handoff"
+      ]
+    },
+    {
+      "id": "mutation-conversation-interrupt-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "interrupt",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "interrupt",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "interrupt",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                },
+                "taskId": null,
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "interrupt",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                },
+                "taskId": null,
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/interrupt/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-stoptask-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "task": {
+          "id": "task-4",
+          "run": {
+            "id": "a81ec16e4ac74040a9107dbe669380b5",
+            "turn": "turn-9"
+          },
+          "active": true
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "stopTask",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "taskId": "task-4",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "stopTask",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "taskId": "task-4",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "stopTask",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                },
+                "taskId": "task-4",
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "stopTask",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                },
+                "taskId": "task-4",
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/stopTask/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-unqueue-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "queue": [
+          {
+            "id": "q-29",
+            "text": "full original"
+          }
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "unqueue",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "q-29"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "unqueue",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "q-29"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "unqueue",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "queueId": "q-29"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "unqueue",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "queueId": "q-29"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/unqueue/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-promotequeued-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "queue": [
+          {
+            "id": "q-28",
+            "text": "first queued"
+          },
+          {
+            "id": "q-29",
+            "text": "full original"
+          }
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "promoteQueued",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "q-29",
+            "mode": "reorder"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "promoteQueued",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "q-29",
+            "mode": "reorder"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "promoteQueued",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "queueId": "q-29"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "promoteQueued",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "queueId": "q-29"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/promoteQueued/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-editqueued-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "queue": [
+          {
+            "id": "q-29",
+            "text": "full original",
+            "sent": "expanded original",
+            "snippets": [
+              "one"
+            ],
+            "attachments": [
+              {
+                "name": "synthetic.png",
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+              }
+            ]
+          }
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "editQueued",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "q-29"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "editQueued",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "q-29"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "editQueued",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "queueId": "q-29"
+              },
+              "replies": [
+                {
+                  "type": "editPrompt",
+                  "text": "full original",
+                  "sent": "expanded original",
+                  "snippets": [
+                    "one"
+                  ],
+                  "attachments": [
+                    {
+                      "name": "synthetic.png",
+                      "mediaType": "image/png",
+                      "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+                    }
+                  ]
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "editQueued",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "queueId": "q-29"
+              },
+              "replies": [
+                {
+                  "type": "editPrompt",
+                  "text": "full original",
+                  "sent": "expanded original",
+                  "snippets": [
+                    "one"
+                  ],
+                  "attachments": [
+                    {
+                      "name": "synthetic.png",
+                      "mediaType": "image/png",
+                      "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aFOkAAAAASUVORK5CYII="
+                    }
+                  ]
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/editQueued/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-clearqueue-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "queue": [
+          {
+            "id": "q-29",
+            "text": "full original"
+          },
+          {
+            "id": "q-30",
+            "text": "second original"
+          }
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "clearQueue",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "clearQueue",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "clearQueue",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "removed": 2
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "clearQueue",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "removed": 2
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/clearQueue/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-permission-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": true,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": true,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "requestId": "approval-11",
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                },
+                "allow": true,
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "requestId": "approval-11",
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                },
+                "allow": true,
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/permission/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-setsetting-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "setSetting",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "model",
+            "value": "synthetic"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "setSetting",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "model",
+            "value": "synthetic"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "setSetting",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "id": "model",
+                "value": "synthetic"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "setSetting",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "id": "model",
+                "value": "synthetic"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/setSetting/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-savecommand-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "saveCommand",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "name": "fixture",
+            "prompt": "full command",
+            "description": "synthetic"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "saveCommand",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "name": "fixture",
+            "prompt": "full command",
+            "description": "synthetic"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "saveCommand",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "name": "fixture"
+              },
+              "replies": [
+                {
+                  "type": "commands",
+                  "done": "saveCommand",
+                  "name": "fixture"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "saveCommand",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "name": "fixture"
+              },
+              "replies": [
+                {
+                  "type": "commands",
+                  "done": "saveCommand",
+                  "name": "fixture"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/saveCommand/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-removecommand-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "removeCommand",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "name": "fixture"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "removeCommand",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "name": "fixture"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "removeCommand",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "name": "fixture"
+              },
+              "replies": [
+                {
+                  "type": "commands",
+                  "done": "removeCommand",
+                  "name": "fixture"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "removeCommand",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "name": "fixture"
+              },
+              "replies": [
+                {
+                  "type": "commands",
+                  "done": "removeCommand",
+                  "name": "fixture"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/removeCommand/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-restorecommand-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "restoreCommand",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "name": "fixture"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "restoreCommand",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "name": "fixture"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "restoreCommand",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "name": "fixture"
+              },
+              "replies": [
+                {
+                  "type": "commands",
+                  "done": "restoreCommand",
+                  "name": "fixture"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "restoreCommand",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "name": "fixture"
+              },
+              "replies": [
+                {
+                  "type": "commands",
+                  "done": "restoreCommand",
+                  "name": "fixture"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/restoreCommand/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-allsettings-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "allSettings",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "allSettings",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "allSettings",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "allSettings",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/allSettings/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-slack-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/slack/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-openpr-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "prUrl": "https://github.com/fixture/repo/pull/1"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "openPr",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "openPr",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "openPr",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "system",
+                "destination": "https://github.com/fixture/repo/pull/1"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "openPr",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "system",
+                "destination": "https://github.com/fixture/repo/pull/1"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/openPr/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-openfile-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "openFile",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "path": "file.swift",
+            "line": 4
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "openFile",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "path": "file.swift",
+            "line": 4
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "openFile",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": "file.swift"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "openFile",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": "file.swift"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/openFile/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-runinterminal-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "runInTerminal",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "command": "echo fixture"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "runInTerminal",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "command": "echo fixture"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "runInTerminal",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "runInTerminal",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/runInTerminal/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-switch-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "switch",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "instance-8"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "switch",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "instance-8"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "switch",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": "instance-8"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "switch",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": "instance-8"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/switch/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-pr-open-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "prUrl": "https://github.com/fixture/repo/pull/1"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:open",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "url": "https://github.com/fixture/repo/pull/1",
+            "prUrl": "https://github.com/fixture/repo/pull/1"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:open",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "url": "https://github.com/fixture/repo/pull/1",
+            "prUrl": "https://github.com/fixture/repo/pull/1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:open",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "system",
+                "destination": "https://github.com/fixture/repo/pull/1"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:open",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "system",
+                "destination": "https://github.com/fixture/repo/pull/1"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/pr:open/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-pr-pane-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "prUrl": null
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:pane",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "open": true,
+            "prUrl": null
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:pane",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "open": true,
+            "prUrl": null
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:pane",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": null,
+                "pane": {
+                  "open": true,
+                  "tab": "conversation",
+                  "width": null,
+                  "full": false
+                }
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:pane",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": null,
+                "pane": {
+                  "open": true,
+                  "tab": "conversation",
+                  "width": null,
+                  "full": false
+                }
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/pr:pane/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-pr-reply-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "prUrl": "https://github.com/fixture/repo/pull/1"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:reply",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1",
+            "threadId": "review-1",
+            "body": "synthetic reply"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:reply",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1",
+            "threadId": "review-1",
+            "body": "synthetic reply"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:reply",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/1",
+                "action": "reply",
+                "message": "synthetic success",
+                "providerId": "provider-1"
+              },
+              "replies": [
+                {
+                  "type": "pr:done",
+                  "action": "reply",
+                  "ok": true,
+                  "message": "synthetic success"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:reply",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/1",
+                "action": "reply",
+                "message": "synthetic success",
+                "providerId": "provider-1"
+              },
+              "replies": [
+                {
+                  "type": "pr:done",
+                  "action": "reply",
+                  "ok": true,
+                  "message": "synthetic success"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/pr:reply/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-pr-resolve-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "prUrl": "https://github.com/fixture/repo/pull/1"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:resolve",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1",
+            "threadId": "review-1",
+            "body": "synthetic reply"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:resolve",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1",
+            "threadId": "review-1",
+            "body": "synthetic reply"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:resolve",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/1",
+                "action": "resolve",
+                "message": "synthetic success",
+                "providerId": "provider-1"
+              },
+              "replies": [
+                {
+                  "type": "pr:done",
+                  "action": "resolve",
+                  "ok": true,
+                  "message": "synthetic success"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:resolve",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/1",
+                "action": "resolve",
+                "message": "synthetic success",
+                "providerId": "provider-1"
+              },
+              "replies": [
+                {
+                  "type": "pr:done",
+                  "action": "resolve",
+                  "ok": true,
+                  "message": "synthetic success"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/pr:resolve/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-pr-comment-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "prUrl": "https://github.com/fixture/repo/pull/1"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:comment",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1",
+            "threadId": "review-1",
+            "body": "synthetic reply"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:comment",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1",
+            "threadId": "review-1",
+            "body": "synthetic reply"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:comment",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/1",
+                "action": "comment",
+                "message": "synthetic success",
+                "providerId": "provider-1"
+              },
+              "replies": [
+                {
+                  "type": "pr:done",
+                  "action": "comment",
+                  "ok": true,
+                  "message": "synthetic success"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:comment",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/1",
+                "action": "comment",
+                "message": "synthetic success",
+                "providerId": "provider-1"
+              },
+              "replies": [
+                {
+                  "type": "pr:done",
+                  "action": "comment",
+                  "ok": true,
+                  "message": "synthetic success"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/pr:comment/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-pr-rerun-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "prUrl": "https://github.com/fixture/repo/pull/1"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:rerun",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1",
+            "threadId": "review-1",
+            "body": "synthetic reply"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:rerun",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1",
+            "threadId": "review-1",
+            "body": "synthetic reply"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:rerun",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/1",
+                "action": "rerun",
+                "message": "synthetic success",
+                "providerId": "provider-1"
+              },
+              "replies": [
+                {
+                  "type": "pr:done",
+                  "action": "rerun",
+                  "ok": true,
+                  "message": "synthetic success"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:rerun",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/1",
+                "action": "rerun",
+                "message": "synthetic success",
+                "providerId": "provider-1"
+              },
+              "replies": [
+                {
+                  "type": "pr:done",
+                  "action": "rerun",
+                  "ok": true,
+                  "message": "synthetic success"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/pr:rerun/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-pr-link-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "prUrl": "https://github.com/fixture/repo/pull/1"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:link",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:link",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:link",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/2",
+                "pane": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:link",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": "https://github.com/fixture/repo/pull/2",
+                "pane": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/pr:link/default"
+      ]
+    },
+    {
+      "id": "mutation-conversation-pr-unlink-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "prUrl": "https://github.com/fixture/repo/pull/1"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:unlink",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:unlink",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:unlink",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": null,
+                "pane": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:unlink",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "prUrl": null,
+                "pane": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "conversation/pr:unlink/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-term-open-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "instance": {
+          "id": "instance-7",
+          "cwd": "/synthetic/project"
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:open",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "session": "instance-7"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:open",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "session": "instance-7"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:open",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "terminal": {
+                  "id": "terminal-2",
+                  "name": "Fixture",
+                  "cwd": "/synthetic/project",
+                  "busy": false,
+                  "command": null,
+                  "activeRun": null
+                }
+              },
+              "replies": [
+                {
+                  "type": "term:opened",
+                  "terminal": {
+                    "id": "terminal-2",
+                    "name": "Fixture",
+                    "cwd": "/synthetic/project",
+                    "busy": false,
+                    "command": null,
+                    "activeRun": null
+                  }
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:open",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "terminal": {
+                  "id": "terminal-2",
+                  "name": "Fixture",
+                  "cwd": "/synthetic/project",
+                  "busy": false,
+                  "command": null,
+                  "activeRun": null
+                }
+              },
+              "replies": [
+                {
+                  "type": "term:opened",
+                  "terminal": {
+                    "id": "terminal-2",
+                    "name": "Fixture",
+                    "cwd": "/synthetic/project",
+                    "busy": false,
+                    "command": null,
+                    "activeRun": null
+                  }
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/term:open/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-term-run-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "terminal": {
+          "id": "terminal-2",
+          "activeRun": null
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:run",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "terminal-2",
+            "command": "echo fixture"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:run",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "terminal-2",
+            "command": "echo fixture"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:run",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "terminal": "terminal-2",
+                "terminalRun": "terminal-run-12"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:run",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "terminal": "terminal-2",
+                "terminalRun": "terminal-run-12"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/term:run/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-term-stop-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "terminal": {
+          "id": "terminal-2",
+          "activeRun": "terminal-run-12"
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:stop",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "terminal-2",
+            "terminalRun": "terminal-run-12"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:stop",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "terminal-2",
+            "terminalRun": "terminal-run-12"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:stop",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "terminal": "terminal-2",
+                "terminalRun": "terminal-run-12"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:stop",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "terminal": "terminal-2",
+                "terminalRun": "terminal-run-12"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/term:stop/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-term-close-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "terminal": {
+          "id": "terminal-2",
+          "activeRun": "terminal-run-12"
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:close",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "terminal-2",
+            "terminalRun": "terminal-run-12"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:close",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "terminal-2",
+            "terminalRun": "terminal-run-12"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:close",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "terminal": "terminal-2",
+                "terminalRun": "terminal-run-12"
+              },
+              "replies": [
+                {
+                  "type": "term:closed",
+                  "id": "terminal-2"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:close",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "terminal": "terminal-2",
+                "terminalRun": "terminal-run-12"
+              },
+              "replies": [
+                {
+                  "type": "term:closed",
+                  "id": "terminal-2"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/term:close/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-open-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": false,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:open",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "conversation": "C1"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:open",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "conversation": "C1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:open",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": "C1",
+                "thread": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:open",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": "C1",
+                "thread": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:open/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-reply-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:reply",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "legacy-1",
+            "conversation": "C1",
+            "text": "synthetic reply"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:reply",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "legacy-1",
+            "conversation": "C1",
+            "text": "synthetic reply"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:reply",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": "C1",
+                "thread": null,
+                "ts": "1795179601.000001"
+              },
+              "replies": [
+                {
+                  "type": "slack:sent",
+                  "id": "legacy-1",
+                  "ok": true
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:reply",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": "C1",
+                "thread": null,
+                "ts": "1795179601.000001"
+              },
+              "replies": [
+                {
+                  "type": "slack:sent",
+                  "id": "legacy-1",
+                  "ok": true
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:reply/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-mute-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:mute",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "conversation": "C1",
+            "muted": true
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:mute",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "conversation": "C1",
+            "muted": true
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:mute",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": "C1",
+                "value": true
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:mute",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": "C1",
+                "value": true
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:mute/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-vips-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:vips",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "vips": [
+              "U1"
+            ]
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:vips",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "vips": [
+              "U1"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:vips",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": null,
+                "value": [
+                  "U1"
+                ]
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:vips",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": null,
+                "value": [
+                  "U1"
+                ]
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:vips/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-enable-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:enable",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:enable",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:enable",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": null,
+                "value": true
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:enable",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "conversation": null,
+                "value": true
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:enable/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-connect-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "credentialDialogAccepted": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:connect",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:connect",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:connect",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "connected": true,
+                "who": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:connect",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "connected": true,
+                "who": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:connect/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-disconnect-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:disconnect",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:disconnect",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:disconnect",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "connected": false,
+                "who": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:disconnect",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "connected": false,
+                "who": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:disconnect/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-signin-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true,
+        "credentialInputExcluded": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:signIn",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "token": "xoxc-synthetic-fixture",
+            "cookie": "xoxd-synthetic-fixture"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:signIn",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "token": "xoxc-synthetic-fixture",
+            "cookie": "xoxd-synthetic-fixture"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:signIn",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "connected": true,
+                "who": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:signIn",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "connected": true,
+                "who": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:signIn/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-settings-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:settings",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:settings",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:settings",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": null
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:settings",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:settings/default"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-setup-local",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:setup",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:setup",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:setup",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "system",
+                "destination": "https://slack.com/fixture"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:setup",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "system",
+                "destination": "https://slack.com/fixture"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:setup/local"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-link-local",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:link",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "conversation": "C1"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:link",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "conversation": "C1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:link",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "system",
+                "destination": "https://slack.com/fixture"
+              },
+              "replies": []
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:link",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "system",
+                "destination": "https://slack.com/fixture"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:link/local"
+      ]
+    },
+    {
+      "id": "mutation-fleet-slack-openticket-default",
+      "polarity": "positive",
+      "covers": [
+        "T12",
+        "T15",
+        "T47"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "local:owner",
+        "seat": {
+          "id": "local-1",
+          "control": true,
+          "local": true,
+          "editor": true
+        }
+      },
+      "initial": {
+        "negotiated": 2,
+        "receiptStore": "durable-fixture",
+        "duplicateExpectedNoRedispatch": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:openTicket",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "url": "https://github.com/fixture/repo/issues/1"
+          }
+        },
+        {
+          "direction": "client",
+          "message": {
+            "type": "slack:openTicket",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "url": "https://github.com/fixture/repo/issues/1"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:openTicket",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": "https://github.com/fixture/repo/issues/1"
+              },
+              "replies": [
+                {
+                  "type": "slack:openTicket",
+                  "url": "https://github.com/fixture/repo/issues/1",
+                  "ok": true,
+                  "instance": "instance-8"
+                }
+              ]
+            },
+            "error": null
+          },
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "slack:openTicket",
+            "target": "fleet",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "provider": "editor-1",
+                "destination": "https://github.com/fixture/repo/issues/1"
+              },
+              "replies": [
+                {
+                  "type": "slack:openTicket",
+                  "url": "https://github.com/fixture/repo/issues/1",
+                  "ok": true,
+                  "instance": "instance-8"
+                }
+              ]
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 1
+        },
+        "state": {},
+        "close": null
+      },
+      "inventory": [
+        "fleet/slack:openTicket/default"
+      ]
+    },
+    {
+      "id": "mutation-unsupported",
+      "polarity": "negative",
+      "covers": [
+        "T12"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {},
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "future:mutation",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "future:mutation",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": false,
+            "at": 1795179601000,
+            "expiresAt": null,
+            "result": null,
+            "error": {
+              "code": "UNSUPPORTED",
+              "message": "Synthetic fixture: UNSUPPORTED",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    }
+  ]
+}

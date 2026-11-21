@@ -118,11 +118,13 @@ class SlackService extends EventEmitter {
     this._recheckTimer = null;
     this._stateTimer = null;
     this._stopping = true;
+    this._generation = 0;
   }
 
   // ---- lifecycle --------------------------------------------------------
 
   async start() {
+    const generation = ++this._generation;
     this._clearTimers();
     this._stopping = false;
     const cfg = Object.assign({
@@ -143,7 +145,7 @@ class SlackService extends EventEmitter {
     this.error = null;
     await this._signIn();
 
-    if (this._stopping) return; // stop() raced us while we were awaiting Slack
+    if (this._stopping || generation !== this._generation) return; // stop/restart raced sign-in
     if (this.me) this.refreshSidebar(true).catch((err) => this.log('slack: sidebar failed: ' + err.message));
     this._startSocket();
     this._startPollLoop();
@@ -166,6 +168,7 @@ class SlackService extends EventEmitter {
   }
 
   stop() {
+    this._generation++;
     this._stopping = true;
     this._clearTimers();
     if (this.socket) { this.socket.stop(); this.socket = null; }
@@ -313,20 +316,23 @@ class SlackService extends EventEmitter {
   // ---- polling --------------------------------------------------------------
 
   _startPollLoop() {
+    const generation = this._generation;
+    const stopped = () => this._stopping || generation !== this._generation;
     const tick = async () => {
-      if (this._stopping) return;
+      if (stopped()) return;
       // Started while the network was down: nothing below can work until it
       // knows who it is, so ask again rather than poll as nobody forever.
       if (!this.me) {
         await this._signIn();
-        if (this._stopping) return;
+        if (stopped()) return;
         if (this.me) this.refreshSidebar(true).catch((err) => this.log('slack: sidebar failed: ' + err.message));
       }
       try { await this._pollOnce(); this._pollOk = true; }
       catch (err) { this._pollOk = false; this.error = humanError(err); this.log('slack: poll failed: ' + err.message); }
+      if (stopped()) return;
       await this.refreshSidebar().catch((err) => this.log('slack: sidebar failed: ' + err.message));
+      if (stopped()) return;
       this._scheduleStateEmit();
-      if (this._stopping) return;
       this._pollTimer = this.setTimeout(tick, this._effectivePollMs());
     };
     tick();
@@ -850,10 +856,12 @@ class SlackService extends EventEmitter {
   _armRecheck() {
     if (this._recheckTimer) { this.clearTimeout(this._recheckTimer); this._recheckTimer = null; }
     if (this._stopping) return;
+    const generation = this._generation;
     this._recheckTimer = this.setTimeout(async () => {
+      if (this._stopping || generation !== this._generation) return;
       try { await this._recheckPending(); }
       catch (err) { this.log('slack: recheck failed: ' + err.message); }
-      this._armRecheck();
+      if (!this._stopping && generation === this._generation) this._armRecheck();
     }, RECHECK_MS);
   }
 
@@ -1080,6 +1088,7 @@ class SlackService extends EventEmitter {
   }
 
   _scheduleStateEmit() {
+    if (this._stopping) return;
     if (this._stateTimer) return;
     this._stateTimer = this.setTimeout(() => {
       this._stateTimer = null;

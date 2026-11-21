@@ -1,10 +1,11 @@
 'use strict';
 
-const vscode = require('vscode');
+const { readConfig: readFrom, readSnippets } = require('./config');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { Session, endedOnLimit } = require('./session');
 const { transcriptPath, useNames } = require('./history');
+const { defaultCommandCatalog } = require('./commandCatalog');
 
 const STORAGE_KEY = 'nikui.sessions.v1';
 // The plan's limits belong to the account, not to a window or a folder.
@@ -27,7 +28,6 @@ const NAMES_KEY = 'nikui.names.v1';
 const KEEP_TURNS = 60;
 const QUEUED_TEXT_MAX = 8000;
 
-/** Only what /status draws, so a remembered turn stays small. */
 /**
  * A queued prompt, small enough to store. The images go: they are base64 in
  * memory and would turn a list of prompts into megabytes of state — so the
@@ -43,6 +43,7 @@ function slimQueued(q) {
   };
 }
 
+/** Only what /status draws, so a remembered turn stays small. */
 function slimTurn(t) {
   return {
     n: t.n, at: t.at, durationMs: t.durationMs, costUsd: t.costUsd,
@@ -64,11 +65,6 @@ const BUILTIN_COMMANDS = [
   'release-notes', 'resume', 'review', 'status', 'terminal-setup', 'usage', 'vim'
 ];
 
-/**
- * Yours merged over the built-in ones. VS Code replaces an object setting
- * wholesale, so adding a snippet of your own would otherwise silently delete
- * the ones that ship with NikUI; an empty string is how you turn one off.
- */
 /** When the quota says it comes back: the spent window's own reset, or the top-level one. */
 function pickReset(limits) {
   if (!limits) return null;
@@ -83,43 +79,8 @@ function pickReset(limits) {
   return candidates.length ? Math.min.apply(null, candidates) : null;
 }
 
-function readSnippets(cfg) {
-  let shipped = {};
-  try {
-    const declared = cfg.inspect && cfg.inspect('promptSnippets');
-    shipped = (declared && declared.defaultValue) || {};
-  } catch (_) { /* older host, or a stub */ }
-  return Object.assign({}, shipped, cfg.get('promptSnippets', {}));
-}
-
-function readConfig() {
-  const cfg = vscode.workspace.getConfiguration('nikui');
-  return {
-    claudePath: cfg.get('claudePath', 'claude'),
-    model: cfg.get('model', ''),
-    permissionMode: cfg.get('permissionMode', 'bypassPermissions'),
-    effort: cfg.get('effort', ''),
-    outputStyle: cfg.get('outputStyle', 'Concise'),
-    extraArgs: cfg.get('extraArgs', []),
-    longCommandsInBackground: cfg.get('longCommandsInBackground', true),
-    autoTitle: cfg.get('autoTitleFromTicket', true),
-    fontFamily: cfg.get('fontFamily', ''),
-    fontSize: cfg.get('fontSize', 13),
-    showThinking: cfg.get('showThinking', true),
-    clock: cfg.get('clock', '24h'),
-    replySuggestions: cfg.get('replySuggestions', true),
-    pauseOnLimit: cfg.get('pauseWhenQuotaRuns', true),
-    resumePrompt: cfg.get('resumePrompt',
-      'Your usage limit reset and NikUI has restarted this instance. Carry on with the task you were ' +
-      'working on before the pause, from where you left off. If it was already finished, say so and stop.'),
-    notifyOnAttention: cfg.get('notifyOnAttention', true),
-    promptSnippets: readSnippets(cfg),
-    interruptOnSingleEscape: cfg.get('interruptOnSingleEscape', false),
-    maxItems: cfg.get('maxTranscriptItems', 400),
-    keepPanelsWarm: cfg.get('keepHiddenPanelsWarm', false),
-    statusEmoji: cfg.get('statusEmoji', {})
-  };
-}
+// Callers without settings use manifest defaults, never an implicit editor.
+const defaultSettings = { get: (key, fallback) => fallback };
 
 /**
  * An instance saved while NikUI still took the CLI's word for its folder may
@@ -132,9 +93,15 @@ function outsideWorktree(cwd) {
 }
 
 class SessionManager extends EventEmitter {
-  constructor(context) {
+  constructor(context, options) {
     super();
     this.context = context;
+    // The extension passes a fresh VS Code source; engines pass their own.
+    this.settingsSource = (options && options.settings) || (() => defaultSettings);
+    this.history = (options && options.history) || { transcriptPath };
+    this.commandCatalog = (options && options.commandCatalog) || defaultCommandCatalog;
+    this.spawner = (options && options.spawner) || null;
+    this.nextId = options && options.nextId;
     this.sessions = new Map();
     this.activeId = null;
     this.limits = context.globalState.get(LIMITS_KEY, null);
@@ -144,7 +111,9 @@ class SessionManager extends EventEmitter {
     this.limitOverride = context.globalState.get(OVERRIDE_KEY, 0) || 0;
     this._resumeTimer = null;
     this.durable = null;
-    useNames(() => this.context.globalState.get(NAMES_KEY, {}) || {});
+    // Legacy callers still feed the compatibility History reader. Engines
+    // supply their own reader and never change that process-wide facade.
+    if (!(options && options.history)) useNames(() => this.context.globalState.get(NAMES_KEY, {}) || {});
   }
 
   /**
@@ -192,8 +161,10 @@ class SessionManager extends EventEmitter {
   }
 
   get config() {
-    return readConfig();
+    return readFrom(this.settingsSource());
   }
+
+  configFor(cwd) { return readFrom(this.settingsSource(cwd)); }
 
   knownCommands() {
     const saved = this.context.globalState.get(COMMANDS_KEY, []);
@@ -208,9 +179,13 @@ class SessionManager extends EventEmitter {
   create({ id, cwd, title, ticket, autoLabel, resume, autoStart, totalCost, usage, turnLog, startedAt,
     turns, errors, interrupts, status, finishedAt, compactions, lastCompactedAt, queue, cutByLimit, unread,
     prPane, prPinned, prUrl }) {
-    const cfg = this.config;
+    if (this.disposed) throw new Error('Session manager is closed');
+    if (this.authorityPolicy) this.authorityPolicy({ id, cwd });
+    const cfg = this.configFor(cwd);
     const session = new Session({
-      id,
+      id: id || (this.nextId && this.nextId()),
+      history: this.history,
+      commandCatalog: this.commandCatalog,
       ticket: ticket || null,
       cwd,
       customTitle: title || null,
@@ -272,6 +247,7 @@ class SessionManager extends EventEmitter {
     if (prPane && typeof prPane === 'object') session.prPane = { open: !!prPane.open, tab: prPane.tab || 'conversation', width: prPane.width || null, full: !!prPane.full };
     if (prPinned && prUrl) { session.prPinned = true; session.prUrl = prUrl; }
     this.sessions.set(session.id, session);
+    if (this.prepareSession) this.prepareSession(session);
     this._applyPause(session);
     if (autoStart !== false) session.start();
     this._changed(session);
@@ -325,6 +301,7 @@ class SessionManager extends EventEmitter {
     this.limits = limits;
     for (const session of this.list) session.limits = limits;
     this.context.globalState.update(LIMITS_KEY, limits);
+    this.emit('account-changed');
     this.emit('limits', limits);
     this.emit('changed');
   }
@@ -353,6 +330,7 @@ class SessionManager extends EventEmitter {
       limitType: (limits && limits.type) || null
     };
     this.context.globalState.update(PAUSE_KEY, this.pause);
+    this.emit('account-changed');
     for (const session of this.list) session.pause({ until, reason: 'limit' });
     this._armResume();
     this.emit('paused', this.pause);
@@ -374,14 +352,14 @@ class SessionManager extends EventEmitter {
       }
       this.context.globalState.update(OVERRIDE_KEY, this.limitOverride);
     }
-    if (!this.pause) return 0;
-    const nudge = this.config.resumePrompt;
+    if (!this.pause) { this.emit('account-changed'); return 0; }
     this.pause = null;
     this.context.globalState.update(PAUSE_KEY, null);
+    this.emit('account-changed');
     if (this._resumeTimer) { clearTimeout(this._resumeTimer); this._resumeTimer = null; }
 
     let woken = 0;
-    for (const session of this.list) if (session.resume({ nudge })) woken += 1;
+    for (const session of this.list) if (session.resume({ nudge: this.configFor(session.cwd).resumePrompt })) woken += 1;
     this.emit('resumed', { woken, manual: !!manual });
     this.emit('changed');
     return woken;
@@ -443,6 +421,7 @@ class SessionManager extends EventEmitter {
         restored: true
       };
       this.context.globalState.update(PAUSE_KEY, this.pause);
+      this.emit('account-changed');
     }
     // A reset that has already passed — the window was closed or reloaded
     // through it — still holds things until the resume, but says nothing: a
@@ -476,6 +455,14 @@ class SessionManager extends EventEmitter {
       session.dispose();
     }
     this.sessions.clear();
+  }
+
+  /** Permanently close an engine owner; disposeAll remains the legacy clear. */
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.disposeAll();
+    this.removeAllListeners();
   }
 
   /**
@@ -600,7 +587,7 @@ class SessionManager extends EventEmitter {
       // What the CLI wrote down outranks what this window remembered: an
       // instance cut off before NikUI kept track of that still ends, on disk,
       // on the limit — and so is still owed its nudge.
-      let onDisk = entry.cutByLimit || !entry.claudeSessionId ? null : endedOnLimit(transcriptPath(entry.cwd, entry.claudeSessionId));
+      let onDisk = entry.cutByLimit || !entry.claudeSessionId ? null : endedOnLimit(this.history.transcriptPath(entry.cwd, entry.claudeSessionId));
       // A limit hit before you overrode the pause by hand is not owed anything.
       if (onDisk && this.limitOverride && (onDisk.at || 0) <= this.limitOverride) onDisk = null;
       if (onDisk && onDisk.resetsAt) this.knownReset = Math.max(this.knownReset || 0, onDisk.resetsAt);
@@ -635,4 +622,4 @@ class SessionManager extends EventEmitter {
   }
 }
 
-module.exports = { SessionManager, readConfig, readSnippets, pickReset, outsideWorktree, RESUME_GRACE_MS, BLIND_RETRY_MS };
+module.exports = { SessionManager, readConfig: readFrom, readSnippets, pickReset, outsideWorktree, RESUME_GRACE_MS, BLIND_RETRY_MS };

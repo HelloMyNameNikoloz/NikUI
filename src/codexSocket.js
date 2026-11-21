@@ -208,12 +208,17 @@ function daemonProcess(ws) {
     while ((at = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, at);
       buf = buf.slice(at + 1);
-      if (line.trim()) ws.send(line);
+      if (line.trim()) {
+        if (ws.open === false) throw Object.assign(new Error('Codex daemon connection is closed'), { delivery: 'not_written' });
+        ws.send(line); // false may mean socket backpressure, not non-acceptance
+        if (ws.open === false) throw new Error('Codex daemon write could not be confirmed');
+      }
     }
   });
   ws.on('message', (text) => proc.stdout.write(text + '\n'));
   ws.on('close', () => proc.emit('exit', null, null));
-  proc.kill = () => ws.close();
+  proc.close = () => ws.close();
+  proc.kill = proc.close; // Compatibility: this handle never owns the daemon.
   return proc;
 }
 

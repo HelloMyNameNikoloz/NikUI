@@ -1,0 +1,1681 @@
+{
+  "fixtureVersion": 1,
+  "category": "run-turn-binding",
+  "vectors": [
+    {
+      "id": "binding-permission-current",
+      "polarity": "positive",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": true,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "requestId": "approval-11",
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                },
+                "allow": true,
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-permission-stale-run",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": true,
+            "run": {
+              "id": "22222222222222222222222222222222",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "STALE_RUN",
+              "message": "Synthetic fixture: STALE_RUN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-permission-stale-turn",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": true,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-8"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "STALE_TURN",
+              "message": "Synthetic fixture: STALE_TURN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-permission-not-pending",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "old-transcript",
+            "allow": true,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "APPROVAL_RESOLVED",
+              "message": "Synthetic fixture: APPROVAL_RESOLVED",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-permission-competing-mid",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "approvalWinner": "22222222222222222222222222222222"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": false,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "APPROVAL_RESOLVED",
+              "message": "Synthetic fixture: APPROVAL_RESOLVED",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-permission-nonboolean",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ]
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": "yes",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "BAD_MESSAGE",
+              "message": "Synthetic fixture: BAD_MESSAGE",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-interrupt-delayed-turn",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "afterOwnerLookup": {
+          "run": {
+            "id": "a81ec16e4ac74040a9107dbe669380b5",
+            "turn": "turn-10"
+          }
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "interrupt",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "interrupt",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "STALE_TURN",
+              "message": "Synthetic fixture: STALE_TURN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-interrupt-background",
+      "polarity": "positive",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "backgroundToken": "bg:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "interrupt",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "bg:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "interrupt",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "bg:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                },
+                "taskId": null,
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-interrupt-background-changed",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "backgroundToken": "bg:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "interrupt",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "bg:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "interrupt",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "STALE_TURN",
+              "message": "Synthetic fixture: STALE_TURN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-stop-task-older-turn",
+      "polarity": "positive",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "task": {
+          "id": "task-4",
+          "run": {
+            "id": "a81ec16e4ac74040a9107dbe669380b5",
+            "turn": "turn-8"
+          },
+          "active": true
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "stopTask",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "taskId": "task-4",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-8"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "stopTask",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-8"
+                },
+                "taskId": "task-4",
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-codex-stop-task",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "provider": "codex"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "stopTask",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "taskId": "task-4",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "stopTask",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "UNSUPPORTED",
+              "message": "Synthetic fixture: UNSUPPORTED",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-steer-delayed",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "afterOwnerLookup": {
+          "run": {
+            "id": "a81ec16e4ac74040a9107dbe669380b5",
+            "turn": "turn-10"
+          }
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "/steer focus",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "STALE_TURN",
+              "message": "Synthetic fixture: STALE_TURN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-promote-reorder",
+      "polarity": "positive",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "activeTurn": "turn-10"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "promoteQueued",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "q-29",
+            "mode": "reorder"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "promoteQueued",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "queueId": "q-29"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-promote-steer-stale",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "provider": "codex"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "promoteQueued",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "q-29",
+            "mode": "steer",
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-8"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "promoteQueued",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "STALE_TURN",
+              "message": "Synthetic fixture: STALE_TURN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-question-matching",
+      "polarity": "positive",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "question": {
+          "requestId": "question-1",
+          "run": {
+            "id": "a81ec16e4ac74040a9107dbe669380b5",
+            "turn": "turn-9"
+          }
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "yes",
+            "answerTo": {
+              "requestId": "question-1",
+              "run": {
+                "id": "a81ec16e4ac74040a9107dbe669380b5",
+                "turn": "turn-9"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "accepted",
+              "data": {
+                "instance": "instance-7",
+                "queueId": "q-29",
+                "operation": "ad1bccaf7de84efcb4067845cad1f0ae"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 1,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-question-missing-marker",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "question": {
+          "requestId": "question-1",
+          "run": {
+            "id": "a81ec16e4ac74040a9107dbe669380b5",
+            "turn": "turn-9"
+          }
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "ordinary draft"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "BAD_MESSAGE",
+              "message": "Synthetic fixture: BAD_MESSAGE",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-question-stale-marker",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "question": {
+          "requestId": "question-1",
+          "run": {
+            "id": "a81ec16e4ac74040a9107dbe669380b5",
+            "turn": "turn-9"
+          }
+        }
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "send",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "text": "yes",
+            "answerTo": {
+              "requestId": "question-old",
+              "run": {
+                "id": "a81ec16e4ac74040a9107dbe669380b5",
+                "turn": "turn-9"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "send",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "STALE_TURN",
+              "message": "Synthetic fixture: STALE_TURN",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-terminal-run-replaced",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "terminalRun": "terminal-run-12"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:stop",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "terminal-2",
+            "terminalRun": "terminal-run-11"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:stop",
+            "target": "fleet",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "STALE_RESOURCE",
+              "message": "Synthetic fixture: STALE_RESOURCE",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-terminal-close-idle",
+      "polarity": "positive",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "fleet",
+        "target": "fleet",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "terminalRun": null
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "term:close",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "id": "terminal-2",
+            "terminalRun": null
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "term:close",
+            "target": "fleet",
+            "status": "applied",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "terminal": "terminal-2",
+                "terminalRun": null
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 1,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-pr-relinked",
+      "polarity": "negative",
+      "covers": [
+        "T23",
+        "T24",
+        "T25",
+        "T26",
+        "T27"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "a81ec16e4ac74040a9107dbe669380b5",
+          "turn": "turn-9"
+        },
+        "pending": [
+          "approval-11"
+        ],
+        "prUrl": "https://github.com/fixture/repo/pull/2"
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "pr:reply",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "prUrl": "https://github.com/fixture/repo/pull/1",
+            "threadId": "review-1",
+            "body": "reply"
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "pr:reply",
+            "target": "session:instance-7",
+            "status": "rejected",
+            "outcome": "rejected",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": null,
+            "error": {
+              "code": "STALE_RESOURCE",
+              "message": "Synthetic fixture: STALE_RESOURCE",
+              "retryable": false
+            }
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    },
+    {
+      "id": "binding-historical-duplicate-before-run-check",
+      "polarity": "positive",
+      "covers": [
+        "T23"
+      ],
+      "context": {
+        "role": "conversation",
+        "target": "session:instance-7",
+        "principal": "device:phone-1",
+        "seat": {
+          "id": "phone-1",
+          "control": true,
+          "local": false,
+          "editor": false
+        }
+      },
+      "initial": {
+        "run": {
+          "id": "22222222222222222222222222222222",
+          "turn": "turn-9"
+        },
+        "storedApplied": true
+      },
+      "input": [
+        {
+          "direction": "client",
+          "message": {
+            "type": "permission",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "issuedAt": 1795179601000,
+            "requestId": "approval-11",
+            "allow": true,
+            "run": {
+              "id": "a81ec16e4ac74040a9107dbe669380b5",
+              "turn": "turn-9"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "replies": [
+          {
+            "type": "ack",
+            "scope": "981aa39d3e3a4f389f0ff600657d42d9",
+            "mid": "ad1bccaf7de84efcb4067845cad1f0ae",
+            "what": "permission",
+            "target": "session:instance-7",
+            "status": "duplicate",
+            "outcome": "applied",
+            "admitted": true,
+            "at": 1795179601000,
+            "expiresAt": 1795266001000,
+            "result": {
+              "code": "ok",
+              "data": {
+                "requestId": "approval-11",
+                "run": {
+                  "id": "a81ec16e4ac74040a9107dbe669380b5",
+                  "turn": "turn-9"
+                },
+                "allow": true,
+                "delivery": "submitted"
+              },
+              "replies": []
+            },
+            "error": null
+          }
+        ],
+        "effects": {
+          "engine": 0,
+          "provider": 0,
+          "ui": 0
+        },
+        "state": {},
+        "close": null
+      }
+    }
+  ]
+}

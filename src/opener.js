@@ -67,9 +67,12 @@ function defaultBrowser() {
 }
 
 /** Open a file in the browser: the default one by name on macOS. Resolves false if it could not. */
-async function openInBrowser(abs) {
+async function openInBrowser(abs, { requireDefault = false, beforeOpen = () => {} } = {}) {
   if (process.platform !== 'darwin') return false;
-  const id = (await defaultBrowser()) || 'com.apple.Safari';
+  const selected = await defaultBrowser();
+  if (requireDefault && !selected) return false;
+  const id = selected || 'com.apple.Safari';
+  beforeOpen();
   return new Promise((resolve) => {
     execFile('/usr/bin/open', ['-b', id, abs], { timeout: 10000 }, (err) => resolve(!err));
   });

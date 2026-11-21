@@ -7,13 +7,16 @@ import Foundation
             if case .state = update {} else { return }
         }
         switch update {
+        case .negotiated(let role, let session): protocolSessions[role] = session
+        case .intent(_, let change): receiveIntent(change)
         case .state(let role, let state):
             if role == .fleet {
                 connection = state
-                if !state.isLive { report.isStale = true }
+                if !state.isLive { report.isStale = true; terminal.freshControlIDs.removeAll() }
                 else { beginSnapshot("fleet"); beginSnapshot("history") }
             }
             if let id = role.conversationID { var value = conversation(id); value.connection = state; if !state.isLive { value.report.isStale = true }; conversationByID[id] = value }
+            if !state.isLive { protocolSessions[role] = nil; clearComposerQuery(role); if let id = role.conversationID { conversationByID[id]?.controlSnapshotFresh = false } }
             if [.offline, .wrongLaptop].contains(state) { markAmbiguous(on: role) }
             if case .reconnecting = state { markAmbiguous(on: role) }
             if case .refused = state { markAmbiguous(on: role) }
@@ -26,13 +29,24 @@ import Foundation
         case .failure(let role, let failure):
             // A requested self-removal is confirmed by the server's policy close, even without a list receipt.
             if failure.code == .refused, failure.message == "this device was removed", let own = seat?.id {
-                for request in Array(requests.values) { if case .forget(let id) = request.action, id == own { finishRequest(request.operation.id, result: .accepted(.null)) } }
+                for request in Array(requests.values) { if case .forget(let id) = request.action, id == own, !request.v2 { finishRequest(request.operation.id, result: .accepted(.null)) } }
             }
             markAmbiguous(on: role); fail(failure)
         }
     }
     /// Deterministic event injection also supports UI fixtures and contract tests without a network.
     public func ingest(_ event: ServerEvent, on role: SocketRole = .fleet) {
+        if case .correlated(_, let semantic) = event {
+            if protocolSessions[role]?.version != .v2 { ingest(semantic, on: role) }; return
+        }
+        if protocolSessions[role]?.version == .v2 {
+            switch event {
+            case .created, .placed, .navigate, .slack(.link), .pr(.done): return // Applied from the original ack once.
+            case .draft, .editPrompt: if !mayApplyComposerReply(on: role) { return }
+            case .refused(let what, _, _): if composerQueries[role]?.action == what { clearComposerQuery(role) }
+            default: break
+            }
+        }
         resolveRequests(event, role: role)
         let now = clock.now()
         switch event {
@@ -42,7 +56,13 @@ import Foundation
             historyStatus.receive(at: now); snapshotTimeouts["history"]?.cancel()
         case .devices(let value): devices = value.raw["devices"].isNull ? DevicesSnapshot(devices.raw.merged(with: value.raw)) : value
         case .awake(let value): awake = value
-        case .device(let value): seat = value
+        case .device(let value):
+            seat = value
+            for (socket, session) in protocolSessions where session.welcome?.seat.id == value.id {
+                guard var raw = session.welcome?.raw else { continue }
+                raw["seat"] = raw["seat"].merged(with: value.raw)
+                if let welcome = try? ProtocolWelcome(validating: raw) { protocolSessions[socket] = ProtocolSession(welcome: welcome, receivedAt: session.receivedAt) }
+            }
         case .report(let available, let value, let trouble):
             if role == .fleet { report.receive(available: available, value: value, trouble: trouble, at: now) }
         case .terminal(let value):

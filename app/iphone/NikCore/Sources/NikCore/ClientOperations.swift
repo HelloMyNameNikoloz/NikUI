@@ -1,6 +1,7 @@
 import Foundation
 
 struct TrackedRequest {
+    var v2 = false
     var generation: UInt64
     var operation: PendingOperation
     var action: ClientAction
@@ -15,7 +16,7 @@ extension Draft {
     /// Delivery changes belong to the captured composition, not just matching words.
     func matchesComposition(_ other: Draft?) -> Bool {
         guard let other else { return false }
-        return text == other.text && attachments == other.attachments && updatedAt == other.updatedAt
+        return text.utf8.elementsEqual(other.text.utf8) && attachments == other.attachments && updatedAt == other.updatedAt && compositionID == other.compositionID && answerTo == other.answerTo
     }
 }
 extension ClientAction {
@@ -90,7 +91,7 @@ extension ClientAction {
 }
 
 @MainActor extension NikClient {
-    func execute(_ action: ClientAction, role: SocketRole, sourceDraft: Draft? = nil, preservesDraft: Bool = false) async -> ActionResult {
+    func execute(_ action: ClientAction, role: SocketRole, sourceDraft: Draft? = nil, preservesDraft: Bool = false, v2Metadata: IntentMetadata? = nil) async -> ActionResult {
         let generation = clientGeneration
         if Task.isCancelled { return .notSent(CoreFailure(.canceled, "The operation was canceled before sending.")) }
         do { try action.validate(on: role, maximumWireBytes: transportConfiguration.maximumSendBytes) }
@@ -107,7 +108,8 @@ extension ClientAction {
         guard lifecycle == .foreground else { return .notSent(CoreFailure(.locked, "Unlock and return to NikUI before sending.")) }
         let state = role == .fleet ? connection : { if case .conversation(let id) = role { return conversation(id).connection }; return .offline }()
         guard state.isLive, isPreview || manager != nil else { return .notSent(CoreFailure(.offline, "The laptop is not connected. Your draft is preserved.")) }
-        if action.requiresControl, seat?.control != true { return .notSent(CoreFailure(.refused, "This device may watch. Grant control on the laptop to use this action.")) }
+        let effectiveSeat = protocolSessions[role]?.welcome?.seat ?? seat
+        if action.requiresControl, effectiveSeat?.control != true { return .notSent(CoreFailure(.refused, "This device may watch. Grant control on the laptop to use this action.")) }
         if case .forget(let id) = action, id != seat?.id, seat?.control != true { return .notSent(CoreFailure(.refused, "Only a controlling device can remove another device.")) }
         if role == .fleet {
             if case .history = action { beginSnapshot("history") }
@@ -118,6 +120,12 @@ extension ClientAction {
         }
         if case .slackReply = action, !slack.state.mayReply { return .notSent(CoreFailure(.refused, "Slack replies are unavailable.")) }
         if case .slackVIPs = action, !slack.state.mayEdit { return .notSent(CoreFailure(.refused, "Slack editing is unavailable.")) }
+        if !isPreview, protocolSessions[role]?.version == .v2, action.needsIntent(on: role) {
+            return await executeV2(action, role: role, sourceDraft: sourceDraft, preservesDraft: preservesDraft, metadata: v2Metadata)
+        }
+        if !isPreview, protocolSessions[role]?.version == .v2, action.isComposerQuery, !beginComposerQuery(action, role: role) {
+            return .notSent(CoreFailure(.refused, "Wait for the previous draft query or reconnect before requesting another."))
+        }
         let lane = action.receiptLane
         if let lane, requests.values.contains(where: { $0.role == role && $0.lane == lane }) { return .notSent(CoreFailure(.refused, "Wait for the previous operation to finish.")) }
         let id = action.correlationID ?? UUID().uuidString
@@ -179,6 +187,7 @@ extension ClientAction {
             }
             return .submitted(PendingOperation(id: id, action: action.type, state: .submitted, createdAt: operation.createdAt))
         } catch {
+            if action.isComposerQuery { clearComposerQuery(role) }
             guard generation == clientGeneration else { return .ambiguous(PendingOperation(id: id, action: action.type, state: .ambiguous, createdAt: operation.createdAt, reason: "The previous connection ended during this operation.")) }
             let failure = (error as? CoreFailure) ?? CoreFailure(.transport, "The connection was interrupted during the write.")
             if [.invalidInput, .tooLarge, .refused, .offline, .locked].contains(failure.code) {
@@ -190,7 +199,7 @@ extension ClientAction {
     }
     func timeoutRequest(_ id: String, generation: UInt64) {
         guard let request = requests[id], request.generation == generation else { return }
-        let result: ActionResult = request.action.mutatesRemoteState ? .ambiguous(PendingOperation(id: id, action: request.action.type, state: .ambiguous, createdAt: request.operation.createdAt, reason: "The laptop did not confirm this operation. Check before retrying.")) : .notSent(CoreFailure(.timeout, "The laptop did not answer."))
+        let result: ActionResult = request.v2 || request.action.mutatesRemoteState ? .ambiguous(PendingOperation(id: id, action: request.action.type, state: .ambiguous, createdAt: request.operation.createdAt, reason: "The laptop did not confirm this operation. Check before retrying.")) : .notSent(CoreFailure(.timeout, "The laptop did not answer."))
         finishRequest(id, result: result)
     }
     func finishRequest(_ id: String, result: ActionResult, generation: UInt64? = nil) {
@@ -217,7 +226,8 @@ extension ClientAction {
             var state = conversation(chat)
             let key: String?
             switch request.action { case .prReply(let thread, let body): key = state.pr.drafts[thread] == body ? thread : nil; case .prComment(let body): key = state.pr.drafts["comment"] == body ? "comment" : nil; default: key = nil }
-            if delivery == .accepted, state.pr.url == request.prURL, let key { state.pr.drafts[key] = nil }
+            let originalPRDraft = !request.v2 || pendingIntents[id]?.prDraftRevision == state.pr.draftRevision
+            if delivery == .accepted, state.pr.url == request.prURL, originalPRDraft, let key { state.pr.drafts[key] = nil }
             state.pr.pending = nil
             if case .notSent(let failure) = result { state.pr.error = failure.message }
             conversationByID[chat] = state
@@ -232,14 +242,14 @@ extension ClientAction {
     }
     func markAmbiguous(on role: SocketRole?) {
         for request in Array(requests.values) where role == nil || request.role == role {
-            if request.action.mutatesRemoteState {
+            if request.v2 || request.action.mutatesRemoteState {
                 finishRequest(request.operation.id, result: .ambiguous(PendingOperation(id: request.operation.id, action: request.action.type, state: .ambiguous, createdAt: request.operation.createdAt, reason: "The connection changed before acceptance was known. Check the laptop snapshot before retrying.")))
             } else { finishRequest(request.operation.id, result: .notSent(CoreFailure(.offline, "The connection changed before the response arrived."))) }
         }
     }
     func resolveRequests(_ event: ServerEvent, role: SocketRole) {
         let outstanding = Array(requests.values)
-        for request in outstanding where request.role == role {
+        for request in outstanding where request.role == role && !request.v2 {
             let action = request.action; var result: ActionResult?
             func accepted(_ raw: JSONValue = .null) -> ActionResult { .accepted(raw) }
             func refused(_ reason: String) -> ActionResult { .notSent(CoreFailure(.refused, reason)) }

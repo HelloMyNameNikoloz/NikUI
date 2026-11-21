@@ -233,9 +233,14 @@
     const text = String(command || '').trim();
     if (!text || !state.terminal) return;
     if (state.runs.some((r) => !r.done)) return flash('Still running. Stop it first.');
-    transport.postMessage({ type: 'term:run', id: state.terminal.id, command: text });
+    const posted = transport.postMessage({ type: 'term:run', id: state.terminal.id, command: text });
+    if (posted === false) return;
+    if (posted?.pending) { pendingCommands.set(posted.mid, { text: field.value, version: commandVersion }); return; }
     field.value = '';
   }
+  let commandVersion = 0;
+  const pendingCommands = new Map();
+  field.addEventListener('input', () => { commandVersion++; });
 
   let saying = null;
   function flash(words) {
@@ -331,9 +336,21 @@
     const message = event.data;
     if (!message || typeof message.type !== 'string') return;
 
+    if (message.type === 'intent:error') { flash(message.message); return; }
+    if (message.type === 'intent' && message.record?.payload.type === 'term:run') {
+      const record = message.record, command = pendingCommands.get(record.mid);
+      if (record.state === 'completed' && command && command.version === commandVersion && field.value === command.text) {
+        field.value = ''; commandVersion++; pendingCommands.delete(record.mid);
+      }
+      if (['unknown', 'rejected'].includes(record.state)) flash(record.state === 'unknown'
+        ? 'This command may have started. Check its output before running it again.' : record.ack?.error?.code || 'Command refused.');
+      return;
+    }
+
     if (message.type === '@welcome' || message.type === '@device') {
       state.connected = true;
       state.control = message.device ? message.device.control !== false : true;
+      if (transport.application?.proto === 2 && !transport.application.allowed({ type: 'term:list' })) state.control = false;
       if (link) { link.hidden = false; link.className = 'link'; link.textContent = 'Live'; }
       transport.postMessage({ type: 'ready' });
       if (state.control) askAndWait();

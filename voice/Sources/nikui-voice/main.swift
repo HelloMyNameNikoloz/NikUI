@@ -16,7 +16,13 @@ import FluidAudio
 import Foundation
 import SQLite3
 
-let home = FileManager.default.homeDirectoryForCurrentUser
+// The signed service supplies its selected profile explicitly. Window mode
+// retains its existing default; an invalid explicit home never falls back.
+let selectedHome = ProcessInfo.processInfo.environment["NIKUI_VOICE_HOME"]
+if let selectedHome, !selectedHome.hasPrefix("/") || selectedHome.contains("\0") {
+    FileHandle.standardError.write(Data("Invalid voice profile\n".utf8)); exit(64)
+}
+let home = selectedHome.map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser
 let support = home.appendingPathComponent("Library/Application Support")
 
 /// Where VoiceInk keeps the model, and where FluidAudio would on its own.

@@ -1799,3 +1799,6 @@ body.app .copy { right: 6px; }
 body.app-conversation .permission-command { padding: 0; color: var(--vscode-foreground); font-size: 13px; }
 body.app-conversation .permission-arguments summary { display: flex; align-items: center; min-height: 44px; font-size: 12px; color: var(--vscode-descriptionForeground); }
 body.app-conversation .permission-arguments pre { margin: 0; }
+.intent-state { padding: 8px 10px; font-size: 12px; color: var(--vscode-descriptionForeground, #aaa); }
+.intent-state button { margin-left: 8px; font-size: inherit; }
+.intent-state select, .intent-state textarea { display: block; width: 100%; margin: 4px 0; font: inherit; }

@@ -828,7 +828,7 @@
         "nikui.remote.autoStart": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Start the local server when the window opens. Off by default: NikUI runs Claude with permissions bypassed, so a socket into it is code execution on this machine, and it should never be listening without you having said so.",
+          "markdownDescription": "Start the local server when the window opens. On by default; the listener binds only to `127.0.0.1`. NikUI runs Claude with permissions bypassed, so whatever passes pairing on this socket can run code on this machine. Turn this off to keep a new window from serving automatically.",
           "description": "Start the local server when this window opens, so a phone that tries to connect can. The server still binds to 127.0.0.1 only."
         },
         "nikui.remote.tailnet": {

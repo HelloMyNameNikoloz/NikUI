@@ -8,6 +8,8 @@ const path = require('path');
 const { nextTicket } = require('./ticket');
 const { prUrlIn } = require('./prlink');
 const { transcriptPath } = require('./history');
+const { defaultCommandCatalog } = require('./commandCatalog');
+const { commandArgs, learnCommandArgs, offerCommandArgs } = defaultCommandCatalog;
 const { pushedFrom } = require('./ci');
 
 const STATUS = {
@@ -66,14 +68,14 @@ const ELSEWHERE = 'This instance is running in another VS Code window. Carry on 
 // whatever only makes sense in this window. The item index is rebuilt from
 // the items, so the two cannot disagree.
 const NOT_SNAPSHOT = new Set([
-  'proc', 'spawner', '_events', '_eventsCount', '_maxListeners',
+  'proc', 'spawner', 'history', 'commandCatalog', '_events', '_eventsCount', '_maxListeners',
   '_settleTimer', '_flushTimer', '_drainTimer', 'drainAt', '_dirty', '_itemIndex',
   'disposed', 'catchingUp', '_clock', '_stdoutBuf', '_attaching', '_held', '_missed',
-  '_leaving', 'elsewhere', '_ciBefore', '_recheck', '_checkedAt', 'ciWatching',
+  '_leaving', 'elsewhere', 'keeperRefusal', '_ciBefore', '_recheck', '_checkedAt', 'ciWatching',
   // The window's, not the instance's: the account's pause and limits are
   // set on every instance by the manager, which is newer than any checkpoint.
   // CI is watched from outside, by a watcher a checkpoint cannot bring back.
-  'pausedUntil', 'pauseReason', '_quietPause', 'limits', 'ci'
+  'pausedUntil', 'pauseReason', '_quietPause', 'limits', 'ci', '_durableQueueOwner', '_engineControls'
 ]);
 // Said while reading back, and still news once it is over: the account ran
 // out, the limits moved, a push to watch CI for. Told afterwards, newest each.
@@ -97,6 +99,8 @@ class Session extends EventEmitter {
   constructor(opts) {
     super();
     this.id = opts.id || nextId();
+    this.history = opts.history || { transcriptPath };
+    this.commandCatalog = opts.commandCatalog || defaultCommandCatalog;
     this.cwd = opts.cwd;
     this.claudePath = opts.claudePath || 'claude';
     this.model = opts.model || '';
@@ -307,12 +311,14 @@ class Session extends EventEmitter {
       !(this._shells.get(t.id) || {}).owned && !NEVER_ENDS.test(t.description || ''))
       .map((t) => {
         const shell = this._shells.get(t.id) || {};
-        return { id: t.id, command: t.description || '', startedAt: shell.at || null, stopping: !!shell.stopping };
+        return { id: t.id, command: t.description || '', startedAt: shell.at || null, stopping: !!shell.stopping,
+          ...(t.run ? { run: t.run } : {}) };
       });
   }
 
   /** Stops one command it left running. The CLI tells the model it was stopped. */
   stopTask(taskId) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.control(this, 'stopTask', { taskId });
     if (!this.isRunning || !this.backgroundTasks.some((t) => t.id === taskId && t.type === 'local_bash')) return false;
     const shell = this._shells.get(taskId) || {};
     this._shells.set(taskId, Object.assign(shell, { stopping: true }));
@@ -418,6 +424,7 @@ class Session extends EventEmitter {
 
   /** Listen to a process, started here or picked up from the keeper. */
   _wire(proc) {
+    if (this._engineControls) this._engineControls.rotate(proc);
     proc.on('error', (err) => { if (this.proc === proc) this._fail(spawnMessage(this.claudePath, err), err.code || null); });
     proc.stdout.setEncoding('utf8');
     // Only while this is still the process. A restart replaces it 300ms later
@@ -538,6 +545,8 @@ class Session extends EventEmitter {
    * it in the panel on every turn would bury the conversation in boilerplate.
    */
   send(text, attachments, opts) {
+    if (this._durableQueueOwner && !(opts && opts.authoritativeDispatch)) return this._durableQueueOwner.submit(this, text, attachments, opts);
+    if (opts && opts.authoritativeDispatch && (this.catchingUp || this._attaching || this.elsewhere || this.isPaused || !this.isRunning || this.inTurn)) return { delivery: 'not_written' };
     const prompt = String(text || '').trim();
     const files = Array.isArray(attachments) ? attachments : [];
     const outgoing = String((opts && opts.sent) || prompt).trim();
@@ -584,6 +593,7 @@ class Session extends EventEmitter {
       );
     }
 
+    if (this._engineControls) this._engineControls.beginTurn();
     this._interrupted = false;
     this._limitThisTurn = false;
     this._turnTools = [];
@@ -599,7 +609,7 @@ class Session extends EventEmitter {
     const said = outgoing || 'See the attached image.';
     content.push({ type: 'text', text: said });
 
-    this._write({ type: 'user', message: { role: 'user', content } });
+    return this._write({ type: 'user', message: { role: 'user', content } });
   }
 
   /**
@@ -608,6 +618,7 @@ class Session extends EventEmitter {
    * genuinely finished.
    */
   submit(text, attachments, opts) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.submit(this, text, attachments, opts);
     // A snippet on its own (`/review`) shows nothing of yours but still sends.
     const hasContent = String(text || '').trim() || String((opts && opts.sent) || '').trim() || (attachments && attachments.length);
     if (!hasContent) return null;
@@ -621,6 +632,7 @@ class Session extends EventEmitter {
   }
 
   enqueue(text, attachments, opts) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.submit(this, text, attachments, opts);
     if (this._attaching) { this._hold('enqueue', text, attachments, opts); return; }
     this.queue.push({
       id: 'q' + (this._seq++),
@@ -639,6 +651,7 @@ class Session extends EventEmitter {
 
   /** Move a queued prompt to the front, and send it now if nothing is running. */
   promote(id) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.promote(this, id);
     const at = this.queue.findIndex((q) => q.id === id);
     if (at <= 0) {
       if (at === 0 && this.isReadyForQueue()) { this._clearDrain(); this._scheduleDrain(0); }
@@ -653,6 +666,7 @@ class Session extends EventEmitter {
 
   /** Take a prompt back out of the queue, text and all, to be edited. */
   reclaim(id) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.reclaim(this, id);
     const at = this.queue.findIndex((q) => q.id === id);
     if (at < 0) return null;
     const [item] = this.queue.splice(at, 1);
@@ -661,12 +675,14 @@ class Session extends EventEmitter {
   }
 
   unqueue(id) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.unqueue(this, id);
     const before = this.queue.length;
     this.queue = this.queue.filter((q) => q.id !== id);
     if (this.queue.length !== before) this.emit('queue');
   }
 
   clearQueue() {
+    if (this._durableQueueOwner) return this._durableQueueOwner.clearQueue(this);
     if (!this.queue.length) return;
     this.queue = [];
     this._clearDrain();
@@ -698,6 +714,7 @@ class Session extends EventEmitter {
   }
 
   _scheduleDrain(delay) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.schedule(this);
     if (this.catchingUp || this._drainTimer || !this.queue.length) return;
     this.drainAt = this.now() + (delay === undefined ? QUEUE_DELAY_MS : delay);
     this.emit('queue');
@@ -748,6 +765,7 @@ class Session extends EventEmitter {
   }
 
   interrupt() {
+    if (this._durableQueueOwner) return this._durableQueueOwner.control(this, 'interrupt');
     if (!this.isRunning || !this.isBusy) return;
     if (this.inTurn) this._interrupted = true;
     else {
@@ -777,6 +795,7 @@ class Session extends EventEmitter {
   }
 
   respondToPermission(requestId, allow, message) {
+    if (this._durableQueueOwner) return this._durableQueueOwner.control(this, 'permission', { requestId, allow, ...(message ? { message } : {}) });
     if (!this.isRunning) {
       // The CLI that asked is gone. Saying "working" here left the instance
       // spinning forever with nothing behind it.
@@ -877,10 +896,9 @@ class Session extends EventEmitter {
   }
 
   _write(obj) {
-    if (this.catchingUp) return;
-    if (!this.proc || !this.proc.stdin.writable) return;
-    try { this.proc.stdin.write(JSON.stringify(obj) + '\n'); }
-    catch (err) { this._notice(`Write failed: ${err.message}`, 'error'); }
+    if (this.catchingUp || !this.proc || !this.proc.stdin.writable) return { delivery: 'not_written' };
+    try { this.proc.stdin.write(JSON.stringify(obj) + '\n'); return { delivery: 'submitted' }; }
+    catch (err) { this._notice(`Write failed: ${err.message}`, 'error'); return { delivery: err.delivery === 'not_written' ? 'not_written' : 'unknown' }; }
   }
 
   /**
@@ -890,7 +908,7 @@ class Session extends EventEmitter {
    */
   async replayTranscript(maxEntries) {
     if (this.replayed || !this.claudeSessionId) return false;
-    const file = transcriptPath(this.cwd, this.claudeSessionId);
+    const file = this.history.transcriptPath(this.cwd, this.claudeSessionId);
     if (!file || !fs.existsSync(file)) return false;
     this.replayed = true;
 
@@ -1016,7 +1034,7 @@ class Session extends EventEmitter {
    */
   noteMissingTranscript() {
     if (!this.claudeSessionId) return false;
-    const file = transcriptPath(this.cwd, this.claudeSessionId);
+    const file = this.history.transcriptPath(this.cwd, this.claudeSessionId);
     this._notice(
       'This conversation could not be read back from disk, so nothing is shown above. ' +
       `Its session is ${this.claudeSessionId}; NikUI looked for ${file}. ` +
@@ -1189,6 +1207,7 @@ class Session extends EventEmitter {
   }
 
   _beginOwnTurn() {
+    if (this._engineControls) this._engineControls.beginTurn();
     this._interrupted = false;
     this._limitThisTurn = false;
     this._turnTools = [];
@@ -1211,6 +1230,7 @@ class Session extends EventEmitter {
     this.backgroundTasks = (Array.isArray(tasks) ? tasks : [])
       .filter((t) => t && t.task_id)
       .map((t) => ({ id: t.task_id, type: t.task_type || null, description: t.description || '' }));
+    if (this._engineControls) this._engineControls.background(this.backgroundTasks);
     // An agent can be sent to the background after it started in the foreground.
     for (const t of this.backgroundTasks) {
       // When a command started is when it was first seen, if nothing said sooner.
@@ -1256,6 +1276,7 @@ class Session extends EventEmitter {
 
   /** Enough about an agent to say which one it was when it reports back. */
   _rememberAgent(event) {
+    if (this._engineControls) this._engineControls.taskStarted(event.task_id, event.task_type);
     if (event.task_id && event.task_type === 'local_bash') {
       if (this._shells.size > 64) this._shells.clear();
       const known = this._shells.get(event.task_id);
@@ -1276,6 +1297,7 @@ class Session extends EventEmitter {
    * found; this line says why a turn started with nobody asking.
    */
   _handleTaskNotification(event) {
+    if (this._engineControls) this._engineControls.taskFinished(event.task_id);
     const agent = this._agents.get(event.task_id);
     this._agents.delete(event.task_id);
     // One in the foreground reported back inside its own tool call already.
@@ -1409,7 +1431,7 @@ class Session extends EventEmitter {
       if (alreadyStreamed) return; // deltas already rendered this block
 
       if (block.type === 'text' && block.text) {
-        if (learnCommandArgs(block.text)) this.emit('meta');
+        if (this.commandCatalog.learnCommandArgs(block.text)) this.emit('meta');
         this._upsert({ id: `${event.uuid || msgId}:${index}`, kind: 'text', text: block.text, streaming: false, agent: event.parent_tool_use_id || null });
       } else if (block.type === 'thinking' && block.thinking) {
         this._upsert({ id: `${event.uuid || msgId}:t${index}`, kind: 'thinking', text: block.thinking, streaming: false });
@@ -1469,6 +1491,7 @@ class Session extends EventEmitter {
   }
 
   _handleResult(event) {
+    if (this._engineControls) this._engineControls.endTurn();
     // total_cost_usd is cumulative for the session, so the turn's own cost is
     // the delta and the session total is simply the latest value.
     let turnCost = 0;
@@ -1561,13 +1584,15 @@ class Session extends EventEmitter {
   _handleControlRequest(event) {
     const req = event.request || {};
     if (req.subtype !== 'can_use_tool') return;
+    const run = this._engineControls && this._engineControls.approval(event.request_id, event);
     this._upsert({
       id: `p${this._seq++}`,
       kind: 'permission',
       requestId: event.request_id,
       name: req.tool_name || 'tool',
       input: req.input || {},
-      resolved: null
+      resolved: null,
+      ...(run ? { run } : {})
     });
     this._setStatus(STATUS.WAITING);
   }
@@ -1892,110 +1917,6 @@ function readUsage(u) {
   };
 }
 
-// Commands that take a fixed set of values, so the composer can offer them
-// rather than expecting somebody to know them. Seeded with the ones we know,
-// extended at runtime from the CLI's own replies, and — for the models — from
-// the catalog the window reads out of the CLI itself.
-//
-// An entry is { value, label, detail }: the label and detail are what a row
-// says, and only the value is ever typed into the prompt.
-const COMMAND_ARGS = new Map();
-
-// Everything on the Usage line, because the values are written after it in two
-// different shapes and both are worth reading.
-const USAGE_RE = /Usage:\s*\/([\w:.-]+)([^\n]*)/g;
-
-// A value as the CLI prints one: a word, possibly with a [1m] on the end. The
-// point of the shape is what it excludes — "or a full model ID" is prose.
-const VALUE = /^[\w@[\].:/-]+$/;
-
-/**
- * The values out of one Usage line, written either way the CLI writes them.
- *
- * `/effort <low|medium|high>` names them in the placeholder. `/model <name>`
- * cannot, because the set is open, so it lists them after: "Available: sonnet,
- * opus, …, or a full model ID". Both are read, because in both cases they are
- * what somebody is choosing between.
- */
-function readValues(line) {
-  const angled = /<([^>]+)>/.exec(line);
-  const listed = /\bAvailable:\s*(.+)$/i.exec(line);
-  const parts = [];
-  if (angled && angled[1].includes('|')) parts.push.apply(parts, angled[1].split('|'));
-  if (listed) parts.push.apply(parts, listed[1].split(','));
-  return parts
-    .map((v) => v.trim().replace(/[.,;]+$/, ''))
-    .filter((v) => v && VALUE.test(v));
-}
-
-const described = (v) => ({ value: v.value, label: v.label || '', detail: v.detail || '' });
-
-/**
- * Add values to a command's list, keeping what is already there.
- *
- * `atFront` is for the described ones: the model catalog is more useful than the
- * aliases the CLI's own reply names, so it goes above them however the two
- * happen to arrive. A described value replaces a bare one of the same name.
- */
-function merge(name, values, atFront) {
-  const have = COMMAND_ARGS.get(name) || [];
-  const seen = new Map();
-  for (const entry of (atFront ? values.concat(have) : have.concat(values))) {
-    const old = seen.get(entry.value);
-    if (!old) seen.set(entry.value, described(entry));
-    else if (entry.label || entry.detail) {
-      seen.set(entry.value, {
-        value: old.value,
-        label: entry.label || old.label,
-        detail: entry.detail || old.detail
-      });
-    }
-  }
-  const next = [...seen.values()];
-  const same = have.length === next.length &&
-    have.every((v, i) => v.value === next[i].value && v.label === next[i].label);
-  COMMAND_ARGS.set(name, next);
-  return !same;
-}
-
-/** Read out of a reply the CLI just gave. */
-function learnCommandArgs(text) {
-  if (!text || text.indexOf('Usage:') < 0) return false;
-  let found = false;
-  let m;
-  USAGE_RE.lastIndex = 0;
-  while ((m = USAGE_RE.exec(text)) !== null) {
-    const values = readValues(m[2]);
-    if (values.length > 1 && merge(m[1], values.map((v) => ({ value: v })), false)) found = true;
-  }
-  return found;
-}
-
-/**
- * Values NikUI knows that the CLI never prints.
- *
- * The models are the case this exists for. The CLI's own reply lists the
- * aliases and then says "or a full model ID" — true, and not a list — while the
- * identifiers themselves are in the binary. The window reads them there and
- * hands them here, so the composer offers what this CLI actually knows.
- *
- * @returns {boolean} whether anything changed, so a page can be told
- */
-function offerCommandArgs(name, values) {
-  if (!name || !Array.isArray(values) || !values.length) return false;
-  return merge(name, values.map(described), true);
-}
-
-// Known before any reply arrives, so "/effort " offers its values on a fresh
-// instance rather than only after somebody has already run it once.
-merge('effort', ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode', 'auto']
-  .map((v) => ({ value: v })), false);
-
-function commandArgs() {
-  const out = {};
-  for (const [k, v] of COMMAND_ARGS) out[k] = v.map(described);
-  return out;
-}
 
 function flattenContent(content) {
   if (content == null) return '';

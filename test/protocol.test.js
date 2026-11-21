@@ -35,6 +35,10 @@ const TO_CLIENT = [
   'init', 'items', 'status', 'stats', 'meta', 'queue', 'reset',
   'statusReport', 'openStatus', 'editPrompt', 'focus', 'draft', 'presence', 'settings', 'commands'
 ];
+// P1-21's negotiated application layer is separate from the unchanged v1 hub
+// dialect. These two events are local outbox/UI state, never server receipts.
+const CLIENT_LOCAL = ['intent', 'protocol'];
+const NEGOTIATION_TO_HOST = ['hello'];
 
 /**
  * The transport's own layer, underneath all of that: who is holding this
@@ -90,7 +94,7 @@ module.exports = async function () {
   checkEqual('the hub sends nothing the protocol does not list',
     [...hubSends].filter((t) => !TO_CLIENT.includes(t)).sort(), []);
   checkEqual('the client draws nothing the protocol does not list',
-    [...clientHears].filter((t) => !TO_CLIENT.includes(t)).sort(), []);
+    [...clientHears].filter((t) => !TO_CLIENT.includes(t) && !CLIENT_LOCAL.includes(t)).sort(), []);
   checkEqual('and it draws every message the protocol lists',
     TO_CLIENT.filter((t) => !clientHears.has(t)), []);
   checkEqual('so every message the hub sends is one the client draws',
@@ -102,7 +106,7 @@ module.exports = async function () {
   const shim = read('media/transport.js');
   const shimMakes = new Set([...shim.matchAll(/type: '([a-zA-Z]+)'/g)].map((m) => m[1]));
   checkEqual('the browser transport invents no messages of its own',
-    [...shimMakes].filter((t) => !TO_HOST.includes(t) && !TO_CLIENT.includes(t)).sort(), []);
+    [...shimMakes].filter((t) => !TO_HOST.includes(t) && !TO_CLIENT.includes(t) && !CLIENT_LOCAL.includes(t) && !NEGOTIATION_TO_HOST.includes(t)).sort(), []);
 
   suite('and so is the layer underneath it');
 

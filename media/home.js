@@ -586,7 +586,8 @@
         reject({ reason: 'Your laptop did not answer. Check the connection and try again.' });
       }, 12000);
       pending.set(id, { resolve, reject, timer });
-      transport.postMessage(Object.assign({ type: type, id: id }, extra || {}));
+      const posted = transport.postMessage(Object.assign({ type: type, id: id }, extra || {}));
+      if (posted === false) { clearTimeout(timer); pending.delete(id); reject({ reason: 'This action is unavailable. It was not sent.' }); }
     });
   }
 
@@ -598,6 +599,15 @@
       document.body.classList.toggle('read-only', !allowed);
       for (const b of document.querySelectorAll('.start-agent, #create, #edit')) b.disabled = !allowed;
       if (IN_APP) requestHistory();
+    }
+    if (message.type === 'intent' && ['rejected', 'unknown'].includes(message.record?.state)) {
+      const waiting = pending.get(message.record.payload.id);
+      if (waiting) {
+        clearTimeout(waiting.timer); pending.delete(message.record.payload.id);
+        waiting.reject({ reason: message.record.state === 'unknown'
+          ? 'The earlier action may have completed. Check the fleet before creating another instance.'
+          : 'The action was refused: ' + (message.record.ack?.error?.code || 'unavailable') });
+      }
     }
     if (IN_APP && message.type === 'history') {
       historyEntries = message.entries || [];

@@ -36,6 +36,7 @@ class PrLinks {
     this.now = opts.now || Date.now;
     this.known = new Map();  // cwd#ticket → { url, at }
     this.asking = new Set();
+    this.disposed = false;
   }
 
   attach(manager) {
@@ -47,6 +48,7 @@ class PrLinks {
 
   /** Sets session.prUrl, now if it is known, later if GitHub has to be asked. */
   link(session) {
+    if (this.disposed) return;
     // Picked by hand: nothing found in the conversation overrides that.
     if (session.prPinned) return;
     const ticket = session.ticket || null;
@@ -59,19 +61,25 @@ class PrLinks {
     if (seen && (seen.url || this.now() - seen.at < RETRY_MS)) return this.set(session, seen.url);
     if (this.asking.has(key)) return;
     this.asking.add(key);
+    const cwd = session.cwd, previousUrl = session.prUrl || null;
     const args = ['pr', 'view'].concat(ticket ? [String(ticket)] : [], ['--json', 'url']);
     return this.run('gh', args, { cwd: session.cwd }).then((r) => {
+      if (this.disposed) return;
       let url = null;
       try { url = r.ok ? JSON.parse(r.stdout).url || null : null; } catch (e) { url = null; }
       this.known.set(key, { url, at: this.now() });
       this.asking.delete(key);
-      // The ticket may have moved on while GitHub answered.
-      if ((session.ticket || null) === ticket) this.set(session, url);
+      // Service-owned discoveries also bind the original project/link. Keep
+      // the ordinary window's ticket-only discovery contract unchanged.
+      const currentTarget = !session._engineControls || !session.disposed && !session.prPinned &&
+        session.cwd === cwd && (session.prUrl || null) === previousUrl;
+      if ((session.ticket || null) === ticket && currentTarget) this.set(session, url);
     });
   }
 
   /** A PR chosen by hand, or null to go back to finding it. */
   pin(session, url) {
+    if (this.disposed) return;
     session.prPinned = !!url;
     if (url) return this.set(session, url);
     this.set(session, null);
@@ -83,6 +91,8 @@ class PrLinks {
     session.prUrl = url || null;
     session.emit('meta');
   }
+
+  dispose() { this.disposed = true; this.known.clear(); this.asking.clear(); }
 }
 
-module.exports = { PrLinks, prUrlIn, fits };
+module.exports = { PrLinks, prUrlIn, fits, defaultRun };
