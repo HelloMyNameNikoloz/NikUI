@@ -66,10 +66,10 @@ do {
     // in the file-based login Keychain. No access group/provisioning is needed.
     guard let info = Bundle.main.infoDictionary,
           let prefix = info["NikKeychainServicePrefix"] as? String,
-          ["com.nikui.engine.test.", "com.nikui.engine.dev."].contains(prefix),
-          service.hasPrefix(prefix), service.count <= 240,
-          text(String(service.dropFirst(prefix.count)), "^[a-zA-Z0-9][a-zA-Z0-9.-]{15,199}$") != nil,
+          info["NikBuildFlavour"] as? String == BuildFlavour.current.rawValue,
           info["NikKeychainBackend"] as? String == "login-file-keychain" else { throw Refusal("KEYCHAIN_NAMESPACE") }
+    do { try BuildFlavour.current.validateKeychain(prefix: prefix, service: service) }
+    catch { throw Refusal("KEYCHAIN_NAMESPACE") }
     // Resolve the account's real login Keychain, independent of the TEST HOME.
     // Never change the default/search list, unlock it, or enumerate other items.
     guard let user = getpwuid(getuid()), let directory = user.pointee.pw_dir else { throw Refusal("KEYCHAIN_UNAVAILABLE") }

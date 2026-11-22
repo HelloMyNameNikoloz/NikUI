@@ -9,7 +9,7 @@ const { verifyWith } = require('../../src/identity');
 const locks = new Map();
 
 function browser({ storage = new Map(), device, config = {}, fakeTimers = false, filter = () => true,
-  assetsRoot = path.join(__dirname, '../../media') } = {}) {
+  assetsRoot = path.join(__dirname, '../../media'), transportSource } = {}) {
   const events = new Map(), messages = [], frames = [], sockets = [], tasks = new Set();
   const add = (name, fn) => { const list = events.get(name) || []; list.push(fn); events.set(name, list); };
   const dispatch = (event) => { if (event.type === 'message') messages.push(event.data); for (const fn of events.get(event.type) || []) fn(event); };
@@ -54,7 +54,7 @@ function browser({ storage = new Map(), device, config = {}, fakeTimers = false,
       const timer = setTimeout(() => { tasks.delete(timer); fn(); }, ms); tasks.add(timer); return timer;
     }, clearTimeout: (timer) => { tasks.delete(timer); if (!fakeTimers) clearTimeout(timer); }
   });
-  for (const file of ['secure.js', 'transport.js']) vm.runInContext(fs.readFileSync(path.join(assetsRoot, file), 'utf8'), context, { filename: file });
+  for (const file of ['secure.js', 'transport.js']) vm.runInContext(file === 'transport.js' && transportSource !== undefined ? transportSource : fs.readFileSync(path.join(assetsRoot, file), 'utf8'), context, { filename: file });
   const api = context.module.exports;
   return { ...api, context, window, document, messages, frames, sockets, tasks, storage,
     socket: () => api.socketTransport(config),

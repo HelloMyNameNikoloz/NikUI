@@ -45,7 +45,7 @@ function createDaemonConfig({ user = {}, projects = [], root, persist = () => {}
   let imports = projects.map((record) => {
     if (!record || record.approved !== true || !record.provenance ||
         !['profile', 'workspace', 'rawScope'].every((key) => typeof record.provenance[key] === 'string' && record.provenance[key]) ||
-        !path.isAbsolute(record.root || '') || !inside(root, path.resolve(record.root))) {
+        !path.isAbsolute(record.root || '') || root && !inside(root, path.resolve(record.root))) {
       throw fail('CONFIG_PROVENANCE', 'Project settings require an explicit private root, owner approval and source provenance');
     }
     validateValues(record.values, true);

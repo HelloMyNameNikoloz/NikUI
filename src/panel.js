@@ -48,6 +48,16 @@ class SessionPanel {
     const p = panels.get(sessionId);
     if (p) p.panel.dispose();
   }
+  static releaseForService() {
+    const released = [];
+    for (const legacy of [...panels.values()]) {
+      released.push({ id: legacy.session.id, panel: legacy.panel });
+      // Keep the actual WebviewPanel and its persisted draft/reading state.
+      // Only the old hub and command subscriptions are retired.
+      legacy.dispose();
+    }
+    return released;
+  }
 
   /** Whether the user can already see this instance, and so needs no telling. */
   static isVisible(sessionId) {

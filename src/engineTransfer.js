@@ -13,10 +13,22 @@ const GLOBAL_KEYS = Object.freeze(['nikui.names.v1', 'nikui.limits.v1', 'nikui.p
   'nikui.slashCommands.v1', 'nikui.devices', 'nikui.deviceTrail', 'nikui.ciDurations', 'nikui.notified', 'nikui.identity', 'nikui.vapid']);
 const WORKSPACE_KEYS = Object.freeze(['nikui.sessions.v1', 'nikui.folders.v1', 'nikui.remote.wasServing']);
 const SECRET_KEYS = Object.freeze(['nikui.slack.userToken', 'nikui.slack.appToken', 'nikui.slack.sessionToken', 'nikui.slack.sessionCookie']);
-const GLOBAL_OMISSIONS = Object.freeze({ 'nikui.models': 'derived', 'nikui.workspace': 'client-owned' });
+const GLOBAL_OMISSIONS = Object.freeze({ 'nikui.models': 'derived', 'nikui.workspace': 'client-owned',
+  '$$__isNewStorageMarker': 'editor-owned; preserved-in-place' });
+const PRESERVED = 'preserved-in-place';
+function inventoryFailure(area, keys, reason) {
+  return Object.assign(fail('EXPORT_INVENTORY_INCOMPLETE', 'Invalid ' + area + ' inventory: ' + reason),
+    { diagnostics: { area, keys: keys.filter((k) => typeof k === 'string').map((k) => k.slice(0, 256)), reason } });
+}
 const OMITTED = Object.freeze({ caches: 'derived; rebuild in target', clientOutboxes: 'client-owned; preserve binding or quarantine',
   providerHomes: 'provider-owned; never copied', editorSQLite: 'never read; export context APIs',
   liveProcesses: 'explicit keeper transfer only; no Codex survival claim' });
+function requireConversations(required, instances, deleted = []) {
+  const present = new Set(instances.map((s) => s.id)), tombstones = new Set(deleted);
+  const missing = [...new Set(required)].filter((id) => !present.has(id) && !tombstones.has(id));
+  if (missing.length) throw Object.assign(fail('EXPORT_INCOMPLETE', 'Conversations are missing from the transfer'),
+    { diagnostics: { missing } });
+}
 
 /** Gate every synthetic source adapter, including deferred memento writes.
  * Drain callbacks must await their real stores before export. A sealed source
@@ -57,7 +69,7 @@ function createParticipantGate({ owner, member, timers = { setTimeout, clearTime
       return guarded;
     },
     async quiesce(t, { closeAdmission, cancel, drain, flush, detach, releaseResources, exportState,
-      readiness = () => ({ ready: true }), timeoutMs = 5000 }) {
+      readiness = () => ({ ready: true }), saveExport = () => {}, timeoutMs = 5000, progress = () => {} }) {
       insist(phase === 'open', 'WRITER_FENCED');
       insist(Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 5000, 'QUIESCENCE_TIMEOUT_INVALID');
       member = owner.participant(member.lease);
@@ -66,33 +78,60 @@ function createParticipantGate({ owner, member, timers = { setTimeout, clearTime
         closeAdmission();
         for (const timer of deferred) timers.clearTimeout(timer); deferred.clear();
       } catch (e) { phase = 'sealed'; throw e; }
-      let timer, expired = false;
-      const deadline = Date.now() + timeoutMs;
+      let timer, expired = false, deadline, rejectTimeout;
+      const stalled = new Promise((_, reject) => { rejectTimeout = reject; });
+      const advance = () => {
+        if (expired) return;
+        deadline = Date.now() + timeoutMs; clearTimeout(timer);
+        timer = setTimeout(() => {
+          expired = true; phase = 'sealed'; rejectTimeout(Object.assign(fail('SOURCE_UNRESPONSIVE', 'Source stopped making progress'),
+            { blockers: [{ id: member.id, build: member.build, code: 'SOURCE_UNRESPONSIVE' }] }));
+        }, timeoutMs);
+        progress();
+      };
       const work = async () => {
-        const ready = await readiness(); insist(ready?.ready === true, ready?.code || 'UNSAFE_UPDATE');
-        await cancel(); await drain();
-        while (pending.size) await Promise.all([...pending]);
-        await flush();
-        while (pending.size) await Promise.all([...pending]);
-        await detach();
+        const ready = await readiness(); insist(ready?.ready === true, ready?.code || 'UNSAFE_UPDATE'); advance();
+        await cancel(); advance(); await drain(advance); advance();
+        while (pending.size) { await Promise.all([...pending].map((work) => work.then(advance))); advance(); }
+        await flush(advance); advance();
+        while (pending.size) { await Promise.all([...pending].map((work) => work.then(advance))); advance(); }
+        await detach(advance); advance();
         insist(typeof releaseResources === 'function', 'RESOURCE_RELEASE_UNPROVEN');
-        const released = await releaseResources();
+        const released = await releaseResources(advance); advance();
         insist(released?.released === true && Array.isArray(released.owned), 'RESOURCE_RELEASE_UNPROVEN');
+        // Disposing the legacy manager persists each final stopped status.
+        // VS Code's mementos acknowledge those writes asynchronously, after
+        // dispose() itself returns. Drain them (including follow-up writes)
+        // before sealing; continued activity still has a hard five-second bound.
+        const settleUntil = Date.now() + timeoutMs;
+        let settleTimer;
+        const incomplete = () => Object.assign(fail('QUIESCENCE_INCOMPLETE', 'Source writes did not settle after disposal'),
+          { diagnostics: { stage: 'released', pending: pending.size, deferred: deferred.size, issue: issue?.code || null } });
+        try {
+          await Promise.race([(async () => {
+            do {
+              insist(phase === 'quiescing' && !issue, 'QUIESCENCE_INCOMPLETE');
+              await Promise.all([...pending].map((write) => write.then(advance)));
+              // Yield to callbacks queued by a completed storage write.
+              await new Promise((resolve) => setImmediate(resolve));
+              if (Date.now() >= settleUntil) throw incomplete();
+            } while (pending.size);
+          })(), new Promise((_, reject) => { settleTimer = setTimeout(() => reject(incomplete()), timeoutMs); })]);
+        } finally { clearTimeout(settleTimer); }
         // No async writer can be outstanding when the gate becomes sealed.
         insist(phase === 'quiescing' && !issue && pending.size === 0 && deferred.size === 0, 'QUIESCENCE_INCOMPLETE');
         owner.assertWriter(member.lease, member.generation, options());
         phase = 'sealed';
-        const state = await exportState();
+        const state = await exportState(advance); advance();
         insist(!expired, 'SOURCE_UNRESPONSIVE');
         const ack = { lease: member.lease, generation: member.generation, quiescent: true, exported: true, sealed: true,
           resourcesReleased: true, resourcesHash: hash(released), deadline, hash: hash(state) };
-        await owner.acknowledge(t, member.id, ack); return { member: clone(member), state, ack };
+        const result = { member: clone(member), state, ack };
+        await saveExport(result);
+        await owner.acknowledge(t, member.id, ack); return result;
       };
       try {
-        return await Promise.race([work(), new Promise((_, reject) => { timer = setTimeout(() => {
-          expired = true; phase = 'sealed'; reject(Object.assign(fail('SOURCE_UNRESPONSIVE', 'Source did not quiesce within its bound'),
-            { blockers: [{ id: member.id, build: member.build, code: 'SOURCE_UNRESPONSIVE' }] }));
-        }, timeoutMs); })]);
+        advance(); return await Promise.race([work(), stalled]);
       } catch (e) { phase = 'sealed'; throw e; }
       finally { clearTimeout(timer); }
     },
@@ -107,18 +146,22 @@ function createParticipantGate({ owner, member, timers = { setTimeout, clearTime
 }
 
 async function exportContext({ context, engine, settings, provenance, globalKeys = GLOBAL_KEYS, workspaceKeys = WORKSPACE_KEYS,
-  secrets, secretKeys = SECRET_KEYS, files = {}, authority = null, keeper = { metaVersion: 1, runs: [] }, completeAuthority = false }) {
+  secrets, secretKeys = SECRET_KEYS, files = {}, authority = null, keeper = { metaVersion: 1, runs: [] }, completeAuthority = false, progress = () => {}, requiredSessionIDs = [] }) {
   insist(context?.globalState && context.workspaceState && provenance && ['profile', 'workspace', 'rawScope'].every((k) => typeof provenance[k] === 'string'), 'EXPORT_INVALID');
   insist(!engine.ledger?.pending, 'EXPORT_LEDGER_UNFLUSHED');
   const inventory = {};
   const collect = async (store, declared, area, omissions = {}) => {
-    insist(Array.isArray(declared) && new Set(declared).size === declared.length && declared.every((k) => typeof k === 'string' &&
-      !['__proto__', 'constructor', 'prototype'].includes(k)), 'EXPORT_INVENTORY_INCOMPLETE');
-    const keys = typeof store.keys === 'function' ? store.keys() : declared;
-    insist(Array.isArray(keys) && keys.every((k) => declared.includes(k) || Object.hasOwn(omissions, k)), 'EXPORT_INVENTORY_INCOMPLETE');
-    inventory[area] = keys.map((key) => ({ key, disposition: Object.hasOwn(omissions, key) ? omissions[key] : 'authoritative' }));
+    if (!Array.isArray(declared) || new Set(declared).size !== declared.length || declared.some((k) => typeof k !== 'string' ||
+      ['__proto__', 'constructor', 'prototype'].includes(k))) throw inventoryFailure(area, declared || [], 'invalid declaration');
+    // SecretStorage.keys() is a Thenable in VS Code; Memento.keys() is sync.
+    const keys = typeof store.keys === 'function' ? await store.keys() : declared;
+    if (!Array.isArray(keys) || keys.some((k) => typeof k !== 'string')) throw inventoryFailure(area, [], 'keys() did not resolve to strings');
+    // Future extension keys and editor bookkeeping stay at their original
+    // scope. They are accounted for without interpreting or copying them.
+    inventory[area] = [...new Set(keys)].map((key) => ({ key, disposition: Object.hasOwn(omissions, key) ? omissions[key]
+      : declared.includes(key) ? 'authoritative' : PRESERVED }));
     const values = {};
-    for (const key of declared) { const value = await store.get(key); if (value !== undefined) values[key] = clone(value); }
+    for (const key of declared) { const value = await store.get(key); if (value !== undefined) values[key] = clone(value); progress(); }
     return values;
   };
   const global = await collect(context.globalState, globalKeys, 'global', GLOBAL_OMISSIONS), workspace = await collect(context.workspaceState, workspaceKeys, 'workspace');
@@ -131,12 +174,17 @@ async function exportContext({ context, engine, settings, provenance, globalKeys
   for (const [name, read] of Object.entries(files)) {
     insist(/^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(name) && typeof read === 'function', 'EXPORT_INVALID');
     fileValues[name] = clone(await read());
+    progress();
   }
   const instances = [...engine.manager.list, ...engine.codex.list].map((s) => ({ ...selectedMeta(s),
     queue: clone(s.queue || []) })); // full text, sent, snippets, attachments; no slimQueued
   const queues = instances.map((s) => ({ instance: s.id, items: s.queue, hash: hash(s.queue) }));
   const authorityState = authority ? authority.snapshot() : null;
   if (authorityState) validateState(authorityState, LIMITS);
+  // The close-admission baseline also survives a dispose-time memento write
+  // that might otherwise hide a short live manager.
+  const retired = completeAuthority ? authorityState?.values[require('./engineState').DOMAIN]?.retiredInstances || [] : [];
+  requireConversations([...requiredSessionIDs, ...(workspace['nikui.sessions.v1'] || []).map((s) => s.id)], instances, retired);
   insist(!completeAuthority || authorityState !== null, 'EXPORT_AUTHORITY_INCOMPLETE');
   const folders = { folders: clone(engine.folders.list()), assign: clone(engine.folders.assign), byConversation: clone(engine.folders.byConversation) };
   const data = { version: 1, provenance: clone(provenance), global, workspace, secrets: secretValues, files: fileValues,
@@ -375,4 +423,4 @@ async function runSyntheticTransfer({ owner, generation, to, target, inventory, 
 }
 
 module.exports = { createParticipantGate, exportContext, buildTransfer, validateTransfer, mergeLedger, restoreAuthority,
-  createSyntheticImporter, runSyntheticTransfer, GLOBAL_KEYS, WORKSPACE_KEYS, SECRET_KEYS, OMITTED };
+  createSyntheticImporter, runSyntheticTransfer, GLOBAL_KEYS, WORKSPACE_KEYS, SECRET_KEYS, GLOBAL_OMISSIONS, PRESERVED, inventoryFailure, OMITTED, requireConversations };

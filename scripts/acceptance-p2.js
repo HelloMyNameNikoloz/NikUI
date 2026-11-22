@@ -44,7 +44,8 @@ async function observe(paths, credential, generation) {
   socket.on('data', (chunk) => { buffer += chunk; let at; while ((at = buffer.indexOf('\n')) >= 0) {
     frames.push(JSON.parse(buffer.slice(0, at))); buffer = buffer.slice(at + 1);
   } });
-  await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); });
+  try { await require('./native-command').bounded(new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); }), 10000, 'OBSERVER_CONNECT_TIMEOUT'); }
+  catch (error) { socket.destroy(); throw error; }
   socket.write(JSON.stringify({ op: 'menu-observe', id: credential.id, key: credential.key, generation }) + '\n');
   await until(() => frames.some((m) => m.type === 'menu:snapshot'), 'menu protocol observer');
   return { frames, close: () => socket.destroy() };
@@ -452,7 +453,7 @@ async function regression(run, filter) {
       const child = spawn(process.execPath, [path.join(REPO, 'test/run.js'), filter], { cwd: REPO, stdio: ['ignore', fd, fd],
         env: { HOME: home, USERPROFILE: home, ZDOTDIR: home, TMPDIR: path.join(home, 'tmp'), PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
           CODEX_HOME: path.join(home, '.codex-work'), NIKUI_NATIVE_TESTS: '0' } });
-      const timer = setTimeout(() => { child.kill('SIGTERM'); }, 120000);
+      const timer = setTimeout(() => { child.kill('SIGKILL'); }, 120000);
       child.once('error', (e) => { clearTimeout(timer); reject(e); });
       child.once('exit', (code, signal) => { clearTimeout(timer); resolve({ code, signal }); });
     });
@@ -462,7 +463,8 @@ async function regression(run, filter) {
   } finally { fs.closeSync(fd); }
 }
 async function main(flags = options(process.argv.slice(2))) {
-  if (flags.help) { process.stdout.write('Usage: scripts/acceptance-p2.sh [--native [--editor] [--real-tools]]\nDefault: portable test profile only. Native/GUI/SecItem/SMAppService: Claude only.\n'); return; }
+  if (flags.help) return { ok: true, usage: 'scripts/acceptance-p2.sh [--native [--editor] [--real-tools]]',
+    default: 'portable test profile only', native: 'native: pending Claude run' };
   noSymlinks(BASE); fs.mkdirSync(BASE, { recursive: true, mode: 0o700 });
   const parent = fs.lstatSync(BASE);
   assert(parent.isDirectory() && parent.uid === process.getuid() && !(parent.mode & 0o022), 'Unsafe evidence parent');
@@ -498,7 +500,7 @@ async function main(flags = options(process.argv.slice(2))) {
       if (!native.ok) {
         const error = fail(native.failure?.code || 'NATIVE_ACCEPTANCE_FAILED',
           (native.failure?.message || 'Signed native acceptance failed') + '; inspect ' + report.nativeEvidence);
-        error.diagnostics = native.failure?.diagnostics; throw error;
+        Object.assign(error, native.failure); throw error;
       }
       report.native = 'passed (automated subset; attended checklist remains)'; report.scenarios = native.acceptanceP2;
       const covered = { A09: 'corrupt selected item; locked/denied manual', A10: 'minimal launchd environment',
@@ -522,18 +524,17 @@ async function main(flags = options(process.argv.slice(2))) {
     }
     report.ok = true;
   } catch (e) {
-    report.failure = { code: e.code || 'ASSERTION_FAILED', message: e.message, diagnostics: e.diagnostics };
+    report.failure = { code: e.code || 'ASSERTION_FAILED', ...require('./native-command').failureEvidence(e) };
     if (flags.native) report.native = 'failed (native gate incomplete)';
     process.exitCode = 1;
   }
   finally {
     save(evidence, report); save(path.join(BASE, 'acceptance-latest.json'), { evidence, ok: report.ok, native: report.native });
   }
-  process.stdout.write(JSON.stringify({ ok: report.ok, evidence, native: report.native, failure: report.failure }) + '\n');
+  report.evidence = evidence;
   return report;
 }
 if (require.main === module) {
-  try { main().catch((e) => { process.stderr.write((e.code || 'ACCEPTANCE_FAILED') + ': ' + e.message + '\n'); process.exitCode = 1; }); }
-  catch (e) { process.stderr.write(e.code + ': ' + e.message + '\n'); process.exitCode = 1; }
+  void require('./native-command').runNative(main);
 }
 module.exports = { main, options, scenarios, portable, regression, until, disconnectBeforeWrite, IDS, PENDING };

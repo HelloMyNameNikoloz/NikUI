@@ -91,7 +91,7 @@ module.exports = async function () {
     await hanging.first;
     const drainStarted = Date.now(), timeout = await hanging.stop(), drain = JSON.parse(timeout.stderr.trim());
     checkEqual('drain timeout is distinct from intentional stop and crash', [timeout.code, timeout.signal, drain.code], [1, null, 'DRAIN_TIMEOUT']);
-    checkEqual('timeout diagnostic names the actual pending owned stage', [drain.lifecycle.phase, drain.lifecycle.stage, drain.lifecycle.completed], ['draining', 'engine-flush', ['control', 'local-management']]);
+    checkEqual('timeout diagnostic names the actual pending owned stage', [drain.lifecycle.phase, drain.lifecycle.stage, drain.lifecycle.completed], ['draining', 'engine-flush', ['control', 'local-management', 'local-device-enrollment']]);
     check('timeout stays bounded and retains the fixture ownership fence', Date.now() - drainStarted < 5500 &&
       JSON.parse(fs.readFileSync(path.join(drainRoot, 'owner.lock'))).pid === hanging.child.pid);
 
@@ -109,12 +109,12 @@ module.exports = async function () {
     await winner.stop();
     const reaper = paths.lock + '.reap';
     fs.writeFileSync(reaper, JSON.stringify({ version: 1, pid: deadPid, token: 'fixture-dead-reaper' }), { mode: 0o600 });
-    const blockedStart = await start(root).done;
-    checkEqual('R10: a dead recovery lock remains a conservative startup refusal', stderrCode(blockedStart), 'OWNER_UNPROVEN');
     const recoveryDoctor = command(root, 'doctor'), recovery = await recoveryDoctor.first;
-    checkEqual('R10: offline CLI doctor prints the exact recovery command', [recovery.manualFix, (await recoveryDoctor.done).code], ["rm -- '" + reaper + "'", 1]);
-    checkEqual('R10: offline doctor leaves the reaper in place', fs.existsSync(reaper), true);
-    fs.unlinkSync(reaper);
+    checkEqual('R11: offline doctor reports automatic recovery without file editing', [recovery.recoveryAvailable, recovery.manualFix, (await recoveryDoctor.done).code], [true, undefined, 1]);
+    checkEqual('R11: read-only doctor leaves recovery to the next start', fs.existsSync(reaper), true);
+    const recoveredStart = start(root);
+    check('R11: a proved dead reaper recovers automatically on start', !!await recoveredStart.first && !fs.existsSync(reaper));
+    await recoveredStart.stop();
     for (const mode of ['exception', 'rejection']) {
       const fault = start(path.join(home, mode === 'exception' ? 'ce' : 'cr'), [], { NIKUI_DAEMON_CRASH_FIXTURE: mode });
       await fault.first;

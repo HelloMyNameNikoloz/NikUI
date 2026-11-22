@@ -74,12 +74,14 @@ function validateDevices(devices, trail) {
   insist(Array.isArray(devices) && devices.length <= 4096 && Array.isArray(trail) && trail.length <= 300, 'EXPORT_DELIVERY_INVALID');
   const ids = new Set(), keys = new Set(), listeners = new Set();
   for (const d of devices) {
-    insist(object(d) && Object.keys(d).every((k) => ['id','name','publicKey','fingerprint','pairedAt','lastSeenAt','lastAddress','control','protection','biometric','previousFingerprint','rekeyedAt','controlChangedAt','listener','apns','push'].includes(k)), 'EXPORT_DELIVERY_INVALID');
+    insist(object(d) && Object.keys(d).every((k) => ['id','name','publicKey','fingerprint','pairedAt','lastSeenAt','lastAddress','control','protection','biometric','previousFingerprint','rekeyedAt','controlChangedAt','listener','apns','push','local','pendingLocalEnrollment'].includes(k)), 'EXPORT_DELIVERY_INVALID');
     const publicKey = readPublicKey(d.publicKey);
     insist(object(d) && key(d.id) && !ids.has(d.id) && publicKey && publicKey.spki === d.publicKey && publicKey.fingerprint === d.fingerprint &&
       !keys.has(d.publicKey) && typeof d.control === 'boolean' && typeof d.name === 'string' && typeof d.biometric === 'boolean' &&
       nonnegative(d.pairedAt) && nonnegative(d.lastSeenAt) && ['software', 'keychain', 'keystore', 'strongbox', 'secure-enclave', 'unknown'].includes(d.protection), 'EXPORT_DELIVERY_INVALID');
     ids.add(d.id); keys.add(d.publicKey);
+    for (const flag of ['local', 'pendingLocalEnrollment']) insist(d[flag] === undefined || typeof d[flag] === 'boolean', 'EXPORT_DELIVERY_INVALID');
+    insist(d.pendingLocalEnrollment !== true || d.local !== true && d.control === false, 'EXPORT_DELIVERY_INVALID');
     for (const time of ['rekeyedAt', 'controlChangedAt']) insist(d[time] === undefined || nonnegative(d[time]), 'EXPORT_DELIVERY_INVALID');
     insist(d.lastAddress === null || typeof d.lastAddress === 'string', 'EXPORT_DELIVERY_INVALID');
     if (d.listener !== undefined) {
@@ -154,16 +156,19 @@ function validateAuthority(authority, profile) {
 function validateSource(state, scope) {
   insist(exactKeys(state, STATE_KEYS) && state.version === 1, 'EXPORT_INVALID');
   insist(exactKeys(state.provenance, ['profile', 'workspace', 'rawScope']) && state.provenance.profile === scope.profile &&
-    path.isAbsolute(state.provenance.workspace) && path.resolve(state.provenance.workspace) === state.provenance.workspace && text(state.provenance.rawScope), 'EXPORT_PROVENANCE_INVALID');
+    require('./sourceWorkspace').valid(state.provenance.workspace) && text(state.provenance.rawScope), 'EXPORT_PROVENANCE_INVALID');
   insist(object(state.global) && object(state.workspace) && object(state.secrets) && object(state.files) && object(state.fileHashes) &&
     exactKeys(state.inventory, ['global', 'workspace', 'secrets']), 'EXPORT_INVENTORY_INCOMPLETE');
-  const { GLOBAL_KEYS, WORKSPACE_KEYS } = require('./engineTransfer');
+  const { GLOBAL_KEYS, WORKSPACE_KEYS, GLOBAL_OMISSIONS, PRESERVED, inventoryFailure } = require('./engineTransfer');
   for (const [area, allowed] of [['global', GLOBAL_KEYS.filter((k) => !['nikui.identity', 'nikui.vapid'].includes(k))], ['workspace', WORKSPACE_KEYS], ['secrets', SECRETS]]) {
-    const entries = state.inventory[area], omissions = area === 'global' ? {'nikui.models':'derived','nikui.workspace':'client-owned'} : {};
-    insist(Array.isArray(entries) && new Set(entries.map((e) => e.key)).size === entries.length &&
+    const entries = state.inventory[area], omissions = area === 'global' ? GLOBAL_OMISSIONS : {};
+    if (!(Array.isArray(entries) && new Set(entries.map((e) => e.key)).size === entries.length &&
       Object.keys(state[area]).every((k) => allowed.includes(k)) && entries.filter((e) => e.disposition === 'authoritative').length === Object.keys(state[area]).length &&
       entries.every((e) => exactKeys(e, ['key', 'disposition']) && (Object.hasOwn(state[area], e.key) && e.disposition === 'authoritative' ||
-        Object.hasOwn(omissions,e.key) && omissions[e.key] === e.disposition && !Object.hasOwn(state[area],e.key))), 'EXPORT_INVENTORY_INCOMPLETE');
+        !Object.hasOwn(state[area],e.key) && (Object.hasOwn(omissions,e.key) && omissions[e.key] === e.disposition ||
+          typeof e.key === 'string' && !allowed.includes(e.key) && e.disposition === PRESERVED))))) {
+      throw inventoryFailure(area, [...Object.keys(state[area]), ...(Array.isArray(entries) ? entries.map((e) => e?.key) : [])], 'payload and dispositions disagree');
+    }
   }
   insist(Object.keys(state.files).length === Object.keys(state.fileHashes).length && Object.entries(state.files).every(([name, value]) =>
     /^[A-Za-z][A-Za-z0-9_.-]{0,99}$/.test(name) && state.fileHashes[name] === hash(value)), 'EXPORT_FILE_HASH');
@@ -185,6 +190,9 @@ function validateSource(state, scope) {
     (state.account.limits === null || object(state.account.limits)) && (state.account.pause === null || object(state.account.pause)), 'EXPORT_ACCOUNTING_INVALID');
   insist(typeof state.completeAuthority === 'boolean' && (!state.completeAuthority || state.authority !== null), 'EXPORT_AUTHORITY_INCOMPLETE');
   if (state.authority !== null) validateAuthority(state.authority, scope.profile);
+  require('./engineTransfer').requireConversations([...(state.workspace['nikui.sessions.v1'] || []).map((s) => s.id),
+    ...(state.files.exportedSessionIDs || [])], state.instances,
+    state.completeAuthority ? state.authority?.values[require('./engineState').DOMAIN]?.retiredInstances || [] : []);
   insist(hash(state.omitted) === hash(require('./engineTransfer').OMITTED), 'EXPORT_INVENTORY_INCOMPLETE');
 }
 
@@ -192,6 +200,7 @@ async function exportSelectedContext(options) {
   insist(options?.selection && options.provenance, 'EXPORT_IDENTITY_INVALID');
   insist(options.keeper?.metaVersion === 1 && Array.isArray(options.keeper.runs), 'KEEPER_META_INCOMPLETE');
   const state = await exportContext({ ...options, secretKeys: SECRETS });
+  state.files.exportedSessionIDs = state.instances.map((s) => s.id);
   state.selection = clone(options.selection);
   // Moved identity/VAPID are secrets; inventory describes the final payload,
   // never a stale list of the source locations that held them before export.
@@ -336,8 +345,11 @@ function validateCurrent(state, profile) {
 }
 
 function createGenerationImporter({ root, target, owner, secretAdapter, testOnly = false, activate = () => {}, fault = () => {}, maxImports = 512 } = {}) {
-  insist(Number.isSafeInteger(maxImports) && maxImports > 0 && maxImports <= 512, 'IMPORT_CAPACITY');
   insist(testOnly === true, 'PRODUCTION_CUTOVER_DISABLED');
+  return createSelectedImporter({ root, target, owner, secretAdapter, activate, fault, maxImports });
+}
+function createSelectedImporter({ root, target, owner, secretAdapter, activate = () => {}, fault = () => {}, maxImports = 512 } = {}) {
+  insist(Number.isSafeInteger(maxImports) && maxImports > 0 && maxImports <= 512, 'IMPORT_CAPACITY');
   insist(key(target) && owner && secretAdapter && typeof activate === 'function', 'IMPORT_TARGET_REQUIRED');
   insist(validService(secretAdapter.service) &&
     secretAdapter.backend === 'login-file-keychain', 'KEYCHAIN_NAMESPACE');
@@ -348,10 +360,10 @@ function createGenerationImporter({ root, target, owner, secretAdapter, testOnly
   const empty = () => ({ version: 1, target, current: null, records: [] });
   function locked(fn) {
     const lock = file + '.lock'; let fd;
-    try { fd = fs.openSync(lock, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600); }
+    try { fd = require('./privateLock').open(lock); }
     catch (e) { if (e.code === 'EEXIST') throw fail('IMPORT_BUSY', 'Another importer owns this generation'); throw e; }
     const stat = fs.fstatSync(fd);
-    try { fs.writeFileSync(fd, JSON.stringify({ pid: process.pid })); fs.fsyncSync(fd); return fn(); }
+    try { return fn(); }
     finally { fs.closeSync(fd); const st = privateFile(lock, { optional: true }); if (st?.ino === stat.ino && st.dev === stat.dev) fs.unlinkSync(lock); }
   }
   function read() {
@@ -403,7 +415,31 @@ function createGenerationImporter({ root, target, owner, secretAdapter, testOnly
       namespace: { service: secretAdapter.service, backend: secretAdapter.backend, account: accountFor(v.transition), evidenceAccount: evidenceFor(v.transition) } };
   }
   const api = {
-    file,
+    file, secretAdapter,
+    async openCommitted({ writerOptions = () => ({}) } = {}) {
+      // Runtime construction has no provider effects. The daemon's exclusive
+      // root lock and receipt dispatcher recovery protect subsequent starts;
+      // the immutable import is never replayed over its current authority.
+      const saved = read(), record = saved.records.find((r) => r.id === saved.current);
+      insist(record && ['inactive', 'reserved', 'started'].includes(record.phase), 'IMPORT_INACTIVE');
+      const { v } = verified(record), status = owner.status();
+      insist(status.generation === v.generation && status.mode === v.to && status.by === target, 'SERVICE_OWNERSHIP_REQUIRED');
+      owner.assertWriter(record.member?.lease, v.generation);
+      const store = createKeychainStore({ adapter: secretAdapter, account: record.account });
+      const guarded = { ...store, update(key, value) {
+        return owner.effect(record.member.lease, record.member.generation, () => store.update(key, value), writerOptions());
+      }, async store(key, value) { return guarded.update(key, value); }, async delete(key) { return guarded.update(key, undefined); } };
+      activeStores.set(record.id, store);
+      return { state: clone(record.state), receipt: clone(record.receipt), member: clone(record.member), store: guarded, transfer: v };
+    },
+    async commitRuntimeMember(transition) {
+      const member = await owner.targetLease(transition, { build: 'production-runtime-v1', metaVersion: 1 });
+      return locked(() => {
+        const saved = read(), record = saved.records.find((r) => r.id === transition);
+        insist(record && ['inactive', 'reserved', 'started'].includes(record.phase), 'IMPORT_INACTIVE');
+        verified(record); record.member = clone(member); record.phase = 'started'; atomicJson(file, saved); return clone(member);
+      });
+    },
     import(envelope) {
       const v = validateSelectedTransfer(envelope);
       insist(v.target === target && v.scope.root !== paths.root, 'IMPORT_SCOPE_CONFLICT');
@@ -450,7 +486,9 @@ function createGenerationImporter({ root, target, owner, secretAdapter, testOnly
         const { v } = verified(record); owner.verifyExport({ value: v, hash: record.hash }); return true;
       });
     },
-    commit(transition) { return owner.commit(transition, { verifyImport: api.verifyInactive }); },
+    commit(transition, { verifyFence = () => {} } = {}) {
+      return owner.commit(transition, { verifyImport: (receipt) => { verifyFence(); return api.verifyInactive(receipt); } });
+    },
     async start(transition) {
       const reserved = await (async () => {
         const saved = read(), record = saved.records.find((r) => r.id === transition);
@@ -504,13 +542,14 @@ function createGenerationImporter({ root, target, owner, secretAdapter, testOnly
         verified(record); record.member = clone(current); atomicJson(file, saved); return clone(current);
       });
     },
-    exportCurrent({ transition, provenance, keeper }) {
+    exportCurrent({ transition, provenance, keeper, currentState }) {
       const saved = read(), record = saved.records.find((r) => r.id === saved.current);
       insist(record?.phase === 'started', 'IMPORT_INACTIVE');
       insist(keeper?.metaVersion === 1 && Array.isArray(keeper.runs), 'KEEPER_META_INCOMPLETE');
       owner.assertWriter(record.member.lease, record.member.generation, { transition, drain: true });
       insist(owner.status().phase === 'barrier' && owner.status().admission === 'closed', 'IMPORT_NOT_QUIESCENT');
-      const { v } = verified(record), current = record.state, runtime = storeValues(record.account);
+      const { v } = verified(record), current = currentState || record.state, runtime = storeValues(record.account);
+      validateCurrent(current, v.scope.profile);
       const selected = v.sources.find((s) => s.member.id === v.selection.source).state;
       const global = clone(current.sources.find((s) => s.id === v.selection.source)?.global || selected.global), folders = { folders: [], assign: {}, byConversation: {} };
       const folderIDs = new Map();
@@ -568,8 +607,23 @@ function createGenerationImporter({ root, target, owner, secretAdapter, testOnly
           record.phase = 'discarded'; if (saved.current === transition) saved.current = null; atomicJson(file, saved);
         });
       });
+    },
+    cleanupReturned() {
+      return locked(() => {
+        const status = owner.status();
+        insist(status.mode === 'window' && status.admission === 'open' && status.phase === 'released', 'RETURN_NOT_RELEASED');
+        const saved = read();
+        for (const record of saved.records) {
+          insist(record.receipt.generation <= status.generation, 'STALE_GENERATION');
+          if (record.phase === 'discarded') continue;
+          record.phase = 'discarding'; atomicJson(file, saved);
+          secretAdapter.delete(record.account); secretAdapter.delete(record.evidenceAccount);
+          record.phase = 'discarded'; if (saved.current === record.id) saved.current = null;
+          atomicJson(file, saved);
+        }
+      });
     }
   };
   return api;
 }
-module.exports = { exportSelectedContext, buildSelectedTransfer, validateSelectedTransfer, validateSource, createGenerationImporter, materialize };
+module.exports = { exportSelectedContext, buildSelectedTransfer, validateSelectedTransfer, validateSource, createGenerationImporter, createSelectedImporter, materialize };

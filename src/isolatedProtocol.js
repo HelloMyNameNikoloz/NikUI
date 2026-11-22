@@ -18,6 +18,26 @@ function enableIsolatedProtocol({ remote, engine, currentState, authority, paths
 function applicationSocket(remote, client, options) {
   const service = services.get(remote);
   if (!service || !service.running()) return null;
+  // Only the selected device store may confer the local seat. The signed
+  // network proof still authenticates the device principal, never a browser.
+  const device = remote.devices?.get(client.device?.id);
+  if (device?.local === true) {
+    options.context.seat.local = true;
+    const send = options.post;
+    options.post = (message) => {
+      if (client.wants && ['init', 'queue'].includes(message?.type)) {
+        const queue = service.currentState.snapshot().outbox.filter((q) => q.target === 'session:' + client.wants &&
+          q.queueId && ['queued', 'dispatching', 'accepted', 'unknown'].includes(q.state)).map((q) => ({
+          id: q.queueId, text: q.payload.message.text, sent: q.payload.message.sent || null,
+          attachments: structuredClone(q.payload.message.attachments || []), snippets: structuredClone(q.payload.message.snippets || []),
+          images: q.payload.message.attachments?.length || 0, lostImages: 0, state: q.state, revision: q.revision,
+          mid: q.mid, error: q.error, actions: q.state === 'queued' && device.control ? ['unqueue', 'promoteQueued'] : []
+        }));
+        message = { ...message, queue };
+      }
+      return send(message);
+    };
+  }
   return service.currentState.createSocket({ ...options, testOnlyV2: true, client, server: remote,
     hub: client.wants ? remote.hubs.hubFor(remote.sessions.get(client.wants), remote.host) : null });
 }

@@ -15,14 +15,29 @@ import AVFoundation
 import FluidAudio
 import Foundation
 import SQLite3
+import Darwin
 
 // The signed service supplies its selected profile explicitly. Window mode
 // retains its existing default; an invalid explicit home never falls back.
+#if NIKUI_PRODUCTION
+// A production helper cannot be redirected into the development model/cache
+// namespace by an inherited HOME or the test harness's voice override.
+guard ProcessInfo.processInfo.environment["NIKUI_VOICE_HOME"] == nil,
+      let account = getpwuid(getuid()), let directory = account.pointee.pw_dir else {
+    fail("PRODUCTION_PROFILE_OVERRIDE", "Production voice uses the account profile.")
+}
+let accountHome = String(cString: directory)
+guard accountHome.hasPrefix("/Users/"), !accountHome.hasPrefix("/Users/Shared/") else {
+    fail("PRODUCTION_PROFILE_OVERRIDE", "Production voice requires the account profile.")
+}
+let home = URL(fileURLWithPath: accountHome)
+#else
 let selectedHome = ProcessInfo.processInfo.environment["NIKUI_VOICE_HOME"]
 if let selectedHome, !selectedHome.hasPrefix("/") || selectedHome.contains("\0") {
     FileHandle.standardError.write(Data("Invalid voice profile\n".utf8)); exit(64)
 }
 let home = selectedHome.map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser
+#endif
 let support = home.appendingPathComponent("Library/Application Support")
 
 /// Where VoiceInk keeps the model, and where FluidAudio would on its own.

@@ -135,7 +135,7 @@ injected adapters; tests never lock the login Keychain or alter its ACL/settings
 final signed helper from the SMAppService-launched engine. It also sets
 `NIKUI_SIGNED_TEST_ROOT` for `npm test`, so the suite explicitly selects that
 private signed test endpoint for the same gate. The endpoint must reside under
-`/tmp/nik-mac/build` and identify itself as `com.nikui.engine.dev`, test-only.
+`/tmp/nik-mac/build` and identify itself as `com.nikui.engine.development`, test-only.
 It cannot select a live editor, production service or arbitrary helper path.
 No native success is inferred from framing or synthetic failure tests.
 

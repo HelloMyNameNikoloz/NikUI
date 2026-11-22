@@ -31,6 +31,8 @@ function createTestStore(file, { testOnly = false } = {}) {
       fs.fsyncSync(fd);
       fs.closeSync(fd); fd = undefined;
       fs.renameSync(tmp, file);
+      const directory = fs.openSync(path.dirname(file), fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
       values = next;
     } finally {
       if (fd !== undefined) fs.closeSync(fd);

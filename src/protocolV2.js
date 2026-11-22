@@ -109,7 +109,7 @@ function validateResult(result, maxBytes = 16384, what = null) {
  */
 function createNegotiation({ authenticated, context, sealed = false, testOnlyV2 = false, caps = CORE,
   engine, receipts, now = Date.now, timers = { setTimeout, clearTimeout }, post, close,
-  legacy = () => {}, receive = () => {} } = {}) {
+  legacy = () => {}, receive = () => {}, helloRequired = true } = {}) {
   requireThat(authenticated === true && context && typeof context.principal === 'string' && context.principal.length > 0, 'FORBIDDEN');
   targetOf(context);
   const trusted = immutable(context);
@@ -126,7 +126,9 @@ function createNegotiation({ authenticated, context, sealed = false, testOnlyV2 
     post({ type: 'protocol:error', code, message: code === 'NO_COMMON_PROTOCOL' ? 'No compatible application protocol.' : code, supported: { ...supported } });
     close(1002, code);
   }
-  deadline = timers.setTimeout(() => error('NEGOTIATION_TIMEOUT'), 10000);
+  // Old clients may remain receive-only forever. Only an explicit transport
+  // opt-in promises hello and permits delaying their application seat.
+  if (helloRequired) deadline = timers.setTimeout(() => error('NEGOTIATION_TIMEOUT'), 10000);
   if (deadline && deadline.unref) deadline.unref();
   return {
     advertisement: { proto: { ...supported }, caps: advertisedCaps },

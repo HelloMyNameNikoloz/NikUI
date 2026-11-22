@@ -150,7 +150,7 @@ function frame(type, seq, prev, state, evidence = null) {
 }
 function encode(record) { return Buffer.from(JSON.stringify(record) + '\n'); }
 
-async function openAuthority({ file, fs: io = fs, now = Date.now, limits: overrides = {}, hook = async () => {}, readOnly = false } = {}) {
+async function openAuthority({ file, fs: io = fs, now = Date.now, limits: overrides = {}, hook = async () => {}, readOnly = false, initialState } = {}) {
   const limits = Object.freeze({ ...LIMITS, ...overrides });
   for (const [name, value] of Object.entries(limits)) insist(Object.hasOwn(LIMITS, name) && integer(value) && value > 0, 'Invalid authority limit');
   insist(typeof file === 'string' && path.isAbsolute(file) && !file.includes('\0'), 'Absolute authority path required');
@@ -295,7 +295,10 @@ async function openAuthority({ file, fs: io = fs, now = Date.now, limits: overri
     const st = checkFile(file, true);
     if (!st) {
       if (readOnly) throw err('AUTHORITY_MISSING', 'No authority exists at this path');
-      state = { v: VERSION, engineId: id(), scope: id(), clockHighWater: wallTime(), entries: [], outbox: [], values: {} };
+      // Selected inactive imports can install a fully validated current image
+      // exactly once. An existing authority always wins, including its unknown
+      // outcomes; a restart never restores the original import over it.
+      state = initialState ? clone(initialState) : { v: VERSION, engineId: id(), scope: id(), clockHighWater: wallTime(), entries: [], outbox: [], values: {} };
       validateState(state, limits);
       await compactState(state, 0, 'initialize');
     } else {

@@ -35,13 +35,17 @@ function fleetPage(asset, nonce, csp, boot) {
  * invoke a legacy command captured by another mode.
  */
 async function activateDevelopment(context, options, { connect = openDevelopmentClient } = {}) {
+  if (options.service && connect === openDevelopmentClient) connect = (input) => openDevelopmentClient({ ...input, service: true });
   let disposed = false, available = false, main = null, statusRequested = false, fleet = { instances: [], codex: [], projects: [] };
   const links = new Set(), panels = new Map(), subscriptions = [];
+  let reconnectTimer, connectingMain = false;
   const localPending = new Map(); let selected = null, restored = null;
   const changed = new vscode.EventEmitter();
   const status = vscode.window.createStatusBarItem();
   const unavailable = (code = 'DAEMON_UNAVAILABLE') => {
-    available = false; status.text = 'NikUI dev: unavailable'; status.tooltip = code + ' — no window engine was started.'; status.show();
+    available = false; status.text = options.service ? 'NikUI: engine unavailable · Restore VS Code' : 'NikUI dev: unavailable';
+    status.command = options.service ? 'nikui.restoreVSCode' : undefined;
+    status.tooltip = options.service ? 'The Mac app engine is unavailable. Restore VS Code works with the retained local helper.' : code + ' — no window engine was started.'; status.show();
     for (const panel of panels.values()) panel.webview.postMessage({ type: 'bridge:offline', code });
     for (const request of localPending.values()) { clearTimeout(request.timer); request.resolve({ ok: false, code: 'LOCAL_OUTCOME_UNKNOWN' }); }
     localPending.clear();
@@ -62,12 +66,12 @@ async function activateDevelopment(context, options, { connect = openDevelopment
     });
   }
   function saveChrome() { if (canManage()) void local('client.state.save', { selected, panels: [...panels.keys()].filter((id) => id !== 'fleet') }); }
-  function show(session = null) {
+  function show(session = null, adoptedPanel = null) {
     if (!available) { void reportGap('daemon connection'); return null; }
     if (session) selected = session;
     const key = session || 'fleet', existing = panels.get(key);
     if (existing) { existing.reveal(); return existing; }
-    const panel = vscode.window.createWebviewPanel('nikui.development', session ? 'NikUI conversation' : 'NikUI development',
+    const panel = adoptedPanel || vscode.window.createWebviewPanel('nikui.development', session ? 'NikUI conversation' : 'NikUI development',
       vscode.ViewColumn.Active, { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')] });
     panels.set(key, panel);
     const asset = (file) => String(panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', file)));
@@ -75,26 +79,32 @@ async function activateDevelopment(context, options, { connect = openDevelopment
     const boot = 'window.NIKUI_DEV_BRIDGE=' + jsonForScript({ session, hostFingerprint: main.enrollment.hostFingerprint,
       clientKind: 'extension', version: require('../package.json').version }) + ';';
     panel.webview.html = session ? renderPage({ asset, nonce, csp, boot }) : fleetPage(asset, nonce, csp, boot);
-    let link = null, opening = null, closed = false;
+    let link = null, opening = null, closed = false, reconnect;
+    function listen() {
+      if (opening || link || closed || disposed) return;
+      const retry = () => {
+        if (link) links.delete(link); link = null; opening = null;
+        if (!closed) panel.webview.postMessage({ type: 'bridge:offline', code: 'DAEMON_UNAVAILABLE' });
+        if (options.service && !closed && !disposed) { clearTimeout(reconnect); reconnect = setTimeout(listen, 1000); }
+      };
+      opening = connect({ root: options.root, secrets: context.secrets, target: session,
+        onMessage: (m) => { if (!closed) panel.webview.postMessage(m); }, onClose: retry
+      }).then((made) => { opening = null; if (closed || disposed) made.close(); else { link = made; links.add(made); } }, retry);
+    }
     subscriptions.push(panel.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === 'bridge:open') {
         if ([...fleet.instances, ...fleet.codex].some((s) => s.id === message.session)) show(message.session);
         return;
       }
       if (message?.type === 'bridge:listen') {
-        if (opening) return;
-        opening = connect({ root: options.root, secrets: context.secrets, target: session,
-          onMessage: (m) => { if (!closed) panel.webview.postMessage(m); },
-          onClose: () => { if (!closed) panel.webview.postMessage({ type: 'bridge:offline', code: 'DAEMON_UNAVAILABLE' }); }
-        }).then((made) => { if (closed || disposed) made.close(); else { link = made; links.add(made); } },
-          () => panel.webview.postMessage({ type: 'bridge:offline', code: 'DAEMON_UNAVAILABLE' }));
+        listen();
         return;
       }
       if (!link) { if (opening) await opening; }
       if (!link || closed) return;
       try { link.send(message); } catch (_) { panel.webview.postMessage({ type: 'bridge:offline', code: 'DAEMON_UNAVAILABLE' }); }
     }));
-    subscriptions.push(panel.onDidDispose(() => { closed = true; panels.delete(key); if (selected === key) selected = null;
+    subscriptions.push(panel.onDidDispose(() => { closed = true; clearTimeout(reconnect); panels.delete(key); if (selected === key) selected = null;
       if (link) { links.delete(link); link.close(); } saveChrome(); }));
     saveChrome();
     return panel;
@@ -111,7 +121,10 @@ async function activateDevelopment(context, options, { connect = openDevelopment
       caps: [...CORE, 'editor-route-v1'], client: { id: crypto.randomBytes(16).toString('hex'), kind: 'extension', version: 'p1' } });
     if (message?.type === 'welcome') {
       if (message.proto !== 2 || !message.seat?.editor) { unavailable('EDITOR_ENROLLMENT_REQUIRED'); return; }
-      available = true; status.text = 'NikUI dev: isolated'; status.tooltip = options.root; status.show();
+      available = true; status.text = options.service ? 'NikUI: Mac app engine' : 'NikUI dev: isolated'; status.command = undefined; status.tooltip = options.root; status.show();
+      if (options.adoptPanels?.length) {
+        for (const { id, panel } of options.adoptPanels.splice(0)) show(id, panel);
+      }
       announce(); main.send({ type: 'ready' });
       if (canManage()) void local('client.state.get', {}).then((r) => { if (r.ok) { restored = r.data; restoreChrome(); } });
       return;
@@ -153,13 +166,14 @@ async function activateDevelopment(context, options, { connect = openDevelopment
     changed: () => { changed.fire(); if (available) main.send({ type: 'ready' }); }, reportGap });
   const tree = { onDidChangeTreeData: changed.event,
     getChildren: (node) => {
-      if (!available) return [{ label: 'Isolated daemon unavailable' }];
+      if (!available) return options.service ? [{ label: 'NikUI engine unavailable. Your work is retained.', recovery: true },
+        { label: 'Restore VS Code', recovery: true, command: { command: 'nikui.restoreVSCode', title: 'Restore VS Code' } }] : [{ label: 'Isolated daemon unavailable' }];
       if (node?.folderNode) return fleet.instances.filter((s) => s.folder?.id === node.id);
       const folders = fleet.folders || [], placed = new Set(folders.map((f) => f.id));
       return [...folders.map((folder) => ({ id: folder.id, label: folder.name, folder, folderNode: true })),
         ...fleet.instances.filter((s) => !placed.has(s.folder?.id)), ...fleet.codex];
     },
-    getTreeItem: (item) => item.folderNode ? { label: item.label, collapsibleState: 1, contextValue: 'nikuiFolder' }
+    getTreeItem: (item) => item.recovery ? item : item.folderNode ? { label: item.label, collapsibleState: 1, contextValue: 'nikuiFolder' }
       : { label: item.label || item.id, description: item.status || 'No fallback engine', contextValue: item.id?.startsWith('cx-') ? 'codex' : item.status === 'working' ? 'running' : 'idle',
         command: item.id ? { command: 'nikui.open', title: 'Open', arguments: [item] } : undefined } };
   subscriptions.push(changed, status);
@@ -182,21 +196,44 @@ async function activateDevelopment(context, options, { connect = openDevelopment
           : () => reportGap(command);
     subscriptions.push(vscode.commands.registerCommand(command, action));
   }
-  const runtime = { mode: 'isolated-development-client', show, manage: local, get available() { return available; },
+  const runtime = { mode: options.service ? 'service-client' : 'isolated-development-client', show, manage: local, get available() { return available; },
+    get fingerprint() { return main?.enrollment?.hostFingerprint; }, get fleet() { return fleet; },
     dispose() { if (disposed) return; disposed = true; available = false;
+      clearTimeout(reconnectTimer);
       for (const link of links) link.close(); links.clear(); main?.close();
       for (const p of localPending.values()) { clearTimeout(p.timer); p.resolve({ ok: false, code: 'LOCAL_OUTCOME_UNKNOWN' }); } localPending.clear();
       for (const panel of panels.values()) panel.dispose(); panels.clear();
       for (const s of subscriptions) s?.dispose(); } };
   context.subscriptions.push(runtime);
-  try {
+  if (options.service && vscode.window.registerWebviewPanelSerializer) {
+    for (const type of ['nikui.session', 'nikui.development']) subscriptions.push(vscode.window.registerWebviewPanelSerializer(type, {
+      deserializeWebviewPanel(panel, state) {
+        if (typeof state?.sessionId !== 'string') { panel.dispose(); return; }
+        if (available) show(state.sessionId, panel);
+        else (options.adoptPanels ||= []).push({ id: state.sessionId, panel });
+      }
+    }));
+  }
+  async function connectMain() {
+    if (disposed || connectingMain) return;
+    connectingMain = true;
+    let connected = false;
+    try {
     const pending = [];
     main = await connect({ root: options.root, secrets: context.secrets, provider: true,
-      onMessage: (m) => main ? void handle(m) : pending.push(m), onClose: () => { if (!disposed) unavailable(); } });
+      onMessage: (m) => connected ? void handle(m) : pending.push(m), onClose: () => {
+        if (!disposed) { unavailable(); if (options.service) { clearTimeout(reconnectTimer); reconnectTimer = setTimeout(connectMain, 1000); } }
+      } });
+    connected = true;
     if (disposed) main.close(); else for (const m of pending) await handle(m);
-    if (vscode.window.onDidChangeWindowState) subscriptions.push(vscode.window.onDidChangeWindowState(announce));
-    if (vscode.workspace.onDidChangeWorkspaceFolders) subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(announce));
-  } catch (error) { unavailable(error.code || 'DAEMON_UNAVAILABLE'); }
+    } catch (error) {
+      unavailable(error.code || 'DAEMON_UNAVAILABLE');
+      if (options.service && !disposed) { clearTimeout(reconnectTimer); reconnectTimer = setTimeout(connectMain, 1000); }
+    } finally { connectingMain = false; }
+  }
+  await connectMain();
+  if (vscode.window.onDidChangeWindowState) subscriptions.push(vscode.window.onDidChangeWindowState(announce));
+  if (vscode.workspace.onDidChangeWorkspaceFolders) subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(announce));
   return runtime;
 }
 

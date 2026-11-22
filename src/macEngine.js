@@ -1,32 +1,68 @@
 #!/usr/bin/env node
 'use strict';
 
-// The real isolated engine in the signed development bundle. There is no
-// source-profile discovery or production label. Provider execution is disabled;
-// a sealed --real-tools rehearsal can run fresh sandboxed CLI prompts only.
+// The signed package entrypoint. The compiled source identity is independent
+// of the JSON manifest. Validate both before any selected-root/Keychain I/O.
 const fs = require('fs');
 const path = require('path');
 const { fail, privateDirectory, privateRoot, privateFile, readPrivateJson, checkPrivateTree } = require('./daemonPaths');
 const { createSecItemAdapter, createKeychainStore } = require('./keychainStore');
+const compiledIdentity = require('./macBuildIdentity');
+const { validatePackage } = require('./macFlavour');
 
 function packageConfiguration(args = process.argv.slice(2)) {
   const engine = path.resolve(__dirname, '..'), contents = path.resolve(engine, '../..');
   const config = JSON.parse(fs.readFileSync(path.join(engine, 'mac-engine.json'), 'utf8'));
-  if (config.version !== 1 || config.label !== 'com.nikui.engine.dev' || config.testOnly !== true ||
-    !config.testHome?.startsWith('/private/tmp/nik-mac/build/') ||
-    !config.root?.startsWith(config.testHome + '/') || process.env.HOME !== config.testHome ||
-    args.length !== 2 || args[0] !== '--root' || args[1] !== config.root ||
-    fs.realpathSync(process.execPath) !== path.join(engine, 'node')) throw fail('PACKAGE_CONFIGURATION', 'Signed test package configuration disagrees');
+  const selection = validatePackage(compiledIdentity, config, { accountHome: require('os').userInfo().homedir,
+    envHome: process.env.HOME, args, execPath: fs.realpathSync(process.execPath), engine });
+  // Production never enters P2's isolated composition. Check the committed
+  // source lease before creating storage or opening the selected Keychain.
+  if (selection.flavour === 'prod') {
+    const ownership = require('./productionOwnership').committedOwnership(selection.root);
+    const paths = privateRoot(selection.root, { create: false });
+    const adapter = createSecItemAdapter({ helper: path.join(contents, 'Helpers/NikKeychain.app/Contents/MacOS/NikKeychain'),
+      home: selection.home, service: config.keychainService });
+    return { config, selection, ownership, paths, adapter, contents };
+  }
   privateDirectory(config.testHome, false);
   const paths = privateRoot(config.root);
   checkPrivateTree(paths.root);
   const adapter = createSecItemAdapter({ helper: path.join(contents, 'Helpers/NikKeychain.app/Contents/MacOS/NikKeychain'),
     home: config.testHome, service: config.keychainService });
-  return { config, paths, adapter, contents };
+  return { config, selection, paths, adapter, contents };
 }
 
 async function main() {
-  const { config, adapter, paths, contents } = packageConfiguration();
+  const configuration = packageConfiguration();
+  try {
+    require('./cutoverRecovery').remove(path.join(configuration.selection.root, 'engine-startup-failure.json'));
+    return await runPackage(configuration);
+  } catch (error) {
+    try { require('./engineStartup').recordFailure(configuration, error); } catch (_) { /* stderr remains available */ }
+    throw error;
+  }
+}
+async function runPackage({ config, selection, adapter, paths, contents }) {
+  if (selection.flavour === 'prod' || config.acceptanceCutover === true) {
+    let daemon, requested = false;
+    const stop = async () => { if (daemon) await daemon.stop(); };
+    for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { requested = true; void stop().catch(() => { process.exitCode = 1; }); });
+    let dependencies = {};
+    if (selection.flavour === 'dev') {
+      // This branch exists only behind the signed development configuration;
+      // production validation rejects it before any selected-root effects.
+      const fixture = require('./acceptanceFixture').createAcceptanceFixture({ root: selection.root, testOnly: true });
+      dependencies = { account: () => ({ homedir: selection.home }), paths: selection,
+        resolver: { resolveAll: async () => ({ tools: Object.fromEntries(['claude', 'codex', 'node', 'gh'].map((name) => [name,
+          { path: path.join(selection.home, 'fixture-' + name), status: 'resolved', source: 'configured' }])), childEnv: { PATH: '/usr/bin:/bin' } }) },
+        spawn: (file, ...args) => (file.endsWith('codex') ? fixture.adapters.codexSpawn : fixture.adapters.claudeSpawn)(file, ...args),
+        power: require('./policyOwner').createFakePolicyAdapters().power,
+        prRun: async () => ({ ok: false, stdout: '', code: 'FIXTURE_PR_UNAVAILABLE' }) };
+    }
+    daemon = await require('./productionRuntime').startProductionRuntime({ selection, secretAdapter: adapter, dependencies });
+    if (requested) await stop();
+    return daemon;
+  }
   // This package is exclusively a signed, randomly namespaced TEST profile.
   // A durable marker permits exactly one synthetic initialization. Later
   // missing/locked/denied items refuse; crashes never regenerate selected pins.
@@ -62,7 +98,7 @@ async function main() {
   const daemon = await require('./nikd').main(['--root', config.root], { adapters: {
     ...rehearsal?.adapters,
     keychain: { adapter, account: 'store.v1' }, toolPaths: { node: process.execPath },
-    package: { label: config.label, testOnly: true, acceptanceP2: !!rehearsal },
+    package: { label: config.label, appID: config.appID, flavour: config.flavour, testOnly: true, acceptanceP2: !!rehearsal, macDesktopPresenter: true },
     control(request) {
       if (request.op === 'package-keychain-selftest' && Object.keys(request).length === 1) {
         return require('./keychainProbe').exerciseKeychain({ helper: path.join(contents, 'Helpers/NikKeychain.app/Contents/MacOS/NikKeychain'),
@@ -78,8 +114,7 @@ async function main() {
   rehearsal?.attach(daemon);
 }
 if (require.main === module) main().catch((error) => {
-  const code = ['KEYCHAIN_DENIED', 'KEYCHAIN_LOCKED', 'KEYCHAIN_NOT_FOUND', 'KEYCHAIN_CORRUPT', 'KEYCHAIN_DUPLICATE', 'PACKAGE_CONFIGURATION'].includes(error.code)
-    ? error.code : 'SIGNED_TEST_ENGINE_UNAVAILABLE';
+  const code = require('./engineStartup').safeCode(error);
   process.stderr.write(JSON.stringify({ ok: false, code }) + '\n');
   process.exitCode = 1;
 });

@@ -229,6 +229,7 @@ class RemoteServer {
     let told = 0;
     for (const client of this.clients) {
       if (!client.device || client.device.kind !== 'device') continue;
+      if (client.negotiates && !client.seated) continue;
       if (only && client.device.id !== only) continue;
       client.post(Object.assign({ type: '@notify' }, message));
       told++;
@@ -932,6 +933,7 @@ ${this.appHead(nonce)}</head>
       id: 'socket-' + (this.seq++),
       socket,
       wants: url.searchParams.get('session') || null,
+      negotiates: url.searchParams.get('applicationProtocol') === '2',
       version: this.version,
       address: (req.socket && req.socket.remoteAddress) || null,
       server: this,
@@ -1743,6 +1745,10 @@ ${this.appHead(nonce)}</head>
       const seat = client.device;
       if (!seat || seat.kind !== 'device') continue;
       const fresh = this.devices.get(seat.id);
+      if (fresh?.local === true && fresh.control !== true) {
+        client.close(wire.CLOSE.POLICY, 'LOCAL_DEVICE_REVOKED');
+        continue;
+      }
       if (!fresh) {
         this.log(`${client.id} closed: ${seat.name} was removed`);
         client.close(wire.CLOSE.POLICY, 'this device was removed');
@@ -1768,6 +1774,8 @@ class RemoteClient {
     this.socket = opts.socket;
     this.server = opts.server;
     this.wants = opts.wants;
+    this.negotiates = opts.negotiates === true;
+    this.beforeSeat = [];
     this.version = opts.version || null;
     this.address = opts.address;
     this.log = opts.log || (() => {});
@@ -1832,13 +1840,20 @@ class RemoteClient {
     if (this.server.applicationProtocol) {
       const { createNegotiation } = require('./protocolV2');
       const local = device.kind === 'local';
+      const transportPost = this.post.bind(this);
       const options = { ...this.server.applicationProtocol,
         authenticated: true, testOnlyV2: false, sealed: !!this.box,
+        helloRequired: this.negotiates,
         context: { authenticated: true, principal: local ? 'local:browser' : 'device:' + device.id,
           role: this.wants ? 'conversation' : 'fleet', target: this.wants ? 'session:' + this.wants : 'fleet',
           seat: { id: device.id, control: !!device.control, local, editor: false } },
-        post: this.post.bind(this), close: (code, reason) => this.close(code, reason),
-        legacy: (message) => this.deliverApplication(message) };
+        post: (message) => {
+          transportPost(message);
+          // No fleet/device/hub broadcasts may precede the application
+          // welcome. Native clients correctly expect that as hello's reply.
+          if (message.type === 'welcome') this.ensureSeated();
+        }, close: (code, reason) => this.close(code, reason),
+        legacy: (message) => { this.ensureSeated(); return this.deliverApplication(message); } };
       if (this.wants && !this.server.sessions.get(this.wants)) return this.deny('that instance is not open any more');
       this.applicationProtocol = require('./isolatedProtocol').applicationSocket(this.server, this, options) || createNegotiation(options);
     }
@@ -1847,7 +1862,15 @@ class RemoteClient {
     this.post(Object.assign({ type: '@welcome', device }, welcomeMessage || null,
       this.version ? { version: this.version } : null,
       this.applicationProtocol ? this.applicationProtocol.advertisement : null));
+    if (!this.applicationProtocol || !this.negotiates) this.ensureSeated();
+  }
+
+  ensureSeated() {
+    if (this.seated || !this.open) return;
+    this.seated = true;
     this.server.seat(this);
+    if (this.applicationProtocol && !this.negotiates && !this.wants) this.post(this.server.fleetMessage());
+    for (const message of this.beforeSeat.splice(0)) this.post(message);
   }
 
   deny(reason, extra) {
@@ -1867,6 +1890,10 @@ class RemoteClient {
 
   post(message) {
     if (!this.open) return;
+    if (this.negotiates && this.applicationProtocol && !this.seated && !['@welcome', 'welcome', '@denied', 'protocol:error'].includes(message.type)) {
+      if (this.beforeSeat.length >= 64) return this.close(wire.CLOSE.POLICY, 'negotiation backlog');
+      this.beforeSeat.push(structuredClone(message)); return;
+    }
     const backlog = this.socket.writableLength;
     if (backlog > MAX_BACKLOG_BYTES) {
       const now = Date.now();

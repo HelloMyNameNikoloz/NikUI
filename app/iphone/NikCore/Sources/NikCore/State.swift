@@ -54,7 +54,7 @@ public struct Draft: Sendable, Codable, Equatable {
         compositionID = V2Wire.randomID()
     }
 }
-public struct ReadingState: Sendable, Equatable {
+public struct ReadingState: Sendable, Codable, Equatable {
     public var anchorID: String?
     public var offset: Double = 0
     public var followsLatest = true
@@ -180,6 +180,11 @@ public struct FeatureVisibility: Sendable, Equatable {
     public var terminal = false
     public var slack = false
     public init() {}
+    public mutating func formUnion(_ other: Self) {
+        report = report || other.report; settings = settings || other.settings
+        commands = commands || other.commands; pr = pr || other.pr
+        terminal = terminal || other.terminal; slack = slack || other.slack
+    }
 }
 public enum CoreEvent: Sendable, Equatable {
     case connection(SocketRole, ConnectionState), server(SocketRole, ServerEvent), intent(LocalIntent)

@@ -14,9 +14,8 @@ const CLIENTS = 'nikd.developmentClients.v1';
 
 // Explicit isolated-daemon composition. No production engine imports this.
 function createDaemonManagement({ engine, paths, authority, currentState, settings, secrets, generation, running, bridge, keeper, canRun = false,
-  adapters = {} }) {
-  const provenance = { profile: 'isolated:' + crypto.createHash('sha256').update(paths.root).digest('hex'),
-    workspace: paths.root, rawScope: 'user' };
+  provenance = { profile: 'isolated:' + crypto.createHash('sha256').update(paths.root).digest('hex'), workspace: paths.root, rawScope: 'user' },
+  approvedProjects = () => [], adapters = {} }) {
   const store = { get: (key, fallback) => authority.snapshot().values[key] ?? fallback,
     update: (key, value, revalidate = () => {}) => authority.commit((s) => { revalidate(); s.values[key] = structuredClone(value); }) };
   let management;
@@ -50,7 +49,7 @@ function createDaemonManagement({ engine, paths, authority, currentState, settin
     admitting: () => running() && currentState.status().admitting,
     authorize: (context) => context.principal.startsWith('local-client:') && secrets.get(CLIENTS, [])
       .some((c) => !c.revoked && context.principal === 'local-client:' + c.id), store, history, provenance,
-    announcedProjects: () => bridge()?.projects() || [],
+    announcedProjects: () => [...new Set([...(bridge()?.projects() || []), ...approvedProjects()])],
     settings: (context) => createLocalSettings({ root: paths.home, read: () => authority.snapshot().values[DOMAIN].settings,
       commit: async (_next, revalidate, change) => {
         const committed = await authority.commit((s) => {

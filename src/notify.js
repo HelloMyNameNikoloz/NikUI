@@ -82,7 +82,8 @@ class Notifier {
     // house, and this is what it is for.
     const to = this.audience ? this.audience.who(message.session) : null;
 
-    const body = Object.assign({ kind, at: this.now() }, message, to ? { to } : null);
+    const eventId = this.eventIdentity?.(kind, message);
+    const body = Object.assign({ kind, at: this.now() }, message, to ? { to } : null, eventId ? { eventId } : null);
     // Only the device this is for. Without an audience this is every device,
     // which is the old behaviour and what a window with no phones paired does.
     const mine = (device) => !to || device.id === to;

@@ -16,8 +16,9 @@ function signingKeychainArgs({ userHome = () => require('os').userInfo().homedir
 
 // Builds an isolated helper bundle only. No registration, installation or
 // selection of user profiles/services. Round 3 signs it again in the package.
-function buildKeychainHelper({ output, identity = 'Apple Development', testOnly = true, moduleCache, version = '1' } = {}) {
+function buildKeychainHelper({ output, identity = 'Apple Development', testOnly = true, moduleCache, version = '1', flavour = 'dev' } = {}) {
   if (!path.isAbsolute(output || '') || !identity || typeof testOnly !== 'boolean') throw new Error('Explicit helper output and signing identity required');
+  if (!['prod', 'dev'].includes(flavour)) throw new Error('BUILD_FLAVOUR_REQUIRED');
   noSymlinks(output);
   if (fs.existsSync(output)) throw new Error('Helper output already exists');
   const contents = path.join(output, 'Contents'), executable = path.join(contents, 'MacOS/NikKeychain');
@@ -26,8 +27,10 @@ function buildKeychainHelper({ output, identity = 'Apple Development', testOnly 
   const cache = moduleCache || path.join(path.dirname(output), 'swift-module-cache'); privateDirectory(cache);
   if (!/^[0-9]+$/.test(version)) throw new Error('Numeric helper version required');
   execFileSync('/usr/bin/xcrun', ['swiftc', '-O', '-target', 'arm64-apple-macos14.0', '-module-cache-path', cache,
-    path.resolve(__dirname, '../helpers/keychain/main.swift'), '-o', executable], { stdio: 'pipe' });
-  const kind = testOnly ? 'test' : 'dev', bundle = 'com.nikui.engine.' + kind + '.keychain';
+    '-D', flavour === 'prod' ? 'NIKUI_PRODUCTION' : 'NIKUI_DEVELOPMENT',
+    path.resolve(__dirname, '../app/mac/NikMenuBar/Sources/NikMacIdentity/BuildIdentity.swift'),
+    path.resolve(__dirname, '../helpers/keychain/main.swift'), '-o', executable], { stdio: 'pipe', timeout: 120000, killSignal: 'SIGKILL' });
+  const kind = flavour === 'prod' ? 'production' : testOnly ? 'test' : 'dev', bundle = 'com.nikui.engine.' + kind + '.keychain';
   const info = path.join(contents, 'Info.plist');
   fs.writeFileSync(info, `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
@@ -38,15 +41,16 @@ function buildKeychainHelper({ output, identity = 'Apple Development', testOnly 
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSBackgroundOnly</key><true/>
 <key>NikKeychainServicePrefix</key><string>com.nikui.engine.${kind}.</string>
+<key>NikBuildFlavour</key><string>${flavour}</string>
 <key>NikKeychainBackend</key><string>login-file-keychain</string>
 </dict></plist>\n`, { mode: 0o600 });
-  execFileSync('/usr/bin/codesign', ['--force', '--sign', identity, ...signingKeychainArgs(), '--timestamp=none', '--options', 'runtime', output], { stdio: 'pipe' });
-  const inspected = require('child_process').spawnSync('/usr/bin/codesign', ['-dvv', output], { encoding: 'utf8' });
-  if (!/^TeamIdentifier=([A-Z0-9]{10})$/m.test(inspected.stderr)) throw new Error('A team-signed helper is required');
+  execFileSync('/usr/bin/codesign', ['--force', '--sign', identity, ...signingKeychainArgs(), '--timestamp=none', '--options', 'runtime', output], { stdio: 'pipe', timeout: 120000, killSignal: 'SIGKILL' });
+  const inspected = require('child_process').spawnSync('/usr/bin/codesign', ['-dvv', output], { encoding: 'utf8', timeout: 15000, killSignal: 'SIGKILL' });
+  if (!/^TeamIdentifier=KBA6653B4V$/m.test(inspected.stderr)) throw new Error('Team KBA6653B4V is required');
   // Replacing the inode avoids a stale kernel signature cache after swiftc's
   // ad-hoc signature and the two explicit signing passes. Bytes stay identical.
   const fresh = executable + '.fresh'; fs.copyFileSync(executable, fresh); fs.chmodSync(fresh, 0o700); fs.renameSync(fresh, executable);
-  execFileSync('/usr/bin/codesign', ['--verify', '--strict', output], { stdio: 'pipe' });
+  execFileSync('/usr/bin/codesign', ['--verify', '--strict', output], { stdio: 'pipe', timeout: 120000, killSignal: 'SIGKILL' });
   return { executable, backend: 'login-file-keychain', servicePrefix: 'com.nikui.engine.' + kind + '.', target: 'arm64-apple-macos14.0' };
 }
 if (require.main === module) {

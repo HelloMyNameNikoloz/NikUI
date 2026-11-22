@@ -12,7 +12,8 @@ module.exports = async () => {
   for (const args of [['--editor'], ['--real-tools'], ['--native', '--root', '/Users/live'], ['--native', '--native']]) {
     const result = spawnSync(process.execPath, [path.join(__dirname, '../scripts/acceptance-p2.js'), ...args], { encoding: 'utf8' });
     checkEqual(args.join(' ') + ' refuses before native startup', result.status, 1);
-    check('refusal has a named gate error', /NATIVE_OPT_IN_REQUIRED|ARGUMENT_INVALID/.test(result.stderr));
+    const refusal = JSON.parse(result.stdout);
+    check('refusal has a named gate error in the final JSON result', refusal.ok === false && /^(NATIVE_OPT_IN_REQUIRED|ARGUMENT_INVALID)$/.test(refusal.failure?.code));
   }
   checkEqual('native flags are independent explicit selections', options(['--native', '--editor', '--real-tools']), { native: true, editor: true, realTools: true, help: false });
   assert.throws(() => createAcceptanceFixture({ root: '/unused' }), { code: 'PRODUCTION_CUTOVER_DISABLED' });

@@ -5,6 +5,17 @@ public protocol ControlTransport: Sendable {
     func request(_ data: Data) async throws -> Data
     func observe(_ data: Data) -> AsyncThrowingStream<Data, any Error>
 }
+public struct ControlReadEvidence: Equatable, Sendable {
+    public let code: String
+    public let operation: String
+    public let errno: Int32?
+    public init(code: String, operation: String, errno: Int32?) {
+        self.code = code; self.operation = operation; self.errno = errno
+    }
+    public var fields: [String: Any] {
+        ["code": code, "operation": operation, "errno": errno as Any? ?? NSNull()]
+    }
+}
 
 // All blocking socket work runs on utility tasks. The UI never blocks on I/O.
 // Each connection verifies the directory/socket and the peer's UID, bounds
@@ -12,6 +23,21 @@ public protocol ControlTransport: Sendable {
 public struct UnixControlTransport: ControlTransport, Sendable {
     public let root: String
     public init(root: String) { self.root = root }
+    /// The controller is a synchronous CLI. Share the same framed socket,
+    /// partial-write/EINTR handling and inode/peer validation as the UI.
+    public func requestSynchronous(_ data: Data, onFailure: ((ControlReadEvidence) -> Void)? = nil) throws -> Data {
+        var operation = "validate", savedErrno: Int32?
+        let capture: (String, Int32?) -> Void = { operation = $0; savedErrno = $1 }
+        do {
+            let connection = try UnixConnection(root: root, timeout: 2, onFailure: capture)
+            defer { connection.cancel() }
+            try connection.send(data, onFailure: capture)
+            return try connection.line(onFailure: capture)
+        } catch {
+            onFailure?(.init(code: (error as? MenuFailure)?.code ?? "CONTROL_UNAVAILABLE", operation: operation, errno: savedErrno))
+            throw error
+        }
+    }
     public func request(_ data: Data) async throws -> Data {
         let holder = ConnectionHolder()
         return try await withTaskCancellationHandler {
@@ -57,19 +83,19 @@ private final class ConnectionHolder: @unchecked Sendable {
 private final class UnixConnection: @unchecked Sendable {
     private var fd: Int32
     private var buffer = Data() // accessed by its one reader only
-    init(root: String, timeout: Int) throws {
+    init(root: String, timeout: Int, onFailure: ((String, Int32?) -> Void)? = nil) throws {
         try PrivateFiles.directory(root)
         let file = root + "/c.sock"
         let before = try PrivateFiles.entry(file, kind: S_IFSOCK, mode: 0o600)
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard descriptor >= 0 else { throw MenuFailure.unavailable }
+        guard descriptor >= 0 else { onFailure?("socket", errno); throw MenuFailure.unavailable }
         fd = descriptor
         do {
             var interval = timeval(tv_sec: timeout, tv_usec: 0), noSignal: Int32 = 1
             guard setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &interval, socklen_t(MemoryLayout<timeval>.size)) == 0,
                   setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &interval, socklen_t(MemoryLayout<timeval>.size)) == 0,
                   setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
-                throw MenuFailure.unavailable
+                onFailure?("setsockopt", errno); throw MenuFailure.unavailable
             }
             var address = sockaddr_un(); address.sun_family = sa_family_t(AF_UNIX)
             address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
@@ -79,7 +105,7 @@ private final class UnixConnection: @unchecked Sendable {
             let result = withUnsafePointer(to: &address) { p in
                 p.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
             }
-            guard result == 0 else { throw MenuFailure.unavailable }
+            guard result == 0 else { onFailure?("connect", errno); throw MenuFailure.unavailable }
             var uid = uid_t(0), gid = gid_t(0)
             guard getpeereid(fd, &uid, &gid) == 0, uid == getuid() else { throw MenuFailure.unsafe }
             let after = try PrivateFiles.entry(file, kind: S_IFSOCK, mode: 0o600)
@@ -88,7 +114,7 @@ private final class UnixConnection: @unchecked Sendable {
     }
     deinit { if fd >= 0 { close(fd) } }
     func cancel() { _ = shutdown(fd, SHUT_RDWR) }
-    func send(_ data: Data) throws {
+    func send(_ data: Data, onFailure: ((String, Int32?) -> Void)? = nil) throws {
         guard data.count < 8192, !data.contains(10) else { throw MenuFailure.invalid }
         let frame = data + Data([10])
         try frame.withUnsafeBytes { raw in
@@ -96,11 +122,11 @@ private final class UnixConnection: @unchecked Sendable {
             while offset < raw.count {
                 let count = Darwin.write(fd, raw.baseAddress!.advanced(by: offset), raw.count - offset)
                 if count < 0 && errno == EINTR { continue }
-                guard count > 0 else { throw MenuFailure.unavailable }; offset += count
+                guard count > 0 else { onFailure?("write", count < 0 ? errno : nil); throw MenuFailure.unavailable }; offset += count
             }
         }
     }
-    func line() throws -> Data {
+    func line(onFailure: ((String, Int32?) -> Void)? = nil) throws -> Data {
         var bytes = [UInt8](repeating: 0, count: 8192)
         while true {
             if let at = buffer.firstIndex(of: 10) {
@@ -110,7 +136,11 @@ private final class UnixConnection: @unchecked Sendable {
             guard buffer.count <= 262144 else { throw MenuFailure.invalid }
             let count = Darwin.read(fd, &bytes, bytes.count)
             if count < 0 && errno == EINTR { continue }
-            guard count > 0 else { throw (errno == EAGAIN || errno == EWOULDBLOCK) && count < 0 ? MenuFailure.timeout : MenuFailure.unavailable }
+            guard count > 0 else {
+                let savedErrno = count < 0 ? errno : nil
+                onFailure?("read", savedErrno)
+                throw savedErrno == EAGAIN || savedErrno == EWOULDBLOCK ? MenuFailure.timeout : MenuFailure.unavailable
+            }
             buffer.append(contentsOf: bytes.prefix(count))
         }
     }
@@ -135,19 +165,20 @@ public enum PrivateFiles {
               kind != S_IFREG || st.st_nlink == 1 else { throw MenuFailure.unsafe }
         return st
     }
-    public static func read(_ file: String) throws -> Data {
+    public static func read(_ file: String, maximumBytes: Int = 262144) throws -> Data {
+        guard maximumBytes > 0, maximumBytes <= 64 * 1024 * 1024 else { throw MenuFailure.unsafe }
         let before = try entry(file, kind: S_IFREG, mode: 0o600)
         let fd = open(file, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw MenuFailure.unsafe }
         defer { close(fd) }
         var opened = stat()
         guard fstat(fd, &opened) == 0, opened.st_dev == before.st_dev, opened.st_ino == before.st_ino,
-              opened.st_size <= 262144 else { throw MenuFailure.unsafe }
+              opened.st_size <= maximumBytes else { throw MenuFailure.unsafe }
         var data = Data(), bytes = [UInt8](repeating: 0, count: 8192)
         while true {
             let n = Darwin.read(fd, &bytes, bytes.count)
             if n < 0 && errno == EINTR { continue }
-            guard n >= 0, data.count + n <= 262144 else { throw MenuFailure.unsafe }
+            guard n >= 0, data.count + n <= maximumBytes else { throw MenuFailure.unsafe }
             if n == 0 { return data }; data.append(contentsOf: bytes.prefix(n))
         }
     }

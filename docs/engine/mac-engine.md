@@ -1,8 +1,17 @@
 # Signed development engine — P2 rounds 3–4
 
+**P3 R1 packaging update:** [p3-design.md](p3-design.md) now specifies the
+compiled dev/production split. `build-mac-engine.sh` remains a dev-only
+compatibility entry; its product is `build/p3/NikUI Dev.app`, app ID
+`com.nikui.app.dev`, engine label still `com.nikui.engine.development`, executable
+`Contents/MacOS/NikUI`. `build-mac-app.sh --flavour prod|dev` builds the new
+products. The historical P2 commands/paths below describe their original
+evidence. Real production cutover/source composition remains a separate P3
+implementation/native gate; the new package never selects P2 fakes as prod.
+
 The package contains the actual isolated engine, media and configuration
 manifest, not the S6 JavaScript probe. It remains test-only, with bundle ID and
-LaunchAgent label **`com.nikui.engine.dev`**. Window mode remains the default;
+LaunchAgent label **`com.nikui.engine.development`**. Window mode remains the default;
 there is no production activation or import command. All profiles, caches,
 logs and build products live under `/tmp/nik-mac/build`. Nothing installs a
 plist in the user's LaunchAgents directory or adopts an existing job.

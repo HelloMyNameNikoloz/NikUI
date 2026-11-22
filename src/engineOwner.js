@@ -1,7 +1,6 @@
 'use strict';
 
-// Synthetic P2 coordinator only. No activation module imports this file. The
-// lock covers admission, source membership, acknowledgments and owner commit.
+// The lock covers admission, source membership, acknowledgments and commit.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -29,11 +28,16 @@ function atomicJson(file, value) {
 
 function createSyntheticOwner({ root, profile, install, testOnly = false, now = Date.now, waitMs = 5000, fault = () => {} } = {}) {
   requireThat(testOnly === true, 'PRODUCTION_CUTOVER_DISABLED');
+  return createOwner({ root, profile, install, now, waitMs, fault });
+}
+function createOwner({ root, profile, install, now = Date.now, waitMs = 5000, fault = () => {} } = {}) {
   requireThat(validString(profile) && validString(install), 'OWNER_SCOPE_REQUIRED');
   requireThat(Number.isInteger(waitMs) && waitMs >= 0 && waitMs <= 5000, 'OWNER_WAIT_INVALID');
   const paths = privateRoot(root), file = path.join(paths.root, 'engine-owner.json');
   const membersFile = file + '.participants', journalFile = file + '.transition', lockFile = file + '.lock';
   const scope = Object.freeze({ root: paths.root, profile, install });
+  const livenessFile = membersFile + '.liveness';
+  let syncDepth = 0;
   const sameScope = (s) => s && s.root === scope.root && s.profile === profile && s.install === install;
   const read = (p, optional = false) => {
     try { return privateFile(p, { optional }) ? readPrivateJson(p) : null; }
@@ -94,7 +98,7 @@ function createSyntheticOwner({ root, profile, install, testOnly = false, now = 
     const deadline = Date.now() + timeout;
     for (;;) {
       let fd;
-      try { fd = fs.openSync(lockFile, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600); }
+      try { fd = require('./privateLock').open(lockFile); }
       catch (e) {
         if (e.code !== 'EEXIST') throw e;
         privateFile(lockFile);
@@ -103,7 +107,6 @@ function createSyntheticOwner({ root, profile, install, testOnly = false, now = 
       }
       const stat = fs.fstatSync(fd);
       try {
-        fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, token: token() })); fs.fsyncSync(fd);
         return fn(); // All mutations under this lock are synchronous.
       } finally {
         fs.closeSync(fd);
@@ -135,14 +138,25 @@ function createSyntheticOwner({ root, profile, install, testOnly = false, now = 
       j.acks[s.id].resourcesReleased === true && /^[a-f0-9]{64}$/.test(j.acks[s.id].resourcesHash) &&
       /^[a-f0-9]{64}$/.test(j.acks[s.id].hash)), 'QUIESCENCE_INCOMPLETE');
   }
-  function syncLocked(change) {
+  function syncLocked(change, wait = true) {
+    if (syncDepth) return change();
     let fd;
-    try { fd = fs.openSync(lockFile, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600); }
-    catch (e) { if (e.code === 'EEXIST') throw fail('WRITER_FENCED', 'Generation admission is locked'); throw e; }
+    const deadline = Date.now() + waitMs;
+    for (;;) {
+      try { fd = require('./privateLock').open(lockFile); break; }
+      catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+        if (!wait) throw fail('WRITER_FENCED', 'Generation transition is locked');
+        if (Date.now() >= deadline) throw fail('OWNER_ADMISSION_TIMEOUT', 'Generation lock did not become available');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+      }
+    }
     const st = fs.fstatSync(fd);
     try {
+      syncDepth++;
       const value = change(); requireThat(!value || typeof value.then !== 'function', 'ASYNC_WRITER_UNSUPPORTED'); return value;
     } finally {
+      syncDepth--;
       fs.closeSync(fd); const current = privateFile(lockFile, { optional: true });
       if (current?.ino === st.ino && current.dev === st.dev) fs.unlinkSync(lockFile);
     }
@@ -156,15 +170,17 @@ function createSyntheticOwner({ root, profile, install, testOnly = false, now = 
     async initialize() {
       return locked(() => {
         if (!privateFile(file, { optional: true })) {
-          // A partial prior initialization is not a fresh scope.
-          requireThat(!read(membersFile, true) && !read(journalFile, true), 'OWNER_CORRUPT');
-          atomicJson(membersFile, { version: 1, scope, members: [] });
-          atomicJson(file, { generation: 0, mode: 'window', since: now(), by: 'synthetic-initial' });
+          // The only recoverable partial initialization is the empty roster
+          // we fsynced immediately before the first owner record.
+          const prior = read(membersFile, true);
+          requireThat(!read(journalFile, true) && (!prior || prior.version === 1 && sameScope(prior.scope) && prior.members?.length === 0), 'OWNER_CORRUPT');
+          if (!prior) atomicJson(membersFile, { version: 1, scope, members: [] });
+          atomicJson(file, { generation: 0, mode: 'window', since: now(), by: 'source-initial' });
         }
         members(); journal(); return owner();
       });
     },
-    async admit({ id, build, metaVersion, busy = false, requested = 'window' }) {
+    async admit({ id, build, metaVersion, busy = false, requested = 'window', liveness }) {
       requireThat(validString(id) && validString(build) && typeof busy === 'boolean' &&
         (metaVersion === undefined || Number.isSafeInteger(metaVersion) && metaVersion >= 0) &&
         ['window', 'service'].includes(requested), 'PARTICIPANT_INVALID');
@@ -178,6 +194,11 @@ function createSyntheticOwner({ root, profile, install, testOnly = false, now = 
           const role = o.mode === 'window' && requested === 'window' || o.mode === 'service' && requested === 'service' && o.by === id ? 'writer' : 'client';
           const member = { id, build, metaVersion, busy, scope, generation: o.generation, lease: token(), connected: true, role, revision: 0 };
           saved.members = saved.members.filter((m) => m.id !== id).concat(member); atomicJson(membersFile, saved);
+          if (liveness) {
+            requireThat(Number.isSafeInteger(liveness.pid) && liveness.pid > 0 && path.isAbsolute(liveness.socket || ''), 'PARTICIPANT_INVALID');
+            const live = read(livenessFile, true) || {};
+            live[id] = { ...liveness, lease: member.lease }; atomicJson(livenessFile, live);
+          }
           return structuredClone(member);
         }, Math.max(0, deadline - Date.now()));
         if (answer) return answer;
@@ -191,6 +212,37 @@ function createSyntheticOwner({ root, profile, install, testOnly = false, now = 
         requireThat(member, 'STALE_PARTICIPANT'); member.connected = false; atomicJson(membersFile, saved);
       });
     },
+    async retireClosed(lease) {
+      return locked(() => {
+        const saved = members(), member = saved.members.find((m) => m.lease === lease);
+        if (!member) return;
+        requireThat(!pending(journal()), 'OWNER_TRANSITION_PENDING');
+        member.connected = false; member.role = 'client'; atomicJson(membersFile, saved);
+      });
+    },
+    async retireWindowTarget(t) {
+      return locked(() => {
+        const j = journal(), o = owner();
+        requireThat(j?.token === t && j.phase === 'released' && j.to === 'window' && o.mode === 'window' && o.generation === j.generation + 1, 'STALE_COORDINATOR');
+        const saved = members();
+        saved.members = saved.members.filter((m) => !(m.id === j.target && m.generation === o.generation));
+        atomicJson(membersFile, saved);
+      });
+    },
+    async pruneDead() {
+      const live = read(livenessFile, true) || {}, gone = [];
+      for (const [id, proof] of Object.entries(live)) {
+        if (require('./daemonLock').pidState(proof.pid) === 'dead' || await require('./daemonLock').probeSocket(proof.socket) === 'absent') gone.push({ id, lease: proof.lease });
+      }
+      return locked(() => {
+        requireThat(!pending(journal()), 'OWNER_TRANSITION_PENDING');
+        const saved = members();
+        for (const proof of gone) for (const member of saved.members) if (member.id === proof.id && member.lease === proof.lease) {
+          member.connected = false; member.role = 'client';
+        }
+        atomicJson(membersFile, saved); return gone;
+      });
+    },
     assertWriter(lease, generation, { transition = null, drain = false } = {}) {
       const o = owner(), j = journal(), member = members().members.find((m) => m.lease === lease);
       requireThat(member?.connected && member.role === 'writer' && member.generation === generation && o.generation === generation, 'STALE_GENERATION');
@@ -200,11 +252,12 @@ function createSyntheticOwner({ root, profile, install, testOnly = false, now = 
     },
     effect(lease, generation, change, options) {
       // Synchronous writer adapters (Durable and mementos included) use the
-      // same lock as admission/commit. A busy lock refuses rather than races.
+      // same lock as admission/commit. Contending windows wait for the short
+      // synchronous transaction; nested command/store guards are reentrant.
       return syncLocked(() => { api.assertWriter(lease, generation, options); return change(); });
     },
     transitionEffect(t, phases, change) {
-      return syncLocked(() => { exact(t, phases); return change(); });
+      return syncLocked(() => { exact(t, phases); return change(); }, false);
     },
     async updateParticipant(lease, { busy }) {
       requireThat(typeof busy === 'boolean', 'PARTICIPANT_INVALID');
@@ -332,10 +385,13 @@ function createSyntheticOwner({ root, profile, install, testOnly = false, now = 
     async abort(t, proof) {
       return locked(() => {
         const j = exact(t, ['barrier', 'exported', 'imported']);
-        requireThat(proof?.targetInactive === true && proof.importDiscarded === true && proof.allSourcesReachable === true, 'ABORT_UNPROVEN');
-        const current = members().members.filter((m) => m.role === 'writer' && m.generation === j.generation);
-        requireThat(current.length === j.sources.length && j.sources.every((s) => current.some((m) => m.id === s.id && m.lease === s.lease && m.connected)), 'ABORT_UNPROVEN');
-        j.phase = 'aborted'; atomicJson(journalFile, j); return owner();
+        requireThat(proof?.targetInactive === true && proof.importDiscarded === true, 'ABORT_UNPROVEN');
+        const saved = members(), current = saved.members.filter((m) => m.role === 'writer' && m.generation === j.generation);
+        const settled = proof.sourcesSettled;
+        requireThat(current.length === j.sources.length && j.sources.every((s) => current.some((m) => m.id === s.id && m.lease === s.lease &&
+          (proof.allSourcesReachable === true && m.connected || settled?.some((p) => p.id === s.id && ['live', 'gone'].includes(p.state))))), 'ABORT_UNPROVEN');
+        for (const member of current) if (settled?.some((p) => p.id === member.id && p.state === 'gone')) { member.connected = false; member.role = 'client'; }
+        atomicJson(membersFile, saved); j.phase = 'aborted'; atomicJson(journalFile, j); return owner();
       });
     },
     status() {
@@ -348,4 +404,4 @@ function createSyntheticOwner({ root, profile, install, testOnly = false, now = 
   return api;
 }
 
-module.exports = { createSyntheticOwner, atomicJson, hash };
+module.exports = { createSyntheticOwner, createOwner, atomicJson, hash };

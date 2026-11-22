@@ -27,6 +27,8 @@ public struct IntentMetadata: Sendable {
     public var updatesDraft: Bool
     public var origin: String?
     public var prDraftRevision: String?
+    public var viewToken: String?
+    public var controlIdentity: String?
     public init(mid: String? = nil, fields: [String: JSONValue] = [:], draft: Draft? = nil, selection: String? = nil, updatesDraft: Bool = false) {
         self.mid = mid; self.fields = fields; self.draft = draft; self.selection = selection
         self.updatesDraft = updatesDraft
@@ -49,6 +51,8 @@ public struct PendingIntent: Codable, Sendable, Equatable, Identifiable {
     public let updatesDraft: Bool
     public let origin: String?
     public let prDraftRevision: String?
+    public let viewToken: String?
+    public let controlIdentity: String?
     public internal(set) var state: State = .pending
     public internal(set) var acknowledgement: MutationAck?
     public internal(set) var operation: ProviderOperation?
@@ -63,7 +67,7 @@ public struct PendingIntent: Codable, Sendable, Equatable, Identifiable {
     var mayDiscardAutomatically: Bool {
         state == .applied && resultConsumed && (what != "send" || [OperationPhase.completed, .rejected].contains(operation?.state ?? .queued))
     }
-    public init(hostFingerprint: String, engineID: String, scope: String, principal: String, target: String, payload: JSONValue, draft: Draft? = nil, selection: String? = nil, updatesDraft: Bool = false, origin: String? = nil, prDraftRevision: String? = nil) throws {
+    public init(hostFingerprint: String, engineID: String, scope: String, principal: String, target: String, payload: JSONValue, draft: Draft? = nil, selection: String? = nil, updatesDraft: Bool = false, origin: String? = nil, prDraftRevision: String? = nil, viewToken: String? = nil, controlIdentity: String? = nil) throws {
         try V2Wire.object(payload, ["type", "mid", "scope", "issuedAt"])
         try V2Wire.require(!hostFingerprint.isEmpty && V2Wire.id(.string(engineID)) && V2Wire.id(.string(scope)) && !principal.isEmpty && V2Wire.target(.string(target)) && V2Wire.id(payload["mid"]) && payload["scope"].stringValue == scope && V2Wire.integer(payload["issuedAt"]) && V2Wire.text(payload["type"]), "persisted intent")
         self.hostFingerprint = hostFingerprint; self.engineID = engineID; self.scope = scope; self.principal = principal; self.target = target
@@ -73,6 +77,8 @@ public struct PendingIntent: Codable, Sendable, Equatable, Identifiable {
         self.updatesDraft = updatesDraft
         self.origin = origin
         self.prDraftRevision = prDraftRevision
+        self.viewToken = viewToken
+        self.controlIdentity = controlIdentity
     }
     /// Shared fixture/import shape. Persistence itself uses a versioned, validated container.
     public init(validating record: JSONValue) throws {
@@ -185,7 +191,7 @@ public actor PendingIntentRepository {
         }
         let mid = metadata.mid ?? V2Wire.randomID()
         payload["mid"] = .string(mid); payload["scope"] = .string(receipts.scope); payload["issuedAt"] = .number(Double(records[mid]?.issuedAt ?? context.session.serverTime(at: now)))
-        var record = try PendingIntent(hostFingerprint: context.hostFingerprint, engineID: welcome.engineID, scope: receipts.scope, principal: context.principal, target: context.role.target, payload: .object(payload), draft: metadata.draft, selection: metadata.selection, updatesDraft: metadata.updatesDraft, origin: metadata.origin, prDraftRevision: metadata.prDraftRevision)
+        var record = try PendingIntent(hostFingerprint: context.hostFingerprint, engineID: welcome.engineID, scope: receipts.scope, principal: context.principal, target: context.role.target, payload: .object(payload), draft: metadata.draft, selection: metadata.selection, updatesDraft: metadata.updatesDraft, origin: metadata.origin, prDraftRevision: metadata.prDraftRevision, viewToken: metadata.viewToken, controlIdentity: metadata.controlIdentity)
         guard record.plaintext.utf8.count <= receipts.maximumMessageBytes else { throw CoreFailure(.tooLarge, "The intent exceeds the engine's message budget.") }
         if let prior = records[mid] {
             try V2Wire.require(prior.hash == record.hash && prior.compatible(with: context), "immutable intent")

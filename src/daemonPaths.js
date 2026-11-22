@@ -76,7 +76,15 @@ function checkPrivateTree(root) {
   // Reject redirects in dormant legacy-format caches/readers too. Never
   // follow a source-state symlink while composing a private generation.
   for (const name of fs.readdirSync(root)) {
-    const file = path.join(root, name), st = fs.lstatSync(file);
+    const file = path.join(root, name);
+    let st; try { st = fs.lstatSync(file); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
+    if (st.isFile() && st.nlink === 2) {
+      const claim = file.match(/^(.*\.lock)\.[a-f0-9]{32}\.candidate$/)?.[1] || (file.endsWith('.lock') ? file : null);
+      if (claim) {
+        require('./privateLock').settleClaim(claim);
+        try { st = fs.lstatSync(file); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
+      }
+    }
     if (st.isSymbolicLink() || st.uid !== uid() || (st.isFile() && st.nlink !== 1)) {
       throw fail('UNSAFE_PATH', 'Private daemon state contains a redirect or foreign-owned entry');
     }

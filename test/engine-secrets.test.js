@@ -132,7 +132,7 @@ module.exports = async () => {
       if(!paths.root.startsWith('/private/tmp/nik-mac/build/'))throw new Error('Only the private built TEST profile can host the real helper gate');
       const {controlRequest}=require('../src/daemonControl');
       const status=await controlRequest(paths,{op:'status'});
-      if(status.package?.label!=='com.nikui.engine.dev'||status.package.testOnly!==true)throw new Error('The selected endpoint is not the signed TEST engine');
+      if(status.package?.label!=='com.nikui.engine.development'||status.package.testOnly!==true)throw new Error('The selected endpoint is not the signed TEST engine');
       const report=await controlRequest(paths,{op:'package-keychain-selftest'},{timeoutMs:30000});
       check('real signed-package SecItem gate passed with a fresh isolated service',report.ok===true&&report.backend==='login-file-keychain'&&/^com\.nikui\.engine\.test\.[a-f0-9]{32}$/.test(report.service));
       for(const name of ['initiallyMissing','add','accessibility','readArbitraryBytes','nondestructiveDuplicate','rebuildRequirement','rebuiltBytesDiffer','rebuiltHelperReadsExisting','update','missingUpdate','emptyBytes','deleteAndMissing','isolatedNamespace']){

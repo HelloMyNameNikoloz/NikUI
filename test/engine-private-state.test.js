@@ -102,14 +102,15 @@ module.exports = async function () {
     write(recoveryLock, { version: 1, pid: 124, token: 'dead-reaper' });
     const reaperBytes = fs.readFileSync(recoveryLock, 'utf8');
     const diagnosis = await diagnoseRoot(paths, { alive: () => 'dead', probe: async () => 'absent' });
-    checkEqual('R10: dead recovery lock doctor prints the exact manual fix', diagnosis.manualFix, "rm -- '" + recoveryLock + "'");
-    check('R10: manual recovery requires stopped starts and never removes the endpoint', /all nikd starts.*stopped/.test(diagnosis.hint));
-    checkEqual('R10: doctor never performs its manual fix', fs.readFileSync(recoveryLock, 'utf8'), reaperBytes);
+    checkEqual('R11: dead recovery lock doctor offers automatic recovery', [diagnosis.recoveryAvailable, diagnosis.manualFix], [true, undefined]);
+    check('R11: doctor directs recovery through the service or Restore VS Code', /Start the service or choose Restore VS Code/.test(diagnosis.hint));
+    checkEqual('R11: read-only doctor retains the recovery record', fs.readFileSync(recoveryLock, 'utf8'), reaperBytes);
     checkEqual('R10: live/unproved recovery never suggests removing its lock',
       (await diagnoseRoot(paths, { alive: () => 'alive', probe: async () => 'absent' })).manualFix, undefined);
     checkEqual('R10: even a dead reaper cannot authorize removing a live endpoint',
       (await diagnoseRoot(paths, { alive: () => 'dead', probe: async () => 'live' })).manualFix, undefined);
-    fs.unlinkSync(recoveryLock);
+    const resumed = await acquireRootLock(paths, { alive: () => 'dead', probe: async () => 'absent' });
+    check('R11: start reaps only a proved dead recovery owner', !fs.existsSync(recoveryLock)); resumed.release();
     write(paths.lock, '{partial owner');
     checkEqual('an incomplete/unreadable owner is not assumed dead', await error(() => acquireRootLock(paths)), 'OWNER_UNPROVEN');
     checkEqual('unproved owner bytes survive', fs.readFileSync(paths.lock, 'utf8'), '{partial owner');

@@ -45,7 +45,7 @@ function lineChannel(socket, receive, initial = '') {
   };
 }
 
-function createDevelopmentBridge({ paths, secrets, remote, currentState, engineInfo, fingerprint, running, management = () => null, timeoutMs = 15000 }) {
+function createDevelopmentBridge({ paths, secrets, remote, currentState, engineInfo, fingerprint, running, management = () => null, timeoutMs = 15000, mode = 'isolated-p1' }) {
   const providers = new Map(), connections = new Set(), pending = new Map();
   let active = true;
   function localContext(request) {
@@ -65,7 +65,7 @@ function createDevelopmentBridge({ paths, secrets, remote, currentState, engineI
       record = { id: crypto.randomBytes(16).toString('hex'), key: crypto.randomBytes(32).toString('base64url'), kind: request.kind };
       records.push(record); secrets.update(CLIENTS, records);
     }
-    return { ok: true, mode: 'isolated-p1', id: record.id, key: record.key, kind: record.kind,
+    return { ok: true, mode, id: record.id, key: record.key, kind: record.kind,
       protocol: 2, engineId: engineInfo.id, hostFingerprint: fingerprint,
       editorMethods: record.kind === 'editor' ? METHODS.slice() : [],
       ...(management() ? { localManagement: { version: 1, generation: management().generation } } : {}) };
@@ -180,17 +180,18 @@ function createDevelopmentBridge({ paths, secrets, remote, currentState, engineI
   };
 }
 
-async function openDevelopmentClient({ root, secrets, target = null, provider = false, onMessage = () => {}, onClose = () => {} }) {
+async function openDevelopmentClient({ root, secrets, target = null, provider = false, onMessage = () => {}, onClose = () => {}, service = false }) {
   const paths = privateRoot(root, { create: false });
   if (!secrets || typeof secrets.get !== 'function' || typeof secrets.store !== 'function') throw fail('SECRET_STORAGE_REQUIRED');
   const status = await controlRequest(paths, { op: 'status' });
-  if (!status.ok || status.mode !== 'isolated-p1' || status.root !== paths.root) throw fail('ISOLATED_DAEMON_REQUIRED');
-  const secretName = 'nikui.isolatedDevelopment.' + crypto.createHash('sha256').update(paths.root).digest('hex');
+  const expectedMode = service ? 'production' : 'isolated-p1';
+  if (!status.ok || status.mode !== expectedMode || status.root !== paths.root) throw fail('ISOLATED_DAEMON_REQUIRED');
+  const secretName = (service ? 'nikui.serviceClient.' : 'nikui.isolatedDevelopment.') + crypto.createHash('sha256').update(paths.root).digest('hex');
   let stored;
   try { const value = await secrets.get(secretName); stored = value ? JSON.parse(value) : null; }
   catch (_) { throw fail('ENROLLMENT_INVALID'); }
   const enrollment = await controlRequest(paths, { op: 'enroll', kind: 'editor', ...(stored ? { id: stored.id, key: stored.key } : {}) });
-  if (!enrollment.ok || enrollment.mode !== 'isolated-p1' || stored &&
+  if (!enrollment.ok || enrollment.mode !== expectedMode || stored &&
     (stored.engineId !== enrollment.engineId || stored.hostFingerprint !== enrollment.hostFingerprint)) throw fail('ENROLLMENT_INVALID');
   // A failed SecretStorage write never opens a connection with a memory key.
   await secrets.store(secretName, JSON.stringify(enrollment));

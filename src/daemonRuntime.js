@@ -41,7 +41,7 @@ async function startDaemon({ root, port = 0, adapters = {} } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw fail('PORT_INVALID', 'Use an explicit loopback port between 0 and 65535');
   const lock = await acquireRootLock(paths);
   const generation = crypto.randomUUID();
-  let engine, control, secrets, state, workspaceState, keeper, authority, currentState, bridge, management, menu, closing, running = false;
+  let engine, control, secrets, state, workspaceState, keeper, authority, currentState, bridge, management, menu, localDevices, desktop, closing, running = false;
   const lifecycle = { phase: 'starting', stage: 'composition', completed: [], failed: [] };
   const owned = [], graph = {}, peers = new Set();
   async function stop() {
@@ -54,7 +54,8 @@ async function startDaemon({ root, port = 0, adapters = {} } = {}) {
       menu?.dispose();
       const remoteClosing = engine && engine.remote && engine.remote.stop();
       const failures = [];
-      for (const [stage, close] of [['control', () => control && control.dispose()], ['local-management', () => management?.flush()], ['engine-flush', () => engine && engine.flush()],
+      for (const [stage, close] of [['control', () => control && control.dispose()], ...(desktop ? [['desktop-publication', () => desktop.dispose()]] : []), ['local-management', () => management?.flush()],
+        ['local-device-enrollment', () => localDevices?.flush()], ['engine-flush', () => engine && engine.flush()],
         ['current-state', () => currentState && currentState.dispose()], ['engine', () => engine && engine.dispose()],
         ['keeper', () => keeper && keeper.close()], ['listener', () => remoteClosing],
         ['peers', () => { for (const socket of peers) socket.destroy(); }],
@@ -196,7 +197,8 @@ async function startDaemon({ root, port = 0, adapters = {} } = {}) {
           secrets.get('nikd.developmentClients.v1', []).some((c) => !c.revoked && context.principal === 'local-client:' + c.id);
         const device = context.principal.startsWith('device:') && engine.delivery.devices.get(context.principal.slice(7));
         return !!device && (access === 'view' || require('./mutationGrants').mayMutate({ ...context,
-          seat: { ...context.seat, control: device.control === true } }, message));
+          seat: { ...context.seat, control: device.control === true,
+            local: context.seat.local === true && device.local === true && device.control === true } }, message));
       } });
     currentState.restoreEngine();
     owned.push('engine', 'delivery', 'slack');
@@ -256,7 +258,11 @@ async function startDaemon({ root, port = 0, adapters = {} } = {}) {
           ...(keeper ? [...keeper.blockers.values()] : []),
           ...Object.entries(resolved.tools).filter(([, tool]) => tool.status === 'missing').map(([tool, value]) => ({ code: 'TOOL_MISSING', tool, hint: value.hint }))] };
     }
-    menu = createMenuManagement({ paths, authority, engine, status, bridge: () => bridge, activeSettings: activeMenuSettings,
+    if (adapters.package?.macDesktopPresenter === true) {
+      desktop = require('./desktopNotifications').createDesktopNotifications({ engine, engineID: engineInfo.id, authority, changed: () => menu?.changed() });
+      engine.delivery.notifier.eventIdentity = desktop.identity;
+    }
+    menu = createMenuManagement({ paths, authority, engine, status, bridge: () => bridge, activeSettings: activeMenuSettings, desktop,
       pinnedNode: adapters.package ? process.execPath : null,
       refreshTools: async () => { resolved = await resolver.refresh(); } });
     if (keeper) { await engine.manager.reattach(keeper); currentState.project(); }
@@ -269,12 +275,16 @@ async function startDaemon({ root, port = 0, adapters = {} } = {}) {
     running = true;
     enableIsolatedProtocol({ remote, engine, currentState, authority, paths, bridge, running: () => running });
     lifecycle.phase = 'running'; lifecycle.stage = null;
+    localDevices = require('./localDeviceEnrollment').createLocalDeviceEnrollment({ authority,
+      devices: engine.delivery.devices, identity: engine.delivery.identity, engine: engineInfo, generation,
+      port: () => remote.port, running: () => running });
     control = await createControl({ paths, connect: (request, socket, initial) => bridge.connect(request, socket, initial),
       observe: (request, socket) => menu.observe(request, socket), handle: (request) => {
       if (!request || typeof request !== 'object') return { ok: false, code: 'CONTROL_INVALID' };
       if (request.op === 'status' || request.op === 'doctor') return status();
       if (request.op === 'local') return bridge.localRequest(request);
       if (request.op === 'enroll' && running && ['local', 'editor'].includes(request.kind || 'local')) {
+        if (request.device !== undefined) return localDevices.enroll(request);
         if (request.kind === 'editor') return bridge.enroll(request);
         if (request.protocol === 2 && request.kind === 'local') return bridge.enroll(request);
         // The legacy local key remains generation-local; it has no editor seat.

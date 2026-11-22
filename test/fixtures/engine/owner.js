@@ -61,6 +61,32 @@ module.exports = async () => {
     await held.sources[0].gate.reopenAfterAbort(); held.sources[0].gate.write(() => {});
     checkEqual('a proved abort reopens only the original generation', [held.owner.status().generation, held.owner.status().mode, held.sources[0].gate.phase], [0, 'window', 'open']);
   } finally { await held.close(); }
+  const advancing = await cutoverFixture(path.join(base, 'advancing'), { count: 1 });
+  try {
+    const t = await advancing.owner.begin({ generation: 0, to: 'service', target: 'test-service', inventory: advancing.inventory() });
+    const started = Date.now(); let steps = 0;
+    await advancing.sources[0].gate.quiesce(t.token, { timeoutMs: 100, closeAdmission() {}, cancel() {}, drain() {}, flush() {},
+      async detach(progress) { for (let i = 0; i < 4; i++) { await new Promise((resolve) => setTimeout(resolve, 40)); steps++; progress(); } },
+      releaseResources: () => ({ released: true, owned: [] }), exportState: () => ({}) });
+    check('actual source progress can exceed the initial quiescence deadline without weakening the fence',
+      steps === 4 && Date.now() - started > 100 && advancing.owner.status().acknowledged.length === 1);
+    await advancing.owner.abort(t.token, { targetInactive: true, importDiscarded: true, allSourcesReachable: true });
+    await advancing.sources[0].gate.reopenAfterAbort(); let worked = false; advancing.sources[0].gate.write(() => { worked = true; });
+    check('a progress-extended source has a proved path back to usable legacy writes', worked && advancing.sources[0].gate.phase === 'open');
+  } finally { await advancing.close(); }
+  const disposal = await cutoverFixture(path.join(base, 'stalled-disposal'), { count: 1 });
+  try {
+    const transition = await disposal.owner.begin({ generation: 0, to: 'service', target: 'test-service', inventory: disposal.inventory() });
+    const never = deferred(), started = Date.now(); let failure;
+    try {
+      await disposal.sources[0].gate.quiesce(transition.token, { timeoutMs: 50, closeAdmission() {}, cancel() {}, drain() {}, flush() {}, detach() {},
+        releaseResources() { disposal.sources[0].gate.track(never.promise); return { released: true, owned: [] }; }, exportState: () => ({}) });
+    } catch (error) { failure = error.code; }
+    check('an unresolved disposal write stays bounded and cannot loosen quiescence',
+      ['QUIESCENCE_INCOMPLETE', 'SOURCE_UNRESPONSIVE'].includes(failure) && Date.now() - started < 1000 && disposal.sources[0].gate.phase === 'sealed');
+    never.resolve(); await new Promise((resolve) => setImmediate(resolve));
+    checkEqual('a disposal write completing after timeout never acknowledges the old generation', disposal.owner.status().acknowledged, []);
+  } finally { await disposal.close(); }
   const changed = await cutoverFixture(path.join(base, 'changed'), { count: 1 });
   try {
     const t = await changed.owner.begin({ generation: 0, to: 'service', target: 'test-service', inventory: changed.inventory() });

@@ -4,7 +4,7 @@ const fs = require('fs');
 const net = require('net');
 const { privateFile, fail } = require('./daemonPaths');
 
-async function createControl({ paths, handle, connect, observe }) {
+async function createControl({ paths, handle, connect, observe, maxRequestBytes = 8192 }) {
   const clients = new Set();
   const server = net.createServer((socket) => {
     clients.add(socket);
@@ -16,7 +16,7 @@ async function createControl({ paths, handle, connect, observe }) {
     const receive = (chunk) => {
       if (handled) return;
       text += chunk;
-      if (Buffer.byteLength(text) > 8192) { handled = true; return socket.end(JSON.stringify({ ok: false, code: 'CONTROL_TOO_LARGE' }) + '\n'); }
+      if (Buffer.byteLength(text) > maxRequestBytes) { handled = true; return socket.end(JSON.stringify({ ok: false, code: 'CONTROL_TOO_LARGE' }) + '\n'); }
       const at = text.indexOf('\n');
       if (at === -1) return;
       handled = true;
@@ -36,7 +36,12 @@ async function createControl({ paths, handle, connect, observe }) {
         });
         return;
       }
-      Promise.resolve().then(() => handle(request)).then(
+      // The receive deadline ends once a bounded request is complete. Callers
+      // own the inactivity deadline while operations report actual progress.
+      socket.setTimeout(0);
+      let sequence = 0;
+      const progress = () => { if (!socket.destroyed) socket.write(JSON.stringify({ controlProgress: ++sequence }) + '\n'); };
+      Promise.resolve().then(() => handle(request, { progress })).then(
         (result) => socket.end(JSON.stringify(result) + '\n'),
         // No raw request, exception message, stack or credentials on the wire.
         () => socket.end(JSON.stringify({ ok: false, code: 'CONTROL_FAILED' }) + '\n'));
@@ -71,23 +76,34 @@ async function createControl({ paths, handle, connect, observe }) {
   };
 }
 
-function controlRequest(paths, request, { timeoutMs = 4000 } = {}) {
+function controlRequest(paths, request, { timeoutMs = 4000, maxReplyBytes = 262144, onProgress } = {}) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000) throw fail('CONTROL_INVALID', 'Invalid control deadline');
+  if (!Number.isSafeInteger(maxReplyBytes) || maxReplyBytes < 1 || maxReplyBytes > 64 * 1024 * 1024) throw fail('CONTROL_INVALID', 'Invalid reply bound');
   privateFile(paths.socket, { socket: true });
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({ path: paths.socket });
-    let data = '';
+    let data = '', reply, sequence = 0;
     socket.setEncoding('utf8');
     socket.setTimeout(timeoutMs, () => { socket.destroy(); reject(fail('CONTROL_UNAVAILABLE', 'The private daemon did not answer')); });
     socket.once('connect', () => socket.write(JSON.stringify(request) + '\n'));
     socket.on('data', (chunk) => {
       data += chunk;
-      if (data.length > 262144) { socket.destroy(); reject(fail('CONTROL_INVALID', 'Invalid private daemon reply')); }
+      if (Buffer.byteLength(data) > maxReplyBytes) { socket.destroy(); reject(fail('CONTROL_INVALID', 'Invalid private daemon reply')); }
+      let at;
+      while ((at = data.indexOf('\n')) >= 0) {
+        const line = data.slice(0, at); data = data.slice(at + 1);
+        try {
+          const value = JSON.parse(line);
+          if (Object.keys(value).length === 1 && Number.isSafeInteger(value.controlProgress) && value.controlProgress > sequence) {
+            sequence = value.controlProgress; onProgress?.();
+          } else { if (reply !== undefined) throw Error(); reply = value; }
+        } catch (_) { socket.destroy(); reject(fail('CONTROL_INVALID', 'Invalid private daemon reply')); }
+      }
     });
     socket.once('error', reject);
     socket.once('end', () => {
       socket.destroy();
-      try { resolve(JSON.parse(data)); }
+      try { resolve(reply === undefined ? JSON.parse(data) : reply); }
       catch (_) { reject(fail('CONTROL_INVALID', 'Invalid private daemon reply')); }
     });
   });

@@ -52,6 +52,7 @@ public struct TransportConfiguration: Sendable, Equatable {
     public var handshakeTimeout: Duration = .seconds(10)
     public var negotiationTimeout: Duration = .seconds(10)
     public var clientID = V2Wire.randomID()
+    public var clientKind: ProtocolClientKind = .iphone
     public init() {}
 }
 public enum ConnectionUpdate: Sendable, Equatable {
@@ -114,7 +115,8 @@ public actor SocketConnection {
         let validated = try PairingInvitation.address(base.absoluteString)
         guard var c = URLComponents(url: validated, resolvingAgainstBaseURL: false) else { throw CoreFailure(.invalidInput, "The laptop address is invalid.") }
         c.scheme = validated.scheme == "https" ? "wss" : "ws"; c.path = "/socket"
-        if case .conversation(let id) = role { c.queryItems = [URLQueryItem(name: "session", value: id)] }
+        c.queryItems = [URLQueryItem(name: "applicationProtocol", value: "2")]
+        if case .conversation(let id) = role { c.queryItems?.append(URLQueryItem(name: "session", value: id)) }
         guard let url = c.url else { throw CoreFailure(.invalidInput, "The socket address is invalid.") }; return url
     }
     public func run(pairing: PairedConnection, key: any SigningKeyProvider, role: SocketRole, sink: @escaping @Sendable (ConnectionUpdate) async -> Void) async -> ConnectionExit {
@@ -154,7 +156,7 @@ public actor SocketConnection {
             if try ProtocolSession.advertised(welcome) {
                 let (selected, selectedChannel) = try await withDeadline(configuration.negotiationTimeout, clock: clock) { [configuration, negotiatedChannel] in
                     var current = negotiatedChannel
-                    let hello = ProtocolSession.hello(clientID: configuration.clientID)
+                    let hello = ProtocolSession.hello(clientID: configuration.clientID, kind: configuration.clientKind)
                     try await socket.send(current.seal(hello.text).text)
                     let response = try await socket.receive()
                     guard response.utf8.count <= configuration.maximumReceiveBytes else { throw CoreFailure(.tooLarge, "The negotiation message is too large.") }
@@ -336,6 +338,13 @@ public actor ConnectionManager {
     private var pairing: PairedConnection?
     private var lifecycle: AppLifecycle = .foreground
     private var selected: String?
+    private var views: [String: (conversation: String, visibility: FeatureVisibility)] = [:]
+    private var desiredConversations: Set<String> { Set(views.values.map(\.conversation) + [selected].compactMap { $0 }) }
+    private func features(for role: SocketRole) -> FeatureVisibility {
+        var result = role == .fleet || role.conversationID == selected ? visibility : FeatureVisibility()
+        for view in views.values where role == .fleet || role.conversationID == view.conversation { result.formUnion(view.visibility) }
+        return result
+    }
     private var visibility = FeatureVisibility()
     private var terminalID: String?
     private var slackSelection: SlackThreadID?
@@ -343,6 +352,7 @@ public actor ConnectionManager {
     private var epoch: UInt64 = 0
     private var wantsConnection = false
     private var closingCount = 0
+    private var stopping: Set<SocketRole> = []
     private struct Slot { let connection: SocketConnection; let task: Task<Void, Never>; let epoch: UInt64 }
     private var slots: [SocketRole: Slot] = [:]
     public init(key: any SigningKeyProvider, factory: any SocketFactory = URLSessionSocketFactory(), clock: any Clock = SystemClock(), configuration: TransportConfiguration = TransportConfiguration(), outbox: PendingIntentRepository = PendingIntentRepository(store: MemoryKeyValueStore()), sink: @escaping @Sendable (ConnectionUpdate) async -> Void) {
@@ -353,10 +363,10 @@ public actor ConnectionManager {
         wantsConnection = true
         if self.pairing != pairing { self.pairing = pairing; await closeAll() }
         guard wantsConnection, closingCount == 0, lifecycle == .foreground else { return }
-        start(.fleet); if let selected { start(.conversation(selected)) }
+        start(.fleet); for id in desiredConversations { start(.conversation(id)) }
     }
     private func start(_ role: SocketRole) {
-        guard wantsConnection, closingCount == 0, slots[role] == nil, pairing != nil, lifecycle == .foreground else { return }
+        guard wantsConnection, closingCount == 0, !stopping.contains(role), slots[role] == nil, pairing != nil, lifecycle == .foreground else { return }
         epoch &+= 1; let current = epoch
         let connection = SocketConnection(factory: factory, clock: clock, configuration: configuration, replayCache: replay, outbox: outbox)
         let task = Task { await self.runLoop(role, connection: connection, epoch: current) }
@@ -397,6 +407,7 @@ public actor ConnectionManager {
     /// Registration is idempotent metadata; retain it before welcome and resend after each authenticated reconnect.
     public func rememberAppleToken(_ token: String) { appleToken = token }
     private func resubscribe(_ role: SocketRole) async {
+        let visibility = features(for: role)
         var actions: [ClientAction] = []
         switch role {
         case .fleet:
@@ -417,22 +428,38 @@ public actor ConnectionManager {
         }
     }
     public func selectConversation(_ id: String?) async {
-        guard selected != id else { return }
-        let old = selected; selected = id
-        if let old { await stop(.conversation(old)) }
-        guard selected == id else { return }
-        if let id { start(.conversation(id)) }
+        selected = id
+        await reconcileViews()
+    }
+    public func setViewSession(_ token: String, conversationID: String?, visibility: FeatureVisibility = FeatureVisibility()) async {
+        let before = Dictionary(uniqueKeysWithValues: slots.keys.map { ($0, features(for: $0)) })
+        if let conversationID { views[token] = (conversationID, visibility) } else { views[token] = nil }
+        await reconcileViews()
+        await refreshFeatures(before: before)
+    }
+    private func reconcileViews() async {
+        for role in Array(slots.keys) {
+            if let id = role.conversationID, !desiredConversations.contains(id) { await stop(role) }
+        }
+        for id in desiredConversations { start(.conversation(id)) }
     }
     public func setVisibility(_ value: FeatureVisibility) async {
-        let old = visibility; visibility = value
-        if let selected {
-            let role = SocketRole.conversation(selected)
-            if old.report != value.report { _ = try? await send(.statusOpen(value.report), on: role) }
-            if old.settings != value.settings { _ = try? await send(.settingsOpen(value.settings), on: role) }
-            if old.commands != value.commands { _ = try? await send(.commandsOpen(value.commands), on: role) }
-            if old.pr != value.pr { _ = try? await send(.prWatch(value.pr), on: role) }
+        let before = Dictionary(uniqueKeysWithValues: slots.keys.map { ($0, features(for: $0)) })
+        visibility = value
+        await refreshFeatures(before: before)
+    }
+    private func refreshFeatures(before: [SocketRole: FeatureVisibility]) async {
+        for role in Array(slots.keys) {
+            let old = before[role] ?? FeatureVisibility(), value = features(for: role)
+            guard old != value else { continue }
+            if role.conversationID != nil {
+                if old.report != value.report { _ = try? await send(.statusOpen(value.report), on: role) }
+                if old.settings != value.settings { _ = try? await send(.settingsOpen(value.settings), on: role) }
+                if old.commands != value.commands { _ = try? await send(.commandsOpen(value.commands), on: role) }
+                if old.pr != value.pr { _ = try? await send(.prWatch(value.pr), on: role) }
+            }
+            await resubscribe(role)
         }
-        for role in Array(slots.keys) { await resubscribe(role) }
     }
     public func setLifecycle(_ value: AppLifecycle) async {
         lifecycle = value
@@ -442,7 +469,10 @@ public actor ConnectionManager {
     public func reconnectNow() async { wantsConnection = true; await closeAll() }
     private func stop(_ role: SocketRole) async {
         guard let slot = slots.removeValue(forKey: role) else { return }
+        stopping.insert(role)
         slot.task.cancel(); await slot.connection.close(); await sink(.state(role, .offline))
+        stopping.remove(role)
+        if let id = role.conversationID, desiredConversations.contains(id) { start(role) }
     }
     private func closeAll() async {
         closingCount += 1
@@ -452,7 +482,7 @@ public actor ConnectionManager {
         }
         closingCount -= 1
         if closingCount == 0, wantsConnection, lifecycle == .foreground {
-            start(.fleet); if let selected { start(.conversation(selected)) }
+            start(.fleet); for id in desiredConversations { start(.conversation(id)) }
         }
     }
     public func disconnect() async { wantsConnection = false; await closeAll() }

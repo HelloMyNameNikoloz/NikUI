@@ -125,7 +125,7 @@ import Foundation
         return ReplySuggestions.replies(answer.text)
     }
     public func handleMemoryPressure() {
-        for id in Array(conversationByID.keys) where id != selectedConversationID {
+        for id in Array(conversationByID.keys) where id != selectedConversationID && !viewSessions.values.contains(where: { $0.conversationID == id }) {
             conversationByID[id]?.items.removeAll(); conversationByID[id]?.pr.snapshot = nil; conversationByID[id]?.report.report = nil; conversationByID[id]?.initialized = false
         }
         slack.files.removeAll()

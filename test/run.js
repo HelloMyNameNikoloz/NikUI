@@ -28,8 +28,10 @@ process.env.NIKUI_KEEPER_DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 
     .sort();
 
   for (const file of files) {
+    if (process.env.NIKUI_TEST_PROGRESS === '1') console.error('Running ' + file);
     const mod = require(path.join(dir, file));
     if (typeof mod === 'function') await mod();
+    if (process.env.NIKUI_TEST_PROGRESS === '1') console.error('Finished ' + file);
   }
 
   let failed = 0;

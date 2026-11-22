@@ -5,6 +5,17 @@ import NikCore
 @testable import NikMenuCore
 
 @Suite("Typed private management client") struct LocalClientTests {
+    @Test func synchronousControllerReadsAFragmentedFrameWithoutWaitingForEOF() throws {
+        let server = try FakeSocketServer { _, root in
+            .init(frames: [try fixtureJSON(root)["status"].encoded()], hold: true, fragment: true)
+        }; defer { server.cleanup() }
+        let started = Date()
+        let bytes = try UnixControlTransport(root: server.root).requestSynchronous(Data(#"{"op":"status"}"#.utf8))
+        let status = try JSONValue.decode(bytes)
+        #expect(status["generation"].stringValue == "generation-1")
+        #expect(status["root"].stringValue == server.root)
+        #expect(Date().timeIntervalSince(started) < 1)
+    }
     @Test func realUnixSocketAndSharedFleet() async throws {
         let server = try FakeSocketServer(); defer { server.cleanup() }
         let store = MemoryEnrollmentStore(), client = LocalControlClient(root: server.root, store: MemoryEnrollmentStore())

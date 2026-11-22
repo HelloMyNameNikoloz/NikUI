@@ -1,0 +1,50 @@
+:root { color-scheme: light dark; --vscode-font-family: -apple-system, BlinkMacSystemFont, sans-serif; --vscode-editor-font-family: ui-monospace, SFMono-Regular, monospace; --vscode-font-size: 14px; --vscode-editor-background: Canvas; --vscode-editor-foreground: CanvasText; --vscode-descriptionForeground: GrayText; --vscode-textLink-foreground: LinkText; --vscode-focusBorder: Highlight; --vscode-button-background: Highlight; --vscode-button-foreground: HighlightText; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: Canvas; color: CanvasText; }
+#scroller { height: 100%; overflow-y: auto; padding: 28px 36px; box-sizing: border-box; }
+#stream { max-width: var(--nikui-reading-width, 840px); margin: 0 auto; min-height: 100%; display: block; }
+#stream > [data-id] { margin: 0 0 20px; overflow-wrap: anywhere; }
+.msg-text, .turn-user .said { font-size: var(--nikui-reading-size, 15px); line-height: 1.6; user-select: text; -webkit-user-select: text; }
+pre { user-select: text; -webkit-user-select: text; overflow-x: auto; background: color-mix(in srgb, CanvasText 5%, Canvas); border-radius: 8px; padding: 14px; }
+.perm .actions { display: none; } /* Native cards own approval controls. */
+.native-card-hint { color: GrayText; font-size: 12px; }
+.dropped { color: GrayText; padding-bottom: 20px; }
+#jump { position: fixed; right: 24px; bottom: 20px; padding: 8px 14px; border-radius: 20px; background: Canvas; color: CanvasText; border: 1px solid GrayText; }
+.copy-code { float: right; font: inherit; font-size: 11px; }
+.find-current { outline: 2px solid Highlight; outline-offset: 6px; border-radius: 4px; }
+#stream { user-select: text; -webkit-user-select: text; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+@media (prefers-contrast: more) { pre, .tool, .turn-user { border: 1px solid CanvasText; } }
+
+.copy-buffer { position: fixed; opacity: 0; }
+:root[data-appearance="light"] { color-scheme: light; }
+:root[data-appearance="dark"] { color-scheme: dark; }
+:root[data-font-size="13"] { --nikui-reading-size: 13px; }
+:root[data-font-size="14"] { --nikui-reading-size: 14px; }
+:root[data-font-size="15"] { --nikui-reading-size: 15px; }
+:root[data-font-size="16"] { --nikui-reading-size: 16px; }
+:root[data-font-size="17"] { --nikui-reading-size: 17px; }
+:root[data-font-size="18"] { --nikui-reading-size: 18px; }
+:root[data-font-size="19"] { --nikui-reading-size: 19px; }
+:root[data-font-size="20"] { --nikui-reading-size: 20px; }
+:root[data-font-size="21"] { --nikui-reading-size: 21px; }
+:root[data-reading-width="600"] { --nikui-reading-width: 600px; }
+:root[data-reading-width="620"] { --nikui-reading-width: 620px; }
+:root[data-reading-width="640"] { --nikui-reading-width: 640px; }
+:root[data-reading-width="660"] { --nikui-reading-width: 660px; }
+:root[data-reading-width="680"] { --nikui-reading-width: 680px; }
+:root[data-reading-width="700"] { --nikui-reading-width: 700px; }
+:root[data-reading-width="720"] { --nikui-reading-width: 720px; }
+:root[data-reading-width="740"] { --nikui-reading-width: 740px; }
+:root[data-reading-width="760"] { --nikui-reading-width: 760px; }
+:root[data-reading-width="780"] { --nikui-reading-width: 780px; }
+:root[data-reading-width="800"] { --nikui-reading-width: 800px; }
+:root[data-reading-width="820"] { --nikui-reading-width: 820px; }
+:root[data-reading-width="840"] { --nikui-reading-width: 840px; }
+:root[data-reading-width="860"] { --nikui-reading-width: 860px; }
+:root[data-reading-width="880"] { --nikui-reading-width: 880px; }
+:root[data-reading-width="900"] { --nikui-reading-width: 900px; }
+:root[data-reading-width="920"] { --nikui-reading-width: 920px; }
+:root[data-reading-width="940"] { --nikui-reading-width: 940px; }
+:root[data-reading-width="960"] { --nikui-reading-width: 960px; }
+:root[data-reading-width="980"] { --nikui-reading-width: 980px; }
+:root[data-reading-width="1000"] { --nikui-reading-width: 1000px; }

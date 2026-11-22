@@ -65,7 +65,13 @@ final class FakeSocketServer: @unchecked Sendable {
             if let handler { return try handler(value, temp) }; return try Self.standard(value, root: temp)
         }
         DispatchQueue.global(qos: .utility).async { [self] in
+            // This task owns the listening descriptor through its last accept.
+            // Closing it in stop() could recycle its number before a queued
+            // accept task starts, letting an old fixture accept a new one's client.
+            defer { close(fd) }
             while true {
+                lock.lock(); let stopped = closed; lock.unlock()
+                if stopped { break }
                 let client = accept(fd, nil, nil)
                 if client < 0 { break }
                 lock.lock()
@@ -80,7 +86,7 @@ final class FakeSocketServer: @unchecked Sendable {
     func stop() {
         lock.lock(); if closed { lock.unlock(); return }; closed = true
         let active = clients; lock.unlock()
-        _ = shutdown(fd, SHUT_RDWR); close(fd)
+        _ = shutdown(fd, SHUT_RDWR)
         for client in active { _ = shutdown(client, SHUT_RDWR) }
     }
     func cleanup() { stop(); try? FileManager.default.removeItem(atPath: root) }

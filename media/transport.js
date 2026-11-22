@@ -415,9 +415,9 @@
       // An app carries the client in a bundle, so there is no page address to
       // infer the laptop from: it is told one, absolutely, and that address
       // keeps its own scheme. A served page still works out where it came from.
-      if (/^wss?:\/\//i.test(config.socket || '')) return config.socket;
       const at = new URL(config.socket || '/socket', window.location.href);
-      at.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      if (!/^wss?:\/\//i.test(config.socket || '')) at.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      at.searchParams.set('applicationProtocol', '2');
       return at.toString();
     }
 

@@ -3,6 +3,7 @@ import CryptoKit
 
 /// Application protocol versions are independent of authentication and @box versions.
 public enum ApplicationProtocol: Int, Codable, Sendable { case v1 = 1, v2 = 2 }
+public enum ProtocolClientKind: String, Sendable { case iphone, mac, test }
 public enum ProtocolCapabilities {
     public static let core = ["mid-ack-v1", "receipts-v1", "run-precondition-v1", "operation-state-v1"]
     public static let supported = core + ["pr-v1", "slack-v1", "terminal-v1", "voice-v1"]
@@ -127,8 +128,8 @@ public struct ProtocolSession: Sendable, Equatable {
         return base + Int(date.timeIntervalSince(receivedAt) * 1_000)
     }
     public func supports(_ capability: String) -> Bool { version == .v1 || welcome?.capabilities.contains(capability) == true }
-    public static func hello(clientID: String, version: String = "1.0") -> JSONValue {
-        .object(["type": .string("hello"), "proto": .object(["min": .number(1), "max": .number(2)]), "caps": .array(ProtocolCapabilities.supported.map(JSONValue.string)), "client": .object(["id": .string(clientID), "kind": .string("iphone"), "version": .string(version)])])
+    public static func hello(clientID: String, version: String = "1.0", kind: ProtocolClientKind = .iphone) -> JSONValue {
+        .object(["type": .string("hello"), "proto": .object(["min": .number(1), "max": .number(2)]), "caps": .array(ProtocolCapabilities.supported.map(JSONValue.string)), "client": .object(["id": .string(clientID), "kind": .string(kind.rawValue), "version": .string(version)])])
     }
     static func advertised(_ welcome: JSONValue) throws -> Bool {
         guard let range = welcome.objectValue["proto"] else {

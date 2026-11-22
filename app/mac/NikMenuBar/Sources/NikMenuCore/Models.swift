@@ -77,6 +77,32 @@ public struct EngineSettings: Codable, Equatable, Sendable {
     }
 }
 public struct SettingsResult: Codable, Equatable, Sendable { public let settings: EngineSettings; public let requiresRestart: Bool }
+public struct DesktopNotice: Codable, Equatable, Sendable, Identifiable {
+    public let id: String, engineID: String, conversationID: String, kind: String, title: String, body: String
+    public let createdAt: Int
+    public init(id: String, engineID: String, conversationID: String, kind: String, title: String, body: String, createdAt: Int) {
+        self.id = id; self.engineID = engineID; self.conversationID = conversationID; self.kind = kind
+        self.title = title; self.body = body; self.createdAt = createdAt
+    }
+    public var valid: Bool {
+        id.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil &&
+        engineID.range(of: "^[a-f0-9]{32}$", options: .regularExpression) != nil &&
+        !conversationID.isEmpty && conversationID.utf8.count <= 256 &&
+        !conversationID.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) &&
+        ["needs-you", "turn-finished", "failed"].contains(kind) && title.utf8.count <= 512 && body.utf8.count <= 1024 && createdAt >= 0
+    }
+}
+public struct DesktopApproval: Codable, Equatable, Sendable {
+    public let conversationID: String
+    public let requestID: String?
+    public let id: String?
+}
+public struct DesktopSnapshot: Codable, Equatable, Sendable {
+    public let engineID: String
+    public let events: [DesktopNotice]
+    public let pendingApprovals: [DesktopApproval]
+    public let issue: String?
+}
 public struct MenuSnapshot: Codable, Equatable, Sendable {
     public let status: EngineStatus
     public let fleet: Fleet
@@ -86,12 +112,13 @@ public struct MenuSnapshot: Codable, Equatable, Sendable {
     public let requiresRestart: Bool
     public let importBlocker: String
     public let updateBlockers: [String]
-    public func validate(root: String) throws {
+    public var desktop: DesktopSnapshot? = nil
+    public func validate(root: String, privateHome: String? = nil) throws {
         guard status.ok, status.root == root, status.pid > 0, !status.generation.isEmpty,
               !status.engine.id.isEmpty, (0...65535).contains(status.listener.port), status.listener.host == "127.0.0.1" else {
             throw MenuFailure.invalid
         }
-        try settings.validate(privateHome: root + "/home")
+        try settings.validate(privateHome: privateHome ?? root + "/home")
         if let browserURL, !Self.isLocalURL(browserURL, port: status.listener.port) { throw MenuFailure.unsafe }
     }
     public static func isLocalURL(_ value: String, port: Int) -> Bool {
@@ -113,13 +140,21 @@ public struct MenuSnapshot: Codable, Equatable, Sendable {
 }
 public enum MenuCommand: Sendable {
     case snapshot, refreshTools, settings, saveSettings(EngineSettings)
+    case history(cwd: String?, filter: String, offset: Int, limit: Int)
+    case resumeHistory(conversation: String, cwd: String)
     public var operation: String {
         switch self { case .snapshot: "menu.snapshot"; case .refreshTools: "tools.refresh"
-        case .settings: "engine.settings.get"; case .saveSettings: "engine.settings.update" }
+        case .settings: "engine.settings.get"; case .saveSettings: "engine.settings.update"
+        case .history: "history.list"; case .resumeHistory: "history.resume" }
     }
-    public var mutates: Bool { if case .saveSettings = self { true } else { false } }
+    public var mutates: Bool { switch self { case .saveSettings, .resumeHistory: true; default: false } }
     public func arguments() throws -> JSONValue {
         if case .saveSettings(let settings) = self { return try JSONValue.decode(JSONEncoder().encode(settings)) }
+        if case .history(let cwd, let filter, let offset, let limit) = self {
+            guard (0...10000).contains(offset), (1...200).contains(limit), filter.count <= 500 else { throw MenuFailure.invalid }
+            return .object(["cwd": cwd.map(JSONValue.string) ?? .null, "filter": .string(filter), "offset": .number(Double(offset)), "limit": .number(Double(limit))])
+        }
+        if case .resumeHistory(let conversation, let cwd) = self { return .object(["conversation": .string(conversation), "cwd": .string(cwd)]) }
         return .object([:])
     }
 }

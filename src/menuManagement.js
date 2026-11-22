@@ -37,7 +37,7 @@ function validateSettings(value, { home, pinnedNode, requireExecutable = true })
 const equivalent = (a, b) => a.codexHome === b.codexHome && a.port === b.port && a.bind === b.bind &&
   ['claude', 'codex', 'node', 'gh'].every((key) => a.tools[key] === b.tools[key]);
 function createMenuManagement({ paths, authority, engine, status, bridge, refreshTools, activeSettings, pinnedNode,
-  heartbeatMs = HEARTBEAT_MS }) {
+  heartbeatMs = HEARTBEAT_MS, desktop }) {
   const observers = new Set();
   let disposed = false, pending;
   const read = () => structuredClone(authority.snapshot().values[SETTINGS] || activeSettings);
@@ -51,7 +51,7 @@ function createMenuManagement({ paths, authority, engine, status, bridge, refres
     const fleet = engine.remote.fleetMessage();
     fleet.instances = fleet.instances.map((row) => ({ ...row, running: !!engine.manager.get(row.id)?.proc }));
     fleet.codex = fleet.codex.map((row) => ({ ...row, running: !row.asleep || ['working', 'waiting'].includes(row.status) }));
-    return { status: current, fleet, browserURL: engine.remote.url,
+    return { status: current, fleet, browserURL: engine.remote.url, ...(desktop ? { desktop: desktop.snapshot() } : {}),
       settings: read(), requiresRestart: requiresRestart(), importBlocker: IMPORT_BLOCKER,
       updateBlockers: [...new Set([...(!current.authority?.writable || state.issue ? ['AUTHORITY_UNAVAILABLE'] : []),
         ...(engine.manager.list.some((s) => s.isBusy) || engine.codex.list.some((s) => s.isBusy) ? ['OWNED_WORK_BUSY'] : []),

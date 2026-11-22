@@ -7,7 +7,7 @@ Passing the scripted subset does not authorize production cutover or default-on.
 ## Scope, setup and evidence
 
 Use only this checkout, a fresh HOME under `/private/tmp/nik-mac/build`, the
-signed `com.nikui.engine.dev` bundle/agent, and its random
+signed `com.nikui.engine.development` bundle/agent, and its random
 `com.nikui.engine.test.*` service. Never stop/adopt/import/reconfigure the live
 NikUI checkout, editor, keeper, Claude, Codex, or borrowed Codex daemon. Never
 read editor SQLite or copy provider homes. Any website opened from the menu
@@ -35,7 +35,7 @@ that provider unrun. Do not log in again to make the test pass.
 
 For attended checks needing a surviving bundle, create a **separate** manual
 package after the scripted agent is gone. Build/run this only as Claude's
-native work. If `launchctl print gui/$(id -u)/com.nikui.engine.dev` succeeds,
+native work. If `launchctl print gui/$(id -u)/com.nikui.engine.development` succeeds,
 stop here and ask that test job's owner to finish; do not unregister it.
 
 ```sh

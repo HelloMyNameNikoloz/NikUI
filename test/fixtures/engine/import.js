@@ -108,6 +108,9 @@ module.exports = async () => {
     first.totalCost = 2; first.usage = {input:20,output:4}; first.turns = 2;
     const duplicate = structuredClone(first); duplicate.totalCost = 3; duplicate.usage = {input:10,output:8}; duplicate.turns = 3;
     sources[1].state.instances = [duplicate]; sources[1].state.queues = [{instance:duplicate.id,items:duplicate.queue,hash:hash(duplicate.queue)}];
+    sources[1].state.workspace['nikui.sessions.v1'] = [structuredClone(duplicate)];
+    sources[1].state.files.exportedSessionIDs = [duplicate.id];
+    sources[1].state.fileHashes.exportedSessionIDs = hash([duplicate.id]);
     sources[1].state.ledger.instances[first.id] = {cost:7,tokens:40,turns:4};
     for (const src of sources) src.ack.hash = hash(src.state);
     const result = buildSelectedTransfer(maxima.t,sources,{selectedSource:sources[0].member.id});

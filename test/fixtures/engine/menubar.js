@@ -98,4 +98,21 @@ module.exports = async () => {
     checkEqual('durable enrollment is reused across engine boots', (await controlRequest(daemon.paths, { op: 'enroll', kind: 'local', protocol: 2, id: enrollment.id, key: enrollment.key })).id, enrollment.id);
     checkEqual('settings no longer require restart after boot', (await call('engine.settings.get')).data.requiresRestart, false);
   } finally { observer?.destroy(); await daemon.stop(); }
+  suite('Packaged acceptance composition menu result regression');
+  const packagedRoot = path.join(base, 'packaged-menu');
+  const fixture = require('../../../src/acceptanceFixture').createAcceptanceFixture({ root: packagedRoot, testOnly: true });
+  const packaged = await startDaemon({ root: packagedRoot, adapters: { ...fixture.adapters,
+    tools: adapters.tools, package: { macDesktopPresenter: true, acceptanceP2: true } } });
+  fixture.attach(packaged);
+  try {
+    await fixture.adapters.control({ op: 'acceptance-p2', action: 'seed' });
+    await fixture.adapters.control({ op: 'acceptance-p2', action: 'pending' });
+    const seat = await controlRequest(packaged.paths, { op: 'enroll', kind: 'local', protocol: 2 });
+    for (const op of ['menu.snapshot', 'tools.refresh']) {
+      const reply = await controlRequest(packaged.paths, { op: 'local', id: seat.id, key: seat.key,
+        request: { ...req(op), generation: packaged.generation } });
+      checkEqual(op + ' succeeds with packaged desktop publication', [reply.ok, reply.code], [true, null]);
+      check(op + ' retains typed pending approvals', matches(reply, resultSchema) && reply.data?.desktop?.pendingApprovals.length === 1);
+    }
+  } finally { await packaged.stop(); }
 };

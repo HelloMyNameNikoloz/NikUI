@@ -63,6 +63,14 @@ import NikCore
         await model.stopEngine()
         #expect(model.state.glyph == .attention); #expect(model.state.problem == "SERVICE_OWNER_MISMATCH")
     }
+    @Test @MainActor func unregisteredFirstRunHasNoServiceEffects() {
+        let service = FakeService()
+        service.agentStatus = .notRegistered
+        let model = MenuViewModel(root: "/unconfigured", client: LocalControlClient(root: "/unconfigured"), service: service)
+        model.showUnregistered()
+        #expect(model.state.glyph == .stopped); #expect(model.agent == .notRegistered)
+        #expect(service.starts == 0); #expect(service.stops == 0); #expect(service.logins == 0)
+    }
     @Test @MainActor func copyDiagnosticsAreWhitelistedAndRedacted() throws {
         let service = FakeService()
         let model = MenuViewModel(root: "/fixture", client: LocalControlClient(root: "/fixture"), service: service)

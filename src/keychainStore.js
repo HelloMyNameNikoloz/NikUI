@@ -9,7 +9,8 @@ const MAX_FRAME = 2 * 1024 * 1024, MAX_VALUE = 1024 * 1024;
 const CODES = new Set(['KEYCHAIN_BAD_FRAME', 'KEYCHAIN_BAD_REQUEST', 'KEYCHAIN_NAMESPACE', 'KEYCHAIN_DUPLICATE',
   'KEYCHAIN_NOT_FOUND', 'KEYCHAIN_LOCKED', 'KEYCHAIN_DENIED', 'KEYCHAIN_CORRUPT', 'KEYCHAIN_UNAVAILABLE']);
 const validAccount = (s) => typeof s === 'string' && s.trim() === s && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/.test(s);
-const validService = (s) => typeof s === 'string' && s.trim() === s && /^com\.nikui\.engine\.(?:test|dev)\.[A-Za-z0-9][A-Za-z0-9.-]{15,199}$/.test(s);
+const validService = (s) => s === 'com.nikui.engine.production.selected-store-v1' ||
+  typeof s === 'string' && s.trim() === s && /^com\.nikui\.engine\.(?:test|dev)\.[A-Za-z0-9][A-Za-z0-9.-]{15,199}$/.test(s);
 const validKey = (s) => typeof s === 'string' && s.length > 0 && s.length <= 256 && !s.includes('\0') && !['__proto__', 'constructor', 'prototype'].includes(s);
 const object = (v) => v && typeof v === 'object' && !Array.isArray(v);
 function encodeFrame(value) {
@@ -39,7 +40,11 @@ function createSecItemAdapter({ helper, service, backend = 'login-file-keychain'
   if (!st.isFile() || st.isSymbolicLink() || st.uid !== process.getuid() || st.nlink !== 1 || (st.mode & 0o022) || !(st.mode & 0o100)) {
     throw fail('KEYCHAIN_HELPER_UNSAFE', 'Keychain helper must be an owned executable');
   }
-  privateDirectory(home, false);
+  if (service === 'com.nikui.engine.production.selected-store-v1') {
+    noSymlinks(home);
+    const account = fs.lstatSync(home);
+    if (!account.isDirectory() || account.uid !== process.getuid() || (account.mode & 0o022)) throw fail('KEYCHAIN_NAMESPACE', 'Account home is unsafe');
+  } else privateDirectory(home, false);
   let metadata = { backend };
   function request(op, account, data) {
     if (!validAccount(account)) throw fail('BAD_STORE_KEY', 'Invalid Keychain account');
@@ -51,7 +56,7 @@ function createSecItemAdapter({ helper, service, backend = 'login-file-keychain'
     }
     let result;
     try {
-      result = run(helper, [], { input: encodeFrame(value), encoding: null, timeout: timeoutMs, maxBuffer: MAX_FRAME + 4,
+      result = run(helper, [], { input: encodeFrame(value), encoding: null, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: MAX_FRAME + 4,
         env: { HOME: home, PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C' }, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (_) { throw fail('KEYCHAIN_UNAVAILABLE', 'Keychain helper could not execute'); }
     if (result?.error || result?.signal || !Number.isInteger(result?.status)) {

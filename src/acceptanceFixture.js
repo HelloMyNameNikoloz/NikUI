@@ -17,7 +17,7 @@ function createAcceptanceFixture({ root, testOnly = false, allowRealTools = fals
   if (effects.version !== 1 || !['claude', 'codex', 'approvals'].every((k) => Number.isSafeInteger(effects[k]) && effects[k] >= 0)) {
     throw fail('STORAGE_UNAVAILABLE', 'Acceptance trace corrupt');
   }
-  let daemon, realTools, handoff, realToolsAbort;
+  let daemon, realTools, handoff, realToolsAbort, macCore = false;
   function count(key) { effects[key]++; atomicJson(file, effects); }
   function processFixture(kind) {
     const proc = new EventEmitter();
@@ -35,6 +35,11 @@ function createAcceptanceFixture({ root, testOnly = false, allowRealTools = fals
         if (kind === 'claude') {
           if (m.type === 'user') count('claude');
           if (m.type === 'control_response') count('approvals');
+          if (macCore && m.type === 'control_request' && m.request?.subtype === 'interrupt') {
+            effects.interrupts = (effects.interrupts || 0) + 1; atomicJson(file, effects);
+            session()._interrupted = true;
+            queueMicrotask(() => say({ type: 'result', subtype: 'success', total_cost_usd: 0 }));
+          }
           if (m.type === 'control_request') queueMicrotask(() => say({ type: 'control_response', response: {
             subtype: 'success', request_id: m.request_id, response: {} } }));
         } else if (m.method && m.id != null) {
@@ -55,6 +60,21 @@ function createAcceptanceFixture({ root, testOnly = false, allowRealTools = fals
     }
     const { engine, graph } = daemon;
     switch (request.action) {
+      case 'mac-core-stream-start': {
+        macCore = true;
+        const s = session();
+        if (!s?.inTurn) return { ok: false, code: 'MAC_CORE_TURN_REQUIRED' };
+        s._handleStream({ event: { type: 'message_start', message: { id: 'p3-native-reply' } } });
+        s._handleStream({ event: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } });
+        s._handleStream({ event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Streamed reply from the P3 fixture.' } } });
+        await graph.currentState.flush(); return { ok: true };
+      }
+      case 'mac-core-stream-end': {
+        if (!macCore) return { ok: false, code: 'MAC_CORE_TURN_REQUIRED' };
+        session()._handleStream({ event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' Complete.' } } });
+        session()._handleStream({ event: { type: 'content_block_stop', index: 0 } });
+        await graph.currentState.flush(); return { ok: true };
+      }
       case 'legacy-owner': {
         const { createSyntheticOwner } = require('./engineOwner');
         const legacy = createSyntheticOwner({ root: path.join(paths.home, 'p2-legacy'), profile: 'p2-legacy-test', install: 'p2-fixture', testOnly: true });
@@ -147,8 +167,8 @@ function createAcceptanceFixture({ root, testOnly = false, allowRealTools = fals
         await graph.currentState.flush();
         const saved = graph.authority.snapshot();
         return { ok: true, effects: { ...effects }, engine: daemon.status().engine, generation: daemon.generation,
-          receipts: saved.entries.map((e) => ({ mid: e.mid, outcome: e.outcome, code: e.error?.code })),
-          outbox: saved.outbox.map((q) => ({ mid: q.mid, state: q.state, correlation: q.correlation })),
+          receipts: saved.entries.map((e) => ({ mid: e.mid, what: e.what, outcome: e.outcome, code: e.error?.code })),
+          outbox: saved.outbox.map((q) => ({ mid: q.mid, state: q.state, correlation: q.correlation, target: q.target, queueId: q.queueId })),
           fingerprint: engine.delivery.identity.fingerprint, applicationServerKey: engine.delivery.vapid.applicationServerKey };
       }
       default: return { ok: false, code: 'ACCEPTANCE_REQUEST_INVALID' };

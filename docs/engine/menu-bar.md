@@ -1,6 +1,12 @@
 # P2 round 4 — menu bar controller
 
-The signed **com.nikui.engine.dev** bundle now launches a SwiftUI
+**P3 R1:** the menu is now a scene of `NikUI.app` / `NikUI Dev.app`, alongside
+a native main-window setup/activity shell. App identity is separate from the
+engine label. See [the P3 design and implementation boundary](p3-design.md).
+The P2 protocol/state/cleanup behavior below remains the dev acceptance
+contract; original bundle/executable names are historical.
+
+The signed **com.nikui.engine.development** bundle now launches a SwiftUI
 `MenuBarExtra`. It remains an explicit, isolated TEST profile; production
 cutover/import is disabled with **PRODUCTION_CUTOVER_DISABLED**. There is no
 production identifier, source-profile discovery, keeper adoption, provider

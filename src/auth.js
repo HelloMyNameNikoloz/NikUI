@@ -152,6 +152,7 @@ class Gate {
 
     const device = this.devices.get(id);
     if (!device) return { ok: false, reason: 'this device is not paired' };
+    if (device.local === true && device.control !== true) return { ok: false, reason: 'LOCAL_DEVICE_REVOKED' };
 
     // A device may use this exchange to replace its own key — because it has
     // moved the key into secure hardware, which it can only do by making a new

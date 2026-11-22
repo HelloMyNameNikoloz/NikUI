@@ -48,11 +48,12 @@ public struct PersistedUIState: Sendable, Codable, Equatable {
     public var protectedDraftIDs: [String]?
     public var protectedSlackDraftIDs: [SlackThreadID]?
     public var lastIntentOrder: UInt64?
+    public var viewSessions: [String: PersistedViewSession]?
     public init() {}
     /// Keeps the newest drafts within the retention budget; no transcripts, reports, terminal output or Slack messages.
     public func bounded(limits: DraftLimits = DraftLimits()) throws -> PersistedUIState {
         var value = self
-        for draft in Array(drafts.values) + Array(slackDrafts.values) {
+        for draft in Array(drafts.values) + Array(slackDrafts.values) + (viewSessions ?? [:]).values.flatMap({ Array($0.drafts.values) }) {
             guard draft.text.utf8.count <= limits.maximumTextBytes else { throw CoreFailure(.tooLarge, "A draft exceeds the protected storage limit.") }
             for image in draft.attachments {
                 guard let data = Data(base64Encoded: image.data), data.count <= limits.maximumAttachmentBytes else { throw CoreFailure(.tooLarge, "A draft image exceeds the protected storage limit.") }

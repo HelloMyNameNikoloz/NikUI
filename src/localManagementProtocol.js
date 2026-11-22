@@ -30,8 +30,15 @@ const menuStatus = { type: 'object', properties: {
 }, required: ['ok', 'root', 'generation', 'pid', 'state', 'engine', 'listener', 'account', 'bridge', 'tools', 'blockers'] };
 const menuFleet = { type: 'object', properties: { type: { const: 'fleet' }, instances: array({ type: 'object' }),
   codex: array({ type: 'object' }), projects: array({ type: 'object' }) }, required: ['type', 'instances', 'codex', 'projects'] };
+const desktopSnapshot = object({ engineID: string,
+  events: array(object({ id: string, engineID: string, conversationID: string,
+    kind: choice('needs-you', 'failed', 'turn-finished'), title: string,
+    body: { type: 'string', maxLength: 160 }, createdAt: { type: 'integer', minimum: 0 } }), 128),
+  pendingApprovals: array(object({ conversationID: string, requestID: string, id: string }), 4096),
+  issue: nullableId });
 const menuSnapshot = object({ status: menuStatus, fleet: menuFleet, browserURL: nullableId,
-  settings: menuSettings, requiresRestart: { type: 'boolean' }, importBlocker: string, updateBlockers: array(string) });
+  settings: menuSettings, requiresRestart: { type: 'boolean' }, importBlocker: string, updateBlockers: array(string),
+  desktop: desktopSnapshot }, ['status', 'fleet', 'browserURL', 'settings', 'requiresRestart', 'importBlocker', 'updateBlockers']);
 const commands = Object.freeze({
   'menu.snapshot': object(),
   'tools.refresh': object(),

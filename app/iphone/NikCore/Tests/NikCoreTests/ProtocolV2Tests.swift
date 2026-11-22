@@ -7,7 +7,7 @@ private func protocolVectors(_ file: String) throws -> [JSONValue] {
     for _ in 0..<5 { root.deleteLastPathComponent() }
     return try JSONValue.decode(Data(contentsOf: root.appendingPathComponent("test/fixtures/protocol-v2/" + file + ".json")))["vectors"].arrayValue
 }
-private func v2Welcome(device: String = "phone-1", optional: Bool = false) throws -> JSONValue {
+func v2Welcome(device: String = "phone-1", optional: Bool = false) throws -> JSONValue {
     var value = try protocolVectors("negotiation")[0]["expected"]["replies"].arrayValue[0]
     value["seat"]["id"] = .string(device)
     if optional { value["caps"] = .array(ProtocolCapabilities.supported.map(JSONValue.string)) }
@@ -253,7 +253,7 @@ private actor IntentGateStore: KeyValueStore {
     func release() { gateRead = false; gateWrite = false; continuation?.resume(); continuation = nil }
 }
 
-private actor NegotiatingFactory: SocketFactory {
+actor NegotiatingFactory: SocketFactory {
     private(set) var sockets: [ScriptedSocket] = []
     var fleetV2: Bool
     var conversationV2: Bool
@@ -414,6 +414,7 @@ private actor NegotiatingFactory: SocketFactory {
     }
     @Test func lateNavigationCannotRedirectANewerSelectionEvenAfterReturningToItsOldID() async throws {
         let factory = NegotiatingFactory(), client = try await client(factory: factory), socket = try #require(await factory.socket(0))
+        try await eventually { await MainActor.run { !client.fleet.projects.isEmpty } }
         let cwd = try #require(client.fleet.projects.first?.path)
         let task = Task { await client.perform(.newInstance(id: "create-1", cwd: cwd, provider: .claude)) }
         try await eventually { await socket.actions.contains { $0["type"].stringValue == "instance:new" } }

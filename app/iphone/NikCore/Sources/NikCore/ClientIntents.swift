@@ -37,11 +37,12 @@ extension ClientAction {
     }
     func captureIntent(_ action: ClientAction, role: SocketRole, sourceDraft: Draft?, preservesDraft: Bool, supplied: IntentMetadata?) throws -> IntentMetadata {
         var metadata = supplied ?? IntentMetadata()
-        metadata.mid = metadata.mid ?? V2Wire.randomID(); metadata.selection = selectedConversationID; metadata.origin = selectionOrigin
+        metadata.mid = metadata.mid ?? V2Wire.randomID()
+        if metadata.viewToken == nil { metadata.selection = selectedConversationID; metadata.origin = selectionOrigin }
         let state = role.conversationID.map { conversation($0) }
         metadata.prDraftRevision = state?.pr.draftRevision
         metadata.draft = sourceDraft ?? state?.draft ?? selectedConversation?.draft
-        metadata.updatesDraft = !preservesDraft && action.type == "send"
+        metadata.updatesDraft = metadata.viewToken != nil ? metadata.updatesDraft : !preservesDraft && action.type == "send"
         func bind(_ run: RunRef?) throws {
             guard state?.controlSnapshotFresh == true else { throw CoreFailure(.refused, "Refresh the conversation before using this control. Your draft is preserved.") }
             if metadata.fields["run"] != nil { _ = try RunRef(validating: metadata.fields["run"]!); return }
@@ -106,7 +107,7 @@ extension ClientAction {
         let stream = AsyncStream<ActionResult>.makeStream(bufferingPolicy: .bufferingNewest(1))
         requests[id] = TrackedRequest(v2: true, generation: generation, operation: operation, action: action, role: role, lane: lane, prURL: metadata.fields["prUrl"]?.stringValue, draft: metadata.updatesDraft ? metadata.draft : nil, continuation: stream.continuation)
         pendingOperations[id] = operation
-        if metadata.updatesDraft, action.type == "send", let chat = role.conversationID { conversationByID[chat]?.draft.delivery = .submitting }
+        if metadata.updatesDraft, metadata.viewToken == nil, action.type == "send", let chat = role.conversationID { conversationByID[chat]?.draft.delivery = .submitting }
         if case .slackReply(_, let conversation, _, let thread) = action { slack.threads[SlackThreadID(conversation: conversation, thread: thread)]?.pending = operation }
         if case .slackOpen(let conversation, let thread) = action {
             let key = SlackThreadID(conversation: conversation, thread: thread); slack.selection = key
@@ -150,7 +151,8 @@ extension ClientAction {
         let operation = PendingOperation(id: record.mid, action: record.what, state: delivery, createdAt: Date(timeIntervalSince1970: Double(record.issuedAt) / 1_000), reason: record.lookupFailure?.message ?? record.operation?.error?.message ?? record.acknowledgement?.error?.message ?? record.quarantineReason)
         pendingOperations[record.mid] = operation
         let chat = record.target.hasPrefix("session:") ? String(record.target.dropFirst(8)) : nil
-        if let chat, let saved = record.draft {
+        receiveViewIntent(record, restoring: restoring)
+        if record.viewToken == nil, let chat, let saved = record.draft {
             var state = conversation(chat)
             if restoring, state.draft.text.isEmpty && state.draft.attachments.isEmpty || saved.updatedAt >= state.draft.updatedAt { state.draft = saved }
             if record.updatesDraft, state.draft.matchesComposition(saved) { state.draft.delivery = delivery }
@@ -174,6 +176,13 @@ extension ClientAction {
         guard change.consumesResult, let result = record.acknowledgement?.result else { return }
         // The origin and captured composition must still be current. A late
         // receipt can update delivery, but cannot redirect or overwrite edits.
+        if let token = record.viewToken {
+            guard viewSessions[token]?.conversationID == record.selection, viewSessions[token]?.origin == record.origin else { return }
+            for reply in result.replies where ["instance:created", "@navigate"].contains(reply["type"].stringValue ?? "") {
+                viewSessions[token]?.navigation = reply["instance"].stringValue ?? reply["session"].stringValue
+            }
+            return
+        }
         guard selectedConversationID == record.selection, record.origin == selectionOrigin else { return }
         if let chat, !conversation(chat).draft.matchesComposition(record.draft) { return }
         if chat == nil, let selected = record.selection, !conversation(selected).draft.matchesComposition(record.draft) { return }

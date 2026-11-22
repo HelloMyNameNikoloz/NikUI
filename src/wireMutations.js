@@ -91,7 +91,8 @@ function createMutationSocket({ currentState, server = null, hub = null, client,
   function grant(trusted, message) {
     checkLive(trusted);
     const d = device();
-    const live = d ? { ...trusted, seat: { ...trusted.seat, control: d.control === true } } : trusted;
+    const live = d ? { ...trusted, seat: { ...trusted.seat, control: d.control === true,
+      local: trusted.seat.local === true && d.local === true && d.control === true } } : trusted;
     requireThat(!LOCAL.has(message.type) || live.seat.local, 'LOCAL_REQUIRED');
     requireThat(mayMutate(live, message), 'FORBIDDEN');
   }

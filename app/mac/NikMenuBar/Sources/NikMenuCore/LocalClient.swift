@@ -10,12 +10,14 @@ public protocol MenuClient: Sendable {
 }
 public actor LocalControlClient: MenuClient {
     public let root: String
+    private let privateHome: String
     private let transport: any ControlTransport
     private let store: any EnrollmentStore
     private var enrollment: Enrollment?
     private var generation: String?
-    public init(root: String, transport: (any ControlTransport)? = nil, store: (any EnrollmentStore)? = nil) {
+    public init(root: String, transport: (any ControlTransport)? = nil, store: (any EnrollmentStore)? = nil, privateHome: String? = nil) {
         self.root = root; self.transport = transport ?? UnixControlTransport(root: root)
+        self.privateHome = privateHome ?? root + "/home"
         self.store = store ?? FileEnrollmentStore(root: root)
     }
     private func prepare() async throws {
@@ -46,7 +48,7 @@ public actor LocalControlClient: MenuClient {
         try await prepare()
         guard let generation else { throw MenuFailure.unavailable }
         var request = try authenticated("menu-observe"); request["generation"] = .string(generation)
-        let upstream = transport.observe(try request.encoded()), root = root, engineID = enrollment!.engineId
+        let upstream = transport.observe(try request.encoded()), root = root, privateHome = privateHome, engineID = enrollment!.engineId
         return AsyncThrowingStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let task = Task {
                 do {
@@ -57,7 +59,7 @@ public actor LocalControlClient: MenuClient {
                             throw MenuFailure.refused(raw["code"].stringValue ?? "CONTROL_INVALID")
                         }
                         let value = try JSONDecoder().decode(MenuSnapshot.self, from: raw["data"].encoded())
-                        try value.validate(root: root)
+                        try value.validate(root: root, privateHome: privateHome)
                         guard value.status.generation == generation, value.status.engine.id == engineID else { throw MenuFailure.refused("STALE_GENERATION") }
                         continuation.yield(value)
                     }
@@ -91,14 +93,21 @@ public actor LocalControlClient: MenuClient {
         }
     }
     public func snapshot() async throws -> MenuSnapshot {
-        let value = try await execute(.snapshot, as: MenuSnapshot.self); try value.validate(root: root); return value
+        let value = try await execute(.snapshot, as: MenuSnapshot.self); try value.validate(root: root, privateHome: privateHome); return value
     }
     public func refreshTools() async throws -> MenuSnapshot {
-        let value = try await execute(.refreshTools, as: MenuSnapshot.self); try value.validate(root: root); return value
+        let value = try await execute(.refreshTools, as: MenuSnapshot.self); try value.validate(root: root, privateHome: privateHome); return value
     }
     public func settings() async throws -> SettingsResult { try await execute(.settings, as: SettingsResult.self) }
     public func saveSettings(_ value: EngineSettings) async throws -> SettingsResult {
-        try value.validate(privateHome: root + "/home")
+        try value.validate(privateHome: privateHome)
         return try await execute(.saveSettings(value), as: SettingsResult.self)
+    }
+    public func history(cwd: String?, filter: String = "", offset: Int = 0, limit: Int = 100) async throws -> JSONValue {
+        try await prepare()
+        return try await execute(.history(cwd: cwd, filter: filter, offset: offset, limit: limit), as: JSONValue.self)
+    }
+    public func resumeHistory(conversation: String, cwd: String) async throws -> JSONValue {
+        try await execute(.resumeHistory(conversation: conversation, cwd: cwd), as: JSONValue.self)
     }
 }

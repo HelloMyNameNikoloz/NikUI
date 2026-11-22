@@ -29,7 +29,7 @@ build/sign/relocate/register/lifecycle/cleanup path. A sealed `acceptanceP2`
 configuration selects synthetic provider adapters in the actual packaged
 engine; there is no environment/HTTP opt-in or arbitrary plugin loader.
 The same scenario clients exercise the packaged transport assets while the
-actual enrolled menu remains open. The label stays `com.nikui.engine.dev`,
+actual enrolled menu remains open. The label stays `com.nikui.engine.development`,
 the selected HOME stays under `/private/tmp/nik-mac/build`, Keychain services
 are dedicated random test namespaces, and inherited provider homes are
 discarded. The script refuses an existing dev job both before and after the
@@ -224,6 +224,12 @@ adapters, and the production import/update entrypoint still reports
 `PRODUCTION_CUTOVER_DISABLED`. The selected data round trip captures current
 signed-engine state but activates data receivers only; it is not a second
 running replacement engine and makes no provider survival claim.
+
+P3 R1 implements the [compiled flavour split](p3-design.md); native P2 drivers
+now build `NikUI Dev.app` / `com.nikui.app.dev` under `build/p3`, retaining the
+same `com.nikui.engine.development` job and isolated-profile checks. New production
+products have no test-root metadata and do not register on build or launch.
+The historical production-disabled P2 composition is not a production runtime.
 
 Per R08, **P3 build item**: preserve the controller's current
 `/private/tmp/nik-mac/build/` gate. A production release needs a separately

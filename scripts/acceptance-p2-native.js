@@ -19,7 +19,7 @@ function findRouteTool() {
 }
 function routeSnapshot(tool, run = spawnSync) {
   if (!tool) return { status: 'unconfigured/unrun', code: 'TAILSCALE_NOT_RESOLVED' };
-  const r = run(tool, ['serve', 'status', '--json'], { encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024,
+  const r = run(tool, ['serve', 'status', '--json'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
     env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C' } });
   if (r.error || r.status !== 0) return { status: 'unconfigured/unrun', code: 'TAILSCALE_STATUS_UNAVAILABLE' };
   try { return { status: 'observed', sha256: hash(JSON.stringify(canonical(JSON.parse(r.stdout)))) }; }

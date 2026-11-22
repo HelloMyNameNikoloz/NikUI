@@ -7,6 +7,7 @@ const fs = require('fs'), path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { privateDirectory, inside, fail } = require('../src/daemonPaths');
 const { controlRequest } = require('../src/daemonControl');
+const { bounded, editorProcesses, signalExact } = require('./native-command');
 const REPO = path.resolve(__dirname, '..');
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const ENTRY = String.raw`
@@ -38,7 +39,7 @@ exports.run = async () => {
   }
 };
 `;
-function editorCommand({ code, directory, cwd }) {
+function editorCommand({ code, directory, cwd, development = true }) {
   const executable = fs.realpathSync(code);
   if (!executable.endsWith('/Visual Studio Code.app/Contents/Resources/app/bin/code')) {
     throw fail('REAL_VSCODE_REQUIRED', 'NIKUI_P2_CODE must name the actual Visual Studio Code CLI');
@@ -47,19 +48,29 @@ function editorCommand({ code, directory, cwd }) {
     '--new-window', '--wait', '--skip-welcome', '--skip-release-notes', '--disable-telemetry',
     // VS Code's extension-test switch avoids its shared OS credential store.
     // This run proves enrollment/control, not editor credential persistence.
-    '--use-inmemory-secretstorage', '--password-store=basic', '--extensionDevelopmentPath', REPO,
-    '--extensionTestsPath', path.join(directory, 'entry.cjs'), cwd] };
+    '--use-inmemory-secretstorage', '--password-store=basic', ...(development ? ['--extensionDevelopmentPath', REPO,
+    '--extensionTestsPath', path.join(directory, 'entry.cjs')] : []), cwd] };
 }
 async function launchEditors({ run, paths, status, cwd }) {
   const code = process.env.NIKUI_P2_CODE || '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code';
   const editors = [];
   async function close() {
     for (const e of editors) fs.writeFileSync(path.join(e.directory, 'close'), '', { mode: 0o600 });
-    for (const e of editors) {
-      const timer = setTimeout(() => e.rejectClose(fail('EDITOR_CLEANUP_PENDING', 'Close the exact test VS Code window: ' + e.directory)), 30000);
-      try { await e.exited; } finally { clearTimeout(timer); fs.closeSync(e.fd); }
-    }
-    // No fallback kill: a failed close remains visible in cleanup evidence.
+    const results = await Promise.allSettled(editors.map(async (e) => {
+      const processes = editorProcesses(path.join(e.directory, 'user-data'), [e.child.pid]);
+      try {
+        try { await bounded(e.exited, 10000, 'EDITOR_CLEANUP_PENDING'); }
+        catch (_) {
+          signalExact(processes, 'SIGTERM');
+          try { await bounded(e.exited, 3000, 'EDITOR_CLEANUP_PENDING'); }
+          catch (_) { signalExact(processes, 'SIGKILL'); await bounded(e.exited, 3000, 'EDITOR_CLEANUP_PENDING'); }
+        }
+        signalExact(processes, 'SIGTERM'); await delay(250); signalExact(processes, 'SIGKILL');
+        if (editorProcesses(path.join(e.directory, 'user-data')).length) throw fail('EDITOR_CLEANUP_PENDING', 'Exact disposable editor cleanup failed');
+      } finally { e.child.unref(); fs.closeSync(e.fd); }
+    }));
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed) throw failed.reason;
   }
   try {
     const executable = fs.realpathSync(code), app = path.resolve(path.dirname(executable), '../../../..');
@@ -85,7 +96,7 @@ async function launchEditors({ run, paths, status, cwd }) {
       const child = spawn(command.file, command.args, { cwd, env: { HOME: home, USERPROFILE: home, ZDOTDIR: home, TMPDIR: path.join(home, 'tmp'),
         PATH: '/usr/bin:/bin:/usr/sbin:/sbin', CODEX_HOME: path.join(home, '.codex-work'),
         NIKUI_ISOLATED_DEV_WINDOW: '1', NIKUI_ISOLATED_DEV_ROOT: paths.root, NIKUI_P2_EDITOR_CONTROL: directory }, stdio: ['ignore', fd, fd] });
-      const e = { directory, fd, command };
+      const e = { directory, fd, command, child };
       e.exited = new Promise((resolve, reject) => { e.rejectClose = reject; child.once('exit', (code, signal) => { e.exit = { code, signal }; resolve(); }); child.once('error', reject); });
       // Attach immediately; a CLI failure must not become an unhandled rejection.
       e.exited.catch(() => {}); editors.push(e);

@@ -85,6 +85,12 @@ function checkDirectory(file, io, required = false) {
 }
 
 function createWindowEngine(context, { spawner, log = () => {}, fs: io = fs } = {}) {
+  if (context.sourceWrite) {
+    const original = io, guarded = Object.create(original);
+    for (const name of ['mkdirSync', 'writeFileSync', 'renameSync', 'unlinkSync', 'appendFileSync', 'rmSync'])
+      guarded[name] = (...args) => context.sourceWrite(() => original[name](...args));
+    io = guarded;
+  }
   const settings = editorSettings();
   const home = resolvedPath(os.homedir(), io);
   let storage = context.globalStorageUri && context.globalStorageUri.fsPath;
@@ -128,8 +134,14 @@ function createWindowEngine(context, { spawner, log = () => {}, fs: io = fs } = 
     try { cleanLegacyCodexCache(storage, io); }
     catch (err) { log('codex: legacy cache cleanup unavailable: ' + err.message); }
   }
+  const launch = spawner || spawn;
+  const guardedSpawn = context.sourceAdmission ? (...args) => context.sourceAdmission(() => launch(...args)) : launch;
+  if (context.sourceAdmission && codex.spawnFn) {
+    const launchCodex = codex.spawnFn;
+    codex.spawnFn = (...args) => context.sourceAdmission(() => launchCodex(...args));
+  }
   return createEngine({
-    context, settings: editorSettings, spawner: spawner || spawn, log, fs: io,
+    context, settings: editorSettings, spawner: guardedSpawn, log, fs: io,
     paths: { home, projects: path.join(home, '.claude', 'projects'), storage,
       codexCache: cacheRoot },
     durable: storage ? new Durable({ dir: storage, place: placeOf(vscode.workspace) }) : null,

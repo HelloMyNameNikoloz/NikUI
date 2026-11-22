@@ -223,6 +223,7 @@ class KeeperLink {
     this.nodePath = opts.nodePath || process.execPath;
     this.source = opts.source || path.join(__dirname, 'keeper.js');
     this.env = opts.env || process.env;
+    this.existingOnly = opts.existingOnly === true;
     this.socketPath = path.join(this.dir, 'k' + PROTO + '.sock');
     this.socket = null;
     this.metaVersion = null;
@@ -249,6 +250,7 @@ class KeeperLink {
   async _connect() {
     privateDir(this.dir);
     let socket = await this._dial().catch(() => null);
+    if (!socket && this.existingOnly) throw Object.assign(new Error('Selected keeper is unavailable'), { code: 'KEEPER_UNAVAILABLE' });
     if (!socket) {
       this._launch();
       const until = Date.now() + CONNECT_MS;

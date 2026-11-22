@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import NikCore
+import NikMacIdentity
 
 public enum LoginRegistration: String, Sendable { case notRegistered, enabled, requiresApproval, notFound, unknown }
 @MainActor public protocol EngineService: AnyObject {
@@ -86,17 +87,20 @@ public struct SettingsDraft: Equatable, Sendable {
     public let root: String
     private let client: any MenuClient
     private let service: any EngineService
+    private let privateHome: String
     private let sleep: @Sendable (TimeInterval) async throws -> Void
     private var monitor: Task<Void, Never>?
     private var intentionalStop = false
     public var onSnapshot: ((MenuSnapshot) -> Void)?
     public init(root: String, client: any MenuClient, service: any EngineService,
-                sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
+                sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }, privateHome: String? = nil) {
         self.root = root; self.client = client; self.service = service; self.sleep = sleep
+        self.privateHome = privateHome ?? root + "/home"
     }
     public var canStart: Bool { !working && !state.connected && state.glyph != .starting }
     public var canStop: Bool { !working && state.connected }
     public var rows: [FleetRow] { state.connected ? snapshot?.runningRows ?? [] : [] }
+    public func showUnregistered() { state.intentionallyStopped(); refreshRegistration() }
     public func refreshRegistration() { login = service.loginStatus; agent = service.agentStatus }
     public func startMonitoring() {
         guard monitor == nil else { return }; refreshRegistration()
@@ -163,7 +167,7 @@ public struct SettingsDraft: Equatable, Sendable {
     public func saveSettings() async {
         guard settingsLoaded, !working, !settingsUnknown else { return }; working = true; defer { working = false }
         do {
-            let settings = try draft.settings(privateHome: root + "/home")
+            let settings = try draft.settings(privateHome: privateHome)
             let result = try await client.saveSettings(settings)
             draft = SettingsDraft(result.settings); requiresRestart = result.requiresRestart
             settingsMessage = result.requiresRestart ? "Saved. Stop and start the engine to apply." : "Settings saved."
@@ -175,7 +179,7 @@ public struct SettingsDraft: Equatable, Sendable {
     public var diagnostics: String {
         // Explicit allowlist: no browser key, enrollment, account identifiers,
         // instance titles, project paths, prompt bytes, environment or errors.
-        var lines = ["NikEngine Dev", "State: \(state.label)", "Login: \(login.rawValue)", "Agent: \(agent.rawValue)"]
+        var lines = [BuildFlavour.current.appName, "State: \(state.label)", "Login: \(login.rawValue)", "Agent: \(agent.rawValue)"]
         guard let snapshot else { return lines.joined(separator: "\n") }
         let s = snapshot.status
         lines += ["Version: \(s.engine.version)", "Generation: \(s.generation)", "Listener: \(s.listener.host):\(s.listener.port)",

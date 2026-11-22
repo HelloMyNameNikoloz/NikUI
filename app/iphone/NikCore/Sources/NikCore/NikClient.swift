@@ -13,6 +13,7 @@ import Observation
     public internal(set) var historyStatus = SnapshotStatus()
     public internal(set) var conversationByID: [String: ConversationState] = [:]
     public internal(set) var selectedConversationID: String?
+    public internal(set) var viewSessions: [String: ViewSessionState] = [:]
     public internal(set) var terminal = TerminalState()
     public internal(set) var report = ReportState()
     public internal(set) var slack = SlackFeatureState()
@@ -53,6 +54,9 @@ import Observation
     @ObservationIgnored var snapshotTimeouts: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var selectionOrigin = V2Wire.randomID()
     @ObservationIgnored var composerQueries: [SocketRole: ComposerQuery] = [:]
+    @ObservationIgnored var viewSubmissions: Set<String> = []
+    var viewControlClaims: [String: String] = [:]
+    @ObservationIgnored var viewIntentLeases: [String: String] = [:]
 
     public convenience init(signingKey: (any SigningKeyProvider)? = nil, secureStore: any KeyValueStore = MemoryKeyValueStore(), cacheStore: any KeyValueStore = MemoryKeyValueStore(), clock: any Clock = SystemClock()) {
         self.init(signingKey: signingKey, secureStore: secureStore, cacheStore: cacheStore, clock: clock, socketFactory: URLSessionSocketFactory())
@@ -144,7 +148,8 @@ import Observation
             guard record.fingerprint == NikCrypto.fingerprint(record.serverSPKI) else { throw CoreFailure(.wrongLaptop, "The saved laptop fingerprint is invalid.") }
             pairedConnection = record
             for intent in try await intentRepository.load(scope: record.scope) { receiveIntent(IntentChange(intent: intent, consumesResult: false), restoring: true) }
-            if let saved = try await cacheRepository.load(scope: record.scope) {
+            let savedUI = try await cacheRepository.load(scope: record.scope)
+            if let saved = savedUI {
                 fleet = saved.fleet
                 for (id, draft) in saved.drafts {
                     var state = conversation(id)
@@ -170,6 +175,7 @@ import Observation
                 for (id, byURL) in saved.prDraftsByURL ?? [:] { var state = conversation(id); state.pr.draftsByURL = byURL; conversationByID[id] = state }
                 terminal.drafts = saved.terminalDrafts
             }
+            restoreViewCompositions(savedUI)
         } catch { fail((error as? CoreFailure) ?? CoreFailure(.persistence, "Saved local state could not be read; the pairing was not erased.")) }
     }
     public func pair(_ invitation: PairingInvitation, deviceName: String = "iPhone") async -> PairingResult {
@@ -212,7 +218,23 @@ import Observation
         await manager?.setVisibility(visibility)
         await manager?.connect(pairing)
         await manager?.selectConversation(selectedConversationID)
+        for (token, view) in viewSessions { await manager?.setViewSession(token, conversationID: view.conversationID, visibility: view.visibility) }
+        for record in pendingIntents.values where record.viewToken != nil && record.target.hasPrefix("session:") && (record.state == .pending || record.isQuarantined) {
+            viewIntentLeases[record.mid] = String(record.target.dropFirst(8))
+        }
+        for (mid, conversation) in viewIntentLeases { await manager?.setViewSession("intent:" + mid, conversationID: conversation) }
         restartPolling()
+    }
+    /// A native local-enrollment adapter has already pinned and persisted this
+    /// record. Keep compositions and pending mids while refreshing its endpoint.
+    public func refreshLocalConnection(_ record: PairedConnection) async throws {
+        guard let key = signingKey, try await key.publicSPKI() == record.publicSPKI,
+              record.fingerprint == NikCrypto.fingerprint(record.serverSPKI),
+              pairedConnection.map({ $0.deviceID == record.deviceID && $0.serverSPKI == record.serverSPKI }) ?? true else {
+            throw CoreFailure(.wrongLaptop, "LOCAL_DEVICE_PIN_MISMATCH")
+        }
+        try NikCrypto.validateSPKI(record.serverSPKI)
+        await disconnect(); pairedConnection = record; await connect()
     }
     public func disconnect() async {
         clientGeneration &+= 1; pollTask?.cancel(); pollTask = nil
@@ -240,7 +262,7 @@ import Observation
     }
     public func selectConversation(_ id: String?) async {
         if let id, id.isEmpty || id.utf8.count > 256 { fail(CoreFailure(.invalidInput, "The conversation ID is invalid.")); return }
-        if let old = selectedConversationID, old != id { markAmbiguous(on: .conversation(old)) }
+        if let old = selectedConversationID, old != id, !viewSessions.values.contains(where: { $0.conversationID == old }) { markAmbiguous(on: .conversation(old)) }
         if selectedConversationID != id { selectionOrigin = V2Wire.randomID() }
         selectedConversationID = id
         if let id, conversationByID[id] == nil { conversationByID[id] = ConversationState(id: id) }
@@ -302,7 +324,8 @@ import Observation
         fleet = Fleet(); history = HistorySnapshot(); conversationByID.removeAll(); terminal = TerminalState(); report = ReportState(); slack = SlackFeatureState(); devices = DevicesSnapshot(); awake = AwakeState(); voice = VoiceAvailability(); selectedConversationID = nil; pendingOperations.removeAll(); promptHistories.removeAll(); notifications = NotificationCoordinator()
         pendingAppleToken = nil; intent = nil; extensionVersion = nil
         pendingIntents.removeAll(); protocolSessions.removeAll()
-        selectionOrigin = V2Wire.randomID()
+        viewControlClaims.removeAll(); viewIntentLeases.removeAll()
+        selectionOrigin = V2Wire.randomID(); viewSessions.removeAll()
         for role in Array(composerQueries.keys) { clearComposerQuery(role) }
     }
     func beginSnapshot(_ key: String) {
@@ -326,8 +349,8 @@ import Observation
         }
     }
     /// Await on background/termination coordination; only bounded drafts, prefs and last fleet are written.
-    public func flushPersistence() async {
-        guard !isPreview, let pairing = pairedConnection else { return }
+    @discardableResult public func flushPersistence() async -> Bool {
+        guard !isPreview, let pairing = pairedConnection else { return true }
         var state = PersistedUIState(); state.fleet = fleet
         state.lastIntentOrder = pendingIntents.values.map(\.localOrder).max()
         let protectedDrafts = Set(pendingIntents.values.compactMap { value -> String? in
@@ -344,7 +367,9 @@ import Observation
             if !value.pr.url.isEmpty { scoped[value.pr.url] = value.pr.drafts }; return scoped.isEmpty ? nil : scoped
         }
         state.terminalDrafts = terminal.drafts
-        do { try await cacheRepository.save(state, scope: pairing.scope) } catch { fail((error as? CoreFailure) ?? CoreFailure(.persistence, "Drafts could not be saved to protected storage.")) }
+        state.viewSessions = viewSessions.mapValues { PersistedViewSession(drafts: $0.drafts, reading: $0.reading, lastConversationID: $0.lastConversationID) }
+        do { try await cacheRepository.save(state, scope: pairing.scope); return true }
+        catch { fail((error as? CoreFailure) ?? CoreFailure(.persistence, "Drafts could not be saved to protected storage.")); return false }
     }
     func restartPolling() {
         pollTask?.cancel(); pollTask = nil

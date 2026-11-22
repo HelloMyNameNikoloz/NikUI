@@ -147,7 +147,13 @@ function createLocalManagement({ engine, generation, admitting, authorize, store
     try { check(context, request); } catch (e) { return answer({ code: e.code }); }
     if (QUERIES.has(request.op)) {
       try { return answer({ ok: true, outcome: 'applied', data: await invoke(context, request, () => check(context, request)) }); }
-      catch (e) { return answer({ code: /^[A-Z][A-Z0-9_]{0,79}$/.test(e.code || '') ? e.code : 'LOCAL_QUERY_UNAVAILABLE', outcome: 'unavailable' }); }
+      catch (e) {
+        // Keep the wire response bounded, but retain the original failure in
+        // the owner-only engine stderr so packaged composition errors can be
+        // diagnosed. Never log the request (which can contain private data).
+        console.error('[local query ' + request.op + ']', e);
+        return answer({ code: /^[A-Z][A-Z0-9_]{0,79}$/.test(e.code || '') ? e.code : 'LOCAL_QUERY_UNAVAILABLE', outcome: 'unavailable' });
+      }
     }
     // Reserve before effects. A crash or lost reply to a pending local action
     // returns unknown on retry, never a repeated restart/remove/pairing action.

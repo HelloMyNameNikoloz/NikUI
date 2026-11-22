@@ -1,10 +1,11 @@
 'use strict';
 
-const vscode = require('vscode');
+let vscode = require('vscode');
 const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
 const path = require('path');
+const os = require('os');
 const { createWindowEngine, createWindowDelivery, createWindowRemote, createWindowPrCi, createWindowCi } = require('./extensionEngine');
 const { readConfig } = require('./editorHost');
 const { projectRoot } = require('./tree');
@@ -41,6 +42,7 @@ const WORKSPACE_KEY = 'nikui.workspace';
 // The GitHub pane's feed and PR picker, for the host the server builds.
 let github = {};
 let developmentClient = null;
+let rehearsalState = null;
 
 /**
  * Bring a transcript back as an instance — the live one if it is already
@@ -150,7 +152,7 @@ async function openTicketInNikui(url, context, manager) {
   return { ok: true, how: 'created' };
 }
 
-function activate(context) {
+function activate(context, preparedSource = null) {
   // Explicit development host only. An unavailable daemon remains visible and
   // cannot fall through into keeper/window-engine construction.
   let development;
@@ -160,12 +162,46 @@ function activate(context) {
     return;
   }
   if (development) return require('./developmentExtension').activateDevelopment(context, development).then((client) => { developmentClient = client; return client; });
+  const originalContext = context;
+  let source;
+  try { source = preparedSource || require('./legacyExtensionSource').prepare(context, vscode); }
+  catch (error) { console.error('[NikUI recovery]', error.code || 'ARTIFACT_CORRUPT'); }
+  if (source?.pendingRestore && !preparedSource) return source.deliverRestore().catch((error) => {
+    source.requireRecovery(); source.recoveryProblem = error.code || 'RESTORE_STATE_UNAVAILABLE';
+    console.error('[NikUI recovery] Saved workspace retained:', source.recoveryProblem);
+  }).then(async (delivered) => {
+    if (delivered) return activate(originalContext);
+    if (require('./cutoverRecovery').pending(originalContext, require('./sourceWorkspace').identity(vscode.workspace))) source.requireRecovery();
+    if (source.needsAdmission) await source.ready();
+    return activate(originalContext, source);
+  });
+  if (source?.recovering) {
+    rehearsalState = () => ({ mode: 'recovery' });
+    return require('./legacyExtensionSource').listenRecovery(source, { context, vscode });
+  }
+  if (source?.service) return require('./developmentExtension').activateDevelopment(context, source.service).then(async (client) => {
+    developmentClient = client;
+    rehearsalState = () => ({ mode: 'service-client', available: client.available });
+    await require('./legacyExtensionSource').listenClient(source, { context, vscode, runtime: client });
+    return client;
+  });
+  if (source?.needsAdmission && !preparedSource) return source.ready().then(() => activate(originalContext, source), (error) => {
+    void vscode.window.showWarningMessage('NikUI: ' + error.code);
+  });
+  if (source) context = source.context;
+  if (source) {
+    const original = vscode, commands = Object.create(original.commands);
+    Object.defineProperty(commands, 'registerCommand', { value: (id, callback, thisArg) => original.commands.registerCommand(id,
+      (...args) => source.admit(() => callback.apply(thisArg, args))) });
+    vscode = Object.create(original); Object.defineProperty(vscode, 'commands', { value: commands });
+  }
   // Started early, so the instances brought back below can be picked up from
   // wherever the last window left them running.
-  if (vscode.workspace.getConfiguration('nikui').get('keepInstancesAcrossReloads', true)) {
+  if (source?.keeperTransfer || vscode.workspace.getConfiguration('nikui').get('keepInstancesAcrossReloads', true)) {
     const { KeeperLink } = require('./keeperLink');
-    keeper = new KeeperLink({ log: (line) => console.log('[nikui] ' + line) });
-    keeper.connect();
+    if (source?.keeperTransfer) {
+      keeper = require('./legacyExtensionSource').returnedKeeper(source);
+    } else { keeper = new KeeperLink({ log: (line) => console.log('[nikui] ' + line) }); keeper.connect(); }
   }
   const core = createWindowEngine(context, {
     spawner: keeper ? keeper.spawner() : null,
@@ -176,6 +212,7 @@ function activate(context) {
   ledger = core.ledger;
   codex = core.codex;
   const folders = core.folders;
+  if (source) require('./legacyExtensionSource').protect(core, source);
   context.subscriptions.push(core);
   if (vscode.workspace.onDidChangeConfiguration) context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async (event) => {
     if (!event.affectsConfiguration('nikui.codexAccount') && !event.affectsConfiguration('nikui.codexComputerUse') && !event.affectsConfiguration('nikui.codexXcode')) return;
@@ -689,6 +726,7 @@ function activate(context) {
   // hand their editor tabs back to us. Folder assignments are tidied once the
   // whole set is back, never while it is still being rebuilt.
   manager.restoreOpen();
+  if (source) require('./legacyExtensionSource').restoreSnapshots(source, core);
   // Instances still running from before the reload are picked up as they
   // were, mid-turn and all.
   if (keeper) manager.reattach(keeper).then((n) => { if (n) { tree.refresh(); console.log('[nikui] picked up ' + n + ' running instance(s)'); } });
@@ -716,7 +754,7 @@ function activate(context) {
   // is asked whether it is listening only once there is one to ask.
   let server = null;
   const awake = keepAwake(context, manager, () => server);
-  server = serveLocally(context, manager, awake, folders, { engine: core, delivery: core.delivery, refreshTree: () => tree.refresh() });
+  server = serveLocally(context, manager, awake, folders, { engine: core, source, delivery: core.delivery, refreshTree: () => tree.refresh() });
   useSwitch('nikui.lidClosed', (on) => awake.switchLid(on));
   if (server.onState) context.subscriptions.push({ dispose: server.onState(() => awake.reconsider()) });
   awake.reconsider();
@@ -733,6 +771,27 @@ function activate(context) {
   }
 
   context.subscriptions.push({ dispose: () => { closeAllHubs(); core.dispose(); } });
+  if (source && process.env.NIKUI_P3_LEGACY_REHEARSAL === '1' && os.homedir().startsWith('/private/tmp/nik-mac/build/p3/')) {
+    rehearsalState = () => developmentClient ? { mode: 'service-client', available: developmentClient.available }
+      : { mode: source.legacy ? 'legacy' : 'recovery', listener: { listening: server.listening, port: server.port }, conversations: core.manager.list.map((s) => ({ id: s.id, title: s.customTitle || s.label,
+        itemIDs: s.items.map((item) => item.id) })) };
+    context.subscriptions.push(vscode.commands.registerCommand('nikui.__cutoverSeed', (id = 'p3-legacy-conversation') => {
+      const cwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
+      const session = core.manager.create({ cwd, id, autoStart: false, title: 'Seeded legacy conversation' });
+      session.items.push({ kind: 'text', id: 'p3-legacy-text', text: 'Transcript seeded in the real legacy VS Code context.' });
+      core.manager.persist(); core.flush();
+      return { id: session.id };
+    }));
+  }
+  if (source) void require('./legacyExtensionSource').listen(source, { context, originalContext, vscode, engine: core, keeper, awake, server,
+    transferPanels: () => SessionPanel.releaseForService(),
+    async becomeClient(root) {
+      engine = null; manager = null; codex = null; keeper = null;
+      developmentClient = await require('./developmentExtension').activateDevelopment(originalContext, { root, service: true,
+        adoptPanels: source.transferredPanels || [] });
+    },
+    restoreLegacy: () => { setTimeout(() => { void vscode.commands.executeCommand('workbench.action.reloadWindow'); }, 250); }
+  }).catch((error) => console.error('[NikUI source handshake]', error.code || 'SOURCE_HANDSHAKE_UNAVAILABLE'));
 }
 
 /**
@@ -1122,7 +1181,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     if (server.listening) return server;
     const port = vscode.workspace.getConfiguration('nikui').get('remote.port', 4517);
     try {
-      await server.start(port);
+      await require('./legacyExtensionSource').startReturnedListener(server, injected.source, port,
+        (message) => { void vscode.window.showWarningMessage(message); });
     } catch (err) {
       vscode.window.showWarningMessage(
         'NikUI could not start the local server: ' + ((err && err.message) || 'unknown error')
@@ -1181,6 +1241,18 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     await server.stop();
     context.workspaceState.update('nikui.remote.wasServing', false);
     paint();
+  };
+  // The attended source bridge may release only resources whose ownership is
+  // still provable. Existing legacy route adoption does not establish that.
+  server.sourceReleaseReadiness = () => [
+    ...(weExposed || cloudflared.running ? ['ROUTE_OWNER_MISMATCH'] : []),
+    ...(server.terminals?.list().length ? ['TERMINAL_BUSY'] : []),
+    ...(server.voice?.running?.size || server.voice?.building ? ['VOICE_BUSY'] : [])
+  ];
+  server.sourceRelease = async () => {
+    if (server.sourceReleaseReadiness().length) throw Object.assign(new Error('Route ownership requires review'), { code: 'ROUTE_OWNER_MISMATCH' });
+    clearInterval(tailnetWatch); tailnetWatch = null;
+    await server.stop();
   };
 
   /**
@@ -2147,4 +2219,5 @@ function deactivate() {
   return Promise.all([closing, k ? k.close() : null]).then(() => {});
 }
 
-module.exports = { activate, deactivate, followFocus, serveLocally, watchForTrouble, watchForCrowding, watchForQuota, watchInbox, openClicked, watchForCi };
+module.exports = { activate, deactivate, followFocus, serveLocally, watchForTrouble, watchForCrowding, watchForQuota, watchInbox, openClicked, watchForCi,
+  cutoverRehearsalState: () => rehearsalState?.() || { mode: 'unavailable' } };

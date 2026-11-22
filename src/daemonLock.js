@@ -16,6 +16,7 @@ function probeSocket(file, timeoutMs = 300) {
   });
 }
 function pidState(pid) {
+  if (pid === process.pid) return 'alive';
   try { process.kill(pid, 0); return 'alive'; }
   catch (err) { return err.code === 'ESRCH' ? 'dead' : 'unproved'; }
 }
@@ -45,20 +46,19 @@ async function diagnoseRoot(paths, { alive = pidState, probe = probeSocket } = {
   if (!dead || await probe(paths.socket) !== 'absent') {
     return { ok: false, code: 'OWNER_UNPROVEN', hint: 'Recovery owner or control endpoint is live or unproved; leave all locks and endpoints in place.' };
   }
-  const quoted = "'" + breaker.replace(/'/g, "'\\''") + "'";
   return { ok: false, code: 'OWNER_UNPROVEN', recoveryLock: breaker,
-    hint: 'The recovery pid and root owner are dead and the control endpoint is absent. With all nikd starts for this root stopped, remove only the recovery lock, then retry start.',
-    manualFix: 'rm -- ' + quoted };
+    recoveryAvailable: true,
+    hint: 'The recorded recovery and service processes are dead. Start the service or choose Restore VS Code to recover this private root automatically.' };
 }
 
 async function acquireRootLock(paths, { probe = probeSocket, alive = pidState } = {}) {
   const breaker = paths.lock + '.reap';
-  const token = crypto.randomUUID();
+  const token = crypto.randomBytes(16).toString('hex');
   let held = null;
   const record = { version: 1, pid: process.pid, token };
   function create(file) {
-    const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
-    try { fs.writeFileSync(fd, JSON.stringify(record) + '\n'); fs.fsyncSync(fd); return fs.fstatSync(fd); }
+    const fd = require('./privateLock').open(file, record, { reap: false });
+    try { return fs.fstatSync(fd); }
     finally { fs.closeSync(fd); }
   }
   function release() {
@@ -68,9 +68,18 @@ async function acquireRootLock(paths, { probe = probeSocket, alive = pidState } 
     }
     held = null;
   }
-  // A dead reaper is intentionally a named refusal; no age-based unlink can
-  // prove an endpoint safe. It contains a pid for manual fixture diagnostics.
-  if (privateFile(breaker, { optional: true })) throw fail('OWNER_UNPROVEN', 'Root recovery is already in progress; inspect the private fixture lock');
+  // Reboot can interrupt recovery too. A dead recorded reaper plus an absent
+  // endpoint is recoverable automatically, with the same inode checks.
+  require('./privateLock').settleClaim(breaker);
+  const oldReaper = privateFile(breaker, { optional: true });
+  if (oldReaper) {
+    const reaper = readPrivateJson(breaker);
+    const oldOwner = privateFile(paths.lock, { optional: true }) ? readPrivateJson(paths.lock) : null;
+    if (!Number.isSafeInteger(reaper?.pid) || reaper.pid < 1 || alive(reaper.pid) !== 'dead' ||
+        oldOwner && (!Number.isSafeInteger(oldOwner.pid) || oldOwner.pid < 1 || alive(oldOwner.pid) !== 'dead') || await probe(paths.socket) !== 'absent' ||
+        !same(oldReaper, privateFile(breaker, { optional: true }))) throw fail('OWNER_UNPROVEN', 'Root recovery is still live or unproved');
+    fs.unlinkSync(breaker);
+  }
   try { held = create(paths.lock); }
   catch (err) {
     if (err.code !== 'EEXIST') throw err;

@@ -32,7 +32,7 @@ async function main(root) {
   const fixture = require('../../src/acceptanceFixture').createAcceptanceFixture({ root, testOnly: true, secretAdapter: adapter });
   const daemon = await require('../../src/daemonRuntime').startDaemon({ root, adapters: {
     ...fixture.adapters, keychain: { adapter, account: 'store.v1' }, toolPaths: { node: process.execPath },
-    package: { label: 'com.nikui.engine.dev', testOnly: true, acceptanceP2: true, portable: true },
+    package: { label: 'com.nikui.engine.development', testOnly: true, acceptanceP2: true, portable: true },
     tools: { knownDirs: [], lookup: async () => ({ path: '/usr/bin:/bin:/usr/sbin:/sbin', tools: {} }) }
   } });
   fixture.attach(daemon);

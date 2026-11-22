@@ -120,7 +120,7 @@ module.exports = async function () {
   const transport = withFakeClock((scheduled) => { clock = scheduled; return socketTransport(global.window.NIKUI_REMOTE); });
   const first = sockets[sockets.length - 1];
   checkEqual('it opens a socket next to the page it was served from',
-    first.url, 'ws://127.0.0.1:4517/socket?session=nik-1');
+    first.url, 'ws://127.0.0.1:4517/socket?session=nik-1&applicationProtocol=2');
   checkEqual('and says so while it is trying', pill.textContent, 'Connecting…');
 
   transport.postMessage({ type: 'ready' });

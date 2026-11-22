@@ -85,7 +85,10 @@ import Testing
     }
     @Test func socketURLUsesNativeSchemeAndEncodesSession() throws {
         let url = try SocketConnection.url(base: URL(string: "https://laptop.example:4517")!, role: .conversation("cx-a?b&c"))
-        #expect(url.scheme == "wss"); #expect(url.port == 4517); #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "cx-a?b&c")
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        #expect(url.scheme == "wss"); #expect(url.port == 4517)
+        #expect(query?.first(where: { $0.name == "session" })?.value == "cx-a?b&c")
+        #expect(query?.first(where: { $0.name == "applicationProtocol" })?.value == "2")
     }
 }
 
