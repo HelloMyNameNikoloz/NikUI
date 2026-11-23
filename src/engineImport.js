@@ -52,7 +52,7 @@ function validateInstance(instance) {
   if (instance.usage !== undefined && instance.usage !== null) insist(object(instance.usage) && Object.values(instance.usage).every(nonnegative), 'EXPORT_ACCOUNTING_INVALID');
   if (instance.turnLog !== undefined) insist(Array.isArray(instance.turnLog) && instance.turnLog.length <= 60 && instance.turnLog.every(object), 'EXPORT_ACCOUNTING_INVALID');
   if (instance.prPane !== undefined && instance.prPane !== null) insist(object(instance.prPane) &&
-    Object.entries(instance.prPane).every(([k,v]) => ['open','full'].includes(k) ? typeof v === 'boolean' : k === 'width' ? nonnegative(v) : k === 'tab' && typeof v === 'string'), 'EXPORT_INSTANCE_INVALID');
+    Object.entries(instance.prPane).every(([k,v]) => ['open','full'].includes(k) ? typeof v === 'boolean' : k === 'width' ? (v === null || nonnegative(v)) : k === 'tab' && typeof v === 'string'), 'EXPORT_INSTANCE_INVALID');
   if (instance.codexSettings !== undefined) insist(object(instance.codexSettings) && instance.provider === 'codex' &&
     Object.entries(instance.codexSettings).every(([k,v]) => ['model','effort','mode'].includes(k) && typeof v === 'string' && (k !== 'mode' || ['plan','default'].includes(v))), 'EXPORT_INSTANCE_INVALID');
   validateQueue(instance.queue);

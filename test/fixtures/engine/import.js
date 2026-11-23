@@ -7,7 +7,7 @@ const { createSyntheticOwner, hash } = require('../../../src/engineOwner');
 const { createKeychainStore } = require('../../../src/keychainStore');
 const { createParticipantGate } = require('../../../src/engineTransfer');
 const base = fs.realpathSync(process.env.NIKUI_ENGINE_FIXTURE_ROOT);
-async function selected(dir, { fault = () => {}, count = 2, authority = null, completeAuthority = false, ownerFault } = {}) {
+async function selected(dir, { fault = () => {}, count = 2, authority = null, completeAuthority = false, ownerFault, prepare = () => {} } = {}) {
   const f = await cutoverFixture(dir, { count, fault: ownerFault });
   f.secrets['nikui.identity'] = keypair(); f.secrets['nikui.vapid'] = keypair(); f.secrets['nikui.slack.userToken'] = 'synthetic-slack-private';
   const selection = pins(f.secrets), adapter = memoryKeychain();
@@ -23,6 +23,7 @@ async function selected(dir, { fault = () => {}, count = 2, authority = null, co
       secrets: { get: (key) => f.secrets[key] }, keeper: { metaVersion: 1, runs: [] }, files: { durable: () => ({ version: 1, places: {} }) } });
     source.exportState = exportState;
   }
+  prepare(f);
   let starts = 0, runtime;
   const options = { root: f.targetRoot, target: 'test-service', owner: f.owner, secretAdapter: adapter, testOnly: true, fault,
     activate(state, generation, member, store) { starts++; runtime = { state, generation, member, store }; } };
@@ -100,6 +101,13 @@ module.exports = async () => {
     }
     checkEqual('invalid payloads produce zero secret items and zero starts', [v.adapter.values.size, v.starts, fs.existsSync(v.importer.file)], [0, 0, false]);
   } finally { await v.close(); }
+
+  suite('Real legacy prPane: an unset width (null) imports');
+  const paneWidth = await selected(path.join(base, 'pane-width-null'), { prepare: (f) => { for (const source of f.sources) source.engine.manager.list[0].prPane = { open: false, tab: 'conversation', width: null, full: false }; } });
+  try {
+    checkEqual('the export carries the null width', paneWidth.envelope.value.sources[0].state.instances[0].prPane?.width, null);
+    checkEqual('legacy null pane width imports', await errorCode(() => paneWidth.importer.import(paneWidth.envelope)), null);
+  } finally { await paneWidth.close(); }
 
   suite('P2 T50: duplicate instance accounting uses maxima across full payloads and ledgers');
   const maxima = await selected(path.join(base, 'maxima'));
