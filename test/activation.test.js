@@ -162,6 +162,8 @@ module.exports = async function () {
         held,
         exposed: [],
         forwardedPort: async () => it.held,
+        serveConfig: async () => ({ TCP: { 443: { HTTPS: true } }, Web: { 'laptop.example.ts.net:443': {
+          Handlers: it.held === null ? {} : { '/': { Proxy: 'http://127.0.0.1:' + it.held } } } } }),
         status: async () => ({ installed: true, running: true, https: true, name: 'laptop.example.ts.net' }),
         expose: async (port) => {
           it.exposed.push(port);
@@ -180,7 +182,10 @@ module.exports = async function () {
     const nobodys = fake(null);
     const first = open(nobodys);
     await settle();
-    checkEqual('a free tailnet is claimed by the window that starts', nobodys.exposed.length, 1);
+    checkEqual('startup leaves a free tailnet unclaimed without explicit window intent', nobodys.exposed.length, 0);
+    check('the new window initially serves on loopback', first.listening === true && first.exposed === false);
+    await require('vscode').__registered.commands['nikui.reachFromPhone']();
+    checkEqual('explicit Reach claims the free tailnet for this window', nobodys.exposed.length, 1);
     checkEqual('and it forwards to that window', nobodys.exposed[0], first.port);
     check('which is then reachable', first.exposed === true);
 
@@ -195,15 +200,14 @@ module.exports = async function () {
     check('and the first still holds the address', first.exposed === true);
     await second.dispose();
 
-    // A window that was closed leaves the machine-wide setting pointing at a
-    // port where nothing answers. That is not somebody else's tunnel; it is
-    // litter, and the next window should pick it up.
+    // A listener can disappear briefly during Move/Restore. A background
+    // observer cannot treat that gap as permission to move the phone route.
     const stale = fake(first.port);
     await first.stop();
     const third = open(stale);
     await settle();
-    checkEqual('a tunnel pointing at a dead port is claimed', stale.exposed.length, 1);
-    checkEqual('by the window that is alive', stale.exposed[0], third.port);
+    checkEqual('a tunnel pointing at a quiet port is preserved', stale.exposed.length, 0);
+    checkEqual('the new window stays on loopback until an explicit Reach', third.exposed, false);
     await third.dispose();
 
     // Logging in starts VS Code before Tailscale. The window is told "not

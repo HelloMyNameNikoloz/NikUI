@@ -122,13 +122,16 @@ module.exports = async function () {
   const anyway = await cold.tailscale.expose(4517);
   checkEqual('a name that never answers is still exposed, not called a failure', anyway.ok, true);
 
-  const stopping = fake({ 'serve --https=443 off': { code: 0, stdout: '', stderr: '' } });
-  checkEqual('it stops', (await stopping.tailscale.hide()).ok, true);
+  const record = require('../src/routeContinuity').routeRecord('laptop.tail1234.ts.net', 4517);
+  const routeConfig = { code: 0, stdout: JSON.stringify({ TCP: { 443: { HTTPS: true } }, Web: {
+    'laptop.tail1234.ts.net:443': { Handlers: { '/': record.handler } } } }), stderr: '' };
+  const stopping = fake({ 'serve status --json': routeConfig, 'serve --https=443 --set-path=/ off': { code: 0, stdout: '', stderr: '' } });
+  checkEqual('it stops', (await stopping.tailscale.hide(record)).ok, true);
   checkEqual('by turning off exactly what was turned on',
-    stopping.calls[0], 'serve --https=443 off');
+    stopping.calls[1], 'serve --https=443 --set-path=/ off');
 
-  const stuck = fake({ 'serve --https=443 off': { code: 1, stdout: '', stderr: 'no such serve config' } });
-  checkEqual('and says so when it cannot', (await stuck.tailscale.hide()).ok, false);
+  const stuck = fake({ 'serve status --json': routeConfig, 'serve --https=443 --set-path=/ off': { code: 1, stdout: '', stderr: 'no such serve config' } });
+  checkEqual('and says so when it cannot', (await stuck.tailscale.hide(record)).ok, false);
 
   const already = fake({ 'serve status --json': { code: 0, stdout: JSON.stringify({ Web: { 'laptop:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:4517' } } } } }), stderr: '' } });
   checkEqual('a forward left over from a previous window is noticed',

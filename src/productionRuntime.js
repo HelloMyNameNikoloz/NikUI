@@ -39,7 +39,7 @@ async function startProductionRuntime({ selection, secretAdapter, dependencies =
   try { ownership.assertCurrent(); }
   catch (error) { lock.release(); throw error; }
   const importer = createSelectedImporter({ root: selection.root, target: selection.label, owner: ownership.owner, secretAdapter });
-  let composition, authority, currentState, bridge, management, menu, desktop, devices, control, keeper;
+  let composition, authority, currentState, bridge, management, menu, desktop, devices, control, keeper, exposure;
   let running = false, closing, phase = 'starting';
   let returnExport, returnToken;
   const generation = ownership.generation + ':' + crypto.randomBytes(16).toString('hex');
@@ -106,7 +106,9 @@ async function startProductionRuntime({ selection, secretAdapter, dependencies =
           seat: { ...context.seat, control: device.control === true, local: device.local === true && device.control === true } }, message));
       } });
     currentState.restoreEngine();
+    dependencies.startupProgress?.('keeper-attach');
     if (keeper) await engine.manager.reattach(keeper);
+    dependencies.startupProgress?.('keeper-attached');
     const snapshotsFile = path.join(paths.state, 'current-snapshots.json');
     const snapshots = privateFile(snapshotsFile, { optional: true }) ? require('./daemonPaths').readPrivateJson(snapshotsFile).sessions
       : state.sources.flatMap((s) => s.files.sessions || []);
@@ -177,7 +179,8 @@ async function startProductionRuntime({ selection, secretAdapter, dependencies =
     function status() {
       return { ok: true, mode: 'production', root: paths.root, generation, pid: process.pid, engine: info, state: phase,
         lifecycle: { phase }, bridge: bridge.status(), account: { home: engine.account.home, borrowed: engine.codex.client.ownership === 'borrowed' },
-        listener: { host: '127.0.0.1', port: remote.port }, tools: composition.tools, blockers: [], policy: engine.policy.state(),
+        listener: { host: '127.0.0.1', port: remote.port }, tools: composition.tools, blockers: [], warnings: exposure?.warnings || [], policy: engine.policy.state(),
+        keeper: { runs: engine.manager.list.filter((s) => s.proc?.kept).map((s) => ({ instance: s.id, runID: s.proc.runId, childPID: s.proc.pid, directory: s.proc.link.dir })) },
         authority: { writable: authority.status().writable, currentState: currentState.status() } };
     }
     menu = createMenuManagement({ paths, authority, engine, status, bridge: () => bridge, desktop,
@@ -185,7 +188,10 @@ async function startProductionRuntime({ selection, secretAdapter, dependencies =
       refreshTools: async () => {} });
     devices = createLocalDeviceEnrollment({ authority, devices: engine.delivery.devices, identity: engine.delivery.identity,
       engine: info, generation, port: () => remote.port, running: () => running });
-    await composition.start(); await remote.start(settings.get('remote.port', 4517), { exactly: true });
+    const routes = require('./routeContinuity').transferredRoutes(state.sources);
+    await composition.start(); await remote.start(routes[0]?.localPort ?? settings.get('remote.port', 4517), { exactly: true });
+    exposure = await require('./routeContinuity').attachRoutes({ sources: state.sources, remote,
+      ...(dependencies.tailscale ? { tailscale: dependencies.tailscale } : {}) });
     phase = 'running'; running = true; currentState.start();
     enableIsolatedProtocol({ remote, engine, currentState, authority, paths, bridge, running: () => running });
     control = await createControl({ paths, connect: (r, s, i) => bridge.connect(r, s, i), observe: (r, s) => menu.observe(r, s),
@@ -198,8 +204,11 @@ async function startProductionRuntime({ selection, secretAdapter, dependencies =
           setTimeout(() => { void stop().catch(() => { process.exitCode = 1; }); }, 25).unref();
           return { ok: true };
         }
-        if (request.op === 'transition.review') return { ok: true,
-          ...require('./engineHandoff').plannedTransitionReadiness({ currentState, engine, resources }) };
+        if (request.op === 'transition.review') {
+          try { await exposure.review(); return { ok: true, warnings: exposure.warnings,
+            ...require('./engineHandoff').plannedTransitionReadiness({ currentState, engine, resources, keeper }) }; }
+          catch (e) { return { ok: true, ready: false, code: e.code, blockerDetails: [e.diagnostics || { code: e.code, message: e.message }] }; }
+        }
         if (request.op === 'transition.export') {
           try {
             if (returnExport && returnToken === request.transition) return { ok: true, exported: returnExport };
@@ -210,7 +219,7 @@ async function startProductionRuntime({ selection, secretAdapter, dependencies =
             let captured;
             returnExport = await gate.quiesce(returnToken, {
               progress,
-              readiness: () => require('./engineHandoff').plannedTransitionReadiness({ currentState, engine, resources }),
+              readiness: async () => { await exposure.review(); return require('./engineHandoff').plannedTransitionReadiness({ currentState, engine, resources, keeper }); },
               closeAdmission() { running = false; phase = 'returning'; currentState.beginDrain(); disableIsolatedProtocol(remote); bridge.dispose(); },
               cancel() {}, drain: () => currentState.flush(), flush: async () => { engine.flush(); await desktop.flush(); await currentState.flush(); },
               async detach(advance) {
@@ -221,16 +230,11 @@ async function startProductionRuntime({ selection, secretAdapter, dependencies =
                   provenance: { profile: ownership.record.profile, workspace: selection.root, rawScope: 'service-current' },
                   selection: store.get('nikd.selection'), secrets: { get: store.get.bind(store) },
                   files: { sessions: () => engine.manager.list.map((s) => s.snapshot()), keeper: () => keeper ? { directory: keeper.dir } : null,
-                    keepers: () => keeper?.directories || [],
+                    keepers: () => keeper?.directories || [], routes: () => exposure.routes, routeWarnings: () => exposure.warnings,
                     workspaces: () => state.sources }, authority, completeAuthority: true, keeper: { metaVersion: 1, runs: [] } });
                 const sessions = engine.manager.list.slice();
-                for (const session of sessions) if (session.proc?.kept) session.detach();
                 if (keeper) {
-                  const listing = await keeper.request({ t: 'list' }, 4000);
-                  if (listing.metaVersion !== 1 || !Array.isArray(listing.runs)) throw fail('KEEPER_METADATA_INCOMPLETE', 'Current keeper proof is unavailable');
-                  captured.keeper = { metaVersion: 1, runs: listing.runs,
-                    transferred: listing.runs.filter((r) => sessions.some((s) => s.id === r.key) && !r.exit)
-                      .map((r) => ({ ...r, released: !r.owned, compatible: true })) };
+                  captured.keeper = await require('./keeperContinuity').releaseKeeper(keeper, sessions);
                 }
               },
               async releaseResources() { await remote.stop(); await desktop.dispose(); await currentState.dispose(); await composition.dispose(); snapshotsClosed = true; await keeper?.close();

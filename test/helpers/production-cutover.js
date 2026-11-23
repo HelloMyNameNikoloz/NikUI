@@ -47,7 +47,7 @@ async function productionFixture(count = 1) {
     slots.push({ i, project, original, vscode, workspace, folder, writes, source: null, engine: null, returned: null });
   }
   const profile = profileID(storage), directory = sourceDirectory(home);
-  async function open(slot, { seed = false, productionAdapters = false, keeper } = {}) {
+  async function open(slot, { seed = false, productionAdapters = false, keeper, keeperSnapshot, server } = {}) {
     const sourceInstall = slot.install || install;
     const workspace = require('../../src/sourceWorkspace').identity(slot.vscode.workspace);
     const importers = returnAdapters({ profile, authorityFile: path.join(storage, 'cutover.authority'),
@@ -76,7 +76,7 @@ async function productionFixture(count = 1) {
     if (productionAdapters) {
       engine.delivery = { identity, vapid, devices: { list: () => [] } };
       await require('../../src/legacyExtensionSource').listen(source, { context: source.context, originalContext: slot.original,
-        vscode: slot.vscode, engine, keeper, restoreLegacy() { slot.restored = true; } });
+        vscode: slot.vscode, engine, keeper, keeperSnapshot, server, becomeClient() {}, restoreLegacy() { slot.restored = true; } });
       return source;
     }
     let exported;

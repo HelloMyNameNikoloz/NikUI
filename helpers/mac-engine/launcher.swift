@@ -14,16 +14,19 @@ import Darwin
         }
     }
     static func launch() throws {
-        let selection = try AppSelection.selected()
+        let executable = try ExecutablePackage.runningExecutable()
+        let contents = try ExecutablePackage.contents(executable: executable)
+        let selection = try AppSelection.selected(executable: executable)
         try BuildFlavour.current.validateRegistration(label: selection.flavour.engineLabel)
-        if selection.flavour == .production || selection.isCutoverRehearsal { try selection.validateCommittedProduction() }
-        try selection.validateExistingRoot()
-        guard let executable = Bundle.main.executablePath else { throw IdentityFailure("PACKAGE_CONFIGURATION") }
-        let contents = URL(fileURLWithPath: executable).resolvingSymlinksInPath()
-            .deletingLastPathComponent().deletingLastPathComponent()
+        let config = try JSONSerialization.jsonObject(with: Data(contentsOf: contents.appendingPathComponent("Resources/engine/mac-engine.json"))) as? [String: Any]
+        let preflight = CommandLine.arguments == [CommandLine.arguments[0], "--preflight"]
+        if !preflight {
+            if selection.flavour == .production || config?["acceptanceCutover"] as? Bool == true { try selection.validateCommittedProduction() }
+            try selection.validateExistingRoot()
+        }
         let engine = contents.appendingPathComponent("Resources/engine")
         let node = engine.appendingPathComponent("node").path
-        let entry = engine.appendingPathComponent("src/macEngine.js").path
+        let entry = engine.appendingPathComponent(preflight ? "src/macPreflight.js" : "src/macEngine.js").path
         let ssh = getenv("SSH_AUTH_SOCK").map { String(cString: $0) }
         for key in ProcessInfo.processInfo.environment.keys { unsetenv(key) }
         for (key, value) in ["HOME": selection.home, "USERPROFILE": selection.home, "ZDOTDIR": selection.home,

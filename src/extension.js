@@ -201,7 +201,7 @@ function activate(context, preparedSource = null) {
     const { KeeperLink } = require('./keeperLink');
     if (source?.keeperTransfer) {
       keeper = require('./legacyExtensionSource').returnedKeeper(source);
-    } else { keeper = new KeeperLink({ log: (line) => console.log('[nikui] ' + line) }); keeper.connect(); }
+    } else { keeper = require('./keeperLink').createWindowKeeper({ log: (line) => console.log('[nikui] ' + line) }); keeper.connect(); }
   }
   const core = createWindowEngine(context, {
     spawner: keeper ? keeper.spawner() : null,
@@ -729,7 +729,8 @@ function activate(context, preparedSource = null) {
   if (source) require('./legacyExtensionSource').restoreSnapshots(source, core);
   // Instances still running from before the reload are picked up as they
   // were, mid-turn and all.
-  if (keeper) manager.reattach(keeper).then((n) => { if (n) { tree.refresh(); console.log('[nikui] picked up ' + n + ' running instance(s)'); } });
+  if (keeper) manager.reattach(keeper).then((n) => { if (n) { tree.refresh(); console.log('[nikui] picked up ' + n + ' running instance(s)'); } })
+    .catch((error) => console.log('[nikui] keeper reattachment unavailable: ' + (error.code || error.message)));
   folders.prune(manager.list.map((s) => s.id));
   // A quota pause that started before the reload is still in force.
   manager.restorePause();
@@ -773,14 +774,26 @@ function activate(context, preparedSource = null) {
   context.subscriptions.push({ dispose: () => { closeAllHubs(); core.dispose(); } });
   if (source && process.env.NIKUI_P3_LEGACY_REHEARSAL === '1' && os.homedir().startsWith('/private/tmp/nik-mac/build/p3/')) {
     rehearsalState = () => developmentClient ? { mode: 'service-client', available: developmentClient.available }
-      : { mode: source.legacy ? 'legacy' : 'recovery', listener: { listening: server.listening, port: server.port }, conversations: core.manager.list.map((s) => ({ id: s.id, title: s.customTitle || s.label,
-        itemIDs: s.items.map((item) => item.id) })) };
-    context.subscriptions.push(vscode.commands.registerCommand('nikui.__cutoverSeed', (id = 'p3-legacy-conversation') => {
+      : { mode: source.legacy ? 'legacy' : 'recovery', borrowedKeeper: keeper?.borrowed === true || !!source.keeperTransfer,
+        listener: { listening: server.listening, port: server.port }, conversations: core.manager.list.map((s) => ({ id: s.id, title: s.customTitle || s.label,
+        itemIDs: s.items.map((item) => item.id), childPID: s.proc?.pid, runID: s.proc?.runId,
+        stoppingPID: s._stoppingProc?.exitCode === null && !s._stoppingProc?.signalCode ? s._stoppingProc.pid : null,
+        keeperRefusal: s.keeperRefusal || null, status: s.status, procState: s.proc?.state,
+        streamText: s.items.filter((item) => ['text', 'assistant'].includes(item.kind)).map((item) => item.text).join('') })) };
+    context.subscriptions.push(vscode.commands.registerCommand('nikui.__cutoverSeed', async (id = 'p3-legacy-conversation', kept = false) => {
       const cwd = vscode.workspace.workspaceFolders[0].uri.fsPath;
       const session = core.manager.create({ cwd, id, autoStart: false, title: 'Seeded legacy conversation' });
       session.items.push({ kind: 'text', id: 'p3-legacy-text', text: 'Transcript seeded in the real legacy VS Code context.' });
+      if (kept && (!keeper || await keeper.attach(session) !== true)) throw Error('LEGACY_REHEARSAL_ATTACH_REQUIRED');
       core.manager.persist(); core.flush();
       return { id: session.id };
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('nikui.__cutoverFinishRun', () => {
+      const session = core.manager.get('p3-legacy-conversation');
+      session?.stop();
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('nikui.__cutoverRestartRun', () => {
+      core.manager.get('p3-legacy-conversation')?.restart();
     }));
   }
   if (source) void require('./legacyExtensionSource').listen(source, { context, originalContext, vscode, engine: core, keeper, awake, server,
@@ -1099,11 +1112,48 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   // Injectable so the one decision that can silently take every phone away
   // from another window — who holds the tailnet — can be driven in a test
   // without a mesh to drive it on.
-  const tailscale = injected.tailscale || new Tailscale();
+  const fixtureTailscale = path.join(os.homedir(), 'fixture-bin/tailscale');
+  const rehearsalTailnet = process.env.NIKUI_P3_LEGACY_REHEARSAL === '1' && os.homedir().startsWith('/private/tmp/nik-mac/build/p3/') && fs.existsSync(fixtureTailscale);
+  const tailscale = injected.tailscale || new Tailscale(rehearsalTailnet ? { binary: fixtureTailscale, probe: async () => true } : {});
   const cloudflared = new Cloudflared({
     log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); }
   });
-  let weExposed = false;
+  const { ROUTE_KEY, routeRecord, verifyRoute, routeCheck, recordWindowRoute } = require('./routeContinuity');
+  let ownedRoute = context.workspaceState.get(ROUTE_KEY, null);
+  let weExposed = !!ownedRoute;
+  let routeTransferred = false;
+  let routeReview, routeVerified = false;
+  const INTENT_KEY = 'nikui.remote.tailnetIntent.v1';
+  const windowSession = vscode.env.sessionId || crypto.randomBytes(16).toString('hex');
+  const hasTailnetIntent = () => {
+    const intent = context.workspaceState.get(INTENT_KEY);
+    return intent?.version === 1 && intent.window === windowSession && intent.port === server.port;
+  };
+  const recordTailnetIntent = () => context.workspaceState.update(INTENT_KEY,
+    { version: 1, window: windowSession, port: server.port });
+  const clearTailnetIntent = () => context.workspaceState.update(INTENT_KEY, undefined);
+  const clearRoute = async () => {
+    ownedRoute = null; weExposed = false; routeVerified = false;
+    await context.workspaceState.update(ROUTE_KEY, undefined);
+  };
+  const recordExposure = async (host) => {
+    const record = routeRecord(host, server.port);
+    await verifyRoute(tailscale, record);
+    await context.workspaceState.update(ROUTE_KEY, record);
+    ownedRoute = record; weExposed = true;
+    routeVerified = true;
+  };
+  const recordPhoneRoute = async () => {
+    if (!server.listening) throw Object.assign(Error('Start this window’s local server first.'), { code: 'ROUTE_OWNER_MISMATCH' });
+    const record = await recordWindowRoute(tailscale, server.port);
+    await context.workspaceState.update(ROUTE_KEY, record);
+    ownedRoute = record; weExposed = true; routeVerified = true;
+    await recordTailnetIntent();
+    server.publicHost = record.host; paint();
+    void vscode.window.showInformationMessage(`NikUI recorded this window’s phone route: https://${record.host}/ → port ${server.port}.`);
+    return { ok: true };
+  };
+  server.recordPhoneRoute = recordPhoneRoute;
 
   delivery.connect(server, { log: (line) => { if (out) out.appendLine(new Date().toISOString() + '  ' + line); } });
   delivery.start();
@@ -1189,10 +1239,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       );
       return null;
     }
-    // Being reachable is the point of serving at all: a phone that has to be on
-    // the same wifi is a phone that works at the desk it was not needed at. So
-    // the tailnet goes in front by itself unless somebody turned that off, and
-    // falls back to merely noticing a tunnel that is already there.
+    // Discover an existing route. Recreating an absent root requires this
+    // window's recorded explicit Reach/Record intent for this exact port.
     reachAgain(true);
     watchTailnet();
     context.workspaceState.update('nikui.remote.wasServing', true);
@@ -1221,9 +1269,10 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       const out = await cloudflared.hide();
       if (!out.ok) problems.push(out.reason);
     }
-    if (weExposed) {
-      const out = await tailscale.hide();
+    if (ownedRoute && !routeTransferred) {
+      const out = ownedRoute.localPort !== server.port ? { ok: true } : await tailscale.hide(ownedRoute);
       if (!out.ok) problems.push(out.reason);
+      else await clearRoute();
     }
     weExposed = false;
     server.publicHost = null;
@@ -1237,6 +1286,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // said they were finished rather than the window merely reloading.
     clearInterval(tailnetWatch);
     tailnetWatch = null;
+    await clearTailnetIntent();
     await closeTunnels();
     await server.stop();
     context.workspaceState.update('nikui.remote.wasServing', false);
@@ -1244,13 +1294,35 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   };
   // The attended source bridge may release only resources whose ownership is
   // still provable. Existing legacy route adoption does not establish that.
-  server.sourceReleaseReadiness = () => [
-    ...(weExposed || cloudflared.running ? ['ROUTE_OWNER_MISMATCH'] : []),
-    ...(server.terminals?.list().length ? ['TERMINAL_BUSY'] : []),
-    ...(server.voice?.running?.size || server.voice?.building ? ['VOICE_BUSY'] : [])
-  ];
+  server.sourceRouteRecord = () => ownedRoute?.localPort === server.port && routeVerified ? ownedRoute : null;
+  server.sourceReleaseReadiness = async ({ reuse = false } = {}) => {
+    if (!reuse || !routeReview) routeReview = routeCheck(tailscale);
+    const problems = [];
+    const warnings = [];
+    if (cloudflared.running) problems.push({ code: 'CLOUDFLARED_URL_CONTINUITY_UNAVAILABLE',
+      message: `The public tunnel ${cloudflared.url || server.publicHost} cannot keep its address when it moves to the engine. Close this public tunnel in VS Code, use tailnet phone access if needed, then Refresh.` });
+    if (ownedRoute) {
+      routeVerified = false;
+      if (ownedRoute.localPort !== server.port) warnings.push({ code: 'ROUTE_PORT_CHANGED',
+        message: `The recorded phone route belongs to port ${ownedRoute.localPort}; this window listens on ${server.port}. Record this window’s phone route or stop phone access.` });
+      else try { await verifyRoute(routeReview, ownedRoute, server.port); routeVerified = true; }
+      catch (error) {
+        warnings.push(error.diagnostics || { code: 'ROUTE_OWNER_MISMATCH', message: error.message });
+        if (error.diagnostics?.absent) server.publicHost = null;
+      }
+    } else if (weExposed || server.exposed && !cloudflared.running) problems.push({ code: 'ROUTE_OWNER_MISMATCH',
+      action: 'record-phone-route',
+      message: `No owned handler was recorded for ${server.publicHost || 'this window’s tailnet URL'}. In this VS Code window, run “NikUI: Record this window’s phone route” (nikui.recordPhoneRoute), then Refresh. This only reads Tailscale status.` });
+    if (server.terminals?.list().length) problems.push({ code: 'TERMINAL_BUSY', message: 'Close the active terminals in this VS Code window, then Refresh.' });
+    if (server.voice?.running?.size || server.voice?.building) problems.push({ code: 'VOICE_BUSY', message: 'Finish the current voice recording or voice build in this VS Code window, then Refresh.' });
+    server.sourceReleaseProblems = problems;
+    server.sourceReleaseWarnings = warnings.map((p) => ({ ...p, message: p.message + ' Phone route will not be transferred.' }));
+    return problems.map((p) => p.code);
+  };
   server.sourceRelease = async () => {
-    if (server.sourceReleaseReadiness().length) throw Object.assign(new Error('Route ownership requires review'), { code: 'ROUTE_OWNER_MISMATCH' });
+    const problems = await server.sourceReleaseReadiness({ reuse: true });
+    if (problems.length) throw Object.assign(new Error(server.sourceReleaseProblems[0].message), { code: problems[0] });
+    routeTransferred = true; // The exact same loopback port keeps this route valid.
     clearInterval(tailnetWatch); tailnetWatch = null;
     await server.stop();
   };
@@ -1286,7 +1358,12 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     // address does not change when it moves: a phone that was showing that
     // window simply starts showing this one, with nothing on either screen to
     // say why.
-    const held = await tailscale.forwardedPort().catch(() => null);
+    let held;
+    try { held = await tailscale.forwardedPort(); }
+    catch (_) {
+      vscode.window.showWarningMessage('NikUI could not verify the current phone route. Check Tailscale is running, then try again.');
+      return false;
+    }
     if (held !== null && held !== server.port && await answering(held)) {
       const move = await vscode.window.showWarningMessage(
         'Another NikUI window is already reachable at this address.',
@@ -1301,12 +1378,14 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       if (move !== 'Move it to this window') return false;
     }
 
+    await recordTailnetIntent();
     const out = await tailscale.expose(server.port);
     if (!out.ok) {
       vscode.window.showWarningMessage('NikUI could not ask Tailscale to forward to it: ' + out.reason);
       return false;
     }
-    weExposed = true;
+    try { await recordExposure(out.host); }
+    catch (_) { vscode.window.showWarningMessage('The phone route changed, but its ownership could not be recorded. Run “NikUI: Record this window’s phone route” when Tailscale is ready.'); return false; }
     server.publicHost = out.host;
     paint();
 
@@ -1395,8 +1474,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       if (Date.now() - lastTailnetTry < 10000) return;
       lastTailnetTry = Date.now();
     }
-    if (vscode.workspace.getConfiguration('nikui').get('remote.tailnet', true)) becomeReachable();
-    else adoptTunnel();
+    const attempt = vscode.workspace.getConfiguration('nikui').get('remote.tailnet', true) ? becomeReachable() : adoptTunnel();
+    void attempt.catch(() => noteTailnet('could not verify this window’s phone route; will retry when Tailscale is ready'));
   };
   const watchTailnet = () => {
     if (tailnetWatch) return;
@@ -1417,23 +1496,27 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     let held = null;
     try { held = await tailscale.forwardedPort(); } catch (_) { return false; }
     if (held === server.port) return adoptTunnel(held);
-    if (held !== null && await answering(held)) {
+    if (held !== null) {
       noteTailnet(`the tailnet is already forwarding to ${held}, which is another window; ` +
         `this one is serving on ${server.port} and is reachable from this machine only`);
       return false;
     }
+    if (!hasTailnetIntent()) return false;
 
     const state = await tailscale.status().catch(() => null);
     if (!state || !state.installed || !state.running || !state.https) {
       if (state) noteTailnet('not putting this window on the tailnet: ' + (state.reason || 'Tailscale is not ready'));
       return false;
     }
+    // Intent may have been revoked while status was in flight.
+    if (!server.listening || !hasTailnetIntent()) return false;
     const done = await tailscale.expose(server.port);
     if (!done.ok) {
       noteTailnet('tailscale serve refused: ' + done.reason);
       return false;
     }
-    weExposed = true;
+    try { await recordExposure(done.host); }
+    catch (_) { noteTailnet('phone route ownership could not be recorded; use “Record this window’s phone route” when Tailscale is ready'); return false; }
     server.publicHost = done.host;
     if (out) out.appendLine(new Date().toISOString() +
       `  this window answers to ${done.host} on the tailnet`);
@@ -1476,7 +1559,6 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       vscode.window.showWarningMessage('NikUI could not open a public tunnel: ' + opened.reason);
       return;
     }
-    weExposed = true;
     server.publicHost = opened.host;
     paint();
     const next = await vscode.window.showWarningMessage(
@@ -1488,6 +1570,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
   };
 
   const unreach = async () => {
+    await clearTailnetIntent();
     const wasOpen = cloudflared.running || weExposed;
     if (!wasOpen) {
       vscode.window.setStatusBarMessage('NikUI: nothing outside this machine could reach this window', 4000);
@@ -1606,6 +1689,8 @@ function serveLocally(context, manager, awakeState, folders, deps) {
       server.exposed
         ? { label: '$(circle-slash) Stop being reachable from my phone', id: 'unreach' }
         : { label: '$(radio-tower) Reach this window from my phone', id: 'reach' },
+      server.exposed && (!ownedRoute || ownedRoute.localPort !== server.port)
+        ? { label: '$(save) Record this window’s phone route', id: 'record-route' } : null,
       server.exposed
         ? null
         : { label: '$(globe) Open a public address (read this first)', id: 'public' },
@@ -1634,6 +1719,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     if (choice.id === 'open') return open();
     if (choice.id === 'pair') return pair();
     if (choice.id === 'reach') return reach();
+    if (choice.id === 'record-route') return recordPhoneRoute();
     if (choice.id === 'public') return reachPublicly();
     if (choice.id === 'unreach') return unreach();
     if (choice.id === 'stop') return stop();
@@ -1768,6 +1854,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
             detail: 'Puts the tailnet in front of the server. Nothing new listens.',
             run: reach
           },
+        ...(server.exposed && (!ownedRoute || ownedRoute.localPort !== server.port) ? [{ label: '$(save) Record this window’s phone route', run: recordPhoneRoute }] : []),
         { label: '$(device-mobile) Pair a device', run: pair },
         {
           label: '$(list-unordered) Devices, and what they did',
@@ -1778,6 +1865,7 @@ function serveLocally(context, manager, awakeState, folders, deps) {
     })),
     vscode.commands.registerCommand('nikui.pairDevice', pair),
     vscode.commands.registerCommand('nikui.reachFromPhone', reach),
+    vscode.commands.registerCommand('nikui.recordPhoneRoute', recordPhoneRoute),
     vscode.commands.registerCommand('nikui.stopReaching', unreach),
     vscode.commands.registerCommand('nikui.reachPublicly', reachPublicly),
     vscode.commands.registerCommand('nikui.grantControl', async (node) => grant(await pick(node))),

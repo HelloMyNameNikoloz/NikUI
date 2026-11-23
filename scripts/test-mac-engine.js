@@ -9,7 +9,7 @@ const { controlRequest } = require('../src/daemonControl');
 const { createSecItemAdapter } = require('../src/keychainStore');
 const REPO = path.resolve(__dirname, '..');
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const { command, failureEvidence, childResult } = require('./native-command');
+const { command, failureEvidence, childResult, cleanupDevelopmentJob } = require('./native-command');
 function jobExists() {
   const result = spawnSync('/bin/launchctl', ['print', `gui/${process.getuid()}/${LABEL}`], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
   if (result.status === 0) return true;
@@ -42,18 +42,25 @@ async function main({ regressions = false, menubar = false, acceptanceP2 = false
   const controller = (action) => JSON.parse(command(executable, [action]));
   const write = () => fs.writeFileSync(evidence, JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
   try {
-    built = build({ output: original, testHome: home, acceptanceP2, acceptanceRealTools, version: '0.3.0', buildNumber: '25' });
+    built = build({ output: original, testHome: home, acceptanceP2, acceptanceRealTools, ...require('../package.json').macApp });
+    assert.equal(built.buildNumber, require('../package.json').macApp.buildNumber);
     const relocated = path.join(run, 'relocated'); privateDirectory(relocated);
-    app = path.join(relocated, 'NikUI Dev.app'); fs.renameSync(built.output, app);
+    app = path.join(relocated, 'NikUI Dev.app');
+    // Match a build → /Applications install: ditto a complete signed package
+    // and keep the original same-id bundle present throughout registration.
+    command('/usr/bin/ditto', [built.output, app]);
     executable = path.join(app, 'Contents/MacOS/NikUI'); paths = privateRoot(built.root, { create: false });
     const identity = controller('build-identity');
     assert.equal(identity.flavour, 'dev'); assert.equal(identity.appID, 'com.nikui.app.dev'); assert.equal(identity.label, LABEL);
     assert.equal(identity.home, built.testHome); assert.equal(identity.root, built.root);
     report.checks.compiledDevelopmentIdentity = true;
-    report.bundle = { original: built.output, relocated: app, node: built.node, root: built.root };
+    report.bundle = { original: built.output, relocated: app, node: built.node, root: built.root, version: built.appVersion, buildNumber: built.buildNumber };
     report.bundle.manifest = path.join(run, 'build-manifest.json');
     fs.copyFileSync(path.join(app, 'Contents/Resources/engine/build-manifest.json'), report.bundle.manifest);
     fs.chmodSync(report.bundle.manifest, 0o600);
+    assert.equal(JSON.parse(fs.readFileSync(report.bundle.manifest)).buildNumber, built.buildNumber);
+    assert.equal(command('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleVersion', path.join(app, 'Contents/Info.plist')]).trim(), built.buildNumber);
+    report.checks.currentBuildVersion = true;
     command('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]); report.checks.relocatedSignature = true;
     const binaries = ['MacOS/NikUI', 'MacOS/nikd', 'Helpers/NikKeychain.app/Contents/MacOS/NikKeychain',
       'Helpers/NikKeychainRebuilt.app/Contents/MacOS/NikKeychain', 'Helpers/NikNotifier.app/Contents/MacOS/nikui-notify',
@@ -75,13 +82,28 @@ async function main({ regressions = false, menubar = false, acceptanceP2 = false
     report.checks.signaturesTargetAndNodeEntitlements = true;
     const jit = command(node, ['-e', 'let s=0;for(let i=0;i<5e7;i++)s+=i;new WebAssembly.Module(new Uint8Array([0,97,115,109,1,0,0,0]));console.log(process.version,process.arch,s)']);
     assert.match(jit, /^v26\.7\.0 arm64 /); report.checks.hardenedJitAndWasm = true;
+    const beforePreflight = fs.readdirSync(built.root).sort();
+    report.idlePreflight = JSON.parse(command(path.join(app, 'Contents/MacOS/nikd'), ['--preflight']));
+    assert.equal(report.idlePreflight.ok, true); assert.equal(report.idlePreflight.mode, 'idle-preflight');
+    assert.equal(report.idlePreflight.label, LABEL); assert.equal(report.idlePreflight.executable, node);
+    assert.deepEqual(fs.readdirSync(built.root).sort(), beforePreflight);
+    assert(!jobExists()); report.checks.idlePackagePreflightBeforeRegistrationAndCommit = true;
     const voice = spawnSync(path.join(app, 'Contents/Helpers/NikVoice.app/Contents/MacOS/nikui-voice'), ['check'],
       { encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL', env: { HOME: built.testHome, NIKUI_VOICE_HOME: built.testHome, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' } });
     assert.equal(voice.status, 1); assert.equal(JSON.parse(voice.stdout).code, 'NO_MODEL');
     report.checks.signedVoiceRefusesMissingTestModel = true;
     assert(!jobExists(), 'A development job appeared during the build; it was not touched');
     attempted = true;
-    report.registration = controller('register'); assert.equal(report.registration.registration, 'enabled');
+    try { report.registration = controller('register'); }
+    finally { if (jobExists()) report.registrationJob = command('/bin/launchctl', ['print', `gui/${process.getuid()}/${LABEL}`]); }
+    assert.equal(report.registration.registration, 'enabled');
+    report.registrationJob = command('/bin/launchctl', ['print', `gui/${process.getuid()}/${LABEL}`]);
+    assert.match(report.registrationJob, new RegExp('^\\s*parent bundle version = ' + built.buildNumber + '$', 'm'));
+    assert.equal(controller('validate-registration').ok, true);
+    const foreign = spawnSync(path.join(original, 'Contents/MacOS/NikUI'), ['validate-registration'],
+      { encoding: 'utf8', timeout: 15000, killSignal: 'SIGKILL' });
+    assert.equal(foreign.status, 1); assert.equal(JSON.parse(foreign.stdout).code, 'SERVICE_BUNDLE_MISMATCH');
+    report.checks.dittoCopyRegistersItselfAndRefusesOriginal = true;
     const first = await waitFor(async () => { const s = await controlRequest(paths, { op: 'status' }); return s.state === 'running' && s; });
     assert.equal(first.root, built.root); assert.equal(first.package?.label, LABEL);
     assert.equal(first.package?.appID, 'com.nikui.app.dev'); assert.equal(first.package?.flavour, 'dev');
@@ -197,27 +219,22 @@ async function main({ regressions = false, menubar = false, acceptanceP2 = false
       } catch (error) { report.cleanup.localDeviceKeychain = false; failures.push(error); }
     }
     if (attempted && executable) {
-      try {
-        if (paths && jobExists()) {
-          const status = await controlRequest(paths, { op: 'status' });
-          if (status.ok) {
-            const result = await controlRequest(paths, { op: 'package-test-cleanup' }); cleanedKeychain = result.cleanup === true;
-            controller('intentional-stop');
-          }
-        }
-      } catch (_) { /* still attempt unregister and exact-service helper cleanup */ }
-      try { controller('unregister'); } catch (error) { if (jobExists()) failures.push(error); }
-      try { await waitFor(() => !jobExists(), 10000); } catch (error) { failures.push(error); }
+      try { report.cleanup.developmentJob = await cleanupDevelopmentJob({ controller, attempted, exists: jobExists }); }
+      catch (error) { failures.push(error); report.cleanup.developmentJob = failureEvidence(error); }
     }
+    // Keep the selected bytes available if removal could not be proved. A
+    // failed cleanup must not turn one startup refusal into KEYCHAIN_NOT_FOUND
+    // on every subsequent KeepAlive attempt.
+    report.cleanup.jobGone = !jobExists();
     const activeApp = app && fs.existsSync(app) ? app : original;
-    if (built && !cleanedKeychain) {
+    if (report.cleanup.jobGone && built && !cleanedKeychain) {
       try {
         const adapter = createSecItemAdapter({ helper: path.join(activeApp, 'Contents/Helpers/NikKeychain.app/Contents/MacOS/NikKeychain'),
           service: built.keychainService, home: built.testHome });
         adapter.delete('store.v1'); assert.equal(adapter.read('store.v1'), null); cleanedKeychain = true;
       } catch (error) { failures.push(error); }
     }
-    if (built && acceptanceP2) {
+    if (report.cleanup.jobGone && built && acceptanceP2) {
       try {
         const adapter = createSecItemAdapter({ helper: path.join(activeApp, 'Contents/Helpers/NikKeychain.app/Contents/MacOS/NikKeychain'),
           service: built.keychainService, home: built.testHome });
@@ -226,7 +243,6 @@ async function main({ regressions = false, menubar = false, acceptanceP2 = false
     }
     if (!built) cleanedKeychain = true; // builds never call SecItem or register
     report.cleanup.keychain = cleanedKeychain && (!acceptanceP2 || !built || report.cleanup.transferAccounts?.cleanup === true);
-    report.cleanup.jobGone = !jobExists();
     if (report.cleanup.jobGone && report.cleanup.keychain && report.cleanup.appGone && !failures.length) {
       for (const file of [app, original].filter(Boolean)) fs.rmSync(file, { recursive: true, force: true });
       report.cleanup.bundleRemoved = !fs.existsSync(original) && (!app || !fs.existsSync(app));

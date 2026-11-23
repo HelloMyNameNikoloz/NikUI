@@ -12,9 +12,9 @@ async function command(request) {
   const selection = validatePackage(identity, config, { accountHome, envHome: process.env.HOME,
     args: ['--root', root], execPath: fs.realpathSync(process.execPath), engine });
   if (selection.flavour !== 'prod' && config.acceptanceCutover !== true) throw fail('DEVELOPMENT_PROFILE_ONLY', 'Only the sealed development rehearsal can drive a test cutover');
-  if (!request || !['review', 'forget-return', 'move', 'finish', 'handback-review', 'handback', 'restore', 'cancel'].includes(request.action)) throw fail('CUTOVER_REQUEST_INVALID', 'Unsupported cutover operation');
+  if (!request || !['review', 'repair-custody', 'record-phone-route', 'forget-return', 'move', 'finish', 'handback-review', 'handback', 'restore', 'cancel'].includes(request.action)) throw fail('CUTOVER_REQUEST_INVALID', 'Unsupported cutover operation');
   let secretAdapter;
-  if (!['review', 'forget-return'].includes(request.action)) secretAdapter = require('./keychainStore').createSecItemAdapter({
+  if (!['review', 'repair-custody', 'record-phone-route', 'forget-return'].includes(request.action)) secretAdapter = require('./keychainStore').createSecItemAdapter({
     helper: path.join(contents, 'Helpers/NikKeychain.app/Contents/MacOS/NikKeychain'),
     home: selection.home, service: config.keychainService });
   const checkpoint = config.acceptanceCutover === true ? async (stage) => {
@@ -30,10 +30,15 @@ async function command(request) {
     }
     throw fail('CUTOVER_REHEARSAL_TIMEOUT', 'The disposable editor did not reload at the barrier');
   } : undefined;
-  const coordinator = require('./productionCutover').createProductionCutover({ selection, secretAdapter, checkpoint,
+  const fixtureTailnet = path.join(selection.home, 'fixture-bin/tailscale');
+  const offlineDependencies = config.acceptanceCutover === true && fs.existsSync(fixtureTailnet)
+    ? { tailscale: new (require('./tunnel').Tailscale)({ binary: fixtureTailnet, probe: async () => true }) } : {};
+  const coordinator = require('./productionCutover').createProductionCutover({ selection, secretAdapter, checkpoint, offlineDependencies,
+    prepareCustody: (directory, options) => require('./keeperSupervisor').supervise(directory, { ...options, interpreter: process.execPath }),
     helper: path.join(contents, 'Helpers/NikKeychain.app') });
   return request.action === 'cancel' ? coordinator.canCancelRegistration() : request.action === 'review' ? { ok: true, ...await coordinator.review(request.profile) }
-    : request.action === 'forget-return' ? coordinator.forgetReturn(request)
+    : request.action === 'repair-custody' ? coordinator.repairCustody(request)
+      : request.action === 'record-phone-route' ? coordinator.recordPhoneRoute(request) : request.action === 'forget-return' ? coordinator.forgetReturn(request)
       : request.action === 'move' ? coordinator.move(request) : ['handback', 'restore'].includes(request.action) ? coordinator.restore()
       : request.action === 'handback-review' ? coordinator.handbackReview() : coordinator.finish();
 }

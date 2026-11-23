@@ -231,6 +231,7 @@ class Run {
 
   orphan() {
     this.owner = null;
+    if (this.retained) return; // Explicit Move custody belongs to this keeper.
     this.startGrace();
   }
 
@@ -315,7 +316,8 @@ class Client {
     const run = msg.runId ? runs.get(msg.runId) : null;
     switch (msg.t) {
       case 'hello':
-        return this.reply(msg, { proto: PROTO, pid: process.pid, metaVersion: 1 });
+        return this.reply(msg, { proto: PROTO, pid: process.pid, metaVersion: 1,
+          capabilities: { version: 1, exactAttach: 1, reclaim: 1, checkpointTail: 1, guardedMetadata: 1, release: 1, retainCustody: 1 } });
       case 'spawn': {
         if (runs.has(msg.runId)) return this.reply(msg, { ok: false, message: 'run exists' });
         if (msg.guard) {
@@ -336,6 +338,10 @@ class Client {
       case 'stop': if (run && run.owner === this) { run.stopping = true; run.stop(); } return;
       case 'kill': if (run && run.owner === this) run.kill(msg.signal); return;
       case 'checkpoint': if (run && run.owner === this) run.takeCheckpoint(msg.seq, msg.snapshot, msg.meta); return;
+      case 'retain':
+        if (!run || run.owner !== this) return this.reply(msg, { ok: false, message: 'owned' });
+        run.retained = true;
+        return this.reply(msg, { ok: true, runId: run.id });
       case 'forget': {
         const mine = run && run.owner === this;
         if (mine) {

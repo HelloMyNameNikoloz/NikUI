@@ -30,6 +30,7 @@ const PLACES = [
   '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
   '/usr/bin/tailscale'
 ];
+const STATUS_TIMEOUT_MS = 650;
 
 class Tailscale {
   /**
@@ -56,10 +57,10 @@ class Tailscale {
     return this.binary;
   }
 
-  async run(argv) {
+  async run(argv, options) {
     const binary = this.find();
     if (!binary) return { code: -1, stdout: '', stderr: 'tailscale is not installed' };
-    return this.runner([binary].concat(argv));
+    return this.runner([binary].concat(argv), options);
   }
 
   /**
@@ -164,8 +165,11 @@ class Tailscale {
   }
 
   /** Take it down again. */
-  async hide() {
-    const out = await this.run(['serve', '--https=443', 'off']);
+  async hide(record) {
+    if (!record) return { ok: false, reason: 'No exact owned tailnet route was recorded.' };
+    try { await require('./routeContinuity').verifyRoute(this, record); }
+    catch (error) { return error.diagnostics?.absent ? { ok: true, absent: true } : { ok: false, reason: error.message }; }
+    const out = await this.run(['serve', '--https=443', '--set-path=/', 'off']);
     return out.code === 0
       ? { ok: true }
       : { ok: false, reason: firstLine(out.stderr) || 'tailscale serve would not stop' };
@@ -182,12 +186,27 @@ class Tailscale {
    * @returns {Promise<number|null>}
    */
   async forwardedPort() {
-    const out = await this.run(['serve', 'status', '--json']);
-    if (out.code !== 0) return null;
-    try {
-      const found = JSON.stringify(JSON.parse(out.stdout || '{}')).match(/127\.0\.0\.1:(\d+)/);
-      return found ? Number(found[1]) : null;
-    } catch (_) { return null; }
+      const config = await this.serveConfig();
+      // Only HTTPS 443's root is NikUI's candidate. /plans, alternate ports
+      // and Funnels must never influence the ownership decision.
+      const roots = Object.entries(config.Web || {}).filter(([key]) => key.endsWith(':443'))
+        .map(([, web]) => web.Handlers?.['/']).filter((handler) => handler !== undefined);
+      if (!roots.length) return null;
+      if (roots.length !== 1) throw new Error('Tailscale root forwarding is ambiguous');
+      const found = /^http:\/\/127\.0\.0\.1:(\d+)\/?$/.exec(roots[0]?.Proxy || '');
+      const port = found && Number(found[1]);
+      if (!port || port > 65535) throw new Error('Tailscale root forwarding is not a local NikUI port');
+      return port;
+  }
+
+  async serveConfig({ timeout = 15000 } = {}) {
+    const out = await this.run(['serve', 'status', '--json'], { timeout });
+    if (out.code !== 0) throw new Error('Tailscale serve status is unavailable');
+    const config = JSON.parse(out.stdout);
+    if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Tailscale serve status is unreadable');
+    if (config.Web !== undefined && (!config.Web || typeof config.Web !== 'object' || Array.isArray(config.Web)))
+      throw new Error('Tailscale serve handlers are unreadable');
+    return config;
   }
 
   /**
@@ -210,9 +229,9 @@ function knock(url, timeoutMs) {
   });
 }
 
-function runCommand(argv) {
+function runCommand(argv, options = {}) {
   return new Promise((resolve) => {
-    execFile(argv[0], argv.slice(1), { timeout: 15000, maxBuffer: 4 * 1024 * 1024 },
+    execFile(argv[0], argv.slice(1), { timeout: options.timeout || 15000, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024 },
       (err, stdout, stderr) => {
         resolve({
           code: err ? (typeof err.code === 'number' ? err.code : 1) : 0,
@@ -350,4 +369,4 @@ const CLOUDFLARE_PLACES = [
 
 const hostOf = (url) => { try { return new URL(url).host; } catch (_) { return null; } };
 
-module.exports = { Tailscale, Cloudflared, PLACES, CLOUDFLARE_PLACES, matchesDomain };
+module.exports = { Tailscale, Cloudflared, PLACES, CLOUDFLARE_PLACES, matchesDomain, STATUS_TIMEOUT_MS };

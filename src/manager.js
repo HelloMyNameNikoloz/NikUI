@@ -470,17 +470,26 @@ class SessionManager extends EventEmitter {
    * Until each answer is in, opening or prompting it waits rather than
    * starting a second `claude` on the same conversation.
    */
-  reattach(link) {
+  async reattach(link) {
+    try {
+    if (link.beginAttach) {
+      try { await link.beginAttach(); }
+      catch (_) { /* Each session receives its own named attach refusal below. */ }
+    }
     const tries = [];
     for (const session of this.list) {
       if (session.isRunning || typeof session.hydrate !== 'function') continue;
       tries.push(this._attachOne(link, session));
     }
-    return Promise.all(tries).then((all) => all.filter(Boolean).length);
+    return (await Promise.all(tries)).filter(Boolean).length;
+    } finally { try { await link.endAttach?.(); } catch (_) { /* No batch rejection may escape activation. */ } }
   }
 
   _attachOne(link, session) {
-    const trying = link.attach(session).catch(() => false);
+    const trying = Promise.resolve().then(() => link.attach(session)).catch((e) => {
+      session.keeperRefusal = e.code || 'KEEPER_UNAVAILABLE';
+      return 'elsewhere';
+    });
     session._attaching = trying;
     session._checkedAt = Date.now();
     return trying.then((got) => {

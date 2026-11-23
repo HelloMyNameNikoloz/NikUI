@@ -21,21 +21,31 @@ function transferredRun({ hello, runs, transferred, requested }) {
   for (const run of runs) {
     insist(validRunDescription(run), 'KEEPER_META_INCOMPLETE');
     if (run.exit) continue;
-    insist(complete(run.meta) && run.meta.instance === run.key &&
-      (requested.conversation === null || run.meta.conversation !== null), 'KEEPER_META_INCOMPLETE');
+    insist(complete(run.meta) && run.meta.instance === run.key, 'KEEPER_META_INCOMPLETE');
+    if (requested.conversation !== null && run.meta.conversation === null) {
+      // Returning an explicitly released idle run starts no new process. Its
+      // first init may not have supplied a conversation ID yet (native R27).
+      // Unknown/untransferred live runs still prevent a duplicate resume.
+      insist(transferred.some((p) => p.runId === run.runId && p.released === true && p.compatible === true &&
+        p.meta?.instance === run.key && p.meta.cwd === run.meta.cwd && p.meta.conversation === null), 'KEEPER_META_INCOMPLETE');
+    }
     if (run.runId !== eligible.runId && (run.key === requested.instance || requested.conversation && run.meta.conversation === requested.conversation))
       throw fail('KEEPER_CONVERSATION_LIVE', 'Another instance owns the conversation');
   }
   const run = runs.find((r) => r.runId === eligible.runId);
   insist(run && !run.exit, 'KEEPER_RUN_LOST');
-  insist(!run.owned, 'KEEPER_OWNED_ELSEWHERE');
+  const rescued = run.lease === 'rescue' && run.rescue?.socket === path.join(run.directory || '', 'r1.sock') &&
+    eligible.rescue?.socket === run.rescue.socket;
+  const blocked = run.lease === 'blocked' && /^KEEPER_[A-Z_]+$/.test(run.blocker || '') && eligible.runId === run.runId &&
+    eligible.meta?.instance === run.key;
+  insist(!run.owned || rescued || blocked, 'KEEPER_OWNED_ELSEWHERE');
   insist(run.meta.instance === requested.instance && run.meta.cwd === requested.cwd && run.meta.conversation === requested.conversation,
     'KEEPER_META_INCOMPLETE');
   insist(eligible.released === true && eligible.compatible === true, 'KEEPER_NOT_ELIGIBLE');
   return { runId: run.runId, guard: { ...requested } };
 }
 
-function plannedTransitionReadiness({ currentState, engine, resources }) {
+function plannedTransitionReadiness({ currentState, engine, resources, keeper }) {
   const state = currentState.status();
   if (state.issue) return { ready: false, code: 'STORAGE_UNAVAILABLE' };
   if (state.dispatches || state.drains || state.observations) return { ready: false, code: 'PROVIDER_DISPATCH_ACTIVE' };
@@ -52,9 +62,11 @@ function plannedTransitionReadiness({ currentState, engine, resources }) {
   // Direct Claude children have no keeper transfer proof. A live turn (or an
   // accepted input whose process disappeared) cannot be declared safe merely
   // because the Codex account is idle. Refusal also covers pending approvals.
-  const claude = (engine.manager?.list || []).filter((s) => s.isBusy || s.inTurn);
+  const carried = new Set((engine.manager?.list || []).filter((s) => keeper && s.proc?.kept && s.proc.state === 'kept' &&
+    !s.keeperRefusal && !(s.items || []).some((i) => i.kind === 'permission' && !i.resolved)).map((s) => s.id));
+  const claude = (engine.manager?.list || []).filter((s) => (s.isBusy || s.inTurn) && !carried.has(s.id));
   if (claude.length) return { ready: false, code: 'CLAUDE_OWNED_BUSY', instances: claude.map((s) => s.id) };
-  const acceptedClaude = outbox.filter((q) => q.state === 'accepted' && q.provider?.kind === 'claude');
+  const acceptedClaude = outbox.filter((q) => q.state === 'accepted' && q.provider?.kind === 'claude' && !carried.has(q.target?.replace(/^session:/, '')));
   if (acceptedClaude.length) return { ready: false, code: 'CLAUDE_OWNED_BUSY', operations: acceptedClaude.map((q) => q.id) };
   const terminals = resources?.terminals?.list?.() || [];
   if (terminals.some((t) => t.busy || t.running || t.status === 'running')) return { ready: false, code: 'TERMINAL_BUSY' };

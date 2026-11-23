@@ -13,6 +13,6 @@ let package = Package(
         .executableTarget(name: "NikEngine", dependencies: ["NikMenuCore", "NikMacIdentity", "NikMacCore"]),
         .testTarget(name: "NikMenuCoreTests", dependencies: ["NikMenuCore"]),
         .testTarget(name: "NikMacIdentityTests", dependencies: ["NikMacIdentity"]),
-        .testTarget(name: "NikMacCoreTests", dependencies: ["NikMacCore"])
+        .testTarget(name: "NikMacCoreTests", dependencies: ["NikMacCore"], exclude: ["Fixtures"])
     ]
 )

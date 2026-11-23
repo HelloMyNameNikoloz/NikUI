@@ -81,6 +81,7 @@ class KeptProc extends EventEmitter {
     this.stdin = {
       get writable() { return self.exitCode === null && self.signalCode === null && !self.released; },
       write(line) {
+        if (self.blocked) throw Object.assign(new Error('Keeper continuity is blocked; stop or recover this chat before sending.'), { delivery: 'not_written' });
         if (self.local) return self.local.stdin.write(line);
         if (self.session?._engineControls && self.state !== 'kept') throw Object.assign(new Error('Keeper write is not ready'), { delivery: 'not_written' });
         const socket = self.link.socket;
@@ -95,6 +96,7 @@ class KeptProc extends EventEmitter {
       // then not, even if this window is gone before it has.
       end() {
         if (self.local) return self.local.stdin.end();
+        self.stopRequested = true;
         self.send({ t: 'stop', runId: self.runId });
       }
     };
@@ -103,13 +105,23 @@ class KeptProc extends EventEmitter {
   kill(signal) {
     this.killed = true;
     if (this.local) return this.local.kill(signal);
+    if (!signal || signal === 'SIGTERM' || signal === 'SIGKILL') this.stopRequested = true;
     this.send({ t: 'kill', runId: this.runId, signal: signal || 'SIGTERM' });
     return true;
   }
 
   send(msg) {
+    if (this.exitCode !== null || this.signalCode !== null || this.state === 'kept' && !this.link.procs.has(this.runId)) return false;
+    if (this.blocked && ['write', 'checkpoint'].includes(msg.t)) return false;
     if (this.state === 'pending') { this.outbox.push(msg); return true; }
-    if (this.state === 'kept') return this.link.send(msg);
+    if (this.state === 'kept') {
+      const sent = this.link.send(msg);
+      if (!sent && ['stop', 'end', 'kill'].includes(msg.t) && (!this.link.socket || this.link.socket.destroyed)) {
+        this.outbox.push(msg);
+        void this.link._recover();
+      }
+      return sent;
+    }
     return false;
   }
 
@@ -121,6 +133,7 @@ class KeptProc extends EventEmitter {
 
   /** One message from the keeper about this run. */
   receive(msg) {
+    if (this.blocked && msg.t === 'line') return;
     if (msg.t === 'spawned') { this.pid = msg.pid; return; }
     if (msg.t === 'line') {
       if (msg.seq <= this.seq) return; // already read back from the checkpoint
@@ -136,7 +149,7 @@ class KeptProc extends EventEmitter {
       if (this.sinceCheckpoint > CHECKPOINT_BYTES || msg.d.startsWith('{"type":"result"')) this.checkpointSoon();
       return;
     }
-    if (msg.t === 'exit') this.finish(msg.exit || {});
+    if (msg.t === 'exit') { this.exitObserved = true; this.finish(msg.exit || {}); }
   }
 
   finish(exit) {
@@ -224,6 +237,8 @@ class KeeperLink {
     this.source = opts.source || path.join(__dirname, 'keeper.js');
     this.env = opts.env || process.env;
     this.existingOnly = opts.existingOnly === true;
+    this.attachOnly = opts.attachOnly === true;
+    this.connectTimeoutMs = opts.connectTimeoutMs || CONNECT_MS;
     this.socketPath = path.join(this.dir, 'k' + PROTO + '.sock');
     this.socket = null;
     this.metaVersion = null;
@@ -242,13 +257,17 @@ class KeeperLink {
       this.ready = this._connect().catch((err) => {
         this.log('keeper: not available, instances end with the window (' + ((err && err.message) || err) + ')');
         return false;
+      }).then((ok) => {
+        if (!ok) this.ready = null;
+        return ok;
       });
     }
     return this.ready;
   }
 
   async _connect() {
-    privateDir(this.dir);
+    // Borrowing a keeper never creates, chmods or repairs its directory.
+    if (!this.existingOnly) privateDir(this.dir);
     let socket = await this._dial().catch(() => null);
     if (!socket && this.existingOnly) throw Object.assign(new Error('Selected keeper is unavailable'), { code: 'KEEPER_UNAVAILABLE' });
     if (!socket) {
@@ -262,7 +281,7 @@ class KeeperLink {
     if (!socket) throw new Error('the keeper did not start');
     if (this.closed && !this._recovering) { socket.destroy(); throw new Error('the window is closing'); }
     this._adopt(socket);
-    const hello = await this.request({ t: 'hello', proto: PROTO }, CONNECT_MS);
+    const hello = await this.request({ t: 'hello', proto: PROTO }, this.connectTimeoutMs);
     if (hello.proto !== PROTO) {
       if (this.socket === socket) this.socket = null;
       socket.destroy();
@@ -270,13 +289,14 @@ class KeeperLink {
     }
     this.keeperPid = hello.pid;
     this.metaVersion = hello.metaVersion || null;
+    this.capabilities = hello.capabilities || null;
     this.log('keeper: connected (pid ' + hello.pid + ')');
     return true;
   }
 
   _dial() {
     return new Promise((resolve, reject) => {
-      const socket = net.connect(this.socketPath);
+      const socket = net.connect(this.transportPath || this.socketPath);
       socket.once('connect', () => { socket.removeListener('error', reject); resolve(socket); });
       socket.once('error', reject);
     });
@@ -308,14 +328,16 @@ class KeeperLink {
   _adopt(socket) {
     this.socket = socket;
     this.metaVersion = null; // capability belongs to this connection's hello
+    this.capabilities = null;
     // Half a line from a connection that is gone is no part of this one.
     this.buf = '';
     socket.setEncoding('utf8');
-    socket.on('data', (chunk) => this._data(chunk));
+    socket.on('data', (chunk) => { if (this.socket === socket) this._data(chunk); });
     const gone = () => {
       if (this.socket !== socket) return;
       this.socket = null;
       this.metaVersion = null;
+      this.capabilities = null;
       for (const [, p] of this.pending) p.resolve({ ok: false, message: 'keeper gone' });
       this.pending.clear();
       this.ready = null;
@@ -328,16 +350,18 @@ class KeeperLink {
   }
 
   _data(chunk) {
-    this.buf += chunk;
-    let at;
-    while ((at = this.buf.indexOf('\n')) >= 0) {
-      const line = this.buf.slice(0, at);
-      this.buf = this.buf.slice(at + 1);
+    // Search each incoming byte once. A checkpoint may span many MiB; scanning
+    // the accumulated prefix on every socket read made that path quadratic.
+    let start = 0, at;
+    while ((at = chunk.indexOf('\n', start)) >= 0) {
+      const line = this.buf + chunk.slice(start, at);
+      this.buf = ''; start = at + 1;
       if (!line) continue;
       let msg;
       try { msg = JSON.parse(line); } catch (_) { continue; }
       this._dispatch(msg);
     }
+    this.buf += chunk.slice(start);
   }
 
   _dispatch(msg) {
@@ -347,7 +371,7 @@ class KeeperLink {
       this.pending.delete(msg.re);
       // Lines for a run being picked up can follow its reply in the same
       // read, before the promise has been seen: hold them for it.
-      if (msg.runId && !this.procs.has(msg.runId)) this.held.set(msg.runId, this.held.get(msg.runId) || []);
+      if (msg.runId && !this.procs.has(msg.runId) && !this.blockedRuns?.has(msg.runId)) this.held.set(msg.runId, this.held.get(msg.runId) || []);
       p.resolve(msg);
       return;
     }
@@ -426,6 +450,10 @@ class KeeperLink {
     if (!r.ok && UNHEARD.has(r.message)) return 'elsewhere';
     if (!r.ok) {
       if (r.message === 'owned') return 'elsewhere';
+      if (this.attachOnly && r.message !== 'none') {
+        if (r.runId) this._holdBlocked(session, r);
+        this.held.delete(r.runId); return 'elsewhere';
+      }
       if (r.message === 'unreplayable' && r.runId) {
         this.held.delete(r.runId);
         this.log('keeper: ' + session.id + ' had too much to read back; resuming it from its transcript instead');
@@ -449,8 +477,9 @@ class KeeperLink {
       return false;
     }
     if (!session.hydrate(r.checkpoint)) {
-      this.send({ t: 'forget', runId: r.runId });
-      return false;
+      if (this.attachOnly || this.manifest) this._holdBlocked(session, r);
+      else this.send({ t: 'forget', runId: r.runId });
+      return this.attachOnly ? 'elsewhere' : false;
     }
     const proc = new KeptProc(this, r.runId, session);
     proc.state = 'kept';
@@ -468,13 +497,23 @@ class KeeperLink {
     return true;
   }
 
+  _holdBlocked(session, reply) {
+    const proc = new KeptProc(this, reply.runId, session);
+    proc.pid = reply.pid; proc.state = 'kept'; proc.blocked = true;
+    this.procs.set(proc.runId, proc); this.held.delete(proc.runId);
+    session.proc = proc; session._wire?.(proc);
+    session.elsewhere = true;
+    session.keeperRefusal = 'KEEPER_UNREPLAYABLE';
+    return proc;
+  }
+
   /**
    * The connection dropped but the keeper may well still be there, and its
    * processes with it: reconnect and carry on from the last line read, rather
    * than calling them dead and starting a second `claude` on the next prompt.
    */
   _recover() {
-    const procs = [...this.procs.values()].filter((p) => p.state === 'kept');
+    const procs = [...this.procs.values()].filter((p) => p.state === 'kept' || p.state === 'pending' && p.stopRequested);
     // What is said meanwhile waits in each one's outbox — including, if the
     // window reloads first, the handover, which still has to reach the keeper.
     for (const p of procs) { p.state = 'pending'; this.procs.delete(p.runId); }
@@ -510,6 +549,11 @@ class KeeperLink {
 
   /** A run that cannot be carried on from here. */
   async _lose(p, why) {
+    if (this.attachOnly) {
+      if (p.session) { p.session.elsewhere = true; p.session._checkedAt = Date.now(); }
+      p.outbox = []; p.released = true; p.state = 'local'; p.finish({ code: null, signal: 'SIGHUP' });
+      return;
+    }
     // Too much to read back: stopped before anything resumes its conversation.
     let ended = why === 'none';
     if (why === 'unreplayable') ended = (await this.request({ t: 'forget', runId: p.runId, wait: true }, 10000)).ok;
@@ -521,8 +565,15 @@ class KeeperLink {
   }
 
   forget(proc) {
+    if (!proc.local && !proc.released) this.send({ t: 'forget', runId: proc.runId });
     this.procs.delete(proc.runId);
-    if (!proc.local) this.send({ t: 'forget', runId: proc.runId });
+  }
+
+  disconnectIdle() {
+    if (this.procs.size || this.pending.size || this._serialWork || this._recovering || this._waiting?.length) return;
+    const socket = this.socket;
+    this.socket = null; this.ready = null; this.metaVersion = null;
+    socket?.end();
   }
 
   /** The window is going away. Resolves once the keeper has everything. */
@@ -546,11 +597,90 @@ class KeeperLink {
       const socket = this.socket;
       if (!socket || socket.destroyed) return;
       return new Promise((resolve) => {
-        const timer = setTimeout(resolve, Math.max(100, until - Date.now()));
-        socket.end(() => { clearTimeout(timer); resolve(); });
+        // end() closes only our writable half. A peer that keeps streaming or
+        // delays its FIN must not retain this departing driver's event loop.
+        // Flush queued checkpoint/release bytes first; never stop the keeper.
+        const finish = () => { clearTimeout(timer); socket.destroy(); resolve(); };
+        const timer = setTimeout(finish, Math.max(100, until - Date.now()));
+        socket.end(finish);
       });
     });
   }
 }
 
-module.exports = { KeeperLink, KeptProc, defaultDir, CHECKPOINT_BYTES, sessionMeta };
+function createWindowKeeper(options = {}) {
+  const dir = options.dir || defaultDir();
+  const legacy = new KeeperLink({ ...options, dir, existingOnly: true, attachOnly: true });
+  const current = new KeeperLink({ ...options, dir: path.join(dir, 'meta1') });
+  const links = [legacy, current];
+  const custodians = new Map();
+  async function custody(raw, key) {
+    const { socketFor, stateFor, protectReleased } = require('./keeperRescue'), socket = socketFor(raw.dir);
+    let present = fs.existsSync(socket) && await require('./daemonLock').probeSocket(socket) !== 'absent';
+    if (!present && fs.existsSync(stateFor(raw.dir))) {
+      const saved = require('./daemonPaths').readPrivateJson(stateFor(raw.dir));
+      if (saved.version !== 1 || !Array.isArray(saved.proofs)) throw Error('Invalid custody manifest');
+      if (saved.proofs.length && (key === undefined || saved.proofs.some((p) => p.key === key))) {
+        await protectReleased({ transferred: saved.proofs }); present = true;
+      }
+    }
+    if (!present) return null;
+    const status = await require('./daemonControl').controlRequest({ socket }, { op: 'status' });
+    if (!status.ok || status.custodyVersion !== 1) throw Error('Custody status is unavailable');
+    if (!(status.runs || []).some((r) => key === undefined || r.key === key)) return null;
+    if (!custodians.has(raw)) {
+      // Never replace a connected raw socket: it may still drive other runs.
+      const link = new KeeperLink({ ...options, dir: raw.dir, existingOnly: true, attachOnly: true });
+      link.transportPath = socket; custodians.set(raw, link); links.push(link);
+    }
+    return custodians.get(raw);
+  }
+  const retire = async () => {
+    if (!legacy.socket || legacy.procs.size) return;
+    const listing = await legacy.request({ t: 'list' }, CONNECT_MS);
+    if (Array.isArray(listing.runs) && !listing.runs.some((r) => !r.exit)) legacy.drained = true;
+    legacy.disconnectIdle();
+  };
+  const forget = legacy.forget.bind(legacy);
+  legacy.forget = (proc) => { forget(proc); void retire(); };
+  const live = async (link) => !link.drained && (link.socket || await require('./daemonLock').probeSocket(link.socketPath) !== 'absent');
+  return { dir: current.dir, directories: links.map((s) => s.dir), links, metaVersion: 1,
+    endAttach: retire,
+    connect: async () => {
+      let ready = true;
+      for (const raw of [legacy, current]) if (await live(raw)) {
+        try { ready = await (await custody(raw) || raw).connect() && ready; }
+        catch (error) { options.log?.('keeper: custody unavailable (' + (error.code || error.message) + ')'); ready = false; }
+      }
+      return ready;
+    },
+    spawner: () => current.spawner(),
+    async attach(session) {
+      for (const raw of [legacy, current]) {
+        if (!await live(raw)) continue;
+        let link;
+        try { link = await custody(raw, session.id) || raw; } catch (error) { session.keeperRefusal = error.code || 'KEEPER_RESCUE_UNAVAILABLE'; return 'elsewhere'; }
+        if (raw === legacy && await link.connect() && link.metaVersion !== 1) {
+          const listing = await link.request({ t: 'list' }, CONNECT_MS);
+          if (!Array.isArray(listing.runs) || listing.runs.filter((r) => r.key === session.id).length > 1) return 'elsewhere';
+        }
+        const result = await link.attach(session);
+        if (result) return result;
+      }
+      await retire();
+      return false;
+    },
+    async request(msg, ms) {
+      if (msg.t !== 'list') throw Error('KEEPER_OPERATION_UNAVAILABLE');
+      const runs = [];
+      for (const link of links) if (await live(link) && await link.connect()) {
+        const listing = await link.request(msg, ms);
+        if (!Array.isArray(listing.runs)) return listing;
+        runs.push(...listing.runs.map((r) => ({ ...r, directory: link.dir })));
+      }
+      return { metaVersion: 1, runs: [...new Map(runs.map((r) => [r.runId, r])).values()] };
+    },
+    async close() { await Promise.all(links.map((link) => link.close())); }
+  };
+}
+module.exports = { KeeperLink, KeptProc, defaultDir, CHECKPOINT_BYTES, sessionMeta, createWindowKeeper };

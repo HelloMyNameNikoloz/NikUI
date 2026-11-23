@@ -11,7 +11,7 @@ const { createParticipantGate } = require('./engineTransfer');
 const insist = (ok, code) => { if (!ok) throw fail(code, code); };
 const sourceDirectory = (home) => path.join(home, 'Library/Application Support/NikUI/sources');
 const profileID = (storage) => hash(path.resolve(storage));
-const SOURCE_BUILD = 'p3-source-v8';
+const SOURCE_BUILD = 'p3-source-v14';
 function processProofs(pids, run = require('child_process').spawnSync) {
   const result = run('/bin/ps', ['-p', [...new Set(pids)].join(','), '-o', 'pid=,lstart=,command='],
     { encoding: 'utf8', timeout: 2000, env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } });
@@ -66,8 +66,12 @@ async function inventory(directory, { tolerateUnresponsive = false, processSnaps
         if (tolerateUnresponsive) { result.push({ ...descriptor, review: { ready: false, blockers: ['SOURCE_UNRESPONSIVE'] } }); continue; }
         throw fail('SOURCE_UNRESPONSIVE', 'A loaded source window did not answer');
       }
-      if (!response.ok && tolerateUnresponsive) { result.push({ ...descriptor, review: { ready: false, blockers: [response.code || 'SOURCE_UNRESPONSIVE'] } }); continue; }
-      insist(response.ok && response.id === descriptor.id && response.profile === descriptor.profile && response.version === 1, 'SOURCE_BUILD_OLD');
+      if (!response?.ok) {
+        const code = response?.code || 'SOURCE_UNRESPONSIVE';
+        if (tolerateUnresponsive) { result.push({ ...descriptor, review: { ready: false, blockers: [code] } }); continue; }
+        throw fail(code, 'A loaded source window refused review');
+      }
+      insist(response.id === descriptor.id && response.profile === descriptor.profile && response.version === 1, 'SOURCE_BUILD_OLD');
       result.push({ ...descriptor, review: response });
     }
     return result;
@@ -137,7 +141,7 @@ function createLegacyActivation(context, { home, install, workspace, directory =
   const wrapped = Object.create(context);
   Object.defineProperties(wrapped, { globalState: { value: wrap(context.globalState) }, workspaceState: { value: wrap(context.workspaceState, false, true) },
     secrets: { value: wrap(context.secrets, true) }, sourceAdmission: { value: admit }, sourceWrite: { value: write } });
-  return {
+  const api = {
     context: wrapped, write, admit, profile, install, revokeWorkspace,
     requireRecovery() { mode = 'recovery'; },
     get legacy() { return mode === 'legacy'; },
@@ -169,8 +173,18 @@ function createLegacyActivation(context, { home, install, workspace, directory =
         try {
           insist(request.nonce === descriptor.nonce, 'SOURCE_AUTHORITY_REQUIRED');
           progress();
+          if (request.op === 'source.route.record') {
+            insist(mode === 'legacy' && typeof adapters.recordPhoneRoute === 'function', 'SOURCE_OPERATION_UNAVAILABLE');
+            return await adapters.recordPhoneRoute();
+          }
           if (request.op === 'source.review') {
-            const review = await adapters.review(), pendingReturns = require('./cutoverRecovery').pendingReturns(context), pendingFolders = pendingReturns.map((item) => item.workspace);
+            // A client/recovery window can be live before the editor's process
+            // inventory settles. Keep its authenticated bridge identity in the
+            // reply, so this readiness failure cannot masquerade as old code.
+            let review;
+            try { review = await adapters.review(); }
+            catch (error) { review = { ready: false, blockers: [error.code || 'SOURCE_UNRESPONSIVE'] }; }
+            const pendingReturns = require('./cutoverRecovery').pendingReturns(context), pendingFolders = pendingReturns.map((item) => item.workspace);
             return { ok: true, version: 1, id, profile, install, workspace, ...review, mode, pendingFolders, pendingReturns,
               ready: review.ready && mode !== 'reloading' && !pendingFolders.length,
               blockers: [...new Set([...(review.blockers || []), ...(mode === 'reloading' ? ['SOURCE_RELOADING'] : []), ...(pendingFolders.length ? ['PENDING_FOLDER_RETURNS'] : [])])] };
@@ -358,5 +372,6 @@ function createLegacyActivation(context, { home, install, workspace, directory =
       if (descriptor) { const file = path.join(directory, descriptor.id + '.json'); if (privateFile(file, { optional: true })) fs.unlinkSync(file); }
     }
   };
+  return api;
 }
 module.exports = { sourceDirectory, profileID, inventory, sourceRequest, createLegacyActivation, SOURCE_BUILD, processProofs };

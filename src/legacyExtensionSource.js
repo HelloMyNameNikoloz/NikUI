@@ -67,22 +67,35 @@ function returnedKeeper(source, options = {}) {
   const recovery = require('./cutoverRecovery');
   const store = require('./privateStore').createPrivateStore(source.keeperFile + '.store');
   const keeper = require('./productionKeeper').createProductionKeeper({ root: path.dirname(source.keeperFile), store,
-    ownDirectory: new (require('./keeperLink').KeeperLink)().dir, sources: [source.keeperTransfer], ...options });
+    ownDirectory: path.join(new (require('./keeperLink').KeeperLink)().dir, 'meta1'), sources: [source.keeperTransfer], ...options });
   const transferred = new Set((source.keeperTransfer.keeper?.transferred || []).map((run) => run.runId));
   let ended = false;
-  const cleanup = () => { recovery.discard(source.keeperFile); recovery.discard(source.keeperFile + '.store'); };
+  const cleanup = () => { recovery.discard(source.keeperFile); recovery.discard(source.keeperFile + '.store'); source.keeperTransfer = null; };
   async function prune() {
     try {
       const listing = await keeper.request({ t: 'list' });
       if (listing.ok && !listing.runs.some((run) => transferred.has(run.runId) && !run.exit)) { ended = true; cleanup(); }
     } catch (_) { /* Unavailable is not proof that a borrowed run ended. */ }
+    finally { keeper.endAttach(); }
   }
-  return { ...keeper,
+  return { ...keeper, get borrowed() { return !ended; },
     async attach(session) {
       const attached = await keeper.attach(session);
-      if (attached === true) session.proc?.once('exit', () => { void prune(); });
-      await prune(); return attached;
+      if (attached === true) {
+        const proc = session.proc;
+        proc?.once('exit', () => {
+          // The final upstream exit can retire the custodian before prune's
+          // list arrives. Keep that exact acknowledgement; an unavailable
+          // endpoint must not resurrect its old manifest as a live run.
+          // Synthetic transport failures do not prove the child has exited.
+          if (proc.exitObserved) transferred.delete(proc.runId);
+          if (!transferred.size) { ended = true; cleanup(); keeper.endAttach(); }
+          else void prune();
+        });
+      }
+      return attached;
     },
+    async endAttach() { keeper.endAttach(); await prune(); },
     async close() {
       await prune(); await keeper.close(); store.dispose();
       if (ended) cleanup();
@@ -167,31 +180,54 @@ function capturedSettings(vscode, engine, profile) {
   });
   return { version: 1, user, projects, editorScopes: { user: structuredClone(user), projects: scopes } };
 }
-async function listen(source, { context, originalContext = context, vscode, engine, keeper, awake, server, becomeClient, restoreLegacy, transferPanels = () => [] }) {
+async function listen(source, { context, originalContext = context, vscode, engine, keeper, keeperSnapshot, awake, server, becomeClient, restoreLegacy, transferPanels = () => [] }) {
   let exported, detached = false, serverClosing, requiredSessionIDs = [];
   let wasListening = server?.listening, previousPort = server?.port;
   let wasServing = originalContext.workspaceState.get('nikui.remote.wasServing');
   const workspace = workspaceIdentity(vscode.workspace);
   let originalSubscriptions = [];
-  function blockers() {
+  let keeperReview;
+  const returns = returnAdapters(source, originalContext, vscode, engine);
+  async function blockers() {
     const result = [];
+    const details = [];
     const sessions = [...engine.manager.list, ...engine.codex.list];
     if (sessions.some((s) => (s.items || []).some((i) => i.kind === 'permission' && !i.resolved))) result.push('PENDING_APPROVAL');
     if (engine.manager.list.some((s) => s.catchingUp || s._attaching || s.proc?.state === 'pending' ||
       s.proc && !s.proc.kept && (s.inTurn || s.isBusy || s.backgroundTasks?.length))) result.push('CLAUDE_OWNED_BUSY');
     if (engine.codex.list.some((s) => s.inTurn || s.isBusy)) result.push(engine.codex.client.ownership === 'owned' ? 'CODEX_OWNED_BUSY' : 'BORROWED_CODEX_BUSY');
-    if (engine.manager.list.some((s) => s.proc?.kept) && keeper?.metaVersion !== 1) result.push('KEEPER_METADATA_INCOMPLETE');
+    try {
+      if (!keeper && engine.manager.list.some((s) => s.proc?.kept)) throw Object.assign(Error('Keeper unavailable'), { code: 'KEEPER_METADATA_INCOMPLETE' });
+      keeperReview = keeper ? await require('./keeperContinuity').captureKeeper(keeper, engine.manager.list, keeperSnapshot ? { snapshot: keeperSnapshot } : {}) : null;
+      for (const directory of new Set((keeperReview?.transferred || []).map((r) => r.directory))) {
+        const failure = require('./keeperSupervisor').startupFailure(directory);
+        if (failure?.terminal) throw Object.assign(Error('Custody needs repair'), { code: failure.code });
+      }
+    }
+    catch (error) { result.push(error.code || 'KEEPER_METADATA_INCOMPLETE'); details.push(require('./keeperContinuity').keeperProblem(result.at(-1), error.sessions || engine.manager.list)); }
     if (awake?.state().lid?.held) result.push('LID_CONTINUITY_UNPROVEN');
-    if (server?.sourceReleaseReadiness) result.push(...server.sourceReleaseReadiness());
-    return result;
+    if (server?.sourceReleaseReadiness) { result.push(...await server.sourceReleaseReadiness()); details.push(...server.sourceReleaseProblems || []); }
+    const names = (list) => list.map((s) => '“' + (s.customTitle || s.label || s.id) + '”').join(', ');
+    for (const code of result) if (!details.some((p) => p.code === code)) details.push({ code, message:
+      code === 'PENDING_APPROVAL' ? `Answer the pending approvals in ${names(sessions.filter((s) => s.items?.some((i) => i.kind === 'permission' && !i.resolved)))}, then Refresh.` :
+      code === 'CLAUDE_OWNED_BUSY' ? `Wait for ${names(engine.manager.list.filter((s) => s.catchingUp || s._attaching || s.proc?.state === 'pending' || s.proc && !s.proc.kept))} to finish its current work or reconnect, then Refresh.` :
+      code.includes('CODEX') ? `Finish or stop the active Codex turns in ${names(engine.codex.list.filter((s) => s.inTurn || s.isBusy))}, then Refresh.` :
+        'Turn off “Keep working with the lid closed” in this VS Code window, then Refresh.' });
+    return { codes: result, details };
   }
   await source.listen({
     review: async () => {
-      const issues = blockers();
+      const { codes: issues, details } = await blockers();
       let hostInventory;
       try { hostInventory = await require('./sourceWindowInventory').sourceWindowInventory(vscode); }
       catch (_) { issues.push('SOURCE_MANIFEST_INCOMPLETE'); }
-      return { ready: issues.length === 0, blockers: issues, fingerprint: engine.delivery.identity.fingerprint,
+      return { ready: issues.length === 0, code: issues[0], blockers: issues, blockerDetails: details,
+        keeperContinuity: { runs: (keeperReview?.transferred || []).map((r) => ({ runId: r.runId, key: r.key, pid: r.pid, directory: r.directory,
+          custodyRequired: !!(r.legacy || r.rescue || r.keeperPID && !r.keeperCustody),
+          name: engine.manager.get(r.key)?.customTitle || engine.manager.get(r.key)?.label || r.key })),
+          observed: (keeperReview?.legacyInventory || []).flatMap((s) => s.runs.map((r) => ({ runId: r.runId, key: r.key, pid: r.pid, directory: s.directory,
+            name: engine.manager.get(r.key)?.customTitle || engine.manager.get(r.key)?.label || r.key }))) },
+        routes: server?.sourceRouteRecord?.() ? [server.sourceRouteRecord()] : [], warnings: server?.sourceReleaseWarnings || [], fingerprint: engine.delivery.identity.fingerprint,
         storageKeys: { global: await originalContext.globalState.keys?.() || [], workspace: await originalContext.workspaceState.keys?.() || [],
           secrets: await originalContext.secrets.keys?.() || require('./engineTransfer').SECRET_KEYS },
         sourceVersion: context.extension?.packageJSON?.version || require('../package.json').version,
@@ -216,8 +252,9 @@ async function listen(source, { context, originalContext = context, vscode, engi
       originalSubscriptions = context.subscriptions.filter((subscription) => subscription !== source);
       serverClosing = server?.stop();
     }, cancel() {}, drain: () => serverClosing, flush: async () => { engine.flush(); },
+    recordPhoneRoute: () => server.recordPhoneRoute(),
     async detach(progress) {
-      const transferKeeper = keeper?.metaVersion === 1 ? keeper : null;
+      const transferKeeper = engine.manager.list.some((s) => s.proc?.kept && !s.proc.released) ? keeper : null;
       const state = await exportSelectedContext({ context, engine, progress, requiredSessionIDs,
         settings: capturedSettings(vscode, engine, source.profile),
         provenance: { profile: source.profile, workspace, rawScope: 'selected-profile' },
@@ -227,19 +264,20 @@ async function listen(source, { context, originalContext = context, vscode, engi
         files: { sessions: () => engine.manager.list.map((s) => s.snapshot()), sourceFolders: () => workspaceRoots(vscode.workspace),
           remoteListener: () => ({ version: 1, listening: !!wasListening, port: previousPort || 0,
             configuredPort: vscode.workspace.getConfiguration('nikui').get('remote.port', 4517) }),
+          routes: () => server?.sourceRouteRecord?.() ? [server.sourceRouteRecord()] : [],
           keeper: () => transferKeeper ? { directory: transferKeeper.dir } : null,
           keepers: () => transferKeeper?.directories || (transferKeeper ? [transferKeeper.dir] : []) }, keeper: { metaVersion: 1, runs: [] } });
       if (wasServing === undefined) delete state.workspace['nikui.remote.wasServing']; else state.workspace['nikui.remote.wasServing'] = wasServing;
       state.inventory.workspace = state.inventory.workspace.filter((e) => e.key !== 'nikui.remote.wasServing');
       if (wasServing !== undefined) state.inventory.workspace.push({ key: 'nikui.remote.wasServing', disposition: 'authoritative' });
       const instances = engine.manager.list.slice();
-      for (const s of instances) if (s.proc?.kept) s.detach();
       if (transferKeeper) {
-        const listing = await transferKeeper.request({ t: 'list' }, 4000);
-        if (listing.metaVersion !== 1 || !Array.isArray(listing.runs)) throw Object.assign(new Error('Keeper proof missing'), { code: 'KEEPER_METADATA_INCOMPLETE' });
-        const transferred = listing.runs.filter((r) => instances.some((s) => s.id === r.key) && !r.exit)
-          .map((r) => ({ ...r, released: !r.owned, compatible: true }));
-        state.keeper = { metaVersion: 1, runs: listing.runs, transferred };
+        // A later list or custody deadline can fail after the first detach.
+        // Abort must rebuild through activation in every such case.
+        detached = true;
+        state.keeper = await require('./keeperContinuity').releaseKeeper(transferKeeper, instances, {
+          ...(keeperSnapshot ? { snapshot: keeperSnapshot } : {})
+        });
       }
       exported = state; detached = true;
     },
@@ -264,7 +302,16 @@ async function listen(source, { context, originalContext = context, vscode, engi
       await becomeClient(root);
       source.recoveryUI = require('./legacyRecoveryUI').showRecovery(originalContext, source.recoveryVSCode || vscode, source);
     },
-    ...returnAdapters(source, originalContext, vscode, engine),
+    ...returns,
+    async prepareRecovery(request) {
+      // Every window joins before the barrier. A host can reload before its
+      // freeze RPC, so remember its actual listener now; otherwise it can take
+      // another window's fixed port during abort and strand the phone route.
+      if (source.listenerFile) require('./engineOwner').atomicJson(source.listenerFile,
+        { version: 1, listening: server?.listening === true, port: server?.port || 0,
+          configuredPort: vscode.workspace.getConfiguration('nikui').get('remote.port', 4517) });
+      await returns.prepareRecovery(request);
+    },
     async restoreLegacy({ reload = false } = {}) {
       // A proved abort may have detached the source. Rebuild through its
       // existing activation path; keeper-owned runs remain in keeper grace.
@@ -294,14 +341,20 @@ function workspaceReturn(state, workspace, id = workspace) {
     (roots.includes(s.cwd) || workspace === state.returnTargetWorkspace && !allRoots.includes(s.cwd)));
   require('./engineTransfer').requireConversations(exportedSessionIDs, instances, deletedSessionIDs);
   const before = original?.settings || selected.settings;
+  const returnedRuns = (state.returnKeeper?.transferred || []).filter((r) => instances.some((s) => s.id === r.key));
+  const returnedIDs = new Set(returnedRuns.map((r) => r.runId));
   return { version: 1, workspace, instances, exportedSessionIDs, deletedSessionIDs, folders: selected.folders,
     beforeWorkspace: original?.files?.legacyWorkspace || original?.workspace || {},
     wasServing: original?.workspace['nikui.remote.wasServing'],
-    listener: original?.files.remoteListener,
+    listener: original?.files.remoteListener, routes: (selected.files.routes || []).filter((r) => r.localPort === original?.files.remoteListener?.port),
     projects: roots.map((root) => ({ project: selected.settings.projects.find((p) => p.root === root) || before.projects.find((p) => p.root === root),
       beforeProject: before.projects.find((p) => p.root === root), scopes: before.editorScopes?.projects.find((p) => p.root === root) })),
     sessions: (selected.files.sessions || []).filter((s) => instances.some((i) => i.id === s.id)),
-    ...(state.returnKeeper?.transferred?.length ? { keepers: { files: { keepers: selected.files.keepers || [] }, keeper: state.returnKeeper } } : {}) };
+    ...(returnedRuns.length ? { keepers: { files: { keepers: returnedRuns.some((r) => r.directory)
+      ? [...new Set(returnedRuns.map((r) => r.directory).filter(Boolean))] : selected.files.keepers || [] },
+      keeper: { ...state.returnKeeper, runs: state.returnKeeper.runs.filter((r) => returnedIDs.has(r.runId)), transferred: returnedRuns,
+        ...(state.returnKeeper.legacyInventory ? { legacyInventory: state.returnKeeper.legacyInventory.map((inventory) => ({ ...inventory,
+          runs: inventory.runs.filter((r) => returnedIDs.has(r.runId)) })) } : {}) } } } : {}) };
 }
 function returnAdapters(source, originalContext, vscode, engine = null) {
   const workspace = workspaceIdentity(vscode.workspace);
@@ -391,6 +444,7 @@ function returnAdapters(source, originalContext, vscode, engine = null) {
       await originalContext.workspaceState.update('nikui.folders.v1', payload.folders);
       if (originalContext.workspaceState.get('nikui.remote.wasServing') !== payload.wasServing)
         await originalContext.workspaceState.update('nikui.remote.wasServing', payload.wasServing);
+      if (payload.routes?.[0]) await originalContext.workspaceState.update(require('./routeContinuity').ROUTE_KEY, payload.routes[0]);
       const { Durable, placeOf } = require('./durable');
       const durable = new Durable({ dir: originalContext.globalStorageUri.fsPath, place: placeOf(vscode.workspace) });
       durable.set('nikui.sessions.v1', payload.instances); durable.set('nikui.folders.v1', payload.folders);

@@ -86,6 +86,7 @@ module.exports = async () => {
     const files = new Map(), requested = [];
     const home = '/private/tmp/nik-mac/build/p3/disposable-fixture';
     const fakeFS = { existsSync(file) { return file.includes('source-seeded-') || file.endsWith('source-reload-2'); },
+      realpathSync: file => file, readFileSync: file => Buffer.from('fixture bridge: ' + path.basename(file)),
       writeFileSync(file, value) { files.set(file, value); }, renameSync(from, to) { files.set(to, files.get(from)); files.delete(from); } };
     const cancelled = () => Promise.reject(Error('Canceled'));
     const vscode = { env: { appName: 'Visual Studio Code' }, version: 'fixture',
@@ -94,7 +95,9 @@ module.exports = async () => {
       commands: { executeCommand(name) { requested.push(name); return name.endsWith('reloadWindow') ? cancelled() : Promise.resolve(); } } };
     const entry = {};
     new Function('require', 'exports', 'process', 'setTimeout', ENTRY)((name) => name === 'fs' ? fakeFS : name === 'path' ? path
-      : name === 'vscode' ? vscode : { cutoverRehearsalState: () => ({ mode: 'recovery' }) }, entry,
+      : name === 'vscode' ? vscode : name === 'crypto' ? require('crypto')
+      : name.endsWith('/src/legacySource') ? { SOURCE_BUILD: require('../src/legacySource').SOURCE_BUILD }
+      : { cutoverRehearsalState: () => ({ mode: 'recovery' }) }, entry,
       { env: { HOME: home }, pid: 123 }, (callback) => callback());
     await entry.activate();
     check(expectedReload ? 'only an explicitly requested reload consumes its expected Canceled rejection'

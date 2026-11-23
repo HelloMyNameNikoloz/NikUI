@@ -10,10 +10,12 @@ import NikCore
             .init(frames: [try fixtureJSON(root)["status"].encoded()], hold: true, fragment: true)
         }; defer { server.cleanup() }
         let started = Date()
-        let bytes = try UnixControlTransport(root: server.root).requestSynchronous(Data(#"{"op":"status"}"#.utf8))
+        var peer = Int32(0)
+        let bytes = try UnixControlTransport(root: server.root).requestSynchronous(Data(#"{"op":"status"}"#.utf8), onPeerPID: { peer = $0 })
         let status = try JSONValue.decode(bytes)
         #expect(status["generation"].stringValue == "generation-1")
         #expect(status["root"].stringValue == server.root)
+        #expect(peer == getpid())
         #expect(Date().timeIntervalSince(started) < 1)
     }
     @Test func realUnixSocketAndSharedFleet() async throws {

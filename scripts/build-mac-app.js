@@ -74,7 +74,7 @@ function buildIcon(resources) {
   } finally { fs.rmSync(work, { recursive: true, force: true }); }
 }
 function buildPlan({ flavour, output, testHome, identity = 'Apple Development', acceptanceP2 = false, acceptanceRealTools = false, acceptanceCutover = false,
-  version = require('../package.json').version, buildNumber = '1' } = {}) {
+  version = require('../package.json').macApp.version, buildNumber = require('../package.json').macApp.buildNumber } = {}) {
   const selected = identityForBuild(flavour);
   if (typeof acceptanceP2 !== 'boolean' || typeof acceptanceRealTools !== 'boolean' || typeof acceptanceCutover !== 'boolean' || (acceptanceRealTools && !acceptanceP2) || acceptanceCutover && acceptanceP2) throw new Error('Invalid acceptance build selection');
   if (flavour === 'prod' && (testHome !== undefined || acceptanceP2 || acceptanceRealTools || acceptanceCutover)) throw new Error('PRODUCTION_TEST_OPTIONS_FORBIDDEN');

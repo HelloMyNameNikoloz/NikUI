@@ -6,7 +6,27 @@ const { hash, atomicJson } = require('./engineOwner');
 const { createParticipantGate } = require('./engineTransfer');
 const { saveExport, readExport } = require('./cutoverRecovery');
 
-async function offlineProductionExport({ selection, owner, importer, transition, holdLease }) {
+async function offlineKeeperRuns(link, proofs, { timeoutMs = 1500 } = {}) {
+  let timer;
+  try {
+    const listing = await Promise.race([(async () => {
+      if (!await link.connect()) throw fail('KEEPER_UNAVAILABLE', 'Current keeper is unavailable');
+      return link instanceof require('./legacyKeeper').LegacyKeeper ? { runs: await link._list() }
+        : await link.request({ t: 'list' }, timeoutMs);
+    })(), new Promise((_, reject) => { timer = setTimeout(() => reject(fail('KEEPER_UNAVAILABLE', 'Keeper listing timed out')), timeoutMs); })]);
+    if (!Array.isArray(listing.runs)) throw fail('KEEPER_METADATA_INCOMPLETE', 'Current keeper listing is unavailable');
+    return listing.runs;
+  } catch (e) {
+    // Restore retains each exact imported proof as a blocked lease. Missing
+    // replies cannot prove an exit, authorize input, or permit a second run.
+    link.closed = true; link.socket?.destroy();
+    return proofs.map((proof) => ({ ...proof, key: proof.key || proof.meta.instance,
+      pid: proof.pid || proof.legacy?.child.pid, exit: null, owned: true, lease: 'blocked',
+      blocker: e.code || 'KEEPER_UNAVAILABLE' }));
+  } finally { clearTimeout(timer); }
+}
+
+async function offlineProductionExport({ selection, owner, importer, transition, holdLease, keeperSnapshot, tailscale }) {
   const saved = importer.snapshot(), record = saved.records.find((r) => r.id === saved.current);
   const store = require('./keychainStore').createKeychainStore({ adapter: importer.secretAdapter, account: record.account });
   const cache = path.join(selection.root, 'production-return-export.json');
@@ -27,7 +47,7 @@ async function offlineProductionExport({ selection, owner, importer, transition,
     }
     // Acquiring the service root proves its recorded process is dead and its
     // endpoint absent. The owner barrier prevents another provider boot.
-    let current = structuredClone(record.state), currentSettings, queueImportPending = false;
+    let current = structuredClone(record.state), currentSettings, queueImportPending = false, globals;
     const authorityFile = path.join(paths.state, 'authority.jsonl');
     const neverActivated = !privateFile(authorityFile, { optional: true });
     if (!neverActivated) {
@@ -58,7 +78,7 @@ async function offlineProductionExport({ selection, owner, importer, transition,
       if (privateFile(ledgerFile, { optional: true })) current.ledger = readPrivateJson(ledgerFile);
       const globalFile = path.join(paths.state, 'global.json');
       if (privateFile(globalFile, { optional: true })) {
-        const values = readPrivateJson(globalFile).values;
+        const values = readPrivateJson(globalFile).values; globals = values;
         for (const source of current.sources) source.global = Object.fromEntries(Object.entries(values).filter(([key]) => require('./engineTransfer').GLOBAL_KEYS.includes(key)));
       }
     }
@@ -67,15 +87,40 @@ async function offlineProductionExport({ selection, owner, importer, transition,
     const runs = [];
     for (const directory of directories) {
       const socket = path.join(directory, 'k1.sock');
-      if (await probeSocket(socket) === 'absent') continue;
-      const link = new (require('./keeperLink').KeeperLink)({ dir: directory, existingOnly: true }); links.push(link);
-      if (!await link.connect() || link.metaVersion !== 1) throw fail('KEEPER_UNAVAILABLE', 'Current keeper metadata is unavailable');
-      const listing = await link.request({ t: 'list' }, 4000);
-      if (!Array.isArray(listing.runs)) throw fail('KEEPER_METADATA_INCOMPLETE', 'Current keeper listing is unavailable');
-      runs.push(...listing.runs.map((r) => ({ ...r, directory })));
+      const original = record.transfer.sources.flatMap((s) => s.state.keeper?.transferred || []).filter((r) => r.directory === directory);
+      const namespace = directory === path.join(selection.root, 'keeper') ? 'nikd.keeper.owned.v1'
+        : 'nikd.keeper.source.' + hash(directory).slice(0, 12);
+      const proofs = globals?.[namespace]?.runs || original;
+      if (await probeSocket(socket) === 'absent') {
+        for (const proof of proofs) if (proof.legacy && require('./daemonLock').pidState(proof.legacy.child.pid) !== 'dead')
+          runs.push({ ...proof, key: proof.key || proof.meta.instance, pid: proof.legacy.child.pid, directory,
+            owned: true, exit: null, lease: 'blocked', blocker: 'KEEPER_UNAVAILABLE' });
+        continue;
+      }
+      const legacy = proofs.some((r) => r.legacy);
+      const memory = { version: 1, runs: proofs };
+      const link = legacy ? new (require('./legacyKeeper').LegacyKeeper)({ dir: directory,
+        store: { get: () => memory, update() {} }, ...(keeperSnapshot ? { processSnapshot: keeperSnapshot } : {}) }) : new (require('./keeperLink').KeeperLink)({ dir: directory, existingOnly: true }); links.push(link);
+      const listing = await offlineKeeperRuns(link, proofs);
+      let rescueStatus;
+      for (const row of listing) {
+        // An R29 manifest or a failed save can predate the custodian. Its
+        // private endpoint can prove exact current custody independently.
+        const rescueSocket = require('./keeperRescue').socketFor(directory);
+        if (!row.rescue && privateFile(rescueSocket, { socket: true, optional: true })) row.rescue = { socket: rescueSocket };
+        if (row.rescue && row.owned) {
+          try {
+            const status = rescueStatus ||= await require('./keeperRescue').rescueRequest({ ...row, directory }, 'status');
+            if (status.held.includes(row.runId)) row.lease = 'rescue';
+          } catch (_) { row.lease = 'blocked'; row.blocker ||= 'KEEPER_UNAVAILABLE'; }
+        }
+        runs.push({ ...row, directory });
+      }
     }
     const keeper = { metaVersion: 1, runs, transferred: runs.filter((r) => !r.exit && current.instances.some((s) => s.id === r.key))
-      .map((r) => ({ ...r, released: !r.owned, compatible: true })) };
+      .map((r) => ({ ...r, released: !r.owned || r.lease === 'rescue' || r.lease === 'blocked', compatible: true })) };
+    const routeState = await require('./routeContinuity').transferableRoutes(tailscale || new (require('./tunnel').Tailscale)(),
+      require('./routeContinuity').transferredRoutes(record.state.sources));
     const gate = createParticipantGate({ owner, member: importer.member() });
     const exported = await gate.quiesce(transition.token, {
       closeAdmission() {}, cancel() {}, drain() {}, flush() {}, detach() {},
@@ -93,7 +138,8 @@ async function offlineProductionExport({ selection, owner, importer, transition,
             ...structuredClone(current.instances.find((i) => i.id === s.id)) }));
         value.files.workspaces = structuredClone(record.state.sources);
         if (currentSettings) value.settings = currentSettings;
-        value.files.keepers = directories; value.files.neverActivated = neverActivated || queueImportPending;
+        value.files.keepers = directories; value.files.routes = routeState.routes; value.files.routeWarnings = routeState.warnings;
+        value.files.neverActivated = neverActivated || queueImportPending;
         value.fileHashes = Object.fromEntries(Object.entries(value.files).map(([key, value]) => [key, hash(value)])); return value;
       },
       saveExport: (value) => saveExport(cache, value, importer.secretAdapter, transition.token)
@@ -102,4 +148,4 @@ async function offlineProductionExport({ selection, owner, importer, transition,
     return exported;
   } finally { store.dispose(); await authority?.close(); await Promise.all(links.map((s) => s.close())); lease?.release(); }
 }
-module.exports = { offlineProductionExport };
+module.exports = { offlineProductionExport, offlineKeeperRuns };

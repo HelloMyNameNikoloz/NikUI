@@ -24,13 +24,34 @@ private actor TestCutoverBackend: CutoverBackend {
 @MainActor private final class TestCutoverService: CutoverService {
     let trace: CutoverTrace
     var approval = false
+    var preflightFailure = false
     init(_ trace: CutoverTrace) { self.trace = trace }
     func registerForCutover() async throws { await trace.add("register"); if approval { throw IdentityFailure("SERVICE_REQUIRES_APPROVAL") } }
+    func preflightForCutover() async throws { await trace.add("preflight"); if preflightFailure { throw IdentityFailure("ENGINE_PREFLIGHT_FAILED", diagnostics: ["exitStatus": "42", "output": "preflight failure"]) } }
     func start() async { await trace.add("start") }
     func stop() async { await trace.add("stop") }
     func unregisterAfterHandback() async { await trace.add("unregister") }
 }
 @Suite("Attended Mac cutover actions") @MainActor struct CutoverTests {
+    @Test func custodyRetryIsExplicitAndDoesNotRegisterTheEngine() async {
+        let trace = CutoverTrace(), service = TestCutoverService(trace)
+        let backend = TestCutoverBackend(trace, responses: ["review": .object(["ok": .bool(true), "ready": .bool(false),
+            "profile": .string("chosen-profile"), "blockers": .array([.string("KEEPER_RESCUE_SUPERVISION_PROGRAM_MISSING")])])])
+        let coordinator = MacCutoverCoordinator(backend: backend, service: service, installed: true)
+        await coordinator.refresh(); await coordinator.refresh()
+        #expect(await trace.values() == ["review", "review"])
+        #expect(!coordinator.mayMove && coordinator.blockers == ["KEEPER_RESCUE_SUPERVISION_PROGRAM_MISSING"])
+        await coordinator.retryCustody()
+        #expect(await trace.values() == ["review", "review", "repair-custody", "review"])
+        #expect(CutoverBlockerText.message(coordinator.blockers[0], review: .null).contains("Retry Custody"))
+    }
+    @Test func recordPhoneRouteUsesTheSelectedBridgeWithoutRegisteringAnEngine() async {
+        let trace = CutoverTrace(), service = TestCutoverService(trace)
+        let coordinator = MacCutoverCoordinator(backend: TestCutoverBackend(trace), service: service, installed: true)
+        await coordinator.refresh(); await coordinator.recordPhoneRoute(sourceID: "source-window")
+        #expect(await trace.values() == ["review", "record-phone-route", "review"])
+        #expect(coordinator.problem == nil)
+    }
     @Test func portBlockerDisablesMoveBeforeRegistration() async {
         let trace = CutoverTrace(), service = TestCutoverService(trace)
         let backend = TestCutoverBackend(trace, responses: ["review": .object(["ok": .bool(true), "ready": .bool(false),
@@ -60,11 +81,11 @@ private actor TestCutoverBackend: CutoverBackend {
         #expect(await trace.values() == ["review"])
         #expect(coordinator.mayMove)
     }
-    @Test func clickRegistersCommitsStartsEnrollsAndSwitchesInOrder() async {
+    @Test func clickValidatesIdleEngineBeforeCommittingThenStartsEnrollsAndSwitches() async {
         let trace = CutoverTrace(), service = TestCutoverService(trace)
         let coordinator = MacCutoverCoordinator(backend: TestCutoverBackend(trace), service: service, installed: true)
         await coordinator.refresh(); await coordinator.move { await trace.add("enroll") }
-        #expect(await trace.values() == ["review", "register", "move", "start", "enroll", "finish"])
+        #expect(await trace.values() == ["review", "register", "preflight", "move", "start", "enroll", "finish"])
         #expect(coordinator.stage == "ready" && coordinator.problem == nil)
         await coordinator.handBack()
         #expect(await trace.values().suffix(3) == ["handback", "stop", "unregister"])
@@ -84,7 +105,7 @@ private actor TestCutoverBackend: CutoverBackend {
         let trace = CutoverTrace(), service = TestCutoverService(trace)
         let coordinator = MacCutoverCoordinator(backend: TestCutoverBackend(trace), service: service, installed: true)
         await coordinator.refresh(); await coordinator.move { throw IdentityFailure("KEYCHAIN_DENIED") }
-        #expect(await trace.values() == ["review", "register", "move", "start"])
+        #expect(await trace.values() == ["review", "register", "preflight", "move", "start"])
         #expect(coordinator.stage == "recovery required" && coordinator.problem == "KEYCHAIN_DENIED")
         await coordinator.restoreVSCode()
         #expect(await trace.values().suffix(3) == ["restore", "stop", "unregister"])
@@ -96,5 +117,33 @@ private actor TestCutoverBackend: CutoverBackend {
         await coordinator.restoreVSCode()
         #expect(await trace.values() == ["restore", "stop", "unregister"])
         #expect(coordinator.stage == "legacy restored" && coordinator.problem == nil)
+    }
+    @Test func failedIdleEnginePreflightNeverCommitsOrEnrolls() async {
+        let trace = CutoverTrace(), service = TestCutoverService(trace); service.preflightFailure = true
+        let backend = TestCutoverBackend(trace, responses: ["cancel": .object(["ok": .bool(true), "legacy": .bool(true)])])
+        let coordinator = MacCutoverCoordinator(backend: backend, service: service, installed: true)
+        await coordinator.refresh(); await coordinator.move { await trace.add("enroll") }
+        #expect(await trace.values() == ["review", "register", "preflight", "cancel"])
+        #expect(coordinator.problem == "ENGINE_PREFLIGHT_FAILED" && coordinator.stage == "review")
+        #expect(coordinator.problemDiagnostics == ["exitStatus": "42", "output": "preflight failure"])
+    }
+    @Test func handbackAndRestoreDisconnectTheServiceClientBeforeRemovingTheEngine() async {
+        for restore in [false, true] {
+            let trace = CutoverTrace(), service = TestCutoverService(trace)
+            let coordinator = MacCutoverCoordinator(backend: TestCutoverBackend(trace), service: service, installed: true,
+                disconnect: { await trace.add("disconnect") })
+            if restore { await coordinator.restoreVSCode() } else { await coordinator.handBack() }
+            #expect(await trace.values() == [restore ? "restore" : "handback", "disconnect", "stop", "unregister"])
+            #expect(coordinator.stage == "legacy restored" && coordinator.problem == nil)
+        }
+    }
+    @Test func failedCurrentStateReturnKeepsTheAppClientAvailableForRecovery() async {
+        let trace = CutoverTrace(), service = TestCutoverService(trace)
+        let backend = TestCutoverBackend(trace, responses: ["handback": .object(["ok": .bool(false), "code": .string("CURRENT_STATE_EXPORT_REQUIRED")])])
+        let coordinator = MacCutoverCoordinator(backend: backend, service: service, installed: true,
+            disconnect: { await trace.add("disconnect") })
+        await coordinator.handBack()
+        #expect(await trace.values() == ["handback"])
+        #expect(coordinator.stage == "recovery required" && coordinator.problem == "CURRENT_STATE_EXPORT_REQUIRED")
     }
 }

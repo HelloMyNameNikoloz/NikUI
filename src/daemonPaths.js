@@ -3,7 +3,6 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { resolvedPath } = require('./engine');
 
 function fail(code, message) { return Object.assign(new Error(message), { code }); }
 const inside = (root, file) => file === root || file.startsWith(root + path.sep);
@@ -33,13 +32,17 @@ function privateFile(file, { socket = false, optional = false } = {}) {
   let st;
   try { st = fs.lstatSync(file); }
   catch (err) { if (optional && err.code === 'ENOENT') return null; throw err; }
+  return validatePrivateFile(st, socket);
+}
+function validatePrivateFile(st, socket = false, allowUnlinked = false) {
   if (st.uid !== uid() || (st.mode & 0o777) !== 0o600 || st.isSymbolicLink() ||
-      (socket ? !st.isSocket() : !st.isFile() || st.nlink !== 1)) {
+      (socket ? !st.isSocket() : !st.isFile() || st.nlink !== 1 && !(allowUnlinked && st.nlink === 0))) {
     throw fail('UNSAFE_FILE', 'Daemon files and socket must be owner-owned, unlinked private entries with mode 0600');
   }
   return st;
 }
 function privateRoot(root, { create = true, realHome = os.userInfo().homedir, envHome = process.env.HOME } = {}) {
+  const { resolvedPath } = require('./engine');
   if (typeof root !== 'string' || !path.isAbsolute(root) || root.includes('\0')) {
     throw fail('ROOT_REQUIRED', 'An explicit absolute private --root is required (use a short temporary path)');
   }
@@ -63,13 +66,26 @@ function privateRoot(root, { create = true, realHome = os.userInfo().homedir, en
 }
 
 function readPrivateJson(file) {
-  const st = privateFile(file);
-  const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
   try {
-    const opened = fs.fstatSync(fd);
-    if (opened.ino !== st.ino || opened.dev !== st.dev) throw fail('PATH_CHANGED', 'Private entry changed while opening');
-    return JSON.parse(fs.readFileSync(fd, 'utf8'));
-  } finally { fs.closeSync(fd); }
+    // atomicJson and the source observer publish with rename. A different
+    // inode is legitimate only after both entries pass the full private-file
+    // checks. Retry that race finitely; unsafe bytes and parse errors refuse.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const st = privateFile(file);
+      const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try {
+        const opened = validatePrivateFile(fs.fstatSync(fd), false, true);
+        if (opened.nlink === 0 || opened.ino !== st.ino || opened.dev !== st.dev) {
+          privateFile(file); // The replacement must also remain private.
+          continue;
+        }
+        return JSON.parse(fs.readFileSync(fd, 'utf8'));
+      } finally { fs.closeSync(fd); }
+    }
+    throw fail('PATH_CHANGED', 'Private entry kept changing while opening');
+  } catch (error) {
+    error.operation = 'readPrivateJson'; error.path = file; throw error;
+  }
 }
 
 function checkPrivateTree(root) {

@@ -11,6 +11,9 @@ import NikCore
     private let selection: AppSelection
     private let agent: SMAppService
     private var createdCutoverRegistration = false
+    private var installedProduction: Bool {
+        (try? ExecutablePackage.contents(executable: ExecutablePackage.runningExecutable()).deletingLastPathComponent().path) == "/Applications/NikUI.app"
+    }
     init(_ selection: AppSelection) {
         self.selection = selection
         agent = SMAppService.agent(plistName: selection.agentPlist)
@@ -23,6 +26,16 @@ import NikCore
     }
     var loginStatus: LoginRegistration { registration(SMAppService.mainApp.status) }
     var agentStatus: LoginRegistration { registration(agent.status) }
+    private func prepareRegistration(forCutover: Bool = false) async throws {
+        guard agentStatus != .requiresApproval else { throw IdentityFailure("SERVICE_REQUIRES_APPROVAL") }
+        let label = selection.flavour.engineLabel
+        let job = try await Task.detached { try ServiceOwner.loadedJob(label: label) }.value
+        let action = try ServiceRegistration.action(status: agentStatus, job: job)
+        if forCutover && action != .reuse { createdCutoverRegistration = true }
+        if action == .replaceStale { try await agent.unregister() }
+        if action != .reuse { try agent.register() }
+        guard agentStatus == .enabled else { throw IdentityFailure(agentStatus == .requiresApproval ? "SERVICE_REQUIRES_APPROVAL" : "SERVICE_UNAVAILABLE") }
+    }
     func setLogin(enabled: Bool) async throws {
         do {
             if enabled {
@@ -35,12 +48,13 @@ import NikCore
     func start() async throws {
         try BuildFlavour.current.validateRegistration(label: selection.flavour.engineLabel)
         if selection.flavour == .production {
-            guard Bundle.main.bundleURL.path == "/Applications/NikUI.app" else { throw MenuFailure.refused("INSTALL_IN_APPLICATIONS_REQUIRED") }
+            guard installedProduction else { throw MenuFailure.refused("INSTALL_IN_APPLICATIONS_REQUIRED") }
             try selection.validateCommittedProduction()
         }
-        do { if agent.status == .notRegistered || agent.status == .notFound { try agent.register() } }
-        catch { throw MenuFailure.refused("SERVICE_REGISTRATION_FAILED") }
-        guard agentStatus == .enabled else { throw MenuFailure.refused(agentStatus == .requiresApproval ? "SERVICE_REQUIRES_APPROVAL" : "SERVICE_UNAVAILABLE") }
+        // DEV's controller owns registration, including stale-record repair.
+        // Preparing twice can remove the registration just created by this
+        // Start while launchd has not yet published its job.
+        if selection.flavour == .production { try await prepareRegistration() }
         try await controller("start")
     }
     func stop() async throws {
@@ -48,21 +62,34 @@ import NikCore
         try await controller("intentional-stop")
     }
     func registerForCutover() async throws {
-        guard selection.isCutoverRehearsal || selection.flavour == .production && Bundle.main.bundleURL.path == "/Applications/NikUI.app" else { throw IdentityFailure("INSTALL_IN_APPLICATIONS_REQUIRED") }
-        if agent.status == .notRegistered || agent.status == .notFound { createdCutoverRegistration = true; try agent.register() }
-        guard agentStatus == .enabled else { throw IdentityFailure(agentStatus == .requiresApproval ? "SERVICE_REQUIRES_APPROVAL" : "SERVICE_UNAVAILABLE") }
+        guard selection.isCutoverRehearsal || selection.flavour == .production && installedProduction else { throw IdentityFailure("INSTALL_IN_APPLICATIONS_REQUIRED") }
+        try await prepareRegistration(forCutover: true)
+        try await controller("validate-registration")
+    }
+    func preflightForCutover() async throws {
+        let contents = try ExecutablePackage.contents(executable: ExecutablePackage.runningExecutable())
+        try await EngineControl.preflight(contents: contents, home: selection.home,
+                                          appID: selection.flavour.appID, label: selection.flavour.engineLabel)
     }
     func unregisterAfterHandback() async throws {
         // The bundled coordinator proved current-state import and window
         // ownership before calling this native final step.
-        if agent.status != .notRegistered { try await agent.unregister() }
-        guard agentStatus == .notRegistered else { throw IdentityFailure("SERVICE_UNREGISTER_FAILED") }
+        if agent.status != .notRegistered && agent.status != .notFound {
+            try await controller("validate-removal")
+            try await agent.unregister()
+        }
+        let label = selection.flavour.engineLabel
+        guard agentStatus == .notRegistered || agentStatus == .notFound,
+              try await Task.detached(operation: { try ServiceOwner.loadedJob(label: label) }).value == nil else { throw IdentityFailure("SERVICE_UNREGISTER_FAILED") }
+        createdCutoverRegistration = false
     }
     func cancelCutoverRegistration() async throws {
+        // Removal is bound to our SMAppService instance and refuses a foreign
+        // running executable, including after a failed startup.
         if createdCutoverRegistration { try await unregisterAfterHandback(); createdCutoverRegistration = false }
     }
-    private func controller(_ action: String) async throws {
-        guard let executable = Bundle.main.executableURL else { throw MenuFailure.unsafe }
+    @discardableResult private func controller(_ action: String) async throws -> [String: Any] {
+        let executable = URL(fileURLWithPath: try ExecutablePackage.runningExecutable())
         let home = selection.home
         let data = try await BoundedProcess().run(executable: executable, arguments: [action],
             environment: ["HOME": home, "USERPROFILE": home, "ZDOTDIR": home, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"], timeout: 40)
@@ -70,6 +97,7 @@ import NikCore
             guard answer?["ok"] as? Bool == true else {
                 throw MenuFailure.refused(answer?["code"] as? String ?? "SERVICE_OPERATION_FAILED")
             }
+            return answer!
     }
 }
 @MainActor final class MenuAppDelegate: NSObject, NSApplicationDelegate {
@@ -111,8 +139,10 @@ struct NikMenuApp: App {
         let model = MenuViewModel(root: selection.root, client: LocalControlClient(root: selection.root,
             privateHome: selection.flavour == .production || selection.isCutoverRehearsal ? selection.home : nil), service: service,
             privateHome: selection.flavour == .production || selection.isCutoverRehearsal ? selection.home : nil)
+        let appSession = MacAppSession(selection: selection), presenter = MacNotificationPresenter(session: appSession)
         _cutover = State(initialValue: MacCutoverCoordinator(backend: BundledCutoverBackend(selection: selection), service: service,
-            installed: Bundle.main.bundleURL.path == "/Applications/NikUI.app" || selection.isCutoverRehearsal))
+            installed: Bundle.main.bundleURL.path == "/Applications/NikUI.app" || selection.isCutoverRehearsal,
+            disconnect: { await appSession.client?.disconnect() }))
         let selected = selection
         if selection.flavour == .development { model.onSnapshot = { value in
             // Native gate evidence is deliberately small and secret-free. No
@@ -126,7 +156,6 @@ struct NikMenuApp: App {
                 guard rename(temp, file) == 0 else { throw MenuFailure.unsafe }
             } catch { try? FileManager.default.removeItem(atPath: temp) }
         } }
-        let appSession = MacAppSession(selection: selection), presenter = MacNotificationPresenter(session: appSession)
         let evidence = model.onSnapshot
         model.onSnapshot = { value in
             evidence?(value)

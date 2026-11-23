@@ -25,12 +25,14 @@ public struct UnixControlTransport: ControlTransport, Sendable {
     public init(root: String) { self.root = root }
     /// The controller is a synchronous CLI. Share the same framed socket,
     /// partial-write/EINTR handling and inode/peer validation as the UI.
-    public func requestSynchronous(_ data: Data, onFailure: ((ControlReadEvidence) -> Void)? = nil) throws -> Data {
+    public func requestSynchronous(_ data: Data, onPeerPID: ((Int32) -> Void)? = nil,
+                                   onFailure: ((ControlReadEvidence) -> Void)? = nil) throws -> Data {
         var operation = "validate", savedErrno: Int32?
         let capture: (String, Int32?) -> Void = { operation = $0; savedErrno = $1 }
         do {
             let connection = try UnixConnection(root: root, timeout: 2, onFailure: capture)
             defer { connection.cancel() }
+            onPeerPID?(connection.peerPID)
             try connection.send(data, onFailure: capture)
             return try connection.line(onFailure: capture)
         } catch {
@@ -82,6 +84,7 @@ private final class ConnectionHolder: @unchecked Sendable {
 }
 private final class UnixConnection: @unchecked Sendable {
     private var fd: Int32
+    private(set) var peerPID: Int32 = 0
     private var buffer = Data() // accessed by its one reader only
     init(root: String, timeout: Int, onFailure: ((String, Int32?) -> Void)? = nil) throws {
         try PrivateFiles.directory(root)
@@ -108,6 +111,10 @@ private final class UnixConnection: @unchecked Sendable {
             guard result == 0 else { onFailure?("connect", errno); throw MenuFailure.unavailable }
             var uid = uid_t(0), gid = gid_t(0)
             guard getpeereid(fd, &uid, &gid) == 0, uid == getuid() else { throw MenuFailure.unsafe }
+            var peer = Int32(0), length = socklen_t(MemoryLayout<Int32>.size)
+            guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &peer, &length) == 0,
+                  length == MemoryLayout<Int32>.size, peer > 0 else { throw MenuFailure.unsafe }
+            peerPID = peer
             let after = try PrivateFiles.entry(file, kind: S_IFSOCK, mode: 0o600)
             guard before.st_dev == after.st_dev, before.st_ino == after.st_ino else { throw MenuFailure.unsafe }
         } catch { close(descriptor); fd = -1; throw error }

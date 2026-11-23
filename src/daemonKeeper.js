@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const { KeeperLink, KeptProc, sessionMeta } = require('./keeperLink');
-const { privateDirectory, privateFile, fail } = require('./daemonPaths');
+const { privateDirectory, privateFile, noSymlinks, fail } = require('./daemonPaths');
 
 const MANIFEST = 'nikd.keeper.v1';
 const complete = (meta) => meta && typeof meta.instance === 'string' && !!meta.instance &&
@@ -17,7 +17,10 @@ const complete = (meta) => meta && typeof meta.instance === 'string' && !!meta.i
 class DaemonKeeper extends KeeperLink {
   constructor({ dir, store, ...options } = {}) {
     if (!dir || !path.isAbsolute(dir) || !store) throw fail('KEEPER_CONFIG', 'A private keeper directory and ownership store are required');
-    privateDirectory(dir);
+    if (options.existingOnly) {
+      noSymlinks(dir);
+      if (require('fs').existsSync(dir)) privateDirectory(dir, false);
+    } else privateDirectory(dir);
     super({ ...options, dir });
     this.store = store;
     this.blockers = new Map();
@@ -33,9 +36,23 @@ class DaemonKeeper extends KeeperLink {
   }
 
   _serial(fn) {
+    this._serialWork = (this._serialWork || 0) + 1;
     const result = this.actions.then(fn);
-    this.actions = result.catch(() => {});
+    this.actions = result.then(() => { this._serialWork--; }, () => { this._serialWork--; });
     return result;
+  }
+
+  async _connect() {
+    const proofs = [...this.manifest.values()].filter((r) => r.legacy || r.rescue).map((r) => ({ ...r,
+      key: r.meta.instance, pid: r.pid || r.legacy?.child.pid, directory: this.dir }));
+    if (proofs.length) {
+      const statuses = [];
+      await require('./keeperRescue').protectReleased({ transferred: proofs }, { statuses });
+      this.transportPath = statuses.some((s) => s.runs.some((r) => this.manifest.get(r.key)?.runId === r.runId))
+        ? require('./keeperRescue').socketFor(this.dir) : null;
+      for (const proof of proofs) this.manifest.get(proof.key).rescue = proof.rescue;
+    }
+    return super._connect();
   }
 
   _block(session, code) {
@@ -50,8 +67,10 @@ class DaemonKeeper extends KeeperLink {
 
   _remember(runId, meta) {
     if (!complete(meta)) throw fail('KEEPER_META_INCOMPLETE', 'Keeper metadata is incomplete');
+    const prior = this.manifest.get(meta.instance);
+    if (prior?.runId === runId && prior.meta.cwd === meta.cwd && prior.meta.conversation === meta.conversation) return;
     const runs = new Map(this.manifest);
-    runs.set(meta.instance, { runId, meta: { ...meta } });
+    runs.set(meta.instance, { ...(prior?.runId === runId ? prior : {}), runId, meta: { ...meta } });
     try {
       const result = this.store.update(MANIFEST, { version: 1, runs: [...runs.values()] });
       if (result && typeof result.then === 'function') throw fail('KEEPER_MANIFEST_UNAVAILABLE', 'Manifest adapter must commit synchronously');
@@ -81,25 +100,30 @@ class DaemonKeeper extends KeeperLink {
     if (!complete(meta)) throw fail('KEEPER_META_INCOMPLETE', 'Instance metadata is incomplete');
     for (const run of runs) {
       if (run === except || run.exit) continue;
-      if (run.key === meta.instance) throw fail('KEEPER_INSTANCE_LIVE', 'The instance already has a live run');
+      if (run.key === meta.instance) throw fail(run.blocker || 'KEEPER_INSTANCE_LIVE', 'The instance already has a live run');
+      if (run.borrowed && !complete(run.meta)) continue; // Unknown foreign keys reserve only themselves.
       if (meta.conversation === null) continue;
+      if (run.borrowed && complete(run.meta) && run.meta.conversation === null) continue;
       if (!complete(run.meta) || run.meta.instance !== run.key || run.meta.conversation === null) throw fail('KEEPER_META_INCOMPLETE', 'A live conversation is not identified');
-      if (run.meta.conversation === meta.conversation) throw fail('KEEPER_CONVERSATION_LIVE', 'The conversation is already live under another instance');
+      if (run.meta.conversation === meta.conversation) throw fail(run.blocker || 'KEEPER_CONVERSATION_LIVE', 'The conversation is already live under another instance');
     }
   }
 
   send(msg) {
     if (msg.guard && this.metaVersion !== 1) return false;
-    if (this.fenced && !['release', 'forget'].includes(msg.t)) return false;
+    if (this.fenced && !['release', 'forget', 'stop', 'end', 'kill', 'list', 'hello'].includes(msg.t)) return false;
+    const proc = this.procs.get(msg.runId);
+    if (proc?.blocked && ['write', 'checkpoint'].includes(msg.t)) return false;
     if (msg.t === 'checkpoint') {
       try {
         const owned = this.manifest.get(msg.meta && msg.meta.instance);
         if (!owned || owned.runId !== msg.runId) throw fail('KEEPER_NOT_ELIGIBLE', 'Checkpoint is not in the ownership manifest');
         this._remember(msg.runId, msg.meta);
       } catch (_) {
-        this.fenced = true;
-        const proc = this.procs.get(msg.runId);
-        if (proc && proc.session) this._block(proc.session, 'KEEPER_MANIFEST_UNAVAILABLE');
+        if (proc && proc.session) {
+          proc.blocked = true;
+          this._block(proc.session, 'KEEPER_MANIFEST_UNAVAILABLE');
+        }
         return false;
       }
     }
@@ -136,12 +160,13 @@ class DaemonKeeper extends KeeperLink {
           if (!reply.ok) throw fail(reply.message, 'Keeper refused or did not confirm spawn');
           proc.pid = reply.pid;
           proc.kept_();
-          if (this.fenced) throw fail('KEEPER_MANIFEST_UNAVAILABLE', 'Checkpoint eligibility could not be committed');
+          if (this.fenced || proc.blocked) throw fail('KEEPER_MANIFEST_UNAVAILABLE', 'Checkpoint eligibility could not be committed');
           this.blockers.delete(session.id); delete session.keeperRefusal;
         } catch (error) {
           this._block(session, error.code);
-          // A lost reply is not non-acceptance. Leave any kept run to grace;
-          // do not fall back, signal an unproved pid, or respawn beside it.
+          // Keep an accepted run owned even if its checkpoint cannot be saved.
+          // Only the user may stop it; a storage error must not arm grace.
+          if (proc.state === 'kept' || proc.blocked) { proc.blocked = true; return; }
           this.send({ t: 'release', runId });
           proc.outbox = []; proc.released = true; proc.state = 'local';
           proc.finish({ code: null, signal: 'SIGHUP' });
@@ -151,9 +176,9 @@ class DaemonKeeper extends KeeperLink {
     };
   }
 
-  attach(session) {
+  async attach(session) {
     return this._serial(async () => {
-      let adopted = null;
+      let adopted = null, adoption;
       try {
         const owned = this.manifest.get(session.id);
         if (!owned || owned.meta.cwd !== session.cwd || session.claudeSessionId &&
@@ -162,13 +187,28 @@ class DaemonKeeper extends KeeperLink {
         }
         const runs = await this._list(), found = runs.find((run) => run.runId === owned.runId && run.key === session.id);
         if (!found) throw fail('KEEPER_RUN_LOST', 'Owned run is no longer within keeper grace');
+        if (found.blocker) {
+          if (found.blocker === 'KEEPER_PROCESS_UNPROVEN') await this._holdUnproven?.(session, found);
+          throw fail(found.blocker, 'This run failed its ownership proof');
+        }
         if (!complete(found.meta) || found.meta.instance !== session.id || found.meta.cwd !== session.cwd ||
             owned.meta.conversation && found.meta.conversation !== owned.meta.conversation) throw fail('KEEPER_META_INCOMPLETE', 'Owned run metadata is incomplete');
-        if (found.owned) throw fail('KEEPER_OWNED_ELSEWHERE', 'Another live connection owns this run');
+        if (found.owned && !(session.proc?.link === this && session.proc.blocked && session.proc.runId === found.runId))
+          throw fail('KEEPER_OWNED_ELSEWHERE', 'Another live connection owns this run');
         this._check(found.meta, runs, found);
-        const reply = await this.request({ t: 'attach', key: session.id, runId: owned.runId, guard: found.meta }, 4000);
-        if (!reply.ok) throw fail(reply.message === 'none' ? 'KEEPER_RUN_LOST' : reply.message, 'Keeper refused adoption');
+        let reply = await this.request({ t: 'attach', key: session.id, runId: owned.runId, guard: found.meta }, 4000);
+        if (reply.message === 'KEEPER_UNREPLAYABLE' && runs.filter((r) => !r.exit && r.key === session.id).length === 1) {
+          // Guarded replay refuses before adoption. Retain the one exact run
+          // as a blocked, user-stoppable lease rather than leaving it to grace.
+          reply = await KeeperLink.prototype.request.call(this, { t: 'attach', key: session.id, runId: owned.runId }, 4000);
+        }
+        adoption = { ...reply, pid: reply.pid ?? found.pid };
+        if (!reply.ok) {
+          if (reply.message === 'unreplayable' && reply.runId === owned.runId && (reply.pid === undefined || reply.pid === found.pid)) adopted = reply.runId;
+          throw fail(reply.message === 'none' ? 'KEEPER_RUN_LOST' : reply.message === 'unreplayable' ? 'KEEPER_UNREPLAYABLE' : reply.message, 'Keeper refused adoption');
+        }
         adopted = reply.runId;
+        if (reply.runId !== owned.runId || reply.pid !== found.pid) throw fail('KEEPER_PROCESS_CHANGED', 'Keeper attached a different run');
         const snap = reply.checkpoint;
         if (!snap || snap.$v !== session.snapshot().$v || snap.id !== session.id || snap.cwd !== session.cwd ||
             (snap.claudeSessionId || null) !== found.meta.conversation || !Array.isArray(snap.items) ||
@@ -177,14 +217,17 @@ class DaemonKeeper extends KeeperLink {
         }
         if (!this._attached(session, reply)) throw fail('KEEPER_CHECKPOINT_INCOMPATIBLE', 'Checkpoint hydration failed');
         if (session._engineControls?.reattach()) session.proc.checkpoint();
-        if (this.fenced) throw fail('KEEPER_MANIFEST_UNAVAILABLE', 'Checkpoint eligibility could not be committed');
+        if (this.fenced || session.proc?.blocked) throw fail('KEEPER_MANIFEST_UNAVAILABLE', 'Checkpoint eligibility could not be committed');
         this.blockers.delete(session.id); delete session.keeperRefusal;
         return true;
       } catch (error) {
         if (adopted) {
-          this.send({ t: 'release', runId: adopted }); this.held.delete(adopted);
+          // An old keeper may adopt before rejecting replay. Retain that lease
+          // visibly, without replaying input or giving it a kill deadline.
+          this.held.delete(adopted);
           const proc = this.procs.get(adopted);
-          if (proc) { proc.released = true; proc.outbox = []; proc.state = 'local'; proc.finish({ code: null, signal: 'SIGHUP' }); }
+          if (proc) proc.blocked = true;
+          else this._holdBlocked(session, adoption);
         }
         return this._block(session, error.code || 'KEEPER_CHECKPOINT_INCOMPATIBLE');
       }
@@ -193,14 +236,21 @@ class DaemonKeeper extends KeeperLink {
 
   _lose(proc, why) {
     this._block(proc.session, why === 'none' ? 'KEEPER_RUN_LOST' : why);
+    if (proc.stopRequested && why === 'unheard') {
+      // A transport deadline is not an exit acknowledgement. This also
+      // covers retained meta1 runs, whose pending Stop must remain retryable.
+      proc.state = 'pending'; this.procs.set(proc.runId, proc);
+      this.onBlocked?.(proc.session);
+      return Promise.resolve();
+    }
     proc.outbox = []; proc.released = true; proc.state = 'local';
     proc.finish({ code: null, signal: 'SIGHUP' });
     return Promise.resolve();
   }
 
   forget(proc) {
-    this.procs.delete(proc.runId);
     if (!proc.released) super.forget(proc);
+    this.procs.delete(proc.runId);
   }
 
   _end() { return Promise.resolve(false); }

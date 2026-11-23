@@ -68,7 +68,7 @@ const ELSEWHERE = 'This instance is running in another VS Code window. Carry on 
 // whatever only makes sense in this window. The item index is rebuilt from
 // the items, so the two cannot disagree.
 const NOT_SNAPSHOT = new Set([
-  'proc', 'spawner', 'history', 'commandCatalog', '_events', '_eventsCount', '_maxListeners',
+  'proc', '_stoppingProc', '_stoppedWait', 'spawner', 'history', 'commandCatalog', '_events', '_eventsCount', '_maxListeners',
   '_settleTimer', '_flushTimer', '_drainTimer', 'drainAt', '_dirty', '_itemIndex',
   'disposed', 'catchingUp', '_clock', '_stdoutBuf', '_attaching', '_held', '_missed',
   '_leaving', 'elsewhere', 'keeperRefusal', '_ciBefore', '_recheck', '_checkedAt', 'ciWatching',
@@ -379,6 +379,23 @@ class Session extends EventEmitter {
 
   start() {
     if (this.isRunning || this.disposed) return;
+    const stopping = this._stoppingProc;
+    if (stopping?.kept && stopping.exitCode === null && !stopping.signalCode) {
+      if (stopping.stopRequested && stopping.state === 'pending') void stopping.link._recover();
+      if (!this._stoppedWait) {
+        this._stoppedWait = true;
+        const timer = setTimeout(() => {
+          stopping.removeListener('exit', confirmed);
+          this._stoppedWait = false;
+          if (stopping.exitCode === null && !stopping.signalCode && !this.disposed)
+            this._notice('Stop has not been confirmed by the keeper. Retry after reconnecting; its running process is still reserved.', 'error');
+        }, 10000);
+        timer.unref?.();
+        const confirmed = () => { clearTimeout(timer); this._stoppedWait = false; this._stoppingProc = null; queueMicrotask(() => this.start()); };
+        stopping.once('exit', confirmed);
+      }
+      return;
+    }
     // Still finding out whether the last window left this one running: a
     // second `claude` on the same conversation is the one thing not to do.
     if (this._attaching) {
@@ -471,10 +488,11 @@ class Session extends EventEmitter {
     const proc = this.proc;
     this.proc = null;
     if (!proc) return;
+    this._stoppingProc = proc;
     try { proc.stdin.end(); } catch (_) { /* already closed */ }
     // Give it a moment to flush, then make sure it is gone. A CLI that ignores
     // SIGTERM would otherwise sit there holding memory.
-    setTimeout(() => { try { proc.kill('SIGTERM'); } catch (_) { /* gone */ } }, 1500);
+    setTimeout(() => { try { if (proc.exitCode === null && !proc.signalCode) proc.kill('SIGTERM'); } catch (_) { /* gone */ } }, 1500);
     setTimeout(() => {
       // Not `proc.killed`: that says a signal was sent, not that it worked.
       try { if (proc.exitCode === null && !proc.signalCode) proc.kill('SIGKILL'); } catch (_) { /* gone */ }

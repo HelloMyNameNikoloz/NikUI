@@ -20,22 +20,57 @@ function absent(label) {
   if (result.status === 113 && result.stderr.includes(`Could not find service "${label}"`)) return;
   throw new Error('EXISTING_OR_UNPROVEN_JOB: ' + label);
 }
+function firstRunEntries(inspect = verify) {
+  return ['prod', 'dev'].map((flavour) => {
+    const app = path.join(BASE, 'final', flavour === 'prod' ? 'NikUI.app' : 'NikUI Dev.app');
+    return { ...inspect({ app, flavour }), executable: path.join(app, 'Contents/MacOS/NikUI') };
+  });
+}
+async function quitOpenedApp({ cli, executable, launched, snapshot = require('../src/keeperContinuity').processSnapshot,
+  kill = process.kill, now = Date.now, sleep = pause, graceMs = 2500, killMs = 2000 }) {
+  const pids = launched.map((p) => p.pid), start = now();
+  let quitFailure;
+  try { cli('quit-app', ...pids.map(String)); }
+  catch (error) { quitFailure = require('./native-command').failureEvidence(error); }
+  const signals = new Set();
+  while (now() - start < graceMs + killMs + 2000) {
+    const facts = await snapshot(pids);
+    const remaining = launched.filter((proof) => {
+      const current = facts.get(proof.pid);
+      return current && current.started === proof.started && current.command === proof.command;
+    });
+    if (!remaining.length && !cli('app-status').pids.some((pid) => pids.includes(pid))) return { absent: true, pids, signals: [...signals], ...(quitFailure ? { quitFailure } : {}) };
+    for (const proof of remaining) {
+      assert(proof.command === executable || proof.command.startsWith(executable + ' '), 'Only the launched exact executable can be stopped');
+      const signal = now() - start < graceMs ? null : now() - start < graceMs + killMs ? 'SIGTERM' : 'SIGKILL';
+      if (signal && !signals.has(proof.pid + ':' + signal)) {
+        // snapshot above revalidates PID, birth and full argv immediately
+        // before each signal. An installed copy or a reused PID is untouched.
+        try { kill(proof.pid, signal); } catch (e) { if (e.code !== 'ESRCH') throw e; }
+        signals.add(proof.pid + ':' + signal);
+      }
+    }
+    await sleep(100);
+  }
+  throw Object.assign(Error('The launched exact app did not quit'), { code: 'APP_CLEANUP_FAILED', pids });
+}
 async function main() {
   if (process.argv.slice(2).join(' ') === '--native --cutover-rehearsal') return require('./test-mac-cutover').main();
   if (process.argv.slice(2).join(' ') === '--native --cutover-rehearsal-fixed-port') return require('./test-mac-cutover').main({ fixedPort: true });
+  if (process.argv.slice(2).join(' ') === '--native --cutover-rehearsal-continuity') return require('./test-mac-cutover').main({ fixedPort: true, legacyContinuity: true });
+  if (process.argv.slice(2).join(' ') === '--native --cutover-rehearsal-never-exiting') return require('./test-mac-cutover').main({ fixedPort: true, legacyContinuity: true, neverExiting: true });
+  if (process.argv.slice(2).join(' ') === '--native --cutover-rehearsal-rescue') return require('./test-mac-cutover').main({ fixedPort: true, legacyContinuity: true, neverExiting: true, rescueContinuity: true });
   if (process.argv.slice(2).join(' ') === '--native --e2e') return require('./test-mac-app-e2e').main();
-  if (process.argv.slice(2).join(' ') !== '--native') throw new Error('Usage: test-mac-app.sh --native [--e2e | --cutover-rehearsal | --cutover-rehearsal-fixed-port] (Claude only)');
-  const testHome = path.join(BASE, 'dev-home'), report = { ok: false, checks: [], cleanup: [] };
-  const entries = ['prod', 'dev'].map((flavour) => {
-    const app = path.join(BASE, flavour === 'prod' ? 'NikUI.app' : 'NikUI Dev.app');
-    const inspection = verify({ app, flavour });
-    return { ...inspection, executable: path.join(app, 'Contents/MacOS/NikUI') };
-  });
+  if (process.argv.slice(2).join(' ') !== '--native') throw new Error('Usage: test-mac-app.sh --native [--e2e | --cutover-rehearsal | --cutover-rehearsal-fixed-port | --cutover-rehearsal-continuity] (Claude only)');
+  const report = { ok: false, checks: [], cleanup: [] };
+  const entries = firstRunEntries();
+  report.cleanupRoots = [];
   const opened = [];
   try {
     for (const entry of entries) {
       absent(entry.label);
-      const cli = (command) => JSON.parse(run(entry.executable, [command], { HOME: testHome, NIKUI_FLAVOUR: 'dev', CODEX_HOME: testHome + '/.codex' }));
+      const testHome = entry.flavour === 'dev' ? JSON.parse(fs.readFileSync(path.join(entry.app, 'Contents/Resources/engine/mac-engine.json'))).testHome : path.join(BASE, 'r' + require('../package.json').macApp.buildNumber + '-first-run-home');
+      const cli = (command, ...args) => JSON.parse(run(entry.executable, [command, ...args], { HOME: testHome, NIKUI_FLAVOUR: 'dev', CODEX_HOME: testHome + '/.codex' }));
       assert.deepEqual(cli('app-status').pids, [], 'Existing exact app is left alone');
       const identity = cli('build-identity');
       assert.equal(identity.flavour, entry.flavour); assert.equal(identity.label, entry.label); assert.equal(identity.appID, entry.appID);
@@ -54,11 +89,14 @@ async function main() {
       const rejectedService = entry.flavour === 'prod' ? 'com.nikui.engine.test.' + 'a'.repeat(32) : 'com.nikui.engine.production.selected-store-v1';
       const refused = spawnSync(helper, [], { input: encodeFrame({ version: 1, id: 'b'.repeat(32), op: 'read', service: rejectedService, account: 'probe' }), timeout: 10000, killSignal: 'SIGKILL' });
       assert.equal(refused.status, 1); assert.equal(decodeFrame(refused.stdout).error.code, 'KEYCHAIN_NAMESPACE');
-      opened.push({ entry, cli });
+      const openedEntry = { entry, cli, launched: [] }; opened.push(openedEntry);
+      report.cleanupRoots.push(entry.app);
       run('/usr/bin/open', ['-n', '--env', 'HOME=' + testHome, entry.app]);
       const deadline = Date.now() + 15000;
       while (!cli('app-status').pids.length && Date.now() < deadline) await pause(200);
       assert.equal(cli('app-status').pids.length, 1);
+      openedEntry.launched = [...(await require('../src/keeperContinuity').processSnapshot(cli('app-status').pids)).values()];
+      assert.equal(openedEntry.launched.length, 1, 'Capture the exact launched app birth and argv for cleanup');
       await pause(1500); // allow first scene/model tasks to run before inspection
       absent(entry.label);
       assert.equal(fs.existsSync(identity.root), rootExisted, 'First launch must not initialize an engine profile');
@@ -70,16 +108,15 @@ async function main() {
   } catch (error) {
     report.failure = require('./native-command').failureEvidence(error);
   } finally {
-    for (const { entry, cli } of opened.reverse()) {
+    for (const { entry, cli, launched } of opened.reverse()) {
       try {
-        cli('quit-app');
-        const deadline = Date.now() + 10000;
-        while (cli('app-status').pids.length && Date.now() < deadline) await pause(200);
-        assert.equal(cli('app-status').pids.length, 0); absent(entry.label);
-        report.cleanup.push({ flavour: entry.flavour, exactAppQuit: true, jobAbsent: true });
-      } catch (error) { report.ok = false; report.cleanup.push({ flavour: entry.flavour, failure: error.message }); }
+        if (!launched.length) launched.push(...(await require('../src/keeperContinuity').processSnapshot(cli('app-status').pids)).values());
+        const quit = await quitOpenedApp({ cli, executable: entry.executable, launched });
+        absent(entry.label);
+        report.cleanup.push({ flavour: entry.flavour, exactAppQuit: quit.absent, jobAbsent: true, ...quit });
+      } catch (error) { report.ok = false; report.cleanup.push({ flavour: entry.flavour, failure: require('./native-command').failureEvidence(error) }); }
     }
-    const evidence = '/private/tmp/nik-mac/p3/r19-native-app.json';
+    const evidence = '/private/tmp/nik-mac/p3/r' + require('../package.json').macApp.buildNumber + '-native-app.json';
     noSymlinks(evidence); fs.writeFileSync(evidence, JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
     report.evidence = evidence;
   }
@@ -87,3 +124,4 @@ async function main() {
   return report;
 }
 if (require.main === module) void require('./native-command').runNative(main);
+module.exports = { firstRunEntries, quitOpenedApp };

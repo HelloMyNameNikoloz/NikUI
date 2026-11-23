@@ -24,6 +24,9 @@ struct EngineMenu: View {
                     .accessibilityLabel("Version \(snapshot.status.engine.version), generation \(snapshot.status.generation)")
                 Text("Codex · \(URL(fileURLWithPath: snapshot.status.account.home).lastPathComponent)")
                 Text("Loopback \(snapshot.status.listener.port) · \(snapshot.status.bridge.editors) editors")
+                ForEach(Array((snapshot.status.warnings ?? []).enumerated()), id: \.offset) { _, warning in
+                    Label(warning.message, systemImage: "exclamationmark.triangle")
+                }
             }
             if let problem = model.state.problem { Text(problem).foregroundStyle(.secondary) }
         }

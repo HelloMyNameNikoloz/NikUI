@@ -29,6 +29,7 @@ public struct EngineStatus: Codable, Equatable, Sendable {
     public struct Account: Codable, Equatable, Sendable { public let home: String; public let borrowed: Bool }
     public struct Bridge: Codable, Equatable, Sendable { public let connected: Int; public let editors: Int; public let pendingEditorRequests: Int }
     public struct Blocker: Codable, Equatable, Sendable { public let code: String; public let tool: String? }
+    public struct Warning: Codable, Equatable, Sendable { public let code: String; public let message: String }
     public let ok: Bool
     public let root: String
     public let generation: String
@@ -40,6 +41,7 @@ public struct EngineStatus: Codable, Equatable, Sendable {
     public let bridge: Bridge
     public let tools: [String: ToolDiagnostic]
     public let blockers: [Blocker]
+    public let warnings: [Warning]?
 }
 public struct EngineSettings: Codable, Equatable, Sendable {
     public struct Tools: Codable, Equatable, Sendable {

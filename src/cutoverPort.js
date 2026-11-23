@@ -26,7 +26,8 @@ async function inspectPort(port, holders = portHolders) {
   return { port, available: !code, ...(code ? { code: code === 'EADDRINUSE' ? 'PORT_IN_USE' : code } : {}), holders: code === 'EADDRINUSE' ? holders(port) : [] };
 }
 async function reviewPort(selected, inspect = inspectPort) {
-  const port = selected[0]?.review.listener?.configuredPort ?? 4517, result = await inspect(port);
+  const routes = selected.flatMap((s) => s.review.routes || []);
+  const port = routes[0]?.localPort ?? selected[0]?.review.listener?.configuredPort ?? 4517, result = await inspect(port);
   const takeover = result.code === 'PORT_IN_USE' && result.holders.length > 0 && result.holders.every((holder) =>
     selected.some((source) => source.pid === holder.pid && source.review.listener?.listening === true && source.review.listener.port === port));
   return { ...result, takeover, ready: result.available || takeover };

@@ -6,6 +6,24 @@ import NikMenuCore
 @testable import NikMacCore
 
 @Suite("Controller status and portable KeepAlive lifecycle") struct EngineControlTests {
+    @Test func claimedPIDCannotReplaceTheControlSocketsKernelPeerPID() throws {
+        let root = "/private/tmp/nik-peer-" + UUID().uuidString.prefix(8)
+        try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(atPath: root) }
+        let child = Process(), output = Pipe()
+        child.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        child.arguments = ["node", "-e", #"""
+        const fs = require('fs'), net = require('net'), root = process.argv[1];
+        net.createServer(socket => socket.once('data', () => socket.end(JSON.stringify({
+          ok: true, root, state: 'running', pid: process.pid + 1, generation: 'claimed', controlPeerPID: process.pid + 1
+        }) + '\n'))).listen(root + '/c.sock', () => { fs.chmodSync(root + '/c.sock', 0o600); console.log('ready'); });
+        """#, root]
+        child.standardOutput = output; child.standardError = FileHandle.standardError
+        try child.run()
+        defer { if child.isRunning { child.terminate(); child.waitUntilExit() } }
+        _ = try output.fileHandleForReading.read(upToCount: 6)
+        #expect(throws: MenuFailure.refused("SERVICE_BUNDLE_MISMATCH")) { _ = try EngineControl.status(root: root) }
+    }
     @Test func successfulStatusRetryRetainsTheOriginalReadErrno() throws {
         let root = "/private/tmp/nik-read-error-" + UUID().uuidString.prefix(8)
         try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])

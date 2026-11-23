@@ -222,6 +222,7 @@ function selectionFor(sources, selectedSource) {
 }
 function buildSelectedTransfer(transition, sources, { selectedSource } = {}) {
   jsonData(sources);
+  validateLegacyInventories(sources);
   for (const source of sources) validateSource(source.state, transition.scope);
   const envelope = buildTransfer(transition, sources);
   envelope.value.ledger = selectedLedger(sources);
@@ -250,6 +251,7 @@ function validateSelectedTransfer(envelope) {
         a.lease === m.lease && a.generation === m.generation && digest(a.resourcesHash) && Number.isSafeInteger(a.deadline) && a.deadline >= 0, 'EXPORT_INVALID');
       validateSource(source.state, v.scope);
     }
+    validateLegacyInventories(v.sources);
     const rebuilt = buildTransfer({ token: v.transition, generation: v.sourceGeneration, from: v.from, to: v.to,
       target: v.target, scope: v.scope, sources: v.sources.map((s) => s.member) }, v.sources);
     rebuilt.value.ledger = selectedLedger(v.sources);
@@ -260,6 +262,17 @@ function validateSelectedTransfer(envelope) {
   } catch (e) {
     if (/^(IMPORT_|EXPORT_|KEEPER_)/.test(e.code || '')) throw e;
     throw fail('IMPORT_INVALID', 'Selected import payload is invalid');
+  }
+}
+
+function validateLegacyInventories(sources) {
+  const proofs = sources.flatMap((s) => s.state.keeper?.transferred || []);
+  for (const source of sources) for (const inventory of source.state.keeper?.legacyInventory || []) {
+    insist(typeof inventory.directory === 'string' && Array.isArray(inventory.runs), 'KEEPER_LEGACY_UNPROVEN');
+    for (const row of inventory.runs) {
+      const proved = proofs.filter((r) => r.directory === inventory.directory && r.runId === row.runId && r.key === row.key && r.pid === row.pid && r.legacy);
+      insist(proved.length === 1, 'KEEPER_LEGACY_UNPROVEN');
+    }
   }
 }
 

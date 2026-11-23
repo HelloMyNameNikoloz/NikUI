@@ -7,7 +7,8 @@ import Darwin
 
 public struct IdentityFailure: Error, Equatable, Sendable, LocalizedError {
     public let code: String
-    public init(_ code: String) { self.code = code }
+    public let diagnostics: [String: String]
+    public init(_ code: String, diagnostics: [String: String] = [:]) { self.code = code; self.diagnostics = diagnostics }
     public var errorDescription: String? { code }
 }
 
@@ -87,14 +88,26 @@ public struct AppSelection: Sendable, Equatable {
         #if NIKUI_PRODUCTION
         false
         #else
-        guard flavour == .development, let resources = Bundle.main.resourceURL,
-              let data = try? Data(contentsOf: resources.appendingPathComponent("engine/mac-engine.json")),
+        guard flavour == .development,
+              let contents = try? ExecutablePackage.contents(executable: ExecutablePackage.runningExecutable()),
+              let data = try? Data(contentsOf: contents.appendingPathComponent("Resources/engine/mac-engine.json")),
               let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
         return config["acceptanceCutover"] as? Bool == true && config["testHome"] as? String == home && config["root"] as? String == root
         #endif
     }
-    public static func selected(bundle: Bundle = .main) throws -> Self {
-        try BuildFlavour.current.selection(info: bundle.infoDictionary ?? [:], accountHome: BuildFlavour.accountHome())
+    public static func selected(bundle: Bundle? = nil) throws -> Self {
+        if let bundle { return try BuildFlavour.current.selection(info: bundle.infoDictionary ?? [:], accountHome: BuildFlavour.accountHome()) }
+        return try selected(executable: ExecutablePackage.runningExecutable())
+    }
+    public static func selected(executable: String, accountHome: String? = nil) throws -> Self {
+        // Auxiliary executables share the app id with other built copies.
+        // Read the containing package directly, bypassing Bundle.main caches.
+        let contents = try ExecutablePackage.contents(executable: executable)
+        let data = try Data(contentsOf: contents.appendingPathComponent("Info.plist"))
+        guard let info = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+            throw IdentityFailure("PACKAGE_CONFIGURATION")
+        }
+        return try BuildFlavour.current.selection(info: info, accountHome: accountHome ?? BuildFlavour.accountHome())
     }
     public func validateExistingRoot() throws {
         var at = ""
@@ -128,6 +141,33 @@ public struct AppSelection: Sendable, Equatable {
               owner["mode"] as? String == "service", owner["generation"] as? Int == generation,
               owner["by"] as? String == flavour.engineLabel else { throw IdentityFailure("SERVICE_OWNERSHIP_REQUIRED") }
         // JS additionally verifies the participant lease and selected receipt.
+    }
+}
+
+public enum ExecutablePackage {
+    /// Foundation may strip /private after resolving links. Match the kernel
+    /// and Node's realpath spelling, and refuse paths that cannot be resolved.
+    public static func canonicalPath(_ path: String) throws -> String {
+        guard path.hasPrefix("/"), !path.utf8.contains(0), let resolved = realpath(path, nil) else {
+            throw IdentityFailure("PACKAGE_CONFIGURATION")
+        }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+    public static func runningExecutable() throws -> String {
+        var size: UInt32 = 0
+        _ = _NSGetExecutablePath(nil, &size)
+        var bytes = [CChar](repeating: 0, count: Int(size))
+        guard _NSGetExecutablePath(&bytes, &size) == 0 else { throw IdentityFailure("PACKAGE_CONFIGURATION") }
+        return try canonicalPath(String(cString: bytes))
+    }
+    public static func contents(executable: String) throws -> URL {
+        let file = URL(fileURLWithPath: executable), macOS = file.deletingLastPathComponent(), contents = macOS.deletingLastPathComponent()
+        guard executable.hasPrefix("/"), file.standardized.path == executable, macOS.lastPathComponent == "MacOS",
+              contents.lastPathComponent == "Contents", contents.deletingLastPathComponent().pathExtension == "app" else {
+            throw IdentityFailure("PACKAGE_CONFIGURATION")
+        }
+        return contents
     }
 }
 

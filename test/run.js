@@ -19,6 +19,19 @@ global.checkEqual = (name, actual, expected) => {
 // builds a KeeperLink without naming a folder gets a throwaway one instead.
 // An inherited override may itself name a live keeper. Never reuse it.
 process.env.NIKUI_KEEPER_DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 'nk-test-'));
+// Portable tests must never register a real launchd job. This test-only
+// supervisor exercises the identical custodian crash/reload entry point.
+const custodySupervisor = require('./helpers/custody-supervisor');
+require('../src/keeperRescue').supervise = custodySupervisor.supervise;
+require('../src/keeperRescue').retireCustody = async (directory) => {
+  // Product cleanup is covered with a launchctl I/O trap in R37. Portable
+  // integrations must never inspect or mutate a real login-session job.
+  try {
+    const status = await require('../src/daemonControl').controlRequest({ socket: require('../src/keeperRescue').socketFor(directory) }, { op: 'status' });
+    if (status.runs?.length) return { retained: true };
+  } catch (_) {}
+  await custodySupervisor.stop(directory); return { removed: true };
+};
 
 (async () => {
   const dir = __dirname;
@@ -33,6 +46,7 @@ process.env.NIKUI_KEEPER_DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 
     if (typeof mod === 'function') await mod();
     if (process.env.NIKUI_TEST_PROGRESS === '1') console.error('Finished ' + file);
   }
+  await custodySupervisor.closeAll();
 
   let failed = 0;
   let suite = null;
@@ -50,4 +64,4 @@ process.env.NIKUI_KEEPER_DIR = fs.mkdtempSync(path.join(require('os').tmpdir(), 
 
   console.log('\n' + (results.length - failed) + '/' + results.length + ' checks passed');
   process.exit(failed ? 1 : 0);
-})().catch((err) => { console.error(err); process.exit(1); });
+})().catch(async (err) => { console.error(err); await custodySupervisor.closeAll(); process.exit(1); });

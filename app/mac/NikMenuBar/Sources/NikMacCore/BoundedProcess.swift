@@ -33,10 +33,27 @@ public final class BoundedProcess: @unchecked Sendable {
     public func runSynchronous(executable: URL, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> Data {
         try execute(executable: executable, arguments: arguments, environment: environment, input: Data(), timeout: timeout, requireSuccess: true, progress: false)
     }
-    private func execute(executable: URL, arguments: [String], environment: [String: String], input: Data, timeout: TimeInterval, requireSuccess: Bool, progress: Bool) throws -> Data {
+    public func runSynchronousResult(executable: URL, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> (data: Data, status: Int32) {
+        let data = try execute(executable: executable, arguments: arguments, environment: environment, input: Data(), timeout: timeout,
+                               requireSuccess: false, progress: false, captureErrors: true)
+        return (data, process.terminationStatus)
+    }
+    /// Capture bounded combined stdout/stderr and the actual exit status even
+    /// when the command fails. The idle preflight emits no selected secrets.
+    public func runResult(executable: URL, arguments: [String], environment: [String: String], timeout: TimeInterval) async throws -> (data: Data, status: Int32) {
+        try await withTaskCancellationHandler {
+            try await Task.detached(priority: .userInitiated) { [self] in
+                let data = try execute(executable: executable, arguments: arguments, environment: environment, input: Data(), timeout: timeout,
+                                       requireSuccess: false, progress: false, captureErrors: true)
+                return (data, process.terminationStatus)
+            }.value
+        } onCancel: { self.cancel() }
+    }
+    private func execute(executable: URL, arguments: [String], environment: [String: String], input: Data, timeout: TimeInterval, requireSuccess: Bool, progress: Bool, captureErrors: Bool = false) throws -> Data {
         let output = Pipe(), stdin = Pipe()
         process.executableURL = executable; process.arguments = arguments; process.environment = environment
-        process.standardInput = stdin; process.standardOutput = output; process.standardError = FileHandle.nullDevice
+        process.standardInput = stdin; process.standardOutput = output
+        if captureErrors { process.standardError = output } else { process.standardError = FileHandle.nullDevice }
         lock.lock()
         do {
             guard !cancelled else { throw IdentityFailure("CUTOVER_CANCELLED") }
@@ -60,29 +77,36 @@ public final class BoundedProcess: @unchecked Sendable {
         _ = fcntl(descriptor, F_SETFL, O_NONBLOCK)
         var deadline = ProcessInfo.processInfo.systemUptime + timeout
         var data = Data(), frames = Data(), sequence = 0, buffer = [UInt8](repeating: 0, count: 8192)
-        while true {
-            lock.lock(); let wasCancelled = cancelled; lock.unlock()
-            guard !wasCancelled else { throw IdentityFailure("CUTOVER_CANCELLED") }
-            guard ProcessInfo.processInfo.systemUptime < deadline else { throw IdentityFailure("CUTOVER_TIMEOUT") }
-            let count = Darwin.read(descriptor, &buffer, buffer.count)
-            if count > 0 {
-                if progress {
-                    frames.append(contentsOf: buffer.prefix(count))
-                    while let newline = frames.firstIndex(of: 10) {
-                        let line = Data(frames[..<newline]); frames.removeSubrange(...newline)
-                        if let value = try? JSONSerialization.jsonObject(with: line) as? [String: Int],
-                           value.count == 1, let next = value["cutoverProgress"], next > sequence {
-                            sequence = next; deadline = ProcessInfo.processInfo.systemUptime + timeout
-                        } else { data.append(line); data.append(10) }
-                    }
-                } else { data.append(contentsOf: buffer.prefix(count)) }
-                guard data.count + frames.count <= 1024 * 1024 else { throw IdentityFailure("CUTOVER_REPLY_TOO_LARGE") }
-            } else if !process.isRunning {
-                if requireSuccess && process.terminationStatus != 0 { throw IdentityFailure("CUTOVER_PROCESS_FAILED") }
-                data.append(frames); return data
+        do {
+            while true {
+                lock.lock(); let wasCancelled = cancelled; lock.unlock()
+                guard !wasCancelled else { throw IdentityFailure("CUTOVER_CANCELLED") }
+                guard ProcessInfo.processInfo.systemUptime < deadline else { throw IdentityFailure("CUTOVER_TIMEOUT") }
+                let count = Darwin.read(descriptor, &buffer, buffer.count)
+                if count > 0 {
+                    if progress {
+                        frames.append(contentsOf: buffer.prefix(count))
+                        while let newline = frames.firstIndex(of: 10) {
+                            let line = Data(frames[..<newline]); frames.removeSubrange(...newline)
+                            if let value = try? JSONSerialization.jsonObject(with: line) as? [String: Int],
+                               value.count == 1, let next = value["cutoverProgress"], next > sequence {
+                                sequence = next; deadline = ProcessInfo.processInfo.systemUptime + timeout
+                            } else { data.append(line); data.append(10) }
+                        }
+                    } else { data.append(contentsOf: buffer.prefix(count)) }
+                    guard data.count + frames.count <= 1024 * 1024 else { throw IdentityFailure("CUTOVER_REPLY_TOO_LARGE") }
+                } else if !process.isRunning {
+                    if requireSuccess && process.terminationStatus != 0 { throw IdentityFailure("CUTOVER_PROCESS_FAILED") }
+                    data.append(frames); return data
+                }
+                else if count < 0 && errno != EAGAIN && errno != EINTR { throw IdentityFailure("CUTOVER_OUTPUT_UNAVAILABLE") }
+                Thread.sleep(forTimeInterval: 0.01)
             }
-            else if count < 0 && errno != EAGAIN && errno != EINTR { throw IdentityFailure("CUTOVER_OUTPUT_UNAVAILABLE") }
-            Thread.sleep(forTimeInterval: 0.01)
+        } catch let error as IdentityFailure {
+            guard captureErrors else { throw error }
+            throw IdentityFailure(error.code, diagnostics: [
+                "output": String(decoding: data.prefix(16384), as: UTF8.self),
+                "exitStatus": process.isRunning ? "running" : String(process.terminationStatus)])
         }
     }
 }

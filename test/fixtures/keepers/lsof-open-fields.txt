@@ -1,0 +1,3 @@
+p42362
+f3
+n/private/tmp/nik-mac/p3/r45-lsof-15_2pp7s/open-fixture

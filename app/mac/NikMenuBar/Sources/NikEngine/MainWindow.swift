@@ -431,9 +431,25 @@ private struct CutoverReview: View {
             }.frame(maxHeight: 160)
             Text("The engine runs independently at login. Your editor profile and its backup remain available. Open at Login for this window is a separate setting.")
                 .font(.caption).foregroundStyle(.secondary)
+            ForEach(coordinator.review["warnings"].arrayValue + coordinator.review["sources"].arrayValue.flatMap { $0["warnings"].arrayValue }, id: \.self) { warning in
+                Label(warning["message"].stringValue ?? "Phone route was not transferred.", systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.orange)
+            }
             ForEach(coordinator.blockers, id: \.self) { code in
                 VStack(alignment: .leading, spacing: 4) {
                     Label(explanation(code), systemImage: "exclamationmark.circle")
+                    if code.hasPrefix("KEEPER_RESCUE_SUPERVISION_") {
+                        Button("Retry Custody") { Task { await coordinator.retryCustody() } }.disabled(coordinator.working)
+                    }
+                    if code == "ROUTE_OWNER_MISMATCH" {
+                        ForEach(coordinator.review["sources"].arrayValue.filter { source in
+                            source["blockerDetails"].arrayValue.contains { $0["action"].stringValue == "record-phone-route" }
+                        }, id: \.self) { source in
+                            Button("Record this window’s phone route") {
+                                Task { await coordinator.recordPhoneRoute(sourceID: source["id"].stringValue ?? "") }
+                            }.disabled(coordinator.working)
+                        }
+                    }
                     if code == "PORT_IN_USE" {
                         let port = coordinator.review["listener"]["port"].intValue ?? 4517
                         Text("Port \(port) is occupied.").font(.callout)
@@ -496,22 +512,6 @@ private struct CutoverReview: View {
             }
     }
     private func explanation(_ code: String) -> String {
-        switch code {
-        case "INSTALL_IN_APPLICATIONS_REQUIRED": "Install NikUI in Applications before moving your work."
-        case "SOURCE_SELECTION_REQUIRED": "Choose the editor profile to move."
-        case "SOURCE_HANDSHAKE_UNAVAILABLE": "Open a NikUI source window with the compatible handoff bridge."
-        case "SOURCE_BUILD_OLD": "Reload VS Code with the current NikUI extension, then review again."
-        case "SOURCE_RELOADING": "Reload the named editor window in VS Code, then refresh this review."
-        case "PORT_IN_USE": coordinator.review["listener"]["holders"].arrayValue.isEmpty
-            ? "Couldn’t identify the port holder. Select Refresh to try again."
-            : "Close the process using the selected port, or choose another NikUI port in VS Code, then refresh."
-        case "EXPORT_INCOMPLETE": "A conversation is missing from the transfer. Reload the source windows and review again; your saved work has been retained."
-        case "PENDING_FOLDER_RETURNS": "Open these folders in VS Code first to restore their saved work, then refresh."
-        case "SERVICE_OWNERSHIP_REQUIRED": "NikUI must own the selected profile before it can return it."
-        case "CURRENT_STATE_EXPORT_REQUIRED": "A verified export of the current engine state is required."
-        case "SOURCE_RETURN_TARGET_REQUIRED": "Open a NikUI editor window to finish restoring shared settings and credentials."
-        case "CUTOVER_TIMEOUT": "The operation timed out. Refresh engine status, or choose Restore VS Code to return your current work."
-        default: "Resolve the named source or engine problem, then refresh this review."
-        }
+        CutoverBlockerText.message(code, review: coordinator.review)
     }
 }

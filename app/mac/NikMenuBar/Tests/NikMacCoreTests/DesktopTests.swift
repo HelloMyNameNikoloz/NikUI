@@ -23,6 +23,35 @@ func desktopImageFixture() throws -> Data {
     CGImageDestinationAddImage(encoder, image, nil); #expect(CGImageDestinationFinalize(encoder)); return bytes as Data
 }
 @Suite("Desktop draft bytes and loaded-transcript find") @MainActor struct DesktopTests {
+    @Test func realSMAppServiceRegistrationUsesItsProcessAndParentBundle() throws {
+        // Verbatim captured Darwin 27 output, supplied in the R37 brief.
+        let captured = """
+        \tpath = (submitted by smd.41692)
+        \ttype = Submitted
+        \tmanaged_by = com.apple.xpc.ServiceManagement
+        \tstate = running
+        \tprogram identifier = Contents/MacOS/nikd (mode: 2)
+        \tparent bundle identifier = com.nikui.app.dev
+        \tparent bundle version = 35
+        \tstdout path = /private/tmp/nik-mac/build/p3/r35-home/engine.stdout.log
+        \t...
+        \tproperties = partial import | runatload | resolve program | has LWCR
+        """
+        let package = try ServicePackageFixture(), program = package.program
+        let running = captured + "\n\tpid = 42\n"
+        #expect(ServiceOwner.matchesPackage(job: running, executable: program, appID: "com.nikui.app.dev", processPath: { $0 == 42 ? program : nil }))
+        let node = URL(fileURLWithPath: program).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/engine/node").path
+        #expect(ServiceOwner.matchesPackage(job: running, executable: program, appID: "com.nikui.app.dev", processPath: { _ in node }))
+        #expect(!ServiceOwner.matchesPackage(job: running, executable: program, appID: "com.nikui.app.dev", enabled: true, processPath: { _ in "/Applications/Foreign.app/Contents/MacOS/nikd" }))
+        #expect(!ServiceOwner.matchesPackage(job: running, executable: program, appID: "com.nikui.app.dev", enabled: true, processPath: { _ in nil }))
+        #expect(!ServiceOwner.matchesPackage(job: running + "pid = 42\n", executable: program, appID: "com.nikui.app.dev", processPath: { _ in program }))
+        #expect(!ServiceOwner.matchesPackage(job: running, executable: program, appID: "com.nikui.app", enabled: true, processPath: { _ in program }))
+        let stopped = captured.replacingOccurrences(of: "state = running", with: "state = not running")
+        #expect(ServiceOwner.matchesPackage(job: stopped, executable: program, appID: "com.nikui.app.dev", enabled: true, allowStopped: true))
+        #expect(!ServiceOwner.matchesPackage(job: captured, executable: program, appID: "com.nikui.app.dev", enabled: true))
+        #expect(!ServiceOwner.matchesPackage(job: captured, executable: program, appID: "com.nikui.app.dev"))
+        #expect(!ServiceOwner.matchesPackage(job: captured.replacingOccurrences(of: "Contents/MacOS/nikd (mode: 2)", with: "../nikd (mode: 2)"), executable: program, appID: "com.nikui.app.dev", enabled: true))
+    }
     @Test func oversizedPixelMetadataRefusesBeforeDecode() throws {
         try MacImageAttachments.validateDimensions(width: 4000, height: 3000)
         for (width, height) in [(0, 10), (10, -1), (20000, 10), (12000, 12000), (Int.max, Int.max)] {

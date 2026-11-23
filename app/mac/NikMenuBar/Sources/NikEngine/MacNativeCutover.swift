@@ -21,6 +21,7 @@ import NikMacIdentity
             evidence["stage"] = .string(stage)
             evidence["coordinatorStage"] = .string(coordinator.stage)
             evidence["coordinatorProblem"] = coordinator.problem.map(JSONValue.string) ?? .null
+            evidence["coordinatorProblemDiagnostics"] = .object(coordinator.problemDiagnostics.mapValues(JSONValue.string))
             evidence["diagnostics"] = session.diagnostics(window: window)
             let file = selection.root + "/mac-cutover-state.json", temporary = selection.root + "/mac-cutover-" + UUID().uuidString
             defer { _ = unlink(temporary) }
@@ -48,6 +49,7 @@ import NikMacIdentity
             }
             if coordinator.stage != "ready" {
                 evidence["reloadInterruptedMove"] = .string(coordinator.problem ?? "CUTOVER_UNAVAILABLE")
+                evidence["reloadInterruptedMoveDiagnostics"] = .object(coordinator.problemDiagnostics.mapValues(JSONValue.string))
                 await coordinator.restoreVSCode()
                 // The external rehearsal must prove both newly activated
                 // legacy windows recovered their seeds before another Move.
@@ -60,6 +62,8 @@ import NikMacIdentity
                 for _ in 0..<120 {
                     try await Task.sleep(for: .milliseconds(250))
                     await coordinator.refresh()
+                    evidence["retryReview"] = coordinator.review
+                    try write("retry review")
                     if coordinator.mayMove && coordinator.review["windows"].intValue == 2 {
                         evidence["moveReview"] = coordinator.review
                         try write("retrying")
@@ -80,6 +84,13 @@ import NikMacIdentity
             }
             evidence["sourceTranscriptRendered"] = .bool(true)
             evidence["everySourceTranscriptRendered"] = .bool(true)
+            if FileManager.default.fileExists(atPath: selection.root + "/legacy-continuity.json") {
+                await window.select("p3-legacy-conversation", client: client)
+                try await wait {
+                    client.conversation("p3-legacy-conversation").items.contains { $0.streaming && $0.text.contains("w3 ") && session.renderedStreamingItems.contains($0.id) }
+                }
+                evidence["keptStreamRendered"] = .bool(true)
+            }
             let created = await client.perform(.newInstance(id: nonce, cwd: cwd, provider: .claude))
             guard case .accepted(let result) = created, let id = result["instance"].stringValue else { throw IdentityFailure("CUTOVER_POST_CREATE_FAILED") }
             evidence["createdAfterCutover"] = .string(id); try write("cutover")
@@ -89,6 +100,8 @@ import NikMacIdentity
             }
             await coordinator.handBack()
             guard coordinator.stage == "legacy restored", coordinator.problem == nil else { throw IdentityFailure(coordinator.problem ?? "HANDBACK_UNAVAILABLE") }
+            guard client.connection == .offline else { throw IdentityFailure("HANDBACK_CLIENT_STILL_RECONNECTING") }
+            evidence["clientDisconnectedAfterHandback"] = .bool(true)
             evidence["ok"] = .bool(true); try write("returned")
         } catch {
             evidence["ok"] = .bool(false); evidence["code"] = .string(MacAppSession.code(error)); try? write("failed")

@@ -8,13 +8,25 @@ const recovery = require('./cutoverRecovery');
 const insist = (v, code) => { if (!v) throw fail(code, code); };
 
 function createProductionCutover({ selection, secretAdapter, sources = (options) => inventory(sourceDirectory(selection.home), options),
-  request = sourceRequest, fault = () => {}, checkpoint = async () => {}, inspectPort, returnWaitMs = 5000, helper }) {
+  request = sourceRequest, fault = () => {}, checkpoint = async () => {}, inspectPort, returnWaitMs = 5000, helper, offlineDependencies = {},
+  prepareCustody = async () => {}, retireCustody = require('./keeperRescue').retireCustody }) {
   const file = path.join(selection.root, 'cutover-request.json'), directory = sourceDirectory(selection.home);
   const saved = () => privateFile(file, { optional: true }) ? readPrivateJson(file) : null;
   const save = (state, stage) => { state.stage = stage; atomicJson(file, state); require('./cutoverProgress').note(); fault(stage); };
   const ownerFor = (state) => createOwner({ root: state.ownerRoot, profile: state.profile, install: state.install });
   const importerFor = (state, owner) => createSelectedImporter({ root: selection.root, target: selection.label, owner, secretAdapter });
   const selectedSources = async (state, options) => (await sources(options)).filter((s) => s.profile === state.profile && s.install === state.install).sort((a, b) => a.id.localeCompare(b.id));
+  const custodyDirectories = (sources, oldReceipt = false) => [...new Set(sources.flatMap((s) =>
+    (s.review?.keeperContinuity?.runs || s.keeperContinuity?.runs || []).filter((r) => r.custodyRequired ||
+      oldReceipt && r.custodyRequired === undefined).map((r) => r.directory)))];
+  async function retireCustodians(state) {
+    const outcomes = [];
+    for (const directory of state.custodyDirectories || custodyDirectories(state.sources, true)) {
+      try { outcomes.push({ directory, ...await retireCustody(directory) }); }
+      catch (e) { outcomes.push({ directory, retained: true, code: e.code || 'KEEPER_RESCUE_SUPERVISION_CLEANUP' }); }
+    }
+    if (outcomes.length) atomicJson(path.join(selection.root, 'custody-cleanup.json'), { version: 1, outcomes });
+  }
   function clearLegacyArtifacts(state) {
     if (!fs.existsSync(directory)) return;
     for (const name of fs.readdirSync(directory)) if (name.startsWith(state.profile + '.') && /\.(restore|keepers|keepers\.store|snapshots)$/.test(name)) recovery.discard(path.join(directory, name));
@@ -89,6 +101,16 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
     if (!profile) return { ready: false, blockers: ['SOURCE_SELECTION_REQUIRED'], sources: all.map(({ id, profile, install, workspace }) => ({ id, profile, install, workspace })), canRestore: !!saved() };
     const selected = all.filter((s) => s.profile === profile).sort((a, b) => a.id.localeCompare(b.id));
     const blockers = [...new Set(selected.flatMap((s) => s.review.blockers || (s.review.ready ? [] : ['SOURCE_UNRESPONSIVE'])))];
+    const blockerDetails = selected.flatMap((s) => s.review.blockerDetails || []);
+    const keeperRuns = selected.flatMap((s) => s.review.keeperContinuity?.runs || []);
+    const unknownRuns = [...new Map(selected.flatMap((s) => s.review.keeperContinuity?.observed || []).filter((r) =>
+      keeperRuns.filter((known) => known.directory === r.directory && known.runId === r.runId && known.key === r.key && known.pid === r.pid).length !== 1)
+      .map((r) => [r.runId, r])).values()];
+    if (unknownRuns.length) {
+      blockers.push('KEEPER_LEGACY_UNPROVEN');
+      blockerDetails.push({ code: 'KEEPER_LEGACY_UNPROVEN', chats: unknownRuns.map((r) => ({ id: r.key, name: r.key })),
+        message: `The legacy keeper holds chats without source ownership proof: ${unknownRuns.map((r) => '“' + (r.name || r.key) + '”').join(', ')}. Open their owning VS Code windows, or stop these ${unknownRuns.length} running chats, then Refresh.` });
+    }
     if (selected.some((s) => s.build !== SOURCE_BUILD)) blockers.push('SOURCE_BUILD_OLD');
     if (selected.some((s) => s.review.mode && s.review.mode !== 'legacy')) blockers.push('OWNER_TRANSITION_PENDING');
     if (all.some((s) => s.profile !== profile)) blockers.push('OTHER_SCOPE_UNFENCED');
@@ -103,7 +125,7 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
     const pendingFolders = [...new Set(selected.flatMap((s) => s.review.pendingFolders || []))].sort();
     const pendingReturns = [...new Map(selected.flatMap((s) => s.review.pendingReturns || []).map((item) => [item.workspace, item])).values()];
     if (pendingFolders.length && !blockers.includes('PENDING_FOLDER_RETURNS')) blockers.push('PENDING_FOLDER_RETURNS');
-    return { ready: blockers.length === 0, blockers, listener, pendingFolders, pendingReturns, profile, sourceID: selected[0]?.id, install: selected[0]?.install,
+    return { ready: blockers.length === 0, blockers, blockerDetails, listener, pendingFolders, pendingReturns, profile, sourceID: selected[0]?.id, install: selected[0]?.install,
       token: hash(reviewed), fingerprint: selected[0]?.review.fingerprint, canRestore: !!saved(),
       windows: selected.length, conversations: selected.reduce((n, s) => n + (s.review.conversations || 0), 0),
       queues: selected.reduce((n, s) => n + (s.review.queues || 0), 0), devices: selected[0]?.review.devices || 0, sources: reviewed };
@@ -139,6 +161,7 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
       clearLegacyArtifacts(state); recovery.discard(path.join(selection.root, 'cutover-return-state.json'));
       await owner.pruneDead(); save(state, 'aborted');
       await acknowledgeLegacy(state, 'source.abort');
+      await retireCustodians(state);
       return { ok: true, stage: 'returned', generation: current.owner.generation };
     } finally { importer.dispose(); }
   }
@@ -150,9 +173,11 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
     }
     if (!state || ['aborted', 'returned'].includes(state.stage)) {
       const ready = await review(profile); insist(ready.ready, ready.blockers[0]); insist(ready.token === token, 'SOURCE_SELECTION_CHANGED');
+      const directories = custodyDirectories(ready.sources);
+      for (const directory of directories) await prepareCustody(directory);
       privateRoot(selection.root); const ownerRoot = path.join(selection.root, 'o'); privateDirectory(ownerRoot);
       state = { version: 1, profile: ready.profile, install: ready.install, token, ownerRoot,
-        sourceID: ready.sourceID, fingerprint: ready.fingerprint, sources: await selectedSources(ready) };
+        sourceID: ready.sourceID, fingerprint: ready.fingerprint, sources: await selectedSources(ready), custodyDirectories: directories };
       save(state, 'reviewed');
     }
     insist(state.profile === profile, 'SOURCE_SELECTION_CHANGED');
@@ -225,7 +250,8 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
     if (status.mode === 'window' || state.stage === 'returning') return { ok: true, ready: true, blockers: [] };
     try {
       const ready = await serviceCall({ op: 'transition.review' });
-      return { ok: true, ready: ready.ready === true, blockers: ready.ready ? [] : [ready.code || 'CURRENT_STATE_EXPORT_REQUIRED'] };
+      return { ok: true, ready: ready.ready === true, blockers: ready.ready ? [] : [ready.code || 'CURRENT_STATE_EXPORT_REQUIRED'],
+        returning: true, warnings: ready.warnings || [], blockerDetails: ready.blockerDetails || [], instances: ready.instances || [], operations: ready.operations || [] };
     } catch (_) { return { ok: true, ready: true, blockers: [], offline: true }; }
   }
   function cleanup(state, owner) {
@@ -245,7 +271,7 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
     let recovered = await owner.recover(), transition = recovered.transition;
     if (recovered.owner.mode === 'window' && transition?.to !== 'window') return abortMove(state, owner);
     if (state.stage === 'returned') {
-      cleanup(state, owner); await acknowledgeLegacy(state, 'source.return.resume');
+      cleanup(state, owner); await acknowledgeLegacy(state, 'source.return.resume'); await retireCustodians(state);
       return { ok: true, stage: 'returned' };
     }
     if (recovered.owner.mode === 'window' && transition?.to === 'window' && transition.phase === 'released') {
@@ -253,6 +279,7 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
       recovery.remove(path.join(directory, state.profile + '.mode'));
       save(state, 'returned'); cleanup(state, owner);
       await acknowledgeLegacy(state, 'source.return.resume');
+      await retireCustodians(state);
       return { ok: true, stage: 'returned', generation: recovered.owner.generation };
     }
     if (recovered.owner.mode === 'service' && transition?.to === 'service' && transition.phase !== 'released') {
@@ -292,6 +319,7 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
           while (Date.now() < deadline && await require('./daemonLock').probeSocket(path.join(selection.root, 'c.sock')) === 'live')
             await new Promise((resolve) => setTimeout(resolve, 25));
           response = { ok: true, exported: await require('./offlineProductionExport').offlineProductionExport({ selection, owner, importer: production, transition,
+            keeperSnapshot: offlineDependencies.keeperSnapshot, tailscale: offlineDependencies.tailscale,
             holdLease: (lease) => { offlineLease = lease; } }) };
         }
         insist(response.ok, response.code || 'CURRENT_STATE_EXPORT_REQUIRED');
@@ -314,6 +342,12 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
             returnKeeper: record.transfer.sources[0].state.keeper,
             returnSecrets: Object.fromEntries(keys.filter((key) => store.get(key) !== undefined).map((key) => [key, store.get(key)])) };
       } finally { store.dispose(); }
+      // Preserve proofs carried by an interrupted pre-R33 Restore journal.
+      if (state.rescuedRuns?.length) {
+        const keeper = current.returnKeeper;
+        for (const key of ['runs', 'transferred']) keeper[key] = [...new Map([...(state.rescuedRuns || []).map((r) =>
+          ({ ...r, released: true, compatible: true })), ...(keeper[key] || [])].map((r) => [r.runId, r])).values()];
+      }
       // Compare with the immutable Move receipt, independently of the
       // baselines carried back by the running service.
       const moved = production.snapshot().records.find((r) => r.id === state.transition);
@@ -360,6 +394,7 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
       save(state, 'returned');
       cleanup(state, owner); fault('return:cleaned');
       await acknowledgeLegacy(state, 'source.return.resume');
+      await retireCustodians(state);
       return { ok: true, stage: 'returned', generation: member.generation };
     } finally { importer.dispose(); production.dispose(); offlineLease?.release(); }
   }
@@ -368,7 +403,20 @@ function createProductionCutover({ selection, secretAdapter, sources = (options)
     if (!state) return { ok: true, legacy: !privateFile(path.join(selection.root, 'production-owner.json'), { optional: true }) };
     const status = ownerFor(state).status(); return { ok: true, legacy: status.mode === 'window' && status.admission === 'open' };
   }
-  return { review, forgetReturn: (value) => exclusive(() => forgetReturn(value)), canCancelRegistration, move: (value) => exclusive(() => move(value)), finish: () => exclusive(finish),
+  async function recordPhoneRoute({ profile, sourceID }) {
+    const source = (await sources()).find((s) => s.profile === profile && s.id === sourceID);
+    insist(source, 'SOURCE_SELECTION_CHANGED');
+    return call(source, { op: 'source.route.record' });
+  }
+  async function repairCustody({ profile }) {
+    const ready = await review(profile);
+    const directories = custodyDirectories(ready.sources || []);
+    insist(directories.length > 0, 'KEEPER_RESCUE_SUPERVISION_SCOPE_REQUIRED');
+    for (const directory of directories) await prepareCustody(directory, { repair: true });
+    return { ok: true };
+  }
+  return { review, recordPhoneRoute, forgetReturn: (value) => exclusive(() => forgetReturn(value)), canCancelRegistration, move: (value) => exclusive(() => move(value)), finish: () => exclusive(finish),
+    repairCustody: (value) => exclusive(() => repairCustody(value)),
     handbackReview, handback: () => exclusive(handback), restore: () => exclusive(handback), saved };
 }
 module.exports = { createProductionCutover };

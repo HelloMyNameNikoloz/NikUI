@@ -3,6 +3,32 @@ import Testing
 @testable import NikMacIdentity
 
 @Suite("Compiled Mac flavour boundaries") struct BuildIdentityTests {
+    @Test func canonicalExecutablePathsKeepTheKernelPrivatePrefixAndRefuseMissingFiles() throws {
+        let directory = "/private/tmp/nik-realpath-" + UUID().uuidString
+        try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let file = directory + "/node with spaces"
+        FileManager.default.createFile(atPath: file, contents: Data())
+        let alias = file.replacingOccurrences(of: "/private/tmp/", with: "/tmp/")
+        #expect(try ExecutablePackage.canonicalPath(file) == file)
+        #expect(try ExecutablePackage.canonicalPath(alias) == file)
+        #expect(throws: IdentityFailure("PACKAGE_CONFIGURATION")) { try ExecutablePackage.canonicalPath(file + "-missing") }
+    }
+    @Test func auxiliaryLauncherReadsItsActualContainingPackage() throws {
+        let directory = URL(fileURLWithPath: "/private/tmp/nik-mac/build/p3/identity-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let contents = directory.appendingPathComponent("NikUI.app/Contents")
+        try FileManager.default.createDirectory(at: contents.appendingPathComponent("MacOS"), withIntermediateDirectories: true)
+        let metadata = try PropertyListSerialization.data(fromPropertyList: info(.current), format: .xml, options: 0)
+        try metadata.write(to: contents.appendingPathComponent("Info.plist"))
+        let executable = contents.appendingPathComponent("MacOS/nikd").path
+        let selected = try AppSelection.selected(executable: executable, accountHome: account)
+        let expected = try BuildFlavour.current.selection(info: info(.current), accountHome: account)
+        #expect(selected == expected)
+        #expect(try ExecutablePackage.contents(executable: executable).path == contents.path)
+        #expect(throws: IdentityFailure("PACKAGE_CONFIGURATION")) { try ExecutablePackage.contents(executable: "/tmp/nikd") }
+        #expect(try ExecutablePackage.runningExecutable().hasPrefix("/"))
+    }
     private let account = "/Users/fixture-owner"
     private func info(_ flavour: BuildFlavour) -> [String: Any] {
         var value: [String: Any] = ["CFBundleIdentifier": flavour.appID, "NikBuildFlavour": flavour.rawValue, "NikEngineLabel": flavour.engineLabel]

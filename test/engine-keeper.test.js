@@ -163,7 +163,7 @@ module.exports = async function () {
         { owned: 'KEEPER_OWNED_ELSEWHERE', incompatible: 'KEEPER_CHECKPOINT_INCOMPATIBLE', malformed: 'KEEPER_CHECKPOINT_INCOMPATIBLE', unreplayable: 'KEEPER_UNREPLAYABLE', expired: 'KEEPER_RUN_LOST' }[kind]);
       s.send('not a replacement'); await sleep(20);
       checkEqual(kind + ' recovery never starts a new provider', f.log().length, 0);
-      if (kind !== 'owned' && kind !== 'expired') checkEqual(kind + ' recovery does not retain ownership of the incompatible run', (await f.list(owner))[0].owned, false);
+      if (kind !== 'owned' && kind !== 'expired') checkEqual(kind + ' recovery retains any adopted incompatible run without arming grace', (await f.list(owner))[0].owned, true);
     } finally { await f.dispose(); }
   }
 
@@ -193,7 +193,7 @@ module.exports = async function () {
       const service = f.daemon(saved), s = f.session(service, 'failed-manifest'); s.send('not a fallback');
       check(stage + ' manifest failure is named', await waitFor(() => s.keeperRefusal === 'KEEPER_MANIFEST_UNAVAILABLE'));
       const observer = f.window(); await observer.connect();
-      checkEqual(stage + ' manifest failure does not retain ownership of an uncheckpointed run', (await f.list(observer)).some((run) => run.key === s.id && run.owned), false);
+      checkEqual(stage + ' manifest failure retains an already accepted run without arming grace', (await f.list(observer)).some((run) => run.key === s.id && run.owned), stage === 'checkpoint');
       checkEqual(stage + ' refusal remains visible in daemon diagnostics', [...service.blockers.values()].map((blocker) => blocker.code), ['KEEPER_MANIFEST_UNAVAILABLE']);
       checkEqual(stage + ' failure never starts a direct child replacement', fcount(f.log()) <= (stage === 'spawn' ? 0 : 1), true);
     } finally { await f.dispose(); }

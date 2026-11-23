@@ -1,0 +1,81 @@
+gui/502/com.nikui.engine.development = {
+	active count = 0
+	path = (submitted by smd.41692)
+	type = Submitted
+	managed_by = com.apple.xpc.ServiceManagement
+	state = not running
+
+	program identifier = Contents/MacOS/nikd (mode: 2)
+	parent bundle identifier = com.nikui.app.dev
+	parent bundle version = 39
+	BTM uuid = 541D2547-2A91-4802-94DE-C976D05F051D
+	working directory = /private/tmp/nik-mac/build/p3/hB-olzVtX
+
+	stdout path = /private/tmp/nik-mac/build/p3/hB-olzVtX/engine.stdout.log
+	stderr path = /private/tmp/nik-mac/build/p3/hB-olzVtX/engine.stderr.log
+	inherited environment = {
+		SSH_AUTH_SOCK => /var/run/com.apple.launchd.2lEYeuE3Qg/Listeners
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+		HOME => /private/tmp/nik-mac/build/p3/hB-olzVtX
+		XPC_SERVICE_NAME => com.nikui.engine.development
+	}
+
+	LWCR = {
+		"reqs" => {
+			"signing-identifier" => "nikd"
+			"validation-category" => 3
+			"team-identifier" => "KBA6653B4V"
+		}
+		"vers" => 1
+		"comp" => 1
+		"ccat" => 0
+	}
+
+	domain = gui/502 [100015]
+	asid = 100015
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 3
+	last exit code = 0
+
+	semaphores = {
+		successful exit => 0
+	}
+
+	resource coalition = {
+		ID = 140114
+		type = resource
+		state = active
+		active count = 1
+		name = com.nikui.engine.development
+	}
+
+	jetsam coalition = {
+		ID = 140115
+		type = jetsam
+		state = active
+		active count = 1
+		name = com.nikui.engine.development
+	}
+
+	spawn type = interactive (4)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	submitted job. ignore execute allowed
+	jetsam thread limit = 32
+	cpumon = default
+	job state = exited
+	sanitizer flags = 0x0
+
+	properties = partial import | runatload | resolve program | has LWCR
+}

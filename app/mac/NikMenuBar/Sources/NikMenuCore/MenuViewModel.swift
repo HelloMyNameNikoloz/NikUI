@@ -190,6 +190,7 @@ public struct SettingsDraft: Equatable, Sendable {
             if let tool = s.tools[name] { lines.append("\(name): \(redact(tool.path ?? "missing")) (\(tool.source))") }
         }
         lines += s.blockers.map { "Blocker: " + MenuFailure.safeCode($0.code) }
+        lines += (s.warnings ?? []).map { "Warning: " + redact($0.message) }
         lines += snapshot.updateBlockers.map { "Update: " + MenuFailure.safeCode($0) }
         if let problem = state.problem { lines.append("Problem: " + MenuFailure.safeCode(problem)) }
         return lines.joined(separator: "\n")

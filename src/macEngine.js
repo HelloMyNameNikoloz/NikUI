@@ -45,8 +45,19 @@ async function main() {
 async function runPackage({ config, selection, adapter, paths, contents }) {
   if (selection.flavour === 'prod' || config.acceptanceCutover === true) {
     let daemon, requested = false;
-    const stop = async () => { if (daemon) await daemon.stop(); };
-    for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { requested = true; void stop().catch(() => { process.exitCode = 1; }); });
+    let stopping;
+    const stop = () => stopping ||= (async () => {
+      if (!daemon) return;
+      await daemon.stop();
+      // The package process owns this lifecycle. A completed intentional drain
+      // must exit successfully even if a native/client handle outlives it;
+      // launchd KeepAlive restarts only unsuccessful exits. Custody is separate.
+      process.exit(0);
+    })();
+    for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {
+      requested = true;
+      if (daemon) void stop().catch(() => { process.exitCode = 1; });
+    });
     let dependencies = {};
     if (selection.flavour === 'dev') {
       // This branch exists only behind the signed development configuration;
@@ -58,8 +69,14 @@ async function runPackage({ config, selection, adapter, paths, contents }) {
         spawn: (file, ...args) => (file.endsWith('codex') ? fixture.adapters.codexSpawn : fixture.adapters.claudeSpawn)(file, ...args),
         power: require('./policyOwner').createFakePolicyAdapters().power,
         prRun: async () => ({ ok: false, stdout: '', code: 'FIXTURE_PR_UNAVAILABLE' }) };
+      const fixtureTailnet = path.join(selection.home, 'fixture-bin/tailscale');
+      if (fs.existsSync(fixtureTailnet)) dependencies.tailscale = new (require('./tunnel').Tailscale)({ binary: fixtureTailnet, probe: async () => true });
     }
+    dependencies.startupProgress = (phase) => require('./engineOwner').atomicJson(path.join(selection.root, 'engine-startup-progress.json'),
+      { version: 1, pid: process.pid, at: Date.now(), phase });
+    dependencies.startupProgress('composition');
     daemon = await require('./productionRuntime').startProductionRuntime({ selection, secretAdapter: adapter, dependencies });
+    dependencies.startupProgress('running');
     if (requested) await stop();
     return daemon;
   }
